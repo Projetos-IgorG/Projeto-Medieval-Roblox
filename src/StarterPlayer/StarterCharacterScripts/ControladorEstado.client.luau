@@ -438,6 +438,7 @@ local function IniciarMonitoramentoReversao()
 end
 
 --- Inverte a direção da animação de equipar/desequipar
+--- A inversão reverte a animação atual - se estava tocando pra frente, toca pra trás e vice-versa
 --- @param novaDirecao number 1 para equipar, -1 para desequipar
 function _G.InverterEquipAnimacao(novaDirecao: number)
 	if not equipAnimState.animacao or not equipAnimState.animacao.IsPlaying then
@@ -445,12 +446,17 @@ function _G.InverterEquipAnimacao(novaDirecao: number)
 		return false
 	end
 
-	-- Inverte a velocidade
+	local direcaoAnterior = equipAnimState.direcao
 	equipAnimState.direcao = novaDirecao
-	equipAnimState.animacao:AdjustSpeed(novaDirecao)
 
-	-- Se a nova direção é negativa, inicia monitoramento para detectar quando chegar ao início
-	if novaDirecao == -1 then
+	-- A velocidade da animação é invertida (negativa do que era)
+	-- Se estava em 1, vai para -1. Se estava em -1, vai para 1.
+	local velocidadeAtual = equipAnimState.animacao.Speed
+	local novaVelocidade = -velocidadeAtual
+	equipAnimState.animacao:AdjustSpeed(novaVelocidade)
+
+	-- Se a nova velocidade é negativa, inicia monitoramento para detectar quando chegar ao início
+	if novaVelocidade < 0 then
 		IniciarMonitoramentoReversao()
 	else
 		-- Se voltou para positivo, remove o monitor
@@ -460,7 +466,14 @@ function _G.InverterEquipAnimacao(novaDirecao: number)
 		end
 	end
 
-	print("[ControladorEstado] Animação de equip invertida para direção:", novaDirecao)
+	print(
+		"[ControladorEstado] Animação de equip invertida:",
+		direcaoAnterior,
+		"->",
+		novaDirecao,
+		"velocidade:",
+		novaVelocidade
+	)
 	return true
 end
 
@@ -744,9 +757,9 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 		end
 
 		equipAnimState.animacao = track
-		-- Direção sempre começa como 1 (positiva) - animação toca normalmente
-		-- Será -1 apenas se invertida via _G.InverterEquipAnimacao
-		equipAnimState.direcao = 1
+		-- Direção: 1 para equipar, -1 para desequipar
+		-- IMPORTANTE: Isso determina o que o callback final vai reportar
+		equipAnimState.direcao = (nomeAnimacao == "Equipar") and 1 or -1
 		equipAnimState.tempoInicio = tick()
 
 		-- Conecta callback de término
@@ -754,7 +767,7 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 			OnEquipAnimacaoTerminou()
 		end)
 
-		print("[ControladorEstado] Animação de", nomeAnimacao, "iniciada")
+		print("[ControladorEstado] Animação de", nomeAnimacao, "iniciada (direção:", equipAnimState.direcao, ")")
 		return
 	end
 

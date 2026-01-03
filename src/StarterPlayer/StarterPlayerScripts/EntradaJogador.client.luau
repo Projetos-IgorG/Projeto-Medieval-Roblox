@@ -54,36 +54,204 @@ local estadoInput = {
 	ultimaDefesa = 0,
 }
 
--- Estado de equipamento
-local toolAtualEquipado = nil -- Referência ao Tool atualmente equipado
-local ultimoToolProcessado = nil -- Último tool que iniciou equip/desequip (para rastrear toggle)
-local direcaoEquip = 0 -- 1 = equipando, -1 = desequipando, 0 = nenhum
+-- ═══════════════════════════════════════════════════════════════════
+-- SISTEMA DE FILA DE EQUIPAMENTO
+-- ═══════════════════════════════════════════════════════════════════
+--[[
+    Sistema de fila para gerenciar troca de tools com animações reversíveis.
+    
+    Estados possíveis:
+    - estadoEquip = "idle" → Nenhuma animação de equip em andamento
+    - estadoEquip = "equipando" → Animação de equipar tocando (velocidade positiva)
+    - estadoEquip = "desequipando" → Animação de desequipar tocando (velocidade positiva ou negativa)
+    
+    Variáveis:
+    - toolAtualEquipado: Tool que está atualmente equipado (modo ativo no servidor)
+    - toolEmAnimacao: Tool cuja animação está tocando agora
+    - toolAlvo: Tool que queremos ter equipado no final (nil = queremos ficar sem arma)
+]]
+
+local estadoEquip = "idle" -- "idle", "equipando", "desequipando"
+local toolAtualEquipado = nil -- Tool que está efetivamente equipado (modo ativo)
+local toolEmAnimacao = nil -- Tool cuja animação está tocando
+local toolAlvo = nil -- Tool que queremos ter no final (nil = Base)
 
 -- ═══════════════════════════════════════════════════════════════════
--- CALLBACKS GLOBAIS
--- ═══════════════════════════════════════════════════════════════════
-
---- Callback chamado pelo ControladorEstado quando a animação de equipar/desequipar termina
---- Reseta o estado de direção de equip
---- @param direcaoFinal number 1 se terminou equipando, -1 se terminou desequipando
-_G.OnEquipAnimacaoTerminou = function(direcaoFinal: number)
-	print("[EntradaJogador] Animação de equip terminou. Direção final:", direcaoFinal)
-	direcaoEquip = 0
-
-	-- Se terminou desequipando, limpa referências
-	if direcaoFinal == -1 then
-		ultimoToolProcessado = nil
-	end
-end
-
--- ═══════════════════════════════════════════════════════════════════
--- FUNÇÕES DE AÇÃO
+-- FUNÇÕES BASE
 -- ═══════════════════════════════════════════════════════════════════
 
 --- Envia ação para o servidor
 local function EnviarAcao(acao: string, dados: any?)
 	TentarAcao:FireServer(acao, dados)
 end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- FUNÇÕES AUXILIARES DE EQUIPAMENTO
+-- ═══════════════════════════════════════════════════════════════════
+
+--- Obtém o modo de um Tool
+local function ObterModoDoTool(tool: Tool): string?
+	if not tool then
+		return nil
+	end
+	local modoValue = tool:FindFirstChild("modoAnimacao")
+	if modoValue and modoValue:IsA("StringValue") and modoValue.Value ~= "" and modoValue.Value ~= "Base" then
+		return modoValue.Value
+	end
+	return nil
+end
+
+-- Forward declaration para permitir referência circular
+local ProcessarProximaAcao
+
+-- Timeout para detectar se ação foi rejeitada pelo servidor
+local TIMEOUT_ACAO = 0.3 -- segundos
+local ultimoIdAcao = 0
+
+--- Verifica se há animação ativa após timeout, senão reseta
+local function VerificarTimeoutAcao(idAcao: number)
+	-- Se o ID mudou, uma nova ação foi iniciada - ignora este timeout
+	if idAcao ~= ultimoIdAcao then
+		return
+	end
+
+	-- Se ainda estamos em estado não-idle mas não há animação, reseta
+	if estadoEquip ~= "idle" then
+		local temAnimacao = _G.EstaEmAnimacaoEquip and _G.EstaEmAnimacaoEquip()
+		if not temAnimacao then
+			print("[EntradaJogador] Timeout: ação rejeitada pelo servidor, resetando estado")
+			estadoEquip = "idle"
+			toolEmAnimacao = nil
+			ProcessarProximaAcao()
+		end
+	end
+end
+
+--- Inicia animação de equipar um tool
+local function IniciarEquipar(tool: Tool, modo: string)
+	estadoEquip = "equipando"
+	toolEmAnimacao = tool
+	ultimoIdAcao = ultimoIdAcao + 1
+	local idAtual = ultimoIdAcao
+	EnviarAcao("Equipar", modo)
+	print("[EntradaJogador] Iniciando equipar:", tool.Name, "- Modo:", modo)
+
+	-- Configura timeout para detectar rejeição
+	task.delay(TIMEOUT_ACAO, function()
+		VerificarTimeoutAcao(idAtual)
+	end)
+end
+
+--- Inicia animação de desequipar
+local function IniciarDesequipar(tool: Tool)
+	estadoEquip = "desequipando"
+	toolEmAnimacao = tool
+	ultimoIdAcao = ultimoIdAcao + 1
+	local idAtual = ultimoIdAcao
+	EnviarAcao("Desequipar")
+	print("[EntradaJogador] Iniciando desequipar:", tool and tool.Name or "?")
+
+	-- Configura timeout para detectar rejeição
+	task.delay(TIMEOUT_ACAO, function()
+		VerificarTimeoutAcao(idAtual)
+	end)
+end
+
+--- Inverte a animação atual
+--- Se não há animação para inverter, reseta estado e processa a fila
+local function InverterAnimacao(novaDirecao: number, modo: string?)
+	local sucesso = false
+	if _G.InverterEquipAnimacao then
+		sucesso = _G.InverterEquipAnimacao(novaDirecao)
+	end
+
+	if sucesso then
+		-- Inversão funcionou, atualiza estado e notifica servidor
+		EnviarAcao("InverterEquipAnimacao", { direcao = novaDirecao, modo = modo })
+
+		if novaDirecao == 1 then
+			estadoEquip = "equipando"
+			print("[EntradaJogador] Invertendo para equipar. Modo:", modo or "?")
+		else
+			estadoEquip = "desequipando"
+			print("[EntradaJogador] Invertendo para desequipar")
+		end
+	else
+		-- Não há animação para inverter - reseta estado e processa fila
+		print("[EntradaJogador] Inversão falhou - resetando estado e processando fila")
+		estadoEquip = "idle"
+		toolEmAnimacao = nil
+		-- Chama ProcessarProximaAcao após um pequeno delay para evitar recursão
+		task.defer(function()
+			ProcessarProximaAcao()
+		end)
+	end
+end
+
+--- Processa a fila - chamado quando uma animação termina
+ProcessarProximaAcao = function()
+	-- Se toolAlvo é diferente do que temos, precisamos agir
+	if toolAlvo ~= toolAtualEquipado then
+		if toolAlvo then
+			-- Queremos equipar algo
+			local modo = ObterModoDoTool(toolAlvo)
+			if modo then
+				if toolAtualEquipado then
+					-- Primeiro precisa desequipar o atual
+					IniciarDesequipar(toolAtualEquipado)
+				else
+					-- Pode equipar direto
+					IniciarEquipar(toolAlvo, modo)
+				end
+			else
+				-- Tool não tem modo válido, ignora
+				toolAlvo = toolAtualEquipado
+			end
+		else
+			-- Queremos ficar sem arma
+			if toolAtualEquipado then
+				IniciarDesequipar(toolAtualEquipado)
+			end
+		end
+	else
+		-- Já temos o que queremos, idle
+		estadoEquip = "idle"
+		toolEmAnimacao = nil
+	end
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- CALLBACKS GLOBAIS
+-- ═══════════════════════════════════════════════════════════════════
+
+--- Callback chamado pelo ControladorEstado quando a animação de equipar/desequipar termina
+--- @param direcaoFinal number 1 se terminou equipando, -1 se terminou desequipando
+_G.OnEquipAnimacaoTerminou = function(direcaoFinal: number)
+	print(
+		"[EntradaJogador] Animação terminou. Direção:",
+		direcaoFinal,
+		"Tool em animação:",
+		toolEmAnimacao and toolEmAnimacao.Name or "nil"
+	)
+
+	if direcaoFinal == 1 then
+		-- Terminou equipando - agora temos o tool equipado
+		toolAtualEquipado = toolEmAnimacao
+	elseif direcaoFinal == -1 then
+		-- Terminou desequipando - agora não temos tool
+		toolAtualEquipado = nil
+	end
+
+	toolEmAnimacao = nil
+	estadoEquip = "idle"
+
+	-- Processa próxima ação da fila
+	ProcessarProximaAcao()
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- FUNÇÕES DE AÇÃO (COMBATE/MOVIMENTO)
+-- ═══════════════════════════════════════════════════════════════════
 
 --- Processa clique do mouse 1 (ataque)
 --- No sistema de combo por marcadores:
@@ -186,111 +354,111 @@ local function ProcessarQuebrarDefesa()
 	EnviarAcao("QuebrarDefesa")
 end
 
---- Obtém o modo atual do Status
-local function ObterModoAtual(): string
-	local character = player.Character
-	if not character then
-		return "Base"
-	end
-
-	local status = character:FindFirstChild("Status")
-	if not status then
-		return "Base"
-	end
-
-	local modoAnimacao = status:FindFirstChild("modoAnimacao")
-	if modoAnimacao and modoAnimacao:IsA("StringValue") then
-		return modoAnimacao.Value
-	end
-
-	return "Base"
-end
-
 --- Processa quando um Tool é equipado
---- Lê o modoAnimacao do Tool e envia ação de Equipar
---- Se estava desequipando, inverte a animação ao invés de iniciar nova
+--- Gerencia fila de equipamento e animações reversíveis
 local function ProcessarToolEquipado(tool: Tool)
-	-- Verifica se o Tool tem um modoAnimacao definido
-	local modoAnimacaoValue = tool:FindFirstChild("modoAnimacao")
-	if not modoAnimacaoValue or not modoAnimacaoValue:IsA("StringValue") then
-		warn("[EntradaJogador] Tool '", tool.Name, "' não tem modoAnimacao definido")
+	local modoDesejado = ObterModoDoTool(tool)
+	if not modoDesejado then
+		warn("[EntradaJogador] Tool '", tool.Name, "' não tem modoAnimacao válido")
 		return
 	end
 
-	local modoDesejado = modoAnimacaoValue.Value
-	if modoDesejado == "" or modoDesejado == "Base" then
-		return -- Não equipa se for Base ou vazio
-	end
+	print("[EntradaJogador] Tool adicionado:", tool.Name, "- Estado atual:", estadoEquip)
 
-	-- Se estava desequipando o mesmo tool, inverte a animação
-	if direcaoEquip == -1 and ultimoToolProcessado == tool then
-		direcaoEquip = 1
-		toolAtualEquipado = tool
+	-- Atualiza o alvo
+	toolAlvo = tool
 
-		-- Primeiro inverte localmente, depois notifica servidor
-		if _G.InverterEquipAnimacao then
-			_G.InverterEquipAnimacao(1)
+	-- Se idle, inicia ação diretamente
+	if estadoEquip == "idle" then
+		if toolAtualEquipado then
+			-- Precisa desequipar primeiro
+			IniciarDesequipar(toolAtualEquipado)
+		else
+			-- Pode equipar direto
+			IniciarEquipar(tool, modoDesejado)
 		end
-		EnviarAcao("InverterEquipAnimacao", { direcao = 1, modo = modoDesejado })
-		print("[EntradaJogador] Invertendo animação: desequipando -> equipando")
 		return
 	end
 
-	local modoAtualValue = ObterModoAtual()
-
-	-- Se já está nesse modo e não está em transição, não precisa equipar novamente
-	if modoAtualValue == modoDesejado and direcaoEquip == 0 then
-		toolAtualEquipado = tool
-		return
+	-- Se estamos equipando
+	if estadoEquip == "equipando" then
+		if toolEmAnimacao == tool then
+			-- Re-equipando o mesmo tool que já está equipando - não faz nada
+			print("[EntradaJogador] Já está equipando este tool")
+			return
+		else
+			-- Equipando tool A, mas queremos tool B
+			-- Precisa reverter animação de A para desequipar, depois equipar B
+			InverterAnimacao(-1, nil)
+			-- toolAlvo já está como tool B, será processado quando animação terminar
+			return
+		end
 	end
 
-	-- Equipa o novo modo
-	direcaoEquip = 1
-	toolAtualEquipado = tool
-	ultimoToolProcessado = tool
-	EnviarAcao("Equipar", modoDesejado)
-
-	print("[EntradaJogador] Tool equipado: ", tool.Name, " - Modo: ", modoDesejado)
+	-- Se estamos desequipando
+	if estadoEquip == "desequipando" then
+		if toolEmAnimacao == tool then
+			-- Estava desequipando este tool, mas agora quer equipar novamente
+			-- Inverte a animação para equipar
+			InverterAnimacao(1, modoDesejado)
+			return
+		else
+			-- Estava desequipando tool A para equipar B, mas agora quer C
+			-- Continua desequipando A, toolAlvo atualizado para C será processado depois
+			print("[EntradaJogador] Atualizando alvo para:", tool.Name)
+			return
+		end
+	end
 end
 
---- Processa quando um Tool é desequipado
---- Envia ação de Desequipar para voltar ao modo Base
---- Se estava equipando, inverte a animação ao invés de iniciar nova
+--- Processa quando um Tool é desequipado (removido do character)
+--- Gerencia fila de equipamento e animações reversíveis
 local function ProcessarToolDesequipado(tool: Tool)
-	-- Verifica se era o tool que estava equipado ou sendo processado
-	if toolAtualEquipado ~= tool and ultimoToolProcessado ~= tool then
-		return
+	print(
+		"[EntradaJogador] Tool removido:",
+		tool.Name,
+		"- Estado atual:",
+		estadoEquip,
+		"- Tool alvo:",
+		toolAlvo and toolAlvo.Name or "nil"
+	)
+
+	-- Se o tool removido é o alvo, atualiza alvo para nil
+	if toolAlvo == tool then
+		toolAlvo = nil
 	end
 
-	-- Se estava equipando o mesmo tool, inverte a animação
-	if direcaoEquip == 1 and ultimoToolProcessado == tool then
-		direcaoEquip = -1
-		toolAtualEquipado = nil
-
-		-- Primeiro inverte localmente, depois notifica servidor
-		if _G.InverterEquipAnimacao then
-			_G.InverterEquipAnimacao(-1)
+	-- Se idle e este era o tool equipado, inicia desequip
+	if estadoEquip == "idle" then
+		if toolAtualEquipado == tool then
+			IniciarDesequipar(tool)
 		end
-		EnviarAcao("InverterEquipAnimacao", { direcao = -1 })
-		print("[EntradaJogador] Invertendo animação: equipando -> desequipando")
 		return
 	end
 
-	local modoAtualValue = ObterModoAtual()
-
-	-- Se já está em Base e não está em transição, não precisa desequipar
-	if modoAtualValue == "Base" and direcaoEquip == 0 then
-		toolAtualEquipado = nil
-		return
+	-- Se estamos equipando
+	if estadoEquip == "equipando" then
+		if toolEmAnimacao == tool then
+			-- Estava equipando este tool, mas foi removido - inverte para desequipar
+			InverterAnimacao(-1, nil)
+			return
+		else
+			-- Equipando outro tool, este foi removido - não afeta
+			return
+		end
 	end
 
-	-- Desequipa (volta para Base)
-	direcaoEquip = -1
-	toolAtualEquipado = nil
-	ultimoToolProcessado = tool
-	EnviarAcao("Desequipar")
-
-	print("[EntradaJogador] Tool desequipado: ", tool.Name)
+	-- Se estamos desequipando
+	if estadoEquip == "desequipando" then
+		if toolEmAnimacao == tool then
+			-- Já está desequipando este tool - continua normalmente
+			-- Se toolAlvo é nil, vai para idle. Se tem outro tool, vai equipar.
+			return
+		else
+			-- Desequipando outro tool - não afeta diretamente
+			return
+		end
+	end
 end
 
 --- Processa pular
