@@ -849,14 +849,27 @@ function ControladorCombate.ProcessarCorrer(entidade: Model)
 
 	if not sucesso then
 		print(string.format("[Combate] %s: Correr FALHOU - %s", entidade.Name, motivo or "?"))
-		-- Se falhou porque uma ação estava em andamento, registra intenção de correr
-		-- para aplicar automaticamente quando a ação terminar.
+		-- Se falhou por ação em andamento, registra intenção de correr
+		-- para aplicar quando a ação terminar.
+		-- Além disso, permite enfileirar quando o estado é bloqueante
+		-- devido a Equipando/Desequipando (comportamento esperado pelo cliente).
 		if motivo == "AcaoEmAndamento" then
 			maquina.dados.correndoIntent = true
 			print(
 				string.format("[Combate] %s: Pedido de correr enfileirado enquanto ação em andamento", entidade.Name)
 			)
 			return true
+		end
+		if motivo == "EstadoBloqueante" then
+			local estadoAcao = maquina.dados.estadoAcao
+			if
+				estadoAcao == MaquinaDeEstados.EstadoAcao.Equipando
+				or estadoAcao == MaquinaDeEstados.EstadoAcao.Desequipando
+			then
+				maquina.dados.correndoIntent = true
+				print(string.format("[Combate] %s: Pedido de correr enfileirado durante equip/desequip", entidade.Name))
+				return true
+			end
 		end
 		return false, motivo
 	end
