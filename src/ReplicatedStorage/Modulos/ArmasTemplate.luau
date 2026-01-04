@@ -72,25 +72,25 @@ ArmasTemplate.Armas = {
 
 		animacoes = {
 			-- Movimento Normal
-			Idle = "rbxassetid://95842068830831",
-			Andando = "rbxassetid://80372639586330",
-			Correndo = "rbxassetid://84480325767002",
-			Pulando = "rbxassetid://126513416555386",
-			Caindo = "rbxassetid://120023331153028",
-			Escalando = "rbxassetid://128601601033320",
+			Idle = "rbxassetid://82165471407920",
+			Andando = "rbxassetid://104395502422213",
+			Correndo = "rbxassetid://84638257154650",
+			Pulando = "rbxassetid://117966230491995",
+			Caindo = "rbxassetid://139130630712682",
+			Escalando = "rbxassetid://114123577974317",
 
 			-- Movimento Agachado
-			IdleAgachado = "rbxassetid://129640837531159", -- TODO: Adicionar ID
-			AndandoAgachado = "rbxassetid://87797732262383", -- TODO: Adicionar ID
+			IdleAgachado = "rbxassetid://129640837531159",
+			AndandoAgachado = "rbxassetid://87797732262383",
 
 			-- Dash
-			DashFrente = "rbxassetid://0000000000", -- TODO: Adicionar ID
-			DashTras = "rbxassetid://0000000000", -- TODO: Adicionar ID
-			DashEsquerda = "rbxassetid://0000000000", -- TODO: Adicionar ID
-			DashDireita = "rbxassetid://0000000000", -- TODO: Adicionar ID
+			DashFrente = "rbxassetid://77731344105069",
+			DashTras = "rbxassetid://116512808764487",
+			DashEsquerda = "rbxassetid://80802499324784",
+			DashDireita = "rbxassetid://114879502782228",
 
 			-- Estado
-			Stunado = "rbxassetid://111940476196229",
+			Stunado = "rbxassetid://104947799689111",
 		},
 	},
 
