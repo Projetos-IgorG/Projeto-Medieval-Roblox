@@ -887,8 +887,16 @@ local function ProcessarSincronizacao(entidade: Model, dados)
 	-- Isso garante que ao equipar/desequipar, as animações troquem para o novo modo
 	local modoMudou = modoAnterior ~= estadoAtual.modoAnimacao
 	if modoMudou and animacaoAtualMov then
-		-- Para a animação atual forçadamente para garantir que a nova seja do modo correto
-		PararAnimacaoMov(true)
+		-- Evita forçar parada de movimento se o jogador estiver no ar correndo,
+		-- pois queremos que a animação de corrida no ar continue a tocar.
+		if movementFlags.isJumping or movementFlags.isFalling then
+			-- Se estiver no ar, apenas atualiza nome da última animação para evitar
+			-- conflitos posteriores, mas não para a track atual.
+			ultimaAnimacaoMovNome = nil
+		else
+			-- Para a animação atual forçadamente para garantir que a nova seja do modo correto
+			PararAnimacaoMov(true)
+		end
 	end
 
 	-- Se entrou em ação de combate, preserva intenção de correr e força parar corrida local
