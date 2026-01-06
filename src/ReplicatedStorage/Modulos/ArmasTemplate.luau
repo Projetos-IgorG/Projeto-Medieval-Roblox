@@ -350,7 +350,7 @@ ArmasTemplate.Armas = {
 
 		animacoes = {
 			-- Combate
-			AtaqueLeve = "rbxassetid://12228094425458",
+			AtaqueLeve = "rbxassetid://122280944254589",
 			AtaquePesado = "rbxassetid://125243003105031",
 			Defesa = "rbxassetid://127751906771957",
 			DefesaQuebrada = "rbxassetid://94588265013910",
