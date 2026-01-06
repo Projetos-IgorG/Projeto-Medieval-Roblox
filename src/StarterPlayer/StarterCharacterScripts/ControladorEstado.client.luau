@@ -114,7 +114,7 @@ local SUAVIDADE_TRANSICAO_CORRENDO = SUAVIDADE_TRANSICAO_DIRECAO * 2 -- Transiç
 -- Sistema de pausa suave de animação (evita reset ao tocar rapidamente)
 local animacaoMovPausada = false -- Se a animação está pausada (parado)
 local ultimaAnimacaoMovNome = nil -- Nome da última animação de movimento
-local TEMPO_MANTER_ANIMACAO = 0.2 -- Tempo para manter animação pausada antes de realmente parar
+local TEMPO_MANTER_ANIMACAO = 0.27 -- Tempo para manter animação pausada antes de realmente parar
 local VELOCIDADE_PAUSA = 0.2 -- Velocidade durante pausa (mantém movimento sutil)
 local timerPararAnimacao = nil -- Timer para parar a animação após tempo
 
