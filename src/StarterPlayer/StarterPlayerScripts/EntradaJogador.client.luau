@@ -617,6 +617,23 @@ end
 
 --- Configura listeners para o Character atual
 local function ConfigurarCharacter(char)
+	-- Resetar estados locais para garantir que após morrer/respawn tudo volte ao estado inicial
+	estadoInput = {
+		mouse1Pressionado = false,
+		mouse2Pressionado = false,
+		tempoMouse1 = 0,
+		agachadoAtivo = false,
+		correndoAtivo = false,
+		ultimaDefesa = 0,
+	}
+
+	-- Resetar estado de fila/equipamento para evitar bloqueios após morrer
+	estadoEquip = "idle"
+	toolAtualEquipado = nil
+	toolEmAnimacao = nil
+	toolAlvo = nil
+	ultimoIdAcao = 0
+
 	-- Conecta eventos de adicionar/remover filhos
 	char.ChildAdded:Connect(OnChildAdded)
 	char.ChildRemoved:Connect(OnChildRemoved)
