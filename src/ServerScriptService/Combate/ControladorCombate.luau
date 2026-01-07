@@ -866,9 +866,10 @@ function ControladorCombate.ProcessarCorrer(entidade: Model)
 			if
 				estadoAcao == MaquinaDeEstados.EstadoAcao.Equipando
 				or estadoAcao == MaquinaDeEstados.EstadoAcao.Desequipando
+				or estadoAcao == MaquinaDeEstados.EstadoAcao.Dashando
 			then
 				maquina.dados.correndoIntent = true
-				print(string.format("[Combate] %s: Pedido de correr enfileirado durante equip/desequip", entidade.Name))
+				print(string.format("[Combate] %s: Pedido de correr enfileirado durante %s", entidade.Name, estadoAcao))
 				return true
 			end
 		end
