@@ -77,6 +77,7 @@ CriarRemoto(Remotos, "TentarAcao", "Event")
 CriarRemoto(Remotos, "MudarShiftLock", "Event")
 CriarRemoto(Remotos, "SincronizarEstado", "Event")
 CriarRemoto(Remotos, "TocarAnimacao", "Event")
+CriarRemoto(Remotos, "EquipAnimacaoTerminou", "Event")
 
 -- BindableEvents: server-side apenas
 CriarBindable(Bindables, "SpawnNPC", "Event")

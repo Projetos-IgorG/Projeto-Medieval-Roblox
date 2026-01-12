@@ -23,6 +23,7 @@ local player = Players.LocalPlayer
 
 local Remotos = ReplicatedStorage:WaitForChild("Remotos")
 local TentarAcao = Remotos:WaitForChild("TentarAcao")
+local EquipAnimacaoTerminou = Remotos:WaitForChild("EquipAnimacaoTerminou")
 
 -- ═══════════════════════════════════════════════════════════════════
 -- CONFIGURAÇÃO DE INPUTS
@@ -245,6 +246,9 @@ _G.OnEquipAnimacaoTerminou = function(direcaoFinal: number)
 
 	toolEmAnimacao = nil
 	estadoEquip = "idle"
+
+	-- Notifica o servidor que a animação de equip/desequip terminou
+	EquipAnimacaoTerminou:FireServer()
 
 	-- Processa próxima ação da fila
 	ProcessarProximaAcao()

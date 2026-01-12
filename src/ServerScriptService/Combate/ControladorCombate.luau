@@ -36,6 +36,7 @@ local TentarAcao = Remotos:WaitForChild("TentarAcao")
 local MudarShiftLock = Remotos:WaitForChild("MudarShiftLock")
 local SincronizarEstado = Remotos:WaitForChild("SincronizarEstado")
 local TocarAnimacao = Remotos:WaitForChild("TocarAnimacao")
+local EquipAnimacaoTerminou = Remotos:WaitForChild("EquipAnimacaoTerminou")
 
 -- ═══════════════════════════════════════════════════════════════════
 -- FUNÇÕES AUXILIARES
@@ -753,11 +754,7 @@ function ControladorCombate.ProcessarEquipar(entidade: Model, modo: string)
 
 	ControladorCombate._TocarAnimacao(entidade, "Equipar")
 
-	-- Após animação, completa ação
-	task.delay(0.5, function()
-		maquina:CompletarAcao()
-	end)
-
+	-- Mantém estadoAcao = Equipando até o cliente notificar que a animação terminou
 	return true
 end
 
@@ -780,11 +777,7 @@ function ControladorCombate.ProcessarDesequipar(entidade: Model)
 		ControladorCombate._SincronizarEstado(entidade)
 	end)
 
-	task.delay(0.5, function()
-		maquina:CompletarAcao()
-		ControladorCombate._SincronizarEstado(entidade)
-	end)
-
+	-- Mantém estadoAcao = Desequipando até o cliente notificar que a animação terminou
 	return true
 end
 
@@ -816,14 +809,7 @@ function ControladorCombate.ProcessarInverterEquipAnimacao(entidade: Model, dado
 		end)
 	end
 
-	-- O cliente vai inverter a animação, só precisamos completar a ação depois
-	-- O tempo é variável dependendo de onde a animação estava, então usamos callback
-	-- Por enquanto, usamos delay padrão (pode ser melhorado depois)
-	task.delay(0.5, function()
-		maquina:CompletarAcao()
-		ControladorCombate._SincronizarEstado(entidade)
-	end)
-
+	-- Mantém estadoAcao (Equipando/Desequipando) até o cliente notificar que a animação terminou
 	return true
 end
 
@@ -1097,6 +1083,25 @@ MudarShiftLock.OnServerEvent:Connect(function(player, ativo)
 	end
 
 	ControladorCombate.ProcessarShiftLock(character, ativo)
+end)
+
+EquipAnimacaoTerminou.OnServerEvent:Connect(function(player)
+	local character = player.Character
+	if not character then
+		return
+	end
+
+	local maquina = ControladorCombate.ObterMaquina(character)
+	if not maquina then
+		return
+	end
+
+	local estadoAcao = maquina:ObterEstadoAcao()
+	if estadoAcao == MaquinaDeEstados.EstadoAcao.Equipando or estadoAcao == MaquinaDeEstados.EstadoAcao.Desequipando then
+		print(string.format("[Combate] %s: Animação de equip/desequip terminou", character.Name))
+		maquina:CompletarAcao()
+		ControladorCombate._SincronizarEstado(character)
+	end
 end)
 
 -- ═══════════════════════════════════════════════════════════════════
