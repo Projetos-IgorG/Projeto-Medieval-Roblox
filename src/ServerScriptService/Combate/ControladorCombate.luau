@@ -1097,7 +1097,10 @@ EquipAnimacaoTerminou.OnServerEvent:Connect(function(player)
 	end
 
 	local estadoAcao = maquina:ObterEstadoAcao()
-	if estadoAcao == MaquinaDeEstados.EstadoAcao.Equipando or estadoAcao == MaquinaDeEstados.EstadoAcao.Desequipando then
+	if
+		estadoAcao == MaquinaDeEstados.EstadoAcao.Equipando
+		or estadoAcao == MaquinaDeEstados.EstadoAcao.Desequipando
+	then
 		print(string.format("[Combate] %s: Animação de equip/desequip terminou", character.Name))
 		maquina:CompletarAcao()
 		ControladorCombate._SincronizarEstado(character)
