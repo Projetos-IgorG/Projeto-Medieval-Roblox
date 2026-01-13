@@ -10,9 +10,22 @@
     NÃO gerencia animações, estados ou lógica de combate.
 ]]
 
+-- ═══════════════════════════════════════════════════════════════════
+-- CONFIGURAÇÃO DE DEBUG
+-- ═══════════════════════════════════════════════════════════════════
+local DEBUG_ENABLED = false -- Altere para true para habilitar prints de debug
+
+--- Função para imprimir apenas se debug estiver habilitado
+local function DebugPrint(...)
+	if DEBUG_ENABLED then
+		print(...)
+	end
+end
+
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
 local _ContextActionService = game:GetService("ContextActionService") -- Reservado para uso futuro
 
 local player = Players.LocalPlayer
@@ -110,6 +123,18 @@ local ProcessarProximaAcao
 local TIMEOUT_ACAO = 0.3 -- segundos
 local ultimoIdAcao = 0
 
+--- Atualiza o estado da backpack (habilita/desabilita)
+--- Bloqueia a backpack durante animações de equip/desequip
+local function AtualizarBackpack()
+	local bloqueado = estadoEquip ~= "idle"
+	local success, result = pcall(function()
+		StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, not bloqueado)
+	end)
+	if not success then
+		warn("[EntradaJogador] Falha ao atualizar estado da mochila:", result)
+	end
+end
+
 --- Verifica se há animação ativa após timeout, senão reseta
 local function VerificarTimeoutAcao(idAcao: number)
 	-- Se o ID mudou, uma nova ação foi iniciada - ignora este timeout
@@ -121,9 +146,10 @@ local function VerificarTimeoutAcao(idAcao: number)
 	if estadoEquip ~= "idle" then
 		local temAnimacao = _G.EstaEmAnimacaoEquip and _G.EstaEmAnimacaoEquip()
 		if not temAnimacao then
-			print("[EntradaJogador] Timeout: ação rejeitada pelo servidor, resetando estado")
+			DebugPrint("[EntradaJogador] Timeout: ação rejeitada pelo servidor, resetando estado")
 			estadoEquip = "idle"
 			toolEmAnimacao = nil
+			AtualizarBackpack()
 			ProcessarProximaAcao()
 		end
 	end
@@ -135,8 +161,9 @@ local function IniciarEquipar(tool: Tool, modo: string)
 	toolEmAnimacao = tool
 	ultimoIdAcao = ultimoIdAcao + 1
 	local idAtual = ultimoIdAcao
+	AtualizarBackpack() -- Bloqueia backpack durante animação
 	EnviarAcao("Equipar", modo)
-	print("[EntradaJogador] Iniciando equipar:", tool.Name, "- Modo:", modo)
+	DebugPrint("[EntradaJogador] Iniciando equipar:", tool.Name, "- Modo:", modo)
 
 	-- Configura timeout para detectar rejeição
 	task.delay(TIMEOUT_ACAO, function()
@@ -150,8 +177,9 @@ local function IniciarDesequipar(tool: Tool)
 	toolEmAnimacao = tool
 	ultimoIdAcao = ultimoIdAcao + 1
 	local idAtual = ultimoIdAcao
+	AtualizarBackpack() -- Bloqueia backpack durante animação
 	EnviarAcao("Desequipar")
-	print("[EntradaJogador] Iniciando desequipar:", tool and tool.Name or "?")
+	DebugPrint("[EntradaJogador] Iniciando desequipar:", tool and tool.Name or "?")
 
 	-- Configura timeout para detectar rejeição
 	task.delay(TIMEOUT_ACAO, function()
@@ -173,16 +201,17 @@ local function InverterAnimacao(novaDirecao: number, modo: string?)
 
 		if novaDirecao == 1 then
 			estadoEquip = "equipando"
-			print("[EntradaJogador] Invertendo para equipar. Modo:", modo or "?")
+			DebugPrint("[EntradaJogador] Invertendo para equipar. Modo:", modo or "?")
 		else
 			estadoEquip = "desequipando"
-			print("[EntradaJogador] Invertendo para desequipar")
+			DebugPrint("[EntradaJogador] Invertendo para desequipar")
 		end
 	else
 		-- Não há animação para inverter - reseta estado e processa fila
-		print("[EntradaJogador] Inversão falhou - resetando estado e processando fila")
+		DebugPrint("[EntradaJogador] Inversão falhou - resetando estado e processando fila")
 		estadoEquip = "idle"
 		toolEmAnimacao = nil
+		AtualizarBackpack() -- Libera backpack quando voltar para idle
 		-- Chama ProcessarProximaAcao após um pequeno delay para evitar recursão
 		task.defer(function()
 			ProcessarProximaAcao()
@@ -229,7 +258,7 @@ end
 --- Callback chamado pelo ControladorEstado quando a animação de equipar/desequipar termina
 --- @param direcaoFinal number 1 se terminou equipando, -1 se terminou desequipando
 _G.OnEquipAnimacaoTerminou = function(direcaoFinal: number)
-	print(
+	DebugPrint(
 		"[EntradaJogador] Animação terminou. Direção:",
 		direcaoFinal,
 		"Tool em animação:",
@@ -246,6 +275,7 @@ _G.OnEquipAnimacaoTerminou = function(direcaoFinal: number)
 
 	toolEmAnimacao = nil
 	estadoEquip = "idle"
+	AtualizarBackpack() -- Libera backpack quando animação termina
 
 	-- Notifica o servidor que a animação de equip/desequip terminou
 	EquipAnimacaoTerminou:FireServer()
@@ -368,7 +398,7 @@ local function ProcessarToolEquipado(tool: Tool)
 		return
 	end
 
-	print("[EntradaJogador] Tool adicionado:", tool.Name, "- Estado atual:", estadoEquip)
+	DebugPrint("[EntradaJogador] Tool adicionado:", tool.Name, "- Estado atual:", estadoEquip)
 
 	-- Atualiza o alvo
 	toolAlvo = tool
@@ -389,7 +419,7 @@ local function ProcessarToolEquipado(tool: Tool)
 	if estadoEquip == "equipando" then
 		if toolEmAnimacao == tool then
 			-- Re-equipando o mesmo tool que já está equipando - não faz nada
-			print("[EntradaJogador] Já está equipando este tool")
+			DebugPrint("[EntradaJogador] Já está equipando este tool")
 			return
 		else
 			-- Equipando tool A, mas queremos tool B
@@ -410,7 +440,7 @@ local function ProcessarToolEquipado(tool: Tool)
 		else
 			-- Estava desequipando tool A para equipar B, mas agora quer C
 			-- Continua desequipando A, toolAlvo atualizado para C será processado depois
-			print("[EntradaJogador] Atualizando alvo para:", tool.Name)
+			DebugPrint("[EntradaJogador] Atualizando alvo para:", tool.Name)
 			return
 		end
 	end
@@ -419,7 +449,7 @@ end
 --- Processa quando um Tool é desequipado (removido do character)
 --- Gerencia fila de equipamento e animações reversíveis
 local function ProcessarToolDesequipado(tool: Tool)
-	print(
+	DebugPrint(
 		"[EntradaJogador] Tool removido:",
 		tool.Name,
 		"- Estado atual:",
@@ -659,4 +689,4 @@ if player.Character then
 	ConfigurarCharacter(player.Character)
 end
 
-print("[EntradaJogador] Inicializado - capturando inputs")
+DebugPrint("[EntradaJogador] Inicializado - capturando inputs")
