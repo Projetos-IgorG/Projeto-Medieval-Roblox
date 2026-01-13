@@ -9,11 +9,22 @@
     Execução: Este script deve rodar PRIMEIRO na ServerScriptService
 ]]
 
+-- ═══════════════════════════════════════════════════════════════════
+-- CONFIGURAÇÃO DE DEBUG
+-- ═══════════════════════════════════════════════════════════════════
+local DEBUG_ENABLED = false -- Altere para true para habilitar prints de debug
+
+local function DebugPrint(...)
+	if DEBUG_ENABLED then
+		print(...)
+	end
+end
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 local Players = game:GetService("Players")
 
-print("[InicializadorSistema] Iniciando...")
+DebugPrint("[InicializadorSistema] Iniciando...")
 
 -- ═══════════════════════════════════════════════════════════════════
 -- PARTE 1: CRIAR REMOTOS E BINDABLES
@@ -82,7 +93,7 @@ CriarRemoto(Remotos, "EquipAnimacaoTerminou", "Event")
 -- BindableEvents: server-side apenas
 CriarBindable(Bindables, "SpawnNPC", "Event")
 
-print("[InicializadorSistema] Remotos criados")
+DebugPrint("[InicializadorSistema] Remotos criados")
 
 -- ═══════════════════════════════════════════════════════════════════
 -- PARTE 2: SETUP DO STATUS FOLDER PARA JOGADORES
@@ -152,7 +163,7 @@ Players.PlayerAdded:Connect(function(Player)
 	end)
 end)
 
-print("[InicializadorSistema] Setup de Status configurado")
+DebugPrint("[InicializadorSistema] Setup de Status configurado")
 
 -- ═══════════════════════════════════════════════════════════════════
 -- PARTE 3: LISTENER DO SHIFTLOCKCHANGED
@@ -176,12 +187,12 @@ ShiftLockChanged.OnServerEvent:Connect(function(player, estado)
 		local shiftLockValue = status:FindFirstChild("ShiftLockOn")
 		if shiftLockValue then
 			shiftLockValue.Value = estado
-			print(string.format("[ShiftLock] %s: ShiftLockOn atualizado para %s", player.Name, tostring(estado)))
+			DebugPrint(string.format("[ShiftLock] %s: ShiftLockOn atualizado para %s", player.Name, tostring(estado)))
 		end
 	end
 end)
 
-print("[InicializadorSistema] Listener ShiftLock conectado")
+DebugPrint("[InicializadorSistema] Listener ShiftLock conectado")
 
 -- ═══════════════════════════════════════════════════════════════════
 -- PARTE 4: CARREGAMENTO DE MÓDULOS E INICIALIZAÇÃO NPC/COMBATE
@@ -192,7 +203,7 @@ local Combate = ServerScriptService:WaitForChild("Combate")
 local GerenciadorNPC = require(Combate:WaitForChild("GerenciadorNPC"))
 local ControladorCombate = require(Combate:WaitForChild("ControladorCombate"))
 
-print("[InicializadorSistema] Módulos de combate carregados")
+DebugPrint("[InicializadorSistema] Módulos de combate carregados")
 
 -- ═══════════════════════════════════════════════════════════════════
 -- PARTE 5: CRIAR PASTA NPCS
@@ -203,7 +214,7 @@ if not pastaNPCs then
 	pastaNPCs = Instance.new("Folder")
 	pastaNPCs.Name = "NPCs"
 	pastaNPCs.Parent = workspace
-	print("[InicializadorSistema] Pasta NPCs criada")
+	DebugPrint("[InicializadorSistema] Pasta NPCs criada")
 end
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -261,7 +272,7 @@ end
 local SpawnNPC = Bindables:WaitForChild("SpawnNPC", 5)
 if SpawnNPC then
 	SpawnNPC.Event:Connect(function(dados)
-		print(
+		DebugPrint(
 			string.format(
 				"[InicializadorSistema] SpawnNPC chamado: nome=%s, vida=%s, modo=%s",
 				tostring(dados.nome),
@@ -273,13 +284,13 @@ if SpawnNPC then
 		local npc = CriarNPCBasico(dados)
 
 		if npc then
-			print(string.format("[InicializadorSistema] NPC '%s' criado com sucesso!", npc.Name))
+			DebugPrint(string.format("[InicializadorSistema] NPC '%s' criado com sucesso!", npc.Name))
 		else
 			warn("[InicializadorSistema] Falha ao criar NPC. Verifique se há um template.")
 		end
 	end)
 
-	print("[InicializadorSistema] Listener SpawnNPC conectado")
+	DebugPrint("[InicializadorSistema] Listener SpawnNPC conectado")
 else
 	warn("[InicializadorSistema] BindableEvent SpawnNPC não encontrado!")
 end
@@ -294,7 +305,7 @@ Players.PlayerAdded:Connect(function(jogador)
 		task.wait(0.5)
 
 		if personagem:FindFirstChildOfClass("Humanoid") then
-			print(string.format("[InicializadorSistema] Jogador %s carregado", jogador.Name))
+			DebugPrint(string.format("[InicializadorSistema] Jogador %s carregado", jogador.Name))
 		end
 	end)
 end)
@@ -302,8 +313,8 @@ end)
 -- Processa jogadores já conectados
 for _, jogador in ipairs(Players:GetPlayers()) do
 	if jogador.Character and jogador.Character:FindFirstChildOfClass("Humanoid") then
-		print(string.format("[InicializadorSistema] Jogador existente %s detectado", jogador.Name))
+		DebugPrint(string.format("[InicializadorSistema] Jogador existente %s detectado", jogador.Name))
 	end
 end
 
-print("[InicializadorSistema] Inicializado com sucesso!")
+DebugPrint("[InicializadorSistema] Inicializado com sucesso!")

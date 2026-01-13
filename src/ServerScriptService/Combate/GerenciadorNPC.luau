@@ -11,6 +11,17 @@
     - Ragdoll na morte
 ]]
 
+-- ═══════════════════════════════════════════════════════════════════
+-- CONFIGURAÇÃO DE DEBUG
+-- ═══════════════════════════════════════════════════════════════════
+local DEBUG_ENABLED = false -- Altere para true para habilitar prints de debug
+
+local function DebugPrint(...)
+	if DEBUG_ENABLED then
+		print(...)
+	end
+end
+
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -377,7 +388,7 @@ function GerenciadorNPC.RegistrarNPC(modelo: Model)
 		end)
 	)
 
-	print("[GerenciadorNPC] NPC registrado: " .. modelo.Name)
+	DebugPrint("[GerenciadorNPC] NPC registrado: " .. modelo.Name)
 end
 
 --- Remove NPC do gerenciamento
@@ -426,6 +437,6 @@ if pastaNPCs then
 	end)
 end
 
-print("[GerenciadorNPC] Inicializado")
+DebugPrint("[GerenciadorNPC] Inicializado")
 
 return GerenciadorNPC

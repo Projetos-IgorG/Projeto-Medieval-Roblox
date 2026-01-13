@@ -11,6 +11,17 @@
     NÃO valida ações (feito no servidor via ControladorCombate)
 ]]
 
+-- ═══════════════════════════════════════════════════════════════════
+-- CONFIGURAÇÃO DE DEBUG
+-- ═══════════════════════════════════════════════════════════════════
+local DEBUG_ENABLED = false -- Altere para true para habilitar prints de debug
+
+local function DebugPrint(...)
+	if DEBUG_ENABLED then
+		print(...)
+	end
+end
+
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -49,7 +60,7 @@ local function DesativarScriptAnimate()
 	local animate = character:FindFirstChild("Animate")
 	if animate then
 		animate:Destroy()
-		print("[ControladorEstado] Script Animate padrão desativado")
+		DebugPrint("[ControladorEstado] Script Animate padrão desativado")
 	end
 
 	for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
@@ -174,7 +185,7 @@ end
 
 --- Chamado quando a animação de combo termina (naturalmente ou forçada)
 local function OnComboAnimacaoTerminou()
-	print("[ControladorEstado] Combo animação terminou")
+	DebugPrint("[ControladorEstado] Combo animação terminou")
 
 	LimparConexoesMarkers()
 
@@ -220,7 +231,7 @@ local function OnMarkerJanelaCombo(indiceGolpe: string)
 	comboState.indiceAtual = indice
 	comboState.continuarCombo = false -- Reseta para aguardar novo input
 
-	print(string.format("[ControladorEstado] Janela de combo ativada (golpe %d)", indice))
+	DebugPrint(string.format("[ControladorEstado] Janela de combo ativada (golpe %d)", indice))
 
 	-- Obtém configuração do combo
 	local combo = ArmasTemplate.ObterCombo(estadoAtual.modoAnimacao)
@@ -233,7 +244,7 @@ local function OnMarkerJanelaCombo(indiceGolpe: string)
 
 	-- Se o jogador já clicou antes da janela abrir (pending), consumir imediatamente
 	if comboState.pendingConsume then
-		print("[ControladorEstado] Consumo antecipado de combo (pending antes da janela)")
+		DebugPrint("[ControladorEstado] Consumo antecipado de combo (pending antes da janela)")
 		comboState.pendingConsume = false
 		comboState.continuarCombo = true
 		comboState.janelaAtiva = false
@@ -260,7 +271,7 @@ local function OnMarkerJanelaCombo(indiceGolpe: string)
 		-- Verifica se deve continuar
 		if comboState.continuarCombo then
 			-- Jogador clicou durante a janela - continua combo
-			print("[ControladorEstado] Combo continuando - velocidade restaurada")
+			DebugPrint("[ControladorEstado] Combo continuando - velocidade restaurada")
 			comboState.janelaAtiva = false
 			comboState.continuarCombo = false
 
@@ -272,7 +283,7 @@ local function OnMarkerJanelaCombo(indiceGolpe: string)
 			TentarAcao:FireServer("ComboContinuado", comboState.indiceAtual + 1)
 		else
 			-- Jogador não clicou - termina combo
-			print("[ControladorEstado] Janela expirou - combo terminando")
+			DebugPrint("[ControladorEstado] Janela expirou - combo terminando")
 			comboState.janelaAtiva = false
 
 			if comboState.animacaoAtiva then
@@ -289,7 +300,7 @@ end
 local function OnMarkerAtaque(indiceGolpe: string)
 	local indice = tonumber(indiceGolpe) or 0
 
-	print(string.format("[ControladorEstado] Marker Attack - golpe %s (índice %d)", indiceGolpe, indice))
+	DebugPrint(string.format("[ControladorEstado] Marker Attack - golpe %s (índice %d)", indiceGolpe, indice))
 
 	-- Notifica servidor para criar hitbox
 	TentarAcao:FireServer("ComboHitbox", indice)
@@ -297,7 +308,7 @@ local function OnMarkerAtaque(indiceGolpe: string)
 	-- Se é o golpe 4 (final), aguarda animação terminar naturalmente
 	if indice >= 4 then
 		comboState.janelaAtiva = false -- Não tem mais janela após o final
-		print("[ControladorEstado] Golpe final executado")
+		DebugPrint("[ControladorEstado] Golpe final executado")
 	end
 end
 
@@ -335,7 +346,7 @@ local function ConfigurarMarkersCombo(track: AnimationTrack)
 	end)
 	table.insert(comboState.conexoesMarkers, conexaoStopped)
 
-	print("[ControladorEstado] Markers de combo configurados")
+	DebugPrint("[ControladorEstado] Markers de combo configurados")
 end
 
 --- Marca que o jogador quer continuar o combo
@@ -345,14 +356,14 @@ function _G.MarcarContinuarCombo()
 	-- Se está na janela, marca para continuar
 	if comboState.janelaAtiva then
 		comboState.continuarCombo = true
-		print("[ControladorEstado] Input de continuar combo registrado (janela ativa)")
+		DebugPrint("[ControladorEstado] Input de continuar combo registrado (janela ativa)")
 		return true
 	end
 
 	-- Se combo está ativo mas ainda não chegou na janela, marca como pending
 	if comboState.animacaoAtiva and comboState.animacaoAtiva.IsPlaying then
 		comboState.pendingConsume = true
-		print("[ControladorEstado] Input antecipado registrado (pending)")
+		DebugPrint("[ControladorEstado] Input antecipado registrado (pending)")
 		return true
 	end
 
@@ -408,7 +419,7 @@ local function OnEquipAnimacaoTerminou()
 	-- Atualiza animação de movimento
 	AtualizarAnimacaoMovimento()
 
-	print("[ControladorEstado] Animação de equipar/desequipar terminou (direção:", direcaoFinal, ")")
+	DebugPrint("[ControladorEstado] Animação de equipar/desequipar terminou (direção:", direcaoFinal, ")")
 end
 
 --- Monitora o TimePosition da animação quando está tocando em velocidade negativa
@@ -443,7 +454,7 @@ end
 --- @param novaDirecao number 1 para equipar, -1 para desequipar
 function _G.InverterEquipAnimacao(novaDirecao: number)
 	if not equipAnimState.animacao or not equipAnimState.animacao.IsPlaying then
-		print("[ControladorEstado] Não há animação de equip ativa para inverter")
+		DebugPrint("[ControladorEstado] Não há animação de equip ativa para inverter")
 		return false
 	end
 
@@ -467,7 +478,7 @@ function _G.InverterEquipAnimacao(novaDirecao: number)
 		end
 	end
 
-	print(
+	DebugPrint(
 		"[ControladorEstado] Animação de equip invertida:",
 		direcaoAnterior,
 		"->",
@@ -611,7 +622,7 @@ end
 
 --- Callback quando animação de dash termina
 local function OnDashAnimacaoTerminou()
-	print("[ControladorEstado] Dash animação terminou")
+	DebugPrint("[ControladorEstado] Dash animação terminou")
 
 	-- Para impulso
 	PararImpulsoDash()
@@ -926,7 +937,7 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 		-- Inicia impulso sustentado
 		IniciarImpulsoDash(direcao)
 
-		print("[ControladorEstado] Animação de Dash iniciada:", nomeAnimacao)
+		DebugPrint("[ControladorEstado] Animação de Dash iniciada:", nomeAnimacao)
 		return
 	end
 
@@ -952,7 +963,13 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 			OnEquipAnimacaoTerminou()
 		end)
 
-		print("[ControladorEstado] Animação de", nomeAnimacao, "iniciada (direção:", equipAnimState.direcao, ")")
+		DebugPrint(
+			"[ControladorEstado] Animação de",
+			nomeAnimacao,
+			"iniciada (direção:",
+			equipAnimState.direcao,
+			")"
+		)
 		return
 	end
 
@@ -969,7 +986,7 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 
 		ConfigurarMarkersCombo(track)
 
-		print(
+		DebugPrint(
 			string.format(
 				"[ControladorEstado] Animação de combo iniciada: %s (velocidade %.1f)",
 				nomeAnimacao :: string,
@@ -1529,7 +1546,7 @@ local function PreCarregarAnimacoes()
 	local total = #todasAnimacoes
 	local carregadas = 0
 
-	print(string.format("[ControladorEstado] Pré-carregando %d animações...", total))
+	DebugPrint(string.format("[ControladorEstado] Pré-carregando %d animações...", total))
 
 	for _, animId in ipairs(todasAnimacoes) do
 		-- Carrega a animação no cache
@@ -1539,7 +1556,7 @@ local function PreCarregarAnimacoes()
 		end
 	end
 
-	print(string.format("[ControladorEstado] %d/%d animações pré-carregadas!", carregadas, total))
+	DebugPrint(string.format("[ControladorEstado] %d/%d animações pré-carregadas!", carregadas, total))
 end
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -1621,4 +1638,4 @@ PreCarregarAnimacoes()
 -- Começa com Idle
 AtualizarAnimacaoMovimento()
 
-print("[ControladorEstado] Inicializado - movimento input-based + StateChanged")
+DebugPrint("[ControladorEstado] Inicializado - movimento input-based + StateChanged")

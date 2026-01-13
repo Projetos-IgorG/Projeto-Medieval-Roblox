@@ -14,6 +14,17 @@
     Funções seguem o padrão "Tente[Ação]" retornando sucesso/falha.
 ]]
 
+-- ═══════════════════════════════════════════════════════════════════
+-- CONFIGURAÇÃO DE DEBUG
+-- ═══════════════════════════════════════════════════════════════════
+local DEBUG_ENABLED = false -- Altere para true para habilitar prints de debug
+
+local function DebugPrint(...)
+	if DEBUG_ENABLED then
+		print(...)
+	end
+end
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local MaquinaDeEstados = {}
@@ -191,7 +202,9 @@ function MaquinaDeEstados:_AlterarEstadoMov(novoEstado: string)
 	self.dados.estadoMov = novoEstado
 
 	-- Debug log
-	print(string.format("[MaquinaDeEstados] %s: estadoMov %s -> %s", self.entidade.Name, estadoAnterior, novoEstado))
+	DebugPrint(
+		string.format("[MaquinaDeEstados] %s: estadoMov %s -> %s", self.entidade.Name, estadoAnterior, novoEstado)
+	)
 
 	if self.callbacks.aoMudarEstadoMov then
 		self.callbacks.aoMudarEstadoMov(novoEstado, estadoAnterior)
@@ -208,7 +221,9 @@ function MaquinaDeEstados:_AlterarEstadoAcao(novoEstado: string)
 	self.dados.estadoAcao = novoEstado
 
 	-- Debug log
-	print(string.format("[MaquinaDeEstados] %s: estadoAcao %s -> %s", self.entidade.Name, estadoAnterior, novoEstado))
+	DebugPrint(
+		string.format("[MaquinaDeEstados] %s: estadoAcao %s -> %s", self.entidade.Name, estadoAnterior, novoEstado)
+	)
 
 	if self.callbacks.aoMudarEstadoAcao then
 		self.callbacks.aoMudarEstadoAcao(novoEstado, estadoAnterior)
@@ -346,7 +361,7 @@ function MaquinaDeEstados:TenteAtacarLeveEmPe(): (boolean, string?, string?)
 		if self.dados.janelaComboAtiva then
 			-- Marca que deve continuar o combo
 			self.dados.continuarCombo = true
-			print(string.format("[MaquinaDeEstados] %s: Combo continuado na janela!", self.entidade.Name))
+			DebugPrint(string.format("[MaquinaDeEstados] %s: Combo continuado na janela!", self.entidade.Name))
 			return true, nil, "ComboContinuado"
 		else
 			-- Não está na janela, ignora input
@@ -477,7 +492,7 @@ function MaquinaDeEstados:TenteBloquear(): (boolean, string?)
 		local shiftLockValue = status:FindFirstChild("ShiftLockOn")
 		if shiftLockValue then
 			shiftLockAtivo = shiftLockValue.Value
-			print(
+			DebugPrint(
 				string.format(
 					"[MaquinaDeEstados] %s: ShiftLockOn lido da Status = %s",
 					self.entidade.Name,
@@ -485,10 +500,12 @@ function MaquinaDeEstados:TenteBloquear(): (boolean, string?)
 				)
 			)
 		else
-			print(string.format("[MaquinaDeEstados] %s: ShiftLockOn NAO ENCONTRADO na Status!", self.entidade.Name))
+			DebugPrint(
+				string.format("[MaquinaDeEstados] %s: ShiftLockOn NAO ENCONTRADO na Status!", self.entidade.Name)
+			)
 		end
 	else
-		print(string.format("[MaquinaDeEstados] %s: Pasta Status NAO ENCONTRADA!", self.entidade.Name))
+		DebugPrint(string.format("[MaquinaDeEstados] %s: Pasta Status NAO ENCONTRADA!", self.entidade.Name))
 	end
 
 	if not shiftLockAtivo then
@@ -496,7 +513,7 @@ function MaquinaDeEstados:TenteBloquear(): (boolean, string?)
 	end
 
 	if not ESTADOS_PERMITE_BLOQUEIO[self.dados.estadoAcao] then
-		print(
+		DebugPrint(
 			string.format(
 				"[MaquinaDeEstados] %s: Bloqueio falhou - estadoAcao=%s nao permite",
 				self.entidade.Name,
@@ -507,7 +524,7 @@ function MaquinaDeEstados:TenteBloquear(): (boolean, string?)
 	end
 
 	if not self:_MovimentoPermiteAtaque() then
-		print(
+		DebugPrint(
 			string.format(
 				"[MaquinaDeEstados] %s: Bloqueio falhou - estadoMov=%s nao permite",
 				self.entidade.Name,
@@ -850,7 +867,9 @@ function MaquinaDeEstados:AtivarJanelaCombo(indiceGolpe: number)
 	self.dados.continuarCombo = false -- Reseta flag de continuar
 	self.dados.indiceCombo = indiceGolpe
 
-	print(string.format("[MaquinaDeEstados] %s: Janela de combo ativada (golpe %d)", self.entidade.Name, indiceGolpe))
+	DebugPrint(
+		string.format("[MaquinaDeEstados] %s: Janela de combo ativada (golpe %d)", self.entidade.Name, indiceGolpe)
+	)
 end
 
 --- Desativa a janela de input do combo
@@ -879,7 +898,7 @@ function MaquinaDeEstados:AvancarGolpeCombo(indiceGolpe: number)
 	self.dados.indiceCombo = indiceGolpe
 	self.dados.ultimoAtaque = tick() -- Atualiza timestamp do último ataque
 
-	print(string.format("[MaquinaDeEstados] %s: Golpe %d executado", self.entidade.Name, indiceGolpe))
+	DebugPrint(string.format("[MaquinaDeEstados] %s: Golpe %d executado", self.entidade.Name, indiceGolpe))
 end
 
 --- Verifica se a janela de combo está ativa

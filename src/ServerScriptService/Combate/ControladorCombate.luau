@@ -13,6 +13,17 @@
     Autoridade: O servidor é autoridade final de todos os estados.
 ]]
 
+-- ═══════════════════════════════════════════════════════════════════
+-- CONFIGURAÇÃO DE DEBUG
+-- ═══════════════════════════════════════════════════════════════════
+local DEBUG_ENABLED = false -- Altere para true para habilitar prints de debug
+
+local function DebugPrint(...)
+	if DEBUG_ENABLED then
+		print(...)
+	end
+end
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -102,7 +113,7 @@ function ControladorCombate._SincronizarEstado(entidade: Model)
 	end
 
 	-- Debug log
-	print(
+	DebugPrint(
 		string.format(
 			"[Estado] %s: Mov=%s, Acao=%s, Modo=%s",
 			entidade.Name,
@@ -371,17 +382,17 @@ function ControladorCombate.ProcessarAtacarLeveEmPe(entidade: Model)
 	if not sucesso then
 		-- Se motivo é "ComboContinuado", foi um input válido durante janela
 		if motivo == "ComboContinuado" then
-			print(string.format("[Combate] %s: Combo input registrado", entidade.Name))
+			DebugPrint(string.format("[Combate] %s: Combo input registrado", entidade.Name))
 			return true, nil
 		end
 
-		print(string.format("[Combate] %s: AtacarLeveEmPe FALHOU - %s", entidade.Name, motivo or "?"))
+		DebugPrint(string.format("[Combate] %s: AtacarLeveEmPe FALHOU - %s", entidade.Name, motivo or "?"))
 		return false, motivo
 	end
 
 	-- Só toca animação se foi um novo ataque (não continuação de combo)
 	if tipoAtaque then
-		print(string.format("[Combate] %s: AtacarLeveEmPe OK - tipo=%s", entidade.Name, tipoAtaque))
+		DebugPrint(string.format("[Combate] %s: AtacarLeveEmPe OK - tipo=%s", entidade.Name, tipoAtaque))
 
 		-- Toca animação (cliente configura marcadores)
 		ControladorCombate._TocarAnimacao(entidade, tipoAtaque)
@@ -414,14 +425,14 @@ function ControladorCombate.ProcessarComboHitbox(entidade: Model, indiceGolpe: n
 
 	-- Verifica se ainda está atacando
 	if maquina:ObterEstadoAcao() ~= "AtacandoLeve" then
-		print(string.format("[Combate] %s: ComboHitbox ignorado - não está atacando", entidade.Name))
+		DebugPrint(string.format("[Combate] %s: ComboHitbox ignorado - não está atacando", entidade.Name))
 		return false, "NaoAtacando"
 	end
 
 	-- Determina o tipo de ataque baseado no índice
 	local tipoAtaque = ArmasTemplate.ObterTipoAtaquePorIndice(maquina:ObterModo(), indiceGolpe)
 
-	print(string.format("[Combate] %s: ComboHitbox golpe %d - tipo=%s", entidade.Name, indiceGolpe, tipoAtaque))
+	DebugPrint(string.format("[Combate] %s: ComboHitbox golpe %d - tipo=%s", entidade.Name, indiceGolpe, tipoAtaque))
 
 	-- Avança o índice do combo na máquina de estados
 	maquina:AvancarGolpeCombo(indiceGolpe)
@@ -465,7 +476,7 @@ function ControladorCombate.ProcessarComboContinuado(entidade: Model, proximoInd
 	-- Ativa janela para o próximo golpe na máquina de estados
 	maquina:DesativarJanelaCombo()
 
-	print(string.format("[Combate] %s: Combo continuado para golpe %d", entidade.Name, proximoIndice))
+	DebugPrint(string.format("[Combate] %s: Combo continuado para golpe %d", entidade.Name, proximoIndice))
 
 	return true
 end
@@ -480,7 +491,7 @@ function ControladorCombate.ProcessarComboTerminou(entidade: Model)
 		maquina:CompletarAcao()
 		ControladorCombate._SincronizarEstado(entidade)
 
-		print(string.format("[Combate] %s: Combo terminado", entidade.Name))
+		DebugPrint(string.format("[Combate] %s: Combo terminado", entidade.Name))
 	end
 
 	return true
@@ -570,11 +581,11 @@ function ControladorCombate.ProcessarBloquear(entidade: Model)
 	local sucesso, motivo = maquina:TenteBloquear()
 
 	if not sucesso then
-		print(string.format("[Combate] %s: Bloquear FALHOU - %s", entidade.Name, motivo or "?"))
+		DebugPrint(string.format("[Combate] %s: Bloquear FALHOU - %s", entidade.Name, motivo or "?"))
 		return false, motivo
 	end
 
-	print(string.format("[Combate] %s: Bloquear OK", entidade.Name))
+	DebugPrint(string.format("[Combate] %s: Bloquear OK", entidade.Name))
 
 	-- Ajusta velocidade
 	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
@@ -685,11 +696,11 @@ function ControladorCombate.ProcessarAgachar(entidade: Model)
 	local sucesso, motivo = maquina:TenteAgachar()
 
 	if not sucesso then
-		print(string.format("[Combate] %s: Agachar FALHOU - %s", entidade.Name, motivo or "?"))
+		DebugPrint(string.format("[Combate] %s: Agachar FALHOU - %s", entidade.Name, motivo or "?"))
 		return false, motivo
 	end
 
-	print(string.format("[Combate] %s: Agachar OK", entidade.Name))
+	DebugPrint(string.format("[Combate] %s: Agachar OK", entidade.Name))
 
 	-- Reduz velocidade
 	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
@@ -707,11 +718,11 @@ function ControladorCombate.ProcessarLevantar(entidade: Model)
 	local sucesso, motivo = maquina:TenteLevantar()
 
 	if not sucesso then
-		print(string.format("[Combate] %s: Levantar FALHOU - %s", entidade.Name, motivo or "?"))
+		DebugPrint(string.format("[Combate] %s: Levantar FALHOU - %s", entidade.Name, motivo or "?"))
 		return false, motivo
 	end
 
-	print(string.format("[Combate] %s: Levantar OK", entidade.Name))
+	DebugPrint(string.format("[Combate] %s: Levantar OK", entidade.Name))
 
 	-- Restaura velocidade
 	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
@@ -743,11 +754,11 @@ function ControladorCombate.ProcessarEquipar(entidade: Model, modo: string)
 	local sucesso, motivo = maquina:TenteEquipar(modo)
 
 	if not sucesso then
-		print(string.format("[Combate] %s: Equipar '%s' FALHOU - %s", entidade.Name, modo, motivo or "?"))
+		DebugPrint(string.format("[Combate] %s: Equipar '%s' FALHOU - %s", entidade.Name, modo, motivo or "?"))
 		return false, motivo
 	end
 
-	print(string.format("[Combate] %s: Equipar '%s' OK", entidade.Name, modo))
+	DebugPrint(string.format("[Combate] %s: Equipar '%s' OK", entidade.Name, modo))
 
 	-- Define o novo modo
 	maquina:DefinirModo(modo)
@@ -792,7 +803,7 @@ function ControladorCombate.ProcessarInverterEquipAnimacao(entidade: Model, dado
 	local direcao = dados.direcao
 	local modo = dados.modo
 
-	print(string.format("[Combate] %s: Invertendo animação para direção %d", entidade.Name, direcao))
+	DebugPrint(string.format("[Combate] %s: Invertendo animação para direção %d", entidade.Name, direcao))
 
 	if direcao == 1 then
 		-- Inverteu de desequipando para equipando
@@ -835,14 +846,14 @@ function ControladorCombate.ProcessarCorrer(entidade: Model)
 	local sucesso, motivo = maquina:TenteCorrer()
 
 	if not sucesso then
-		print(string.format("[Combate] %s: Correr FALHOU - %s", entidade.Name, motivo or "?"))
+		DebugPrint(string.format("[Combate] %s: Correr FALHOU - %s", entidade.Name, motivo or "?"))
 		-- Se falhou por ação em andamento, registra intenção de correr
 		-- para aplicar quando a ação terminar.
 		-- Além disso, permite enfileirar quando o estado é bloqueante
 		-- devido a Equipando/Desequipando (comportamento esperado pelo cliente).
 		if motivo == "AcaoEmAndamento" then
 			maquina.dados.correndoIntent = true
-			print(
+			DebugPrint(
 				string.format("[Combate] %s: Pedido de correr enfileirado enquanto ação em andamento", entidade.Name)
 			)
 			return true
@@ -855,14 +866,16 @@ function ControladorCombate.ProcessarCorrer(entidade: Model)
 				or estadoAcao == MaquinaDeEstados.EstadoAcao.Dashando
 			then
 				maquina.dados.correndoIntent = true
-				print(string.format("[Combate] %s: Pedido de correr enfileirado durante %s", entidade.Name, estadoAcao))
+				DebugPrint(
+					string.format("[Combate] %s: Pedido de correr enfileirado durante %s", entidade.Name, estadoAcao)
+				)
 				return true
 			end
 		end
 		return false, motivo
 	end
 
-	print(string.format("[Combate] %s: Correr OK", entidade.Name))
+	DebugPrint(string.format("[Combate] %s: Correr OK", entidade.Name))
 
 	-- Aumenta velocidade usando config
 	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
@@ -880,7 +893,7 @@ function ControladorCombate.ProcessarPararCorrer(entidade: Model)
 
 	local _sucesso = maquina:TentePararCorrer()
 
-	print(string.format("[Combate] %s: PararCorrer OK", entidade.Name))
+	DebugPrint(string.format("[Combate] %s: PararCorrer OK", entidade.Name))
 
 	-- Restaura velocidade usando config
 	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
@@ -915,11 +928,11 @@ function ControladorCombate.ProcessarDash(entidade: Model, direcao: string)
 	local sucesso, motivo = maquina:TenteDash(direcao)
 
 	if not sucesso then
-		print(string.format("[Combate] %s: Dash FALHOU - %s", entidade.Name, motivo or "?"))
+		DebugPrint(string.format("[Combate] %s: Dash FALHOU - %s", entidade.Name, motivo or "?"))
 		return false, motivo
 	end
 
-	print(string.format("[Combate] %s: Dash OK - direção=%s", entidade.Name, direcao))
+	DebugPrint(string.format("[Combate] %s: Dash OK - direção=%s", entidade.Name, direcao))
 
 	-- Se estava correndo, guarda intenção de correr para depois do dash
 	if estavaCorrendo then
@@ -954,7 +967,7 @@ function ControladorCombate.ProcessarDashTerminou(entidade: Model)
 
 	maquina:CompletarDash()
 
-	print(string.format("[Combate] %s: Dash TERMINOU", entidade.Name))
+	DebugPrint(string.format("[Combate] %s: Dash TERMINOU", entidade.Name))
 
 	-- Atualiza status DashOn
 	local status = entidade:FindFirstChild("Status")
@@ -973,7 +986,7 @@ function ControladorCombate.ProcessarDashTerminou(entidade: Model)
 		if humanoid then
 			humanoid.WalkSpeed = ArmasTemplate.ConfiguracaoGlobal.VelocidadeCorrendo or 25
 		end
-		print(string.format("[Combate] %s: Corrida restaurada após dash", entidade.Name))
+		DebugPrint(string.format("[Combate] %s: Corrida restaurada após dash", entidade.Name))
 	end
 
 	ControladorCombate._SincronizarEstado(entidade)
@@ -1101,7 +1114,7 @@ EquipAnimacaoTerminou.OnServerEvent:Connect(function(player)
 		estadoAcao == MaquinaDeEstados.EstadoAcao.Equipando
 		or estadoAcao == MaquinaDeEstados.EstadoAcao.Desequipando
 	then
-		print(string.format("[Combate] %s: Animação de equip/desequip terminou", character.Name))
+		DebugPrint(string.format("[Combate] %s: Animação de equip/desequip terminou", character.Name))
 		maquina:CompletarAcao()
 		ControladorCombate._SincronizarEstado(character)
 	end
@@ -1154,6 +1167,6 @@ for _, player in ipairs(Players:GetPlayers()) do
 	end
 end
 
-print("[ControladorCombate] Inicializado no servidor")
+DebugPrint("[ControladorCombate] Inicializado no servidor")
 
 return ControladorCombate

@@ -2,6 +2,17 @@
 -- Script único que gerencia o teleporte entre dois portais
 -- Autor: Roblox Assistant
 
+-- ═══════════════════════════════════════════════════════════════════
+-- CONFIGURAÇÃO DE DEBUG
+-- ═══════════════════════════════════════════════════════════════════
+local DEBUG_ENABLED = false -- Altere para true para habilitar prints de debug
+
+local function DebugPrint(...)
+	if DEBUG_ENABLED then
+		print(...)
+	end
+end
+
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -178,11 +189,11 @@ if portal1 and portal2 then
 	portal1.Touched:Connect(onPortalTouched(portal1, portal2))
 	portal2.Touched:Connect(onPortalTouched(portal2, portal1))
 
-	print("Sistema de portais inicializado com sucesso!")
-	print("Portal1 (azul) -> Portal2 (laranja)")
-	print("Portal2 (laranja) -> Portal1 (azul)")
+	DebugPrint("[PortalSystem] Sistema de portais inicializado com sucesso!")
+	DebugPrint("[PortalSystem] Portal1 (azul) -> Portal2 (laranja)")
+	DebugPrint("[PortalSystem] Portal2 (laranja) -> Portal1 (azul)")
 else
-	warn("Erro: Portais não encontrados no Workspace!")
+	warn("[PortalSystem] Erro: Portais não encontrados no Workspace!")
 end
 
 -- Limpar cooldowns de players que saem do jogo

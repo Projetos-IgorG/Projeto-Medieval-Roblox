@@ -1,6 +1,17 @@
 -- Script cliente para controlar a câmera durante o teleporte do portal
 -- Autor: Roblox Assistant
 
+-- ═══════════════════════════════════════════════════════════════════
+-- CONFIGURAÇÃO DE DEBUG
+-- ═══════════════════════════════════════════════════════════════════
+local DEBUG_ENABLED = false -- Altere para true para habilitar prints de debug
+
+local function DebugPrint(...)
+	if DEBUG_ENABLED then
+		print(...)
+	end
+end
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -59,4 +70,4 @@ end
 -- Conectar ao evento do servidor
 cameraUpdateEvent.OnClientEvent:Connect(updateCamera)
 
-print("Controlador de câmera do portal inicializado no cliente!")
+DebugPrint("[PortalCameraController] Inicializado no cliente!")
