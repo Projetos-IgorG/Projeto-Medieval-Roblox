@@ -22,6 +22,13 @@ local function DebugPrint(...)
 	end
 end
 
+--- Função para advertir apenas se debug estiver habilitado
+local function DebugWarn(...)
+	if DEBUG_ENABLED then
+		warn(...)
+	end
+end
+
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -131,7 +138,7 @@ local function AtualizarBackpack()
 		StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, not bloqueado)
 	end)
 	if not success then
-		warn("[EntradaJogador] Falha ao atualizar estado da mochila:", result)
+		DebugWarn("[EntradaJogador] Falha ao atualizar estado da mochila:", result)
 	end
 end
 
@@ -394,7 +401,7 @@ end
 local function ProcessarToolEquipado(tool: Tool)
 	local modoDesejado = ObterModoDoTool(tool)
 	if not modoDesejado then
-		warn("[EntradaJogador] Tool '", tool.Name, "' não tem modoAnimacao válido")
+		DebugWarn("[EntradaJogador] Tool '", tool.Name, "' não tem modoAnimacao válido")
 		return
 	end
 
@@ -638,6 +645,21 @@ end)
 --- Detecta quando um filho é adicionado ao Character (pode ser Tool)
 local function OnChildAdded(child)
 	if child:IsA("Tool") then
+		-- Verifica se o jogador está morto
+		local char = player.Character
+		if char then
+			local humanoid = char:FindFirstChild("Humanoid")
+			if humanoid and humanoid.Health <= 0 then
+				-- Jogador está morto - desseleciona o tool automaticamente
+				if child:FindFirstChild("modoAnimacao") then
+					-- Se tem modoAnimacao, desequipa
+					humanoid:UnequipTools()
+					DebugPrint("[EntradaJogador] Tool desequipado automaticamente (jogador morto):", child.Name)
+				end
+				return
+			end
+		end
+
 		ProcessarToolEquipado(child)
 	end
 end
@@ -668,9 +690,21 @@ local function ConfigurarCharacter(char)
 	toolAlvo = nil
 	ultimoIdAcao = 0
 
+	-- Habilita backpack ao nascer
+	AtualizarBackpack()
+
 	-- Conecta eventos de adicionar/remover filhos
 	char.ChildAdded:Connect(OnChildAdded)
 	char.ChildRemoved:Connect(OnChildRemoved)
+
+	-- Conecta ao evento de morte para habilitar backpack
+	local humanoid = char:WaitForChild("Humanoid")
+	humanoid.Died:Connect(function()
+		-- Ao morrer, reseta estado de equipamento e habilita backpack
+		estadoEquip = "idle"
+		AtualizarBackpack()
+		DebugPrint("[EntradaJogador] Jogador morreu - Backpack habilitada")
+	end)
 
 	-- Verifica se já tem algum Tool equipado
 	for _, child in pairs(char:GetChildren()) do
