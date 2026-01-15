@@ -497,6 +497,88 @@ function ControladorCombate.ProcessarComboTerminou(entidade: Model)
 	return true
 end
 
+--- Processa notificação de early cancel do combo final
+--- Muda o estado para Normal antes da animação terminar completamente
+--- @param entidade Model Personagem atacante
+function ControladorCombate.ProcessarComboEarlyCancel(entidade: Model)
+	local maquina = ControladorCombate.ObterMaquina(entidade)
+
+	-- Completa a ação se ainda está atacando
+	if maquina:ObterEstadoAcao() == "AtacandoLeve" then
+		maquina:CompletarAcao()
+
+		-- Resetar velocidade para normal
+		local humanoid = entidade:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid.WalkSpeed = ArmasTemplate.ConfiguracaoGlobal.VelocidadeNormal
+		end
+
+		ControladorCombate._SincronizarEstado(entidade)
+
+		DebugPrint(string.format("[Combate] %s: Combo early cancel executado", entidade.Name))
+	end
+
+	return true
+end
+
+--- Processa notificação de early cancel do ataque pesado
+--- Muda o estado para Normal antes da animação terminar completamente
+--- @param entidade Model Personagem atacante
+function ControladorCombate.ProcessarHeavyAttackEarlyCancel(entidade: Model)
+	local maquina = ControladorCombate.ObterMaquina(entidade)
+
+	-- Completa a ação se ainda está em ataque pesado
+	if maquina:ObterEstadoAcao() == "AtaquePesado" then
+		maquina:CompletarAcao()
+
+		-- Resetar velocidade para normal
+		local humanoid = entidade:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid.WalkSpeed = ArmasTemplate.ConfiguracaoGlobal.VelocidadeNormal
+		end
+
+		ControladorCombate._SincronizarEstado(entidade)
+
+		DebugPrint(string.format("[Combate] %s: Heavy attack early cancel executado", entidade.Name))
+	end
+
+	return true
+end
+
+--- Processa cancelamento de ataque por defesa
+--- Chamado quando o jogador inicia bloqueio durante a janela de cancelamento de um ataque
+--- @param entidade Model Personagem atacante
+--- @param tipoAtaque string Tipo do ataque cancelado ("AtaqueLeve" ou "CarregandoPesado")
+function ControladorCombate.ProcessarCancelarAtaquePorDefesa(entidade: Model, tipoAtaque: string)
+	local maquina = ControladorCombate.ObterMaquina(entidade)
+
+	local estadoAcao = maquina:ObterEstadoAcao()
+
+	-- Verifica se está em um estado válido para cancelar
+	local podeCancel = false
+	if tipoAtaque == "AtaqueLeve" and estadoAcao == "AtacandoLeve" then
+		podeCancel = true
+	elseif tipoAtaque == "CarregandoPesado" and (estadoAcao == "CarregandoPesado" or estadoAcao == "AtaquePesado") then
+		podeCancel = true
+	end
+
+	if podeCancel then
+		maquina:CompletarAcao()
+
+		-- Resetar velocidade para normal
+		local humanoid = entidade:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid.WalkSpeed = ArmasTemplate.ConfiguracaoGlobal.VelocidadeNormal
+		end
+
+		ControladorCombate._SincronizarEstado(entidade)
+
+		DebugPrint(string.format("[Combate] %s: Ataque '%s' cancelado por defesa", entidade.Name, tipoAtaque))
+	end
+
+	return true
+end
+
 --- Processa ação de ataque leve agachado
 function ControladorCombate.ProcessarAtacarLeveAgachado(entidade: Model)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
@@ -527,6 +609,14 @@ function ControladorCombate.ProcessarCarregarPesado(entidade: Model)
 	local sucesso, motivo = maquina:TenteCarregarPesado()
 
 	if not sucesso then
+		-- Notifica jogador se a ação foi rejeitada (ex: Cooldown)
+		local player = Players:GetPlayerFromCharacter(entidade)
+		if player then
+			local rem = ReplicatedStorage:FindFirstChild("Remotos")
+			if rem and rem:FindFirstChild("AcaoRejeitada") then
+				rem:FindFirstChild("AcaoRejeitada"):FireClient(player, "CarregarPesado", motivo)
+			end
+		end
 		return false, motivo
 	end
 
@@ -538,7 +628,9 @@ function ControladorCombate.ProcessarCarregarPesado(entidade: Model)
 		humanoid.WalkSpeed = velBloq * 1.5
 	end
 
-	ControladorCombate._TocarAnimacao(entidade, "AtaquePesado", false, 0.3) -- Velocidade lenta para carregar
+	-- Usa velocidade configurável para o carregamento
+	local velocidadeCarregar = ArmasTemplate.ConfiguracaoGlobal.VelocidadeCarregandoPesado or 1.1
+	ControladorCombate._TocarAnimacao(entidade, "AtaquePesado", false, velocidadeCarregar)
 
 	return true
 end
@@ -550,6 +642,14 @@ function ControladorCombate.ProcessarSoltarPesado(entidade: Model)
 	local sucesso, motivo = maquina:TenteSoltarPesado()
 
 	if not sucesso then
+		-- Notifica jogador se a ação foi rejeitada (ex: Cooldown)
+		local player = Players:GetPlayerFromCharacter(entidade)
+		if player then
+			local rem = ReplicatedStorage:FindFirstChild("Remotos")
+			if rem and rem:FindFirstChild("AcaoRejeitada") then
+				rem:FindFirstChild("AcaoRejeitada"):FireClient(player, "SoltarPesado", motivo)
+			end
+		end
 		return false, motivo
 	end
 
@@ -561,15 +661,33 @@ function ControladorCombate.ProcessarSoltarPesado(entidade: Model)
 		humanoid.WalkSpeed = velBloq * 1.5
 	end
 
-	ControladorCombate._TocarAnimacao(entidade, "AtaquePesado", false, 1)
+	-- NÃO envia nova animação - o cliente já está tocando e vai ajustar a velocidade
+	-- A animação continua de onde parou, apenas com velocidade diferente
 	ControladorCombate._AplicarImpulsoAtacante(entidade, "AtaquePesado")
 
-	task.delay(0.15, function()
-		local alvos = ControladorCombate._CriarHitbox(entidade, "AtaquePesado")
-		for _, alvo in ipairs(alvos) do
-			ControladorCombate._ProcessarHit(entidade, alvo, "AtaquePesado")
-		end
-	end)
+	-- Hitbox será criada pelo marcador HeavyAttack na animação
+	-- O cliente notifica o servidor via TentarAcao quando o marcador é atingido
+
+	return true
+end
+
+--- Processa hitbox do ataque pesado (chamado pelo cliente quando o marcador HeavyAttack é atingido)
+function ControladorCombate.ProcessarHeavyAttackHitbox(entidade: Model)
+	local maquina = ControladorCombate.ObterMaquina(entidade)
+
+	-- Verifica se está no estado correto (AtaquePesado)
+	if maquina.dados.estadoAcao ~= "AtaquePesado" then
+		DebugPrint(string.format("[Combate] %s: HeavyAttackHitbox FALHOU - não está em AtaquePesado", entidade.Name))
+		return false, "EstadoInvalido"
+	end
+
+	DebugPrint(string.format("[Combate] %s: HeavyAttackHitbox - criando hitbox", entidade.Name))
+
+	-- Cria hitbox e processa hits
+	local alvos = ControladorCombate._CriarHitbox(entidade, "AtaquePesado")
+	for _, alvo in ipairs(alvos) do
+		ControladorCombate._ProcessarHit(entidade, alvo, "AtaquePesado")
+	end
 
 	return true
 end
@@ -1029,6 +1147,7 @@ local MapaAcoes = {
 	AtacarLeveAgachado = ControladorCombate.ProcessarAtacarLeveAgachado,
 	CarregarPesado = ControladorCombate.ProcessarCarregarPesado,
 	SoltarPesado = ControladorCombate.ProcessarSoltarPesado,
+	HeavyAttackHitbox = ControladorCombate.ProcessarHeavyAttackHitbox,
 	Bloquear = ControladorCombate.ProcessarBloquear,
 	PararBloqueio = ControladorCombate.ProcessarPararBloqueio,
 	QuebrarDefesa = ControladorCombate.ProcessarQuebrarDefesa,
@@ -1063,6 +1182,14 @@ local MapaAcoes = {
 		return ControladorCombate.ProcessarComboContinuado(entidade, dados)
 	end,
 	ComboTerminou = ControladorCombate.ProcessarComboTerminou,
+	ComboEarlyCancel = ControladorCombate.ProcessarComboEarlyCancel,
+	HeavyAttackEarlyCancel = ControladorCombate.ProcessarHeavyAttackEarlyCancel,
+
+	-- Cancelamento de ataque por defesa
+	CancelarAtaquePorDefesa = function(entidade, dados)
+		-- dados = tipo do ataque ("AtaqueLeve" ou "CarregandoPesado")
+		return ControladorCombate.ProcessarCancelarAtaquePorDefesa(entidade, dados)
+	end,
 }
 
 --- Processa ação genérica
@@ -1116,6 +1243,44 @@ EquipAnimacaoTerminou.OnServerEvent:Connect(function(player)
 	then
 		DebugPrint(string.format("[Combate] %s: Animação de equip/desequip terminou", character.Name))
 		maquina:CompletarAcao()
+		ControladorCombate._SincronizarEstado(character)
+	end
+end)
+
+-- Recebe notificação genérica de que uma animação de AÇÃO terminou
+-- Ex: AtaqueLeve, AtaquePesado, CarregandoPesado
+local AcaoAnimacaoTerminou = Remotos:WaitForChild("AcaoAnimacaoTerminou")
+AcaoAnimacaoTerminou.OnServerEvent:Connect(function(player, nomeAcao)
+	local character = player.Character
+	if not character then
+		return
+	end
+
+	local maquina = ControladorCombate.ObterMaquina(character)
+	if not maquina then
+		return
+	end
+
+	local estadoAcao = maquina:ObterEstadoAcao()
+	-- Se estiver em um estado de ataque ou carregando, completa a ação
+	if
+		estadoAcao == MaquinaDeEstados.EstadoAcao.AtacandoLeve
+		or estadoAcao == MaquinaDeEstados.EstadoAcao.CarregandoPesado
+		or estadoAcao == MaquinaDeEstados.EstadoAcao.AtaquePesado
+	then
+		DebugPrint(
+			string.format(
+				"[Combate] %s: Animação de AÇÃO '%s' terminou - completando ação",
+				character.Name,
+				nomeAcao or "(desconhecida)"
+			)
+		)
+		maquina:CompletarAcao()
+		-- Resetar velocidade para normal
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid.WalkSpeed = ArmasTemplate.ConfiguracaoGlobal.VelocidadeNormal
+		end
 		ControladorCombate._SincronizarEstado(character)
 	end
 end)

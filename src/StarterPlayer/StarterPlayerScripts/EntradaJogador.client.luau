@@ -13,7 +13,7 @@
 -- ═══════════════════════════════════════════════════════════════════
 -- CONFIGURAÇÃO DE DEBUG
 -- ═══════════════════════════════════════════════════════════════════
-local DEBUG_ENABLED = false -- Altere para true para habilitar prints de debug
+local DEBUG_ENABLED = true -- Altere para true para habilitar prints de debug
 
 --- Função para imprimir apenas se debug estiver habilitado
 local function DebugPrint(...)
@@ -44,6 +44,20 @@ local player = Players.LocalPlayer
 local Remotos = ReplicatedStorage:WaitForChild("Remotos")
 local TentarAcao = Remotos:WaitForChild("TentarAcao")
 local EquipAnimacaoTerminou = Remotos:WaitForChild("EquipAnimacaoTerminou")
+local AcaoRejeitada = Remotos:FindFirstChild("AcaoRejeitada")
+
+-- Listener: se o servidor rejeitar uma ação, loga (ex: Cooldown para ataque pesado)
+if AcaoRejeitada then
+	AcaoRejeitada.OnClientEvent:Connect(function(acao, motivo)
+		if acao == "CarregarPesado" or acao == "SoltarPesado" then
+			if motivo == "Cooldown" then
+				DebugPrint("[EntradaJogador] Ação rejeitada:", acao, "- motivo: Cooldown (heavy attack em cooldown)")
+			else
+				DebugPrint("[EntradaJogador] Ação rejeitada:", acao, "- motivo:", motivo or "?")
+			end
+		end
+	end)
+end
 
 -- ═══════════════════════════════════════════════════════════════════
 -- CONFIGURAÇÃO DE INPUTS
@@ -51,7 +65,7 @@ local EquipAnimacaoTerminou = Remotos:WaitForChild("EquipAnimacaoTerminou")
 
 local Configuracao = {
 	-- Tempo para considerar ataque pesado (segurar M1)
-	TempoCarregarPesado = 0.2,
+	TempoCarregarPesado = 0.12,
 
 	-- Cooldowns
 	CooldownDefesa = 0.5, -- Cooldown de 0.5 segundos para defesa
@@ -71,10 +85,27 @@ local estadoInput = {
 	mouse1Pressionado = false,
 	mouse2Pressionado = false,
 	tempoMouse1 = 0,
+	tempoMouse2 = 0,
 	agachadoAtivo = false,
 	correndoAtivo = false,
 	ultimaDefesa = 0,
+	carregandoPesado = false,
+	ataqueLevePendente = false,
 }
+
+-- ═══════════════════════════════════════════════════════════════════
+-- FUNÇÕES GLOBAIS PARA VERIFICAÇÃO DE INPUT
+-- ═══════════════════════════════════════════════════════════════════
+
+--- Verifica se M1 está sendo pressionado (usado pelo ControladorEstado para ataque pesado)
+function _G.EstaSegurandoM1()
+	return estadoInput.mouse1Pressionado
+end
+
+--- Verifica se está carregando ataque pesado
+function _G.EstaCarregandoPesado()
+	return estadoInput.carregandoPesado
+end
 
 -- ═══════════════════════════════════════════════════════════════════
 -- SISTEMA DE FILA DE EQUIPAMENTO
@@ -296,14 +327,19 @@ end
 -- ═══════════════════════════════════════════════════════════════════
 
 --- Processa clique do mouse 1 (ataque)
---- No sistema de combo por marcadores:
---- - Se há combo ativo (janela ou animação), tenta marcar continuação
---- - Caso contrário, envia novo ataque
+--- Sistema de ataque leve/pesado:
+--- - Ao pressionar, marca tempo e aguarda
+--- - Se soltar antes de 0.2s → ataque leve
+--- - Se segurar mais de 0.2s → CarregarPesado (via loop)
+--- - Combo é tratado imediatamente
 local function ProcessarMouse1Pressionado()
 	estadoInput.mouse1Pressionado = true
 	estadoInput.tempoMouse1 = tick()
+	estadoInput.carregandoPesado = false
+	estadoInput.ataqueLevePendente = true -- Ainda não decidiu se é leve ou pesado
 
 	-- Verifica se há combo ativo (função exposta pelo ControladorEstado)
+	-- Combo tem prioridade e é processado imediatamente
 	local comboAtivo = _G.EstaComboAtivo and _G.EstaComboAtivo()
 	local janelaAtiva = _G.EstaJanelaComboAtiva and _G.EstaJanelaComboAtiva()
 
@@ -314,20 +350,21 @@ local function ProcessarMouse1Pressionado()
 			if marcou then
 				-- Também notifica servidor que input foi recebido
 				EnviarAcao("AtacarLeveEmPe")
+				estadoInput.ataqueLevePendente = false -- Combo iniciado, não enviar ataque leve depois
 				return
 			end
 		end
 	end
 
-	-- Não está em combo - inicia novo ataque
-	if estadoInput.agachadoAtivo then
-		EnviarAcao("AtacarLeveAgachado")
-	else
-		EnviarAcao("AtacarLeveEmPe")
-	end
+	-- Se está em combo, envia ataque leve imediatamente
+	-- Caso contrário, aguarda para decidir se é leve ou pesado
+	-- O loop ProcessarMouse1Segurar ou ProcessarMouse1Solto vai decidir
+	DebugPrint("[EntradaJogador] M1 pressionado - aguardando decisão leve/pesado")
 end
 
 --- Processa soltar mouse 1
+--- Se estava carregando pesado → SoltarPesado
+--- Se ainda era pendente (< 0.2s) → Ataque leve
 local function ProcessarMouse1Solto()
 	if not estadoInput.mouse1Pressionado then
 		return
@@ -336,23 +373,51 @@ local function ProcessarMouse1Solto()
 	local tempoSegurando = tick() - estadoInput.tempoMouse1
 	estadoInput.mouse1Pressionado = false
 
-	-- Se segurou tempo suficiente, pode ser ataque pesado
-	if tempoSegurando >= Configuracao.TempoCarregarPesado then
+	-- Se estava carregando ataque pesado, solta o pesado
+	if estadoInput.carregandoPesado then
+		DebugPrint("[EntradaJogador] M1 solto - SoltarPesado (carregou por", tempoSegurando, "s)")
+
+		-- Primeiro, notifica o ControladorEstado para continuar a animação (se estava pausada)
+		if _G.ContinuarAtaquePesado then
+			_G.ContinuarAtaquePesado()
+		end
+
+		-- Depois envia a ação para o servidor
 		EnviarAcao("SoltarPesado")
+		estadoInput.carregandoPesado = false
+		estadoInput.ataqueLevePendente = false
+	elseif estadoInput.ataqueLevePendente then
+		-- Soltou antes de 0.2s, é ataque leve
+		DebugPrint("[EntradaJogador] M1 solto - AtaqueLeve (segurou", tempoSegurando, "s)")
+		if estadoInput.agachadoAtivo then
+			EnviarAcao("AtacarLeveAgachado")
+		else
+			EnviarAcao("AtacarLeveEmPe")
+		end
+		estadoInput.ataqueLevePendente = false
 	end
 end
 
 --- Processa segurar mouse 1 (chamado em loop)
+--- Após 0.2s de segurar, inicia carregamento de ataque pesado
 local function ProcessarMouse1Segurar()
 	if not estadoInput.mouse1Pressionado then
+		return
+	end
+
+	-- Se já está carregando pesado, não precisa fazer nada
+	if estadoInput.carregandoPesado then
 		return
 	end
 
 	local tempoSegurando = tick() - estadoInput.tempoMouse1
 
 	-- Após tempo mínimo, inicia carregamento pesado
-	if tempoSegurando >= Configuracao.TempoCarregarPesado then
+	if tempoSegurando >= Configuracao.TempoCarregarPesado and estadoInput.ataqueLevePendente then
+		DebugPrint("[EntradaJogador] M1 segurado por", tempoSegurando, "s - iniciando CarregarPesado")
 		EnviarAcao("CarregarPesado")
+		estadoInput.carregandoPesado = true
+		estadoInput.ataqueLevePendente = false -- Não é mais ataque leve
 	end
 end
 
@@ -364,7 +429,53 @@ local function ProcessarMouse2Pressionado()
 		return -- Ainda em cooldown
 	end
 
+	-- Marca que M2 está pressionado e registra o tempo
 	estadoInput.mouse2Pressionado = true
+	estadoInput.tempoMouse2 = agora
+
+	-- Tenta cancelar ataque por defesa (se estiver na janela de cancelamento)
+	if _G.TentarCancelarAtaquePorDefesa then
+		local cancelou, tipoAtaque = _G.TentarCancelarAtaquePorDefesa()
+		if cancelou then
+			DebugPrint("[EntradaJogador] Ataque cancelado por defesa:", tipoAtaque)
+			-- Notifica servidor sobre o cancelamento
+			EnviarAcao("CancelarAtaquePorDefesa", tipoAtaque)
+
+			-- Reseta estado de carregamento pesado se estava carregando
+			if tipoAtaque == "CarregandoPesado" then
+				estadoInput.carregandoPesado = false
+				estadoInput.ataqueLevePendente = false
+			end
+
+			-- NÃO inicia defesa imediatamente após cancelar
+			-- Aguarda um tempo para ver se o jogador continua segurando M2
+			local tempoParaDefesa = require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("ArmasTemplate")).ConfiguracaoGlobal.TempoSegurandoM2ParaDefesa
+				or 0.15
+
+			task.delay(tempoParaDefesa, function()
+				-- Verifica se M2 ainda está pressionado após o delay
+				if estadoInput.mouse2Pressionado then
+					DebugPrint("[EntradaJogador] M2 ainda pressionado após cancel - iniciando defesa")
+					-- Cancela o cancel pendente (não volta ao Idle, vai direto pra defesa)
+					if _G.CancelarCancelPendente then
+						_G.CancelarCancelPendente()
+					end
+					estadoInput.ultimaDefesa = tick()
+					EnviarAcao("Bloquear")
+				else
+					DebugPrint("[EntradaJogador] M2 solto após cancel - apenas cancelou, sem defesa")
+					-- Resolve o cancel pendente (volta ao Idle)
+					if _G.ResolverCancelPendente then
+						_G.ResolverCancelPendente()
+					end
+				end
+			end)
+
+			return -- Não inicia defesa agora, aguarda o delay
+		end
+	end
+
+	-- Se não cancelou nenhum ataque, inicia defesa normalmente
 	estadoInput.ultimaDefesa = agora
 	EnviarAcao("Bloquear")
 end
@@ -681,6 +792,9 @@ local function ConfigurarCharacter(char)
 		agachadoAtivo = false,
 		correndoAtivo = false,
 		ultimaDefesa = 0,
+		-- Sistema de ataque pesado
+		carregandoPesado = false,
+		ataqueLevePendente = false,
 	}
 
 	-- Resetar estado de fila/equipamento para evitar bloqueios após morrer

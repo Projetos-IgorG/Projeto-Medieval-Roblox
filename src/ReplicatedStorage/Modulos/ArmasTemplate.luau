@@ -37,6 +37,23 @@ ArmasTemplate.ConfiguracaoGlobal = {
 	TempoMinimoQueda = 0.28, -- Hold de animação de pulo antes de transitar para queda
 	VelocidadeCorrendoNoAr = 0.4, -- Velocidade da animação de corrida no ar
 
+	-- Ataque Pesado
+	VelocidadeCarregandoPesado = 1.1, -- Velocidade da animação enquanto carrega (segurando M1)
+	VelocidadeSoltarPesado = 1.0, -- Velocidade da animação ao soltar M1
+
+	-- Janela de Cancelamento Antecipado (Final Early Cancel)
+	-- Permite mudar estado para Normal antes da animação terminar completamente
+	-- O valor é em segundos ANTES do fim da animação
+	JanelaCancelamentoComboFinal = 0.15, -- Quanto tempo antes do fim do último golpe leve
+	JanelaCancelamentoAtaquePesado = 0.2, -- Quanto tempo antes do fim do ataque pesado
+
+	-- Janela de Cancelamento por Defesa (Defense Cancel)
+	-- Permite cancelar um ataque ao iniciar bloqueio nos primeiros X segundos
+	JanelaCancelamentoAtaquePorDefesa = 0.27, -- Janela no início do ataque leve
+	JanelaCancelamentoCarregamentoPorDefesa = 0.8, -- Janela no início do carregamento pesado
+	CooldownCancelamentoPorDefesa = 1.0, -- Cooldown entre cancelamentos
+	TempoSegurandoM2ParaDefesa = 0.08, -- Tempo que deve segurar M2 após cancelar para iniciar defesa
+
 	-- Cooldowns por ação
 	CooldownComboLeve = 0.5,
 	CooldownAtaquePesado = 2.0,

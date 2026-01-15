@@ -14,7 +14,7 @@
 -- ═══════════════════════════════════════════════════════════════════
 -- CONFIGURAÇÃO DE DEBUG
 -- ═══════════════════════════════════════════════════════════════════
-local DEBUG_ENABLED = false -- Altere para true para habilitar prints de debug
+local DEBUG_ENABLED = true -- Altere para true para habilitar prints de debug
 
 local function DebugPrint(...)
 	if DEBUG_ENABLED then
@@ -164,6 +164,15 @@ local comboState = {
 	pendingConsume = false, -- Clique antecipado (antes da janela abrir)
 	janelaTimer = nil, -- Thread do timer da janela
 	token = 0, -- Token para invalidar timers antigos
+	earlyCancelTimer = nil, -- Timer para cancelamento antecipado
+	earlyCancelExecutado = false, -- Se o cancelamento antecipado já foi executado
+	tempoInicio = 0, -- Momento em que o combo iniciou (para defense cancel)
+}
+
+-- Estado global para cancelamento por defesa
+local defenseCancelState = {
+	ultimoCancelamento = 0, -- Tempo do último cancelamento (para cooldown)
+	cancelPendente = false, -- Se há um cancel que ainda não resolveu a animação
 }
 
 --- Limpa conexões de markers da animação atual
@@ -181,6 +190,12 @@ local function LimparConexoesMarkers()
 		pcall(task.cancel, comboState.janelaTimer)
 		comboState.janelaTimer = nil
 	end
+
+	-- Cancela timer de early cancel se existir
+	if comboState.earlyCancelTimer then
+		pcall(task.cancel, comboState.earlyCancelTimer)
+		comboState.earlyCancelTimer = nil
+	end
 end
 
 --- Chamado quando a animação de combo termina (naturalmente ou forçada)
@@ -195,6 +210,8 @@ local function OnComboAnimacaoTerminou()
 	comboState.continuarCombo = false
 	comboState.pendingConsume = false
 	comboState.token = 0
+	comboState.earlyCancelExecutado = false
+	comboState.tempoInicio = 0
 
 	-- Atualiza estado local
 	estadoAtual.estadoAcao = "Nenhuma"
@@ -305,10 +322,58 @@ local function OnMarkerAtaque(indiceGolpe: string)
 	-- Notifica servidor para criar hitbox
 	TentarAcao:FireServer("ComboHitbox", indice)
 
-	-- Se é o golpe 4 (final), aguarda animação terminar naturalmente
+	-- Se é o golpe 4 (final), configura early cancel e aguarda animação terminar
 	if indice >= 4 then
 		comboState.janelaAtiva = false -- Não tem mais janela após o final
 		DebugPrint("[ControladorEstado] Golpe final executado")
+
+		-- Configura timer de early cancel baseado no tempo restante da animação
+		if comboState.animacaoAtiva and comboState.animacaoAtiva.IsPlaying then
+			local track = comboState.animacaoAtiva
+			local janelaEarlyCancel = ArmasTemplate.ConfiguracaoGlobal.JanelaCancelamentoComboFinal or 0.15
+			local tempoRestante = (track.Length - track.TimePosition) / track.Speed
+
+			-- Só agenda early cancel se houver tempo suficiente
+			if tempoRestante > janelaEarlyCancel and janelaEarlyCancel > 0 then
+				local tempoParaEarlyCancel = tempoRestante - janelaEarlyCancel
+				DebugPrint(
+					string.format(
+						"[ControladorEstado] Early cancel agendado: %.2fs restante, early cancel em %.2fs",
+						tempoRestante,
+						tempoParaEarlyCancel
+					)
+				)
+
+				comboState.earlyCancelTimer = task.delay(tempoParaEarlyCancel, function()
+					-- Verifica se ainda está no mesmo combo e não foi cancelado
+					if
+						comboState.animacaoAtiva
+						and comboState.animacaoAtiva.IsPlaying
+						and not comboState.earlyCancelExecutado
+					then
+						comboState.earlyCancelExecutado = true
+						DebugPrint("[ControladorEstado] Early cancel executado - mudando estado para Normal")
+
+						-- Atualiza estado local imediatamente
+						estadoAtual.estadoAcao = "Nenhuma"
+
+						-- Notifica servidor para mudar estado antecipadamente
+						TentarAcao:FireServer("ComboEarlyCancel")
+
+						-- Se o jogador está segurando Shift, volta a correr
+						if isShiftHeld then
+							movementFlags.isRunning = true
+							TentarAcao:FireServer("Correr")
+							estadoAtual.estadoMov = "Correndo"
+							estadoAtual.correndo = true
+						end
+
+						-- Atualiza animação de movimento (a animação de combo vai terminar naturalmente em background)
+						AtualizarAnimacaoMovimento()
+					end
+				end)
+			end
+		end
 	end
 end
 
@@ -378,6 +443,349 @@ end
 --- Verifica se há um combo ativo (animação tocando)
 function _G.EstaComboAtivo()
 	return comboState.animacaoAtiva and comboState.animacaoAtiva.IsPlaying
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- SISTEMA DE ATAQUE PESADO POR MARCADORES
+-- ═══════════════════════════════════════════════════════════════════
+
+--[[
+	O sistema de ataque pesado funciona assim:
+	1. Player segura M1 por mais de 0.2s → Cliente envia "CarregarPesado"
+	2. Servidor envia animação "AtaquePesado" com velocidade 0.3 (lenta)
+	3. Quando a animação chega no marcador "AttackRelease":
+	   - Se ainda está segurando M1 → pausa animação (velocidade 0)
+	   - Se já soltou M1 → continua normalmente
+	4. Quando solta M1 → Cliente envia "SoltarPesado" → animação continua (velocidade 1)
+	5. Quando chega no marcador "HeavyAttack" → hitbox é criada pelo servidor
+	
+	Marcadores na animação:
+	- "AttackRelease" - Ponto onde a animação pausa se ainda segurando M1
+	- "HeavyAttack" - Momento de criar hitbox (parâmetro opcional)
+]]
+
+-- Estado local do ataque pesado
+local heavyAttackState = {
+	animacao = nil, -- AnimationTrack atual
+	aguardandoSoltar = false, -- Se está pausado esperando soltar M1
+	conexoesMarkers = {}, -- Conexões dos markers
+	conexaoTermino = nil, -- Conexão para detectar término
+	earlyCancelTimer = nil, -- Timer para cancelamento antecipado
+	earlyCancelExecutado = false, -- Se o cancelamento antecipado já foi executado
+	tempoInicio = 0, -- Momento em que o carregamento iniciou (para defense cancel)
+}
+
+--- Limpa conexões de markers do ataque pesado
+local function LimparConexoesHeavyAttack()
+	for _, conexao in ipairs(heavyAttackState.conexoesMarkers) do
+		if conexao and conexao.Connected then
+			conexao:Disconnect()
+		end
+	end
+	heavyAttackState.conexoesMarkers = {}
+
+	if heavyAttackState.conexaoTermino then
+		heavyAttackState.conexaoTermino:Disconnect()
+		heavyAttackState.conexaoTermino = nil
+	end
+
+	-- Cancela timer de early cancel se existir
+	if heavyAttackState.earlyCancelTimer then
+		pcall(task.cancel, heavyAttackState.earlyCancelTimer)
+		heavyAttackState.earlyCancelTimer = nil
+	end
+end
+
+--- Chamado quando a animação de ataque pesado termina
+local function OnHeavyAttackTerminou()
+	DebugPrint("[ControladorEstado] Animação de ataque pesado terminou")
+	LimparConexoesHeavyAttack()
+	heavyAttackState.animacao = nil
+	heavyAttackState.aguardandoSoltar = false
+	heavyAttackState.earlyCancelExecutado = false
+	AtualizarAnimacaoMovimento()
+
+	-- Notifica o servidor que a animação de ação terminou (para completar estado e resetar velocidade)
+	local acaoNome = "AtaquePesado"
+	local ok, err = pcall(function()
+		local rem = ReplicatedStorage:FindFirstChild("Remotos")
+		if rem and rem:FindFirstChild("AcaoAnimacaoTerminou") then
+			rem:FindFirstChild("AcaoAnimacaoTerminou"):FireServer(acaoNome)
+		end
+	end)
+	if not ok then
+		DebugPrint("[ControladorEstado] Falha ao notificar servidor do término da ação:", err)
+	end
+end
+
+--- Processa o marcador "AttackRelease" - ponto de pausa
+local function OnMarkerAttackRelease()
+	DebugPrint("[ControladorEstado] Marcador AttackRelease atingido")
+
+	if not heavyAttackState.animacao or not heavyAttackState.animacao.IsPlaying then
+		return
+	end
+
+	-- Verifica se o jogador ainda está segurando M1
+	-- Usa função global exposta pelo EntradaJogador
+	local aindaSegurando = _G.EstaSegurandoM1 and _G.EstaSegurandoM1()
+
+	if aindaSegurando then
+		-- Pausa a animação - aguarda soltar M1
+		heavyAttackState.animacao:AdjustSpeed(0)
+		heavyAttackState.aguardandoSoltar = true
+		DebugPrint("[ControladorEstado] Animação pausada - aguardando soltar M1")
+	else
+		-- Já soltou M1, continua a animação normalmente
+		-- A velocidade já foi ajustada para 1 pelo SoltarPesado do servidor
+		DebugPrint("[ControladorEstado] M1 já foi solto - animação continua")
+	end
+end
+
+--- Processa o marcador "HeavyAttack" - momento de criar hitbox
+local function OnMarkerHeavyAttack()
+	DebugPrint("[ControladorEstado] Marcador HeavyAttack atingido - notificando servidor para criar hitbox")
+	-- Notifica o servidor para criar o hitbox do ataque pesado
+	TentarAcao:FireServer("HeavyAttackHitbox")
+
+	-- Configura timer de early cancel baseado no tempo restante da animação
+	if heavyAttackState.animacao and heavyAttackState.animacao.IsPlaying then
+		local track = heavyAttackState.animacao
+		local janelaEarlyCancel = ArmasTemplate.ConfiguracaoGlobal.JanelaCancelamentoAtaquePesado or 0.2
+		local speed = math.max(track.Speed, 0.1) -- Evita divisão por zero
+		local tempoRestante = (track.Length - track.TimePosition) / speed
+
+		-- Só agenda early cancel se houver tempo suficiente
+		if tempoRestante > janelaEarlyCancel and janelaEarlyCancel > 0 then
+			local tempoParaEarlyCancel = tempoRestante - janelaEarlyCancel
+			DebugPrint(
+				string.format(
+					"[ControladorEstado] Heavy attack early cancel agendado: %.2fs restante, early cancel em %.2fs",
+					tempoRestante,
+					tempoParaEarlyCancel
+				)
+			)
+
+			heavyAttackState.earlyCancelTimer = task.delay(tempoParaEarlyCancel, function()
+				-- Verifica se ainda está no ataque pesado e não foi cancelado
+				if
+					heavyAttackState.animacao
+					and heavyAttackState.animacao.IsPlaying
+					and not heavyAttackState.earlyCancelExecutado
+				then
+					heavyAttackState.earlyCancelExecutado = true
+					DebugPrint("[ControladorEstado] Heavy attack early cancel executado - mudando estado para Normal")
+
+					-- Atualiza estado local imediatamente
+					estadoAtual.estadoAcao = "Nenhuma"
+
+					-- Notifica servidor para mudar estado antecipadamente
+					TentarAcao:FireServer("HeavyAttackEarlyCancel")
+
+					-- Se o jogador está segurando Shift, volta a correr
+					if isShiftHeld then
+						movementFlags.isRunning = true
+						TentarAcao:FireServer("Correr")
+						estadoAtual.estadoMov = "Correndo"
+						estadoAtual.correndo = true
+					end
+
+					-- Atualiza animação de movimento (a animação de ataque pesado vai terminar naturalmente em background)
+					AtualizarAnimacaoMovimento()
+				end
+			end)
+		end
+	end
+end
+
+--- Configura listeners de marcadores para uma animação de ataque pesado
+---@param track AnimationTrack
+local function ConfigurarMarkersHeavyAttack(track: AnimationTrack)
+	LimparConexoesHeavyAttack()
+
+	heavyAttackState.animacao = track
+	heavyAttackState.aguardandoSoltar = false
+
+	-- Marcador de pausa (AttackRelease)
+	local conexaoRelease = track:GetMarkerReachedSignal("AttackRelease"):Connect(function()
+		OnMarkerAttackRelease()
+	end)
+	table.insert(heavyAttackState.conexoesMarkers, conexaoRelease)
+
+	-- Marcador de hitbox (HeavyAttack)
+	local conexaoHit = track:GetMarkerReachedSignal("HeavyAttack"):Connect(function()
+		OnMarkerHeavyAttack()
+	end)
+	table.insert(heavyAttackState.conexoesMarkers, conexaoHit)
+
+	-- Conexão de término
+	heavyAttackState.conexaoTermino = track.Stopped:Connect(function()
+		OnHeavyAttackTerminou()
+	end)
+
+	DebugPrint("[ControladorEstado] Markers de ataque pesado configurados")
+end
+
+--- Continua a animação de ataque pesado (chamado quando M1 é solto)
+--- Chamado por EntradaJogador via _G quando SoltarPesado é enviado
+--- Apenas ajusta a velocidade da animação - NÃO reinicia
+function _G.ContinuarAtaquePesado()
+	if not heavyAttackState.animacao or not heavyAttackState.animacao.IsPlaying then
+		DebugPrint("[ControladorEstado] ContinuarAtaquePesado - sem animação ativa")
+		return false
+	end
+
+	-- Obtém velocidade configurável para quando solta M1
+	local velocidadeSoltar = ArmasTemplate.ConfiguracaoGlobal.VelocidadeSoltarPesado or 1.0
+
+	if heavyAttackState.aguardandoSoltar then
+		-- Estava pausado (velocidade 0), continua a animação com velocidade de soltar
+		heavyAttackState.animacao:AdjustSpeed(velocidadeSoltar)
+		heavyAttackState.aguardandoSoltar = false
+		DebugPrint("[ControladorEstado] Animação de ataque pesado retomada (velocidade:", velocidadeSoltar, ")")
+		return true
+	end
+
+	-- Não estava pausado, mas ainda assim ajusta velocidade para a de soltar
+	-- Isso garante que a animação tenha a velocidade correta após soltar M1
+	heavyAttackState.animacao:AdjustSpeed(velocidadeSoltar)
+	DebugPrint("[ControladorEstado] Velocidade ajustada para soltar (velocidade:", velocidadeSoltar, ")")
+	return true
+end
+
+--- Verifica se está em ataque pesado ativo
+function _G.EstaAtaquePesadoAtivo()
+	return heavyAttackState.animacao and heavyAttackState.animacao.IsPlaying
+end
+
+--- Verifica se está aguardando soltar M1 no ataque pesado
+function _G.EstaAguardandoSoltarPesado()
+	return heavyAttackState.aguardandoSoltar
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- SISTEMA DE CANCELAMENTO POR DEFESA
+-- ═══════════════════════════════════════════════════════════════════
+
+--- Tenta cancelar ataque por defesa
+--- Retorna true se cancelou com sucesso, false caso contrário
+--- @return boolean sucesso
+--- @return string? tipoAtaque O tipo de ataque que foi cancelado ("AtaqueLeve" ou "CarregandoPesado")
+function _G.TentarCancelarAtaquePorDefesa()
+	local agora = tick()
+	local config = ArmasTemplate.ConfiguracaoGlobal
+
+	-- Verifica cooldown de cancelamento
+	local cooldown = config.CooldownCancelamentoPorDefesa or 1.0
+	if (agora - defenseCancelState.ultimoCancelamento) < cooldown then
+		DebugPrint("[ControladorEstado] Defense cancel em cooldown")
+		return false, nil
+	end
+
+	-- Verifica se está em ataque leve (combo) dentro da janela
+	if comboState.animacaoAtiva and comboState.animacaoAtiva.IsPlaying then
+		local tempoDecorrido = agora - comboState.tempoInicio
+		local janelaAtaque = config.JanelaCancelamentoAtaquePorDefesa or 0.15
+
+		-- Só permite cancelar no primeiro golpe do combo (índice 1) e dentro da janela
+		if comboState.indiceAtual <= 1 and tempoDecorrido <= janelaAtaque then
+			DebugPrint(
+				string.format(
+					"[ControladorEstado] Defense cancel: Cancelando ataque leve (%.3fs dentro da janela de %.3fs)",
+					tempoDecorrido,
+					janelaAtaque
+				)
+			)
+
+			-- Para a animação
+			comboState.animacaoAtiva:Stop(0.1)
+
+			-- Limpa estado
+			LimparConexoesMarkers()
+			comboState.animacaoAtiva = nil
+			comboState.janelaAtiva = false
+			comboState.indiceAtual = 0
+			comboState.continuarCombo = false
+			comboState.pendingConsume = false
+			comboState.token = 0
+			comboState.earlyCancelExecutado = false
+			comboState.tempoInicio = 0
+
+			-- Atualiza estado local
+			estadoAtual.estadoAcao = "Nenhuma"
+
+			-- Registra cooldown
+			defenseCancelState.ultimoCancelamento = agora
+
+			-- Marca que há um cancel pendente (não atualiza animação ainda)
+			-- O EntradaJogador vai decidir se deve voltar ao Idle ou ir para defesa
+			defenseCancelState.cancelPendente = true
+
+			return true, "AtaqueLeve"
+		end
+	end
+
+	-- Verifica se está carregando ataque pesado dentro da janela
+	if heavyAttackState.animacao and heavyAttackState.animacao.IsPlaying then
+		local tempoDecorrido = agora - heavyAttackState.tempoInicio
+		local janelaCarregamento = config.JanelaCancelamentoCarregamentoPorDefesa or 0.2
+
+		-- Só permite cancelar se ainda não passou do marcador AttackRelease (ainda carregando)
+		-- E se estiver dentro da janela
+		if tempoDecorrido <= janelaCarregamento then
+			DebugPrint(
+				string.format(
+					"[ControladorEstado] Defense cancel: Cancelando carregamento pesado (%.3fs dentro da janela de %.3fs)",
+					tempoDecorrido,
+					janelaCarregamento
+				)
+			)
+
+			-- Para a animação
+			heavyAttackState.animacao:Stop(0.1)
+
+			-- Limpa estado
+			LimparConexoesHeavyAttack()
+			heavyAttackState.animacao = nil
+			heavyAttackState.aguardandoSoltar = false
+			heavyAttackState.earlyCancelExecutado = false
+			heavyAttackState.tempoInicio = 0
+
+			-- Atualiza estado local
+			estadoAtual.estadoAcao = "Nenhuma"
+
+			-- Registra cooldown
+			defenseCancelState.ultimoCancelamento = agora
+
+			-- Marca que há um cancel pendente (não atualiza animação ainda)
+			-- O EntradaJogador vai decidir se deve voltar ao Idle ou ir para defesa
+			defenseCancelState.cancelPendente = true
+
+			return true, "CarregandoPesado"
+		end
+	end
+
+	return false, nil
+end
+
+--- Resolve o cancel pendente - volta para animação de movimento (Idle)
+--- Chamado pelo EntradaJogador quando o jogador solta M2 sem defender
+function _G.ResolverCancelPendente()
+	if defenseCancelState.cancelPendente then
+		defenseCancelState.cancelPendente = false
+		DebugPrint("[ControladorEstado] Cancel pendente resolvido - voltando ao Idle")
+		AtualizarAnimacaoMovimento()
+	end
+end
+
+--- Cancela o cancel pendente - não volta ao Idle pois vai defender
+--- Chamado pelo EntradaJogador quando o jogador vai iniciar defesa
+function _G.CancelarCancelPendente()
+	if defenseCancelState.cancelPendente then
+		defenseCancelState.cancelPendente = false
+		DebugPrint("[ControladorEstado] Cancel pendente cancelado - indo para defesa")
+		-- Não chama AtualizarAnimacaoMovimento(), a animação de defesa vai tomar conta
+	end
 end
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -983,6 +1391,7 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 		comboState.janelaAtiva = false
 		comboState.indiceAtual = 1
 		comboState.continuarCombo = false
+		comboState.tempoInicio = tick() -- Marca início para defense cancel
 
 		ConfigurarMarkersCombo(track)
 
@@ -992,6 +1401,20 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 				nomeAnimacao :: string,
 				velocidade
 			)
+		)
+		return
+	end
+
+	-- Verifica se é animação de ataque pesado para configurar markers
+	local ehAtaquePesado = nomeAnimacao and nomeAnimacao == "AtaquePesado"
+
+	if ehAtaquePesado then
+		-- Configura sistema de ataque pesado por marcadores
+		heavyAttackState.tempoInicio = tick() -- Marca início para defense cancel
+		ConfigurarMarkersHeavyAttack(track)
+
+		DebugPrint(
+			string.format("[ControladorEstado] Animação de ataque pesado iniciada (velocidade %.1f)", velocidade)
 		)
 	end
 end
@@ -1420,7 +1843,7 @@ end
 -- Conecta listener de StateChanged
 humanoid.StateChanged:Connect(OnStateChanged)
 
--- ═══════════════════════════════════════════════════════════════════
+-- ═══════════════════════════════��═══════════════════════════════════
 -- INPUT LOCAL - LEFTSHIFT PARA CORRIDA
 -- ═══════════════════════════════════════════════════════════════════
 
@@ -1630,7 +2053,7 @@ end)
 
 -- ═══════════════════════════════════════════════════════════════════
 -- INICIALIZAÇÃO
--- ═══════════════════════════════════════════════════════════════════
+-- ════════════════�������══════════════════════════════════════════════════
 
 -- Pré-carrega todas as animações ao iniciar
 PreCarregarAnimacoes()

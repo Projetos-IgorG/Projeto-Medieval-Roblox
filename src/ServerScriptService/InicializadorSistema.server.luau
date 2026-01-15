@@ -89,6 +89,8 @@ CriarRemoto(Remotos, "MudarShiftLock", "Event")
 CriarRemoto(Remotos, "SincronizarEstado", "Event")
 CriarRemoto(Remotos, "TocarAnimacao", "Event")
 CriarRemoto(Remotos, "EquipAnimacaoTerminou", "Event")
+CriarRemoto(Remotos, "AcaoAnimacaoTerminou", "Event") -- Notifica quando animação de AÇÃO (ataque, etc) termina
+CriarRemoto(Remotos, "AcaoRejeitada", "Event") -- Notifica cliente quando uma ação foi rejeitada (motivo)
 
 -- BindableEvents: server-side apenas
 CriarBindable(Bindables, "SpawnNPC", "Event")
@@ -200,8 +202,8 @@ DebugPrint("[InicializadorSistema] Listener ShiftLock conectado")
 
 -- Aguarda que o InicializadorSistema tenha criado os Remotos
 local Combate = ServerScriptService:WaitForChild("Combate")
-local GerenciadorNPC = require(Combate:WaitForChild("GerenciadorNPC"))
-local ControladorCombate = require(Combate:WaitForChild("ControladorCombate"))
+local _GerenciadorNPC = require(Combate:WaitForChild("GerenciadorNPC"))
+local _ControladorCombate = require(Combate:WaitForChild("ControladorCombate"))
 
 DebugPrint("[InicializadorSistema] Módulos de combate carregados")
 

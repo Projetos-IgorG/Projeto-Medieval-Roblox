@@ -138,6 +138,9 @@ function MaquinaDeEstados.Novo(entidade: Model)
 		shiftLock = false,
 		correndo = false,
 		indiceCombo = 0,
+		-- Map of last attack timestamps per attack type (e.g. AtaqueLeve, AtaquePesado)
+		ultimoAtaqueTipos = {},
+		-- legacy field (kept for compatibility but not used for cooldown checks)
 		ultimoAtaque = 0,
 		ultimoParry = 0,
 		parryToken = 0,
@@ -369,16 +372,19 @@ function MaquinaDeEstados:TenteAtacarLeveEmPe(): (boolean, string?, string?)
 		end
 	end
 
-	-- Novo ataque - verifica cooldown
+	-- Novo ataque - verifica cooldown (por tipo: AtaqueLeve)
 	local ataque = ArmasTemplate.ObterAtaque(self.dados.modoAnimacao, "AtaqueLeve")
-	if ataque and self.dados.ultimoAtaque > 0 then
+	local ultimoLeve = self.dados.ultimoAtaqueTipos and self.dados.ultimoAtaqueTipos["AtaqueLeve"] or 0
+	if ataque and ultimoLeve > 0 then
 		local cooldown = ataque.tempoRecarga or 0.5
-		if (agora - self.dados.ultimoAtaque) < cooldown then
+		if (agora - ultimoLeve) < cooldown then
 			return false, nil, "Cooldown"
 		end
 	end
 
 	-- Inicia novo combo
+	self.dados.ultimoAtaqueTipos["AtaqueLeve"] = agora
+	-- For backward compatibility
 	self.dados.ultimoAtaque = agora
 	self.dados.indiceCombo = 1
 	self.dados.janelaComboAtiva = false
@@ -448,11 +454,12 @@ function MaquinaDeEstados:TenteCarregarPesado(): (boolean, string?)
 		return false, "SemCombate"
 	end
 
-	-- Verifica cooldown do ataque pesado
+	-- Verifica cooldown do ataque pesado (por tipo: AtaquePesado)
 	local ataque = ArmasTemplate.ObterAtaque(self.dados.modoAnimacao, "AtaquePesado")
 	if ataque then
 		local agora = tick()
-		if (agora - self.dados.ultimoAtaque) < ataque.tempoRecarga then
+		local ultimoPesado = self.dados.ultimoAtaqueTipos and self.dados.ultimoAtaqueTipos["AtaquePesado"] or 0
+		if ultimoPesado > 0 and (agora - ultimoPesado) < ataque.tempoRecarga then
 			return false, "Cooldown"
 		end
 	end
@@ -472,7 +479,11 @@ function MaquinaDeEstados:TenteSoltarPesado(): (boolean, string?)
 		return false, "NaoCarregando"
 	end
 
-	self.dados.ultimoAtaque = tick()
+	local agora = tick()
+	-- Marca cooldown específico para ataque pesado
+	self.dados.ultimoAtaqueTipos["AtaquePesado"] = agora
+	-- Backwards compatibility
+	self.dados.ultimoAtaque = agora
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.AtaquePesado)
 	return true, nil
 end
@@ -896,7 +907,11 @@ function MaquinaDeEstados:AvancarGolpeCombo(indiceGolpe: number)
 	end
 
 	self.dados.indiceCombo = indiceGolpe
-	self.dados.ultimoAtaque = tick() -- Atualiza timestamp do último ataque
+	local agora = tick()
+	-- Atualiza timestamp apenas para AtaqueLeve (combo)
+	self.dados.ultimoAtaqueTipos["AtaqueLeve"] = agora
+	-- Backwards compatibility
+	self.dados.ultimoAtaque = agora -- Atualiza valor legado para código externo que ainda o utiliza
 
 	DebugPrint(string.format("[MaquinaDeEstados] %s: Golpe %d executado", self.entidade.Name, indiceGolpe))
 end
