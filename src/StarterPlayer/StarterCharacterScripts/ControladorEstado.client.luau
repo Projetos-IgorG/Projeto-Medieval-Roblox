@@ -106,9 +106,6 @@ local movementFlags = {
 -- Flag global para saber se Shift está sendo segurado (independente de estado)
 local isShiftHeld = false
 
--- Controle de pulo
-local jumpHoldUntil = 0
-
 -- Cache de animações
 local animacoesCarregadas = {}
 local animacaoAtualMov = nil
@@ -134,6 +131,19 @@ local ANIMACOES_COM_DIRECAO = {
 	Andando = true,
 	Correndo = true,
 	AndandoAgachado = true,
+}
+
+-- Animações que NÃO devem loopar (tocam uma vez e param)
+local ANIMACOES_SEM_LOOP = {
+	Pulando = true,
+	-- Caindo é loop pois não sabemos quanto tempo vai durar a queda
+}
+
+-- Estado da animação de pulo (para controlar transição para Caindo)
+local jumpAnimState = {
+	animacao = nil, -- AnimationTrack da animação de pulo
+	conexaoTermino = nil, -- Conexão ao Stopped para detectar término
+	aguardandoTermino = false, -- Se estamos aguardando a animação terminar
 }
 
 -- Forward declaration de funções usadas antes de serem definidas
@@ -1193,6 +1203,38 @@ local function PararAnimacaoAcao()
 	end
 end
 
+--- Limpa estado da animação de pulo
+local function LimparJumpAnimState()
+	if jumpAnimState.conexaoTermino then
+		jumpAnimState.conexaoTermino:Disconnect()
+		jumpAnimState.conexaoTermino = nil
+	end
+	jumpAnimState.animacao = nil
+	jumpAnimState.aguardandoTermino = false
+end
+
+--- Callback quando animação de pulo termina
+local function OnJumpAnimacaoTerminou()
+	DebugPrint("[ControladorEstado] Animação de Pulando terminou completamente")
+
+	-- Limpa estado do pulo
+	LimparJumpAnimState()
+
+	-- Só transita para Caindo se ainda está no ar
+	if movementFlags.isJumping or movementFlags.isFalling then
+		-- Marca que agora está caindo (animação de pulo terminou)
+		movementFlags.isJumping = false
+		movementFlags.isFalling = true
+		estadoAtual.estadoMov = "Caindo"
+		-- Notifica o servidor para atualizar o estado autoritativo também
+		pcall(function()
+			TentarAcao:FireServer("SincronizarMovimento", "Caindo")
+		end)
+		AtualizarAnimacaoMovimento()
+		DebugPrint("[ControladorEstado] Transitando para Caindo após animação de pulo")
+	end
+end
+
 --- Toca animação de movimento
 ---@param nomeAnimacao string Nome da animação
 ---@param velocidadeBase number? Velocidade base (será multiplicada pela direção se aplicável)
@@ -1211,10 +1253,18 @@ local function TocarAnimacaoMov(nomeAnimacao: string, velocidadeBase: number?)
 	local usaDirecao = ANIMACOES_COM_DIRECAO[nomeAnimacao] == true
 	local velocidade = velocidadeBase or 1
 
+	-- Verifica se esta animação deve loopar ou não
+	local deveLoop = not ANIMACOES_SEM_LOOP[nomeAnimacao]
+
 	-- Cancela timer de parada se existir (estamos retomando)
 	if timerPararAnimacao then
 		pcall(task.cancel, timerPararAnimacao)
 		timerPararAnimacao = nil
+	end
+
+	-- Se estamos tocando uma animação diferente de Pulando, limpa estado do pulo
+	if nomeAnimacao ~= "Pulando" then
+		LimparJumpAnimState()
 	end
 
 	-- Verifica se é a mesma animação que estava pausada ou tocando
@@ -1246,7 +1296,7 @@ local function TocarAnimacaoMov(nomeAnimacao: string, velocidadeBase: number?)
 	-- Se não tinha animação ou era diferente, inicia nova
 	if not animacaoAtualMov or not animacaoAtualMov.IsPlaying then
 		track.Priority = Enum.AnimationPriority.Core
-		track.Looped = true
+		track.Looped = deveLoop
 		track:Play(TIMINGS.MoveFadeIn)
 
 		-- Aplica velocidade inicial imediatamente com direção preservada
@@ -1262,6 +1312,15 @@ local function TocarAnimacaoMov(nomeAnimacao: string, velocidadeBase: number?)
 		else
 			track:AdjustSpeed(velocidade)
 			velocidadeAnimacaoAtual = velocidade
+		end
+
+		-- Se é animação de pulo, configura callback de término
+		if nomeAnimacao == "Pulando" then
+			LimparJumpAnimState() -- Limpa estado anterior se houver
+			jumpAnimState.animacao = track
+			jumpAnimState.aguardandoTermino = true
+			jumpAnimState.conexaoTermino = track.Stopped:Connect(OnJumpAnimacaoTerminou)
+			DebugPrint("[ControladorEstado] Animação de Pulando iniciada (sem loop, aguardando término)")
 		end
 	end
 
@@ -1655,8 +1714,6 @@ local function AtualizarEstadoMovimento()
 
 	-- Prioridade 3: No ar (pulo/queda)
 	if movementFlags.isJumping or movementFlags.isFalling then
-		local velocidadeY = hrp.AssemblyLinearVelocity.Y
-
 		-- Verifica se está em ação de combate que impede correr
 		local emCombate = (
 			estadoAtual.estadoAcao == "AtacandoLeve"
@@ -1678,13 +1735,17 @@ local function AtualizarEstadoMovimento()
 		end
 
 		-- Decidir entre Pulando e Caindo (se não está correndo no ar)
-		local agora = tick()
-		if movementFlags.isFalling or (movementFlags.isJumping and velocidadeY <= -1 and agora >= jumpHoldUntil) then
+		-- IMPORTANTE: Só muda para Caindo quando a animação de Pulando terminar completamente
+		-- OU se isFalling foi setado diretamente (queda sem pulo)
+		if movementFlags.isFalling then
+			-- Está caindo (seja após pulo ou queda direta)
 			if estadoAtual.estadoMov ~= "Caindo" then
 				estadoAtual.estadoMov = "Caindo"
 				AtualizarAnimacaoMovimento()
 			end
-		else
+		elseif movementFlags.isJumping then
+			-- Ainda está na fase de pulo - mantém animação de Pulando
+			-- A transição para Caindo será feita quando a animação terminar (OnJumpAnimacaoTerminou)
 			if estadoAtual.estadoMov ~= "Pulando" then
 				estadoAtual.estadoMov = "Pulando"
 				AtualizarAnimacaoMovimento()
@@ -1742,8 +1803,8 @@ end
 -- DETECÇÃO DE QUEDA POR MATERIAL (AIR)
 -- ═══════════════════════════════════════════════════════════════════
 
---- Verifica material do chão após animação de pulo
-local function VerificarMaterialQueda()
+--- Verifica material do chão após animação de pulo (reservado para uso futuro)
+local function _VerificarMaterialQueda()
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	if not hrp then
 		return
@@ -1775,15 +1836,14 @@ end
 
 --- Listener para mudanças de estado do Humanoid
 local function OnStateChanged(oldState, newState)
-	-- Atualiza flags baseado no novo estado
+	-- Atualiza flags de estados especiais
 	movementFlags.isClimbing = (newState == Enum.HumanoidStateType.Climbing)
 	movementFlags.isSwimming = (newState == Enum.HumanoidStateType.Swimming)
-	movementFlags.isJumping = (newState == Enum.HumanoidStateType.Jumping)
-	movementFlags.isFalling = (newState == Enum.HumanoidStateType.Freefall)
 
-	-- Configura hold de pulo
-	if movementFlags.isJumping then
-		jumpHoldUntil = tick() + TIMINGS.JumpHold
+	-- Trata estado de pulo
+	if newState == Enum.HumanoidStateType.Jumping then
+		movementFlags.isJumping = true
+		movementFlags.isFalling = false
 
 		-- Se estava correndo, mantém a animação de corrida com velocidade reduzida
 		if movementFlags.isRunning and animacaoAtualMov then
@@ -1791,11 +1851,23 @@ local function OnStateChanged(oldState, newState)
 			estadoAtual.estadoMov = "Correndo"
 			return -- Não chama AtualizarEstadoMovimento
 		end
+		-- A transição para Caindo será controlada pelo callback OnJumpAnimacaoTerminou
+		-- quando a animação de Pulando terminar completamente
+	end
 
-		-- Agenda verificação de material após animação de pulo
-		task.delay(TIMINGS.JumpHold + 0.05, function()
-			VerificarMaterialQueda()
-		end)
+	-- Trata estado de queda (Freefall)
+	if newState == Enum.HumanoidStateType.Freefall then
+		-- Se está aguardando a animação de pulo terminar, ignora completamente
+		-- O callback OnJumpAnimacaoTerminou cuidará da transição quando a animação terminar
+		if jumpAnimState.aguardandoTermino then
+			-- Não faz nada - mantém isJumping = true, isFalling = false
+			-- Não chama AtualizarEstadoMovimento
+			return
+		else
+			-- Queda direta (sem pulo ou após animação de pulo terminar)
+			movementFlags.isJumping = false
+			movementFlags.isFalling = true
+		end
 	end
 
 	-- Se aterrissou (Running, Landed, GettingUp), reseta flags de ar
@@ -1809,6 +1881,9 @@ local function OnStateChanged(oldState, newState)
 		if humanoid.FloorMaterial ~= Enum.Material.Air then
 			movementFlags.isJumping = false
 			movementFlags.isFalling = false
+
+			-- Limpa estado da animação de pulo (pode ter aterrissado antes de terminar)
+			LimparJumpAnimState()
 
 			-- Se está correndo, mantém Correndo e restaura velocidade normal
 			if movementFlags.isRunning then
@@ -2024,7 +2099,9 @@ player.CharacterAdded:Connect(function(novoCharacter)
 		isClimbing = false,
 		isSwimming = false,
 	}
-	jumpHoldUntil = 0
+
+	-- Limpa estado da animação de pulo
+	LimparJumpAnimState()
 
 	-- Reseta sistema de direção reversa
 	direcaoAtual = 1
