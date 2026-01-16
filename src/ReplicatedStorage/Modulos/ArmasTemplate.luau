@@ -49,10 +49,10 @@ ArmasTemplate.ConfiguracaoGlobal = {
 
 	-- Janela de Cancelamento por Defesa (Defense Cancel)
 	-- Permite cancelar um ataque ao iniciar bloqueio nos primeiros X segundos
-	JanelaCancelamentoAtaquePorDefesa = 0.27, -- Janela no início do ataque leve
-	JanelaCancelamentoCarregamentoPorDefesa = 0.8, -- Janela no início do carregamento pesado
+	JanelaCancelamentoAtaquePorDefesa = 0.3, -- Janela no início do ataque leve
+	JanelaCancelamentoCarregamentoPorDefesa = 0.9, -- Janela no início do carregamento pesado
 	CooldownCancelamentoPorDefesa = 1.0, -- Cooldown entre cancelamentos
-	TempoSegurandoM2ParaDefesa = 0.08, -- Tempo que deve segurar M2 após cancelar para iniciar defesa
+	TempoSegurandoM2ParaDefesa = 0.13, -- Tempo que deve segurar M2 após cancelar para iniciar defesa
 
 	-- Cooldowns por ação
 	CooldownComboLeve = 0.5,
