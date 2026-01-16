@@ -966,6 +966,11 @@ end
 -- Expõe a função para EntradaJogador.client.lua usar
 _G.CalcularDirecaoDash = CalcularDirecaoDashLocal
 
+--- Verifica se o personagem está fazendo dash
+function _G.EstaEmDash()
+	return movementFlags.isDashing
+end
+
 --- Inicia aplicação de impulso sustentado durante o dash
 --- A direção é recalculada a cada frame baseado na orientação atual do personagem
 local function IniciarImpulsoDash(direcao: string)

@@ -32,7 +32,6 @@ end
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local StarterGui = game:GetService("StarterGui")
 local _ContextActionService = game:GetService("ContextActionService") -- Reservado para uso futuro
 
 local player = Players.LocalPlayer
@@ -40,6 +39,10 @@ local player = Players.LocalPlayer
 -- ═══════════════════════════════════════════════════════════════════
 -- REMOTE EVENTS
 -- ═══════════════════════════════════════════════════════════════════
+
+-- Referência ao GUI customizado
+local PlayerGui = player:WaitForChild("PlayerGui")
+local CustomInventoryGUI = PlayerGui:WaitForChild("Custom Inventory", 10) -- Aguarda até 10 segundos
 
 local Remotos = ReplicatedStorage:WaitForChild("Remotos")
 local TentarAcao = Remotos:WaitForChild("TentarAcao")
@@ -129,6 +132,11 @@ local toolAtualEquipado = nil -- Tool que está efetivamente equipado (modo ativ
 local toolEmAnimacao = nil -- Tool cuja animação está tocando
 local toolAlvo = nil -- Tool que queremos ter no final (nil = Base)
 
+--- Verifica se há animação de equip/desequip em andamento
+function _G.EstaEmAnimacaoEquip()
+	return estadoEquip ~= "idle"
+end
+
 -- ═══════════════════════════════════════════════════════════════════
 -- FUNÇÕES BASE
 -- ═══════════════════════════════════════════════════════════════════
@@ -161,15 +169,35 @@ local ProcessarProximaAcao
 local TIMEOUT_ACAO = 0.3 -- segundos
 local ultimoIdAcao = 0
 
---- Atualiza o estado da backpack (habilita/desabilita)
---- Bloqueia a backpack durante animações de equip/desequip
+--- Atualiza o estado do Inventory customizado (habilita/desabilita)
+--- Esconde Inventory e HotBar durante animações de equip/desequip
+--- Ao retornar ao idle, mostra apenas HotBar (Inventory permanece oculto)
 local function AtualizarBackpack()
 	local bloqueado = estadoEquip ~= "idle"
 	local success, result = pcall(function()
-		StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, not bloqueado)
+		if CustomInventoryGUI then
+			local inventory = CustomInventoryGUI:FindFirstChild("Inventory")
+			local hotbar = CustomInventoryGUI:FindFirstChild("hotBar")
+
+			if bloqueado then
+				-- Durante animação: esconde ambos
+				if inventory then
+					inventory.Visible = false
+				end
+				if hotbar then
+					hotbar.Visible = false
+				end
+			else
+				-- Fora de animação: mostra apenas HotBar
+				if hotbar then
+					hotbar.Visible = true
+				end
+				-- Inventory permanece com sua visibilidade atual (não força mostrar)
+			end
+		end
 	end)
 	if not success then
-		DebugWarn("[EntradaJogador] Falha ao atualizar estado da mochila:", result)
+		DebugWarn("[EntradaJogador] Falha ao atualizar estado do inventário customizado:", result)
 	end
 end
 
@@ -632,6 +660,12 @@ end
 --- Processa dash
 --- Calcula a direção baseado no MoveDirection do humanoid em relação ao LookVector
 local function ProcessarDash()
+	-- Bloqueia dash se há animação de equip em andamento
+	if _G.EstaEmAnimacaoEquip and _G.EstaEmAnimacaoEquip() then
+		DebugPrint("[EntradaJogador] Dash bloqueado: Animação de equipamento em andamento")
+		return
+	end
+
 	-- Usa a função global para calcular direção (definida em ControladorEstado)
 	local direcao = "Frente"
 	if _G.CalcularDirecaoDash then
