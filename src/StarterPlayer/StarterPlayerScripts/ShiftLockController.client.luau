@@ -26,6 +26,16 @@ local CONFIG = {
 	DefaultZoomOut = 10, -- Zoom ao sair da 1ª pessoa via Ctrl
 	FP_Threshold = 1.5, -- Distância para considerar modo FPS
 	HeadHideLimit = 0.6, -- Zoom mínimo onde a cabeça some
+	DeadZoneSnapDelay = 0.2, -- Tempo em segundos na zona morta antes do snap (200ms)
+	SnapTransitionTime = 0.25, -- Tempo da transição suave do snap
+	-- Movement offsets & FOV
+	WalkOffset = Vector3.new(0, -0.1, -0.3), -- Pequeno deslocamento ao andar
+	RunOffset = Vector3.new(0, -0.2, -0.4), -- Deslocamento extra ao correr
+	WalkFOV = 72, -- FOV ao andar (se desejar)
+	RunFOV = 77, -- FOV ao correr
+	DefaultFOV = 70, -- Valor base de FOV (padrão)
+	FOVTransitionTime = 0.3, -- Tempo de transição do FOV
+	RunSpeedThreshold = 18, -- Velocidade acima da qual é considerado corrida
 }
 
 local TWEEN_INFO = TweenInfo.new(CONFIG.TransitionTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -44,6 +54,14 @@ local isActive = false
 local isFirstPersonMode = false
 local isSwimming = false
 local isCrouching = false
+local isSnappingToFP = false -- Flag para evitar snap repetitivo
+local deadZoneEntryTime = nil -- Timestamp de entrada na zona morta
+local currentZoomTween = nil -- Tween do zoom suave
+local isMoving = false
+local isRunning = false
+local currentFOVTween = nil
+local lastFOV = nil
+local defaultFOV = nil
 local lastSentState = nil
 local currentOffsetTween = nil
 local lastTargetOffset = Vector3.zero
@@ -266,6 +284,46 @@ local function updateState()
 
 	local camDist = (camera.CFrame.Position - camera.Focus.Position).Magnitude
 	local nowInFirstPerson = camDist < CONFIG.FP_Threshold
+	local inDeadZone = nowInFirstPerson and camDist > CONFIG.HeadHideLimit
+
+	-- SNAP PARA PRIMEIRA PESSOA: Evita zona morta entre HeadHideLimit e FP_Threshold
+	-- Funciona com ou sem ShiftLock, usando janela de tempo para evitar snaps acidentais
+	if inDeadZone and not isSnappingToFP then
+		local now = tick()
+
+		if deadZoneEntryTime == nil then
+			-- Primeira vez entrando na zona morta
+			deadZoneEntryTime = now
+		elseif (now - deadZoneEntryTime) >= CONFIG.DeadZoneSnapDelay then
+			-- Ficou tempo suficiente na zona morta, executa snap suave
+			isSnappingToFP = true
+			deadZoneEntryTime = nil
+
+			-- Cancela tween anterior se existir
+			if currentZoomTween then
+				currentZoomTween:Cancel()
+			end
+
+			-- Transição suave do zoom usando tween
+			local snapTweenInfo =
+				TweenInfo.new(CONFIG.SnapTransitionTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+			currentZoomTween = TweenService:Create(plr, snapTweenInfo, {
+				CameraMinZoomDistance = CONFIG.ZoomRangeOn.Min,
+				CameraMaxZoomDistance = CONFIG.ZoomRangeOn.Min,
+			})
+			currentZoomTween:Play()
+
+			-- Restaura o range após a transição completar
+			currentZoomTween.Completed:Once(function()
+				local maxZoom = (isActive or isFirstPersonMode) and CONFIG.ZoomRangeOn.Max or CONFIG.ZoomRangeOff.Max
+				plr.CameraMaxZoomDistance = maxZoom
+				isSnappingToFP = false
+			end)
+		end
+	else
+		-- Saiu da zona morta, reseta o timer
+		deadZoneEntryTime = nil
+	end
 
 	if nowInFirstPerson ~= isFirstPersonMode then
 		isFirstPersonMode = nowInFirstPerson
@@ -295,10 +353,45 @@ local function updateState()
 		targetOffset = targetOffset + CONFIG.OffsetCrouch
 	end
 
+	-- Aplica deslocamento por movimento (andar / correr)
+	local movementOffset = Vector3.zero
+	if isRunning then
+		movementOffset = CONFIG.RunOffset
+	elseif isMoving then
+		movementOffset = CONFIG.WalkOffset
+	end
+	targetOffset = targetOffset + movementOffset
+
 	-- Tween do offset apenas se mudou (Evita recriar tweens todo frame)
 	if targetOffset ~= lastTargetOffset then
 		lastTargetOffset = targetOffset
 		tweenOffset(targetOffset)
+	end
+
+	-- GERA TRANSIÇÃO SUAVE DO FOV CONFORME MOVIMENTO
+	local targetFOV = defaultFOV or CONFIG.DefaultFOV
+	if isRunning then
+		targetFOV = CONFIG.RunFOV
+	elseif isMoving then
+		targetFOV = CONFIG.WalkFOV
+	end
+
+	if lastFOV == nil then
+		lastFOV = camera.FieldOfView or defaultFOV
+	end
+
+	if math.abs((targetFOV or 0) - (lastFOV or 0)) > 0.01 then
+		-- cria tween somente se mudou
+		if currentFOVTween then
+			currentFOVTween:Cancel()
+		end
+		local fovTweenInfo = TweenInfo.new(CONFIG.FOVTransitionTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		currentFOVTween = TweenService:Create(camera, fovTweenInfo, { FieldOfView = targetFOV })
+		currentFOVTween:Play()
+		lastFOV = targetFOV
+		currentFOVTween.Completed:Once(function()
+			currentFOVTween = nil
+		end)
 	end
 
 	-- Gerencia limites de zoom e suaviza a transição (Especialmente quando longe)
@@ -330,6 +423,17 @@ local function onCharacterAdded(char)
 	if hrp and hum then
 		characterComponents.HRP = hrp
 		characterComponents.Humanoid = hum
+
+		-- Guarda FOV padrão ao spawnar
+		defaultFOV = camera.FieldOfView or CONFIG.DefaultFOV
+		lastFOV = defaultFOV
+
+		-- Detecta movimento (Walking/Running) via evento Running
+		hum.Running:Connect(function(speed)
+			isMoving = (speed > 0.5)
+			isRunning = (speed >= CONFIG.RunSpeedThreshold)
+			-- não cria tweens direto aqui; updateState vai aplicar offsets/FOV suavemente
+		end)
 
 		-- Detecta mudanças de estado do Humanoid (incluindo natação)
 		hum.StateChanged:Connect(function(oldState, newState)
@@ -375,6 +479,19 @@ local function onCharacterRemoving()
 	characterComponents = {}
 	isSwimming = false
 	isCrouching = false
+	isSnappingToFP = false
+	deadZoneEntryTime = nil
+	if currentZoomTween then
+		currentZoomTween:Cancel()
+		currentZoomTween = nil
+	end
+	if currentFOVTween then
+		currentFOVTween:Cancel()
+		currentFOVTween = nil
+	end
+	isMoving = false
+	isRunning = false
+	lastFOV = nil
 	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 end
 
