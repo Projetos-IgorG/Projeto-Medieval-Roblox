@@ -272,6 +272,12 @@ function module:addTool(tool: Tool, parent: string, position: number)
 	object.Parent = parent
 	object.Position = position
 	object.Name = tool.Name
+
+	-- Prevent Roblox built-in drop (Backspace) from affecting tools managed by this inventory.
+	-- We handle dropping manually via the custom UI/controls.
+	if tool:IsA("Tool") then
+		tool.CanBeDropped = false
+	end
 	self.OBJECTS[parent][position == nil and frame.Name or position] = object
 	local function manageTool(_, inputState, inputObject)
 		if

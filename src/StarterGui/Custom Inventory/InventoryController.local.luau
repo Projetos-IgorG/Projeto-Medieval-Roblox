@@ -152,6 +152,75 @@ local function getToolEquipped()
 	return character and character:FindFirstChildOfClass("Tool")
 end
 
+-- Use ContextActionService to capture Backspace and block the default Roblox drop action.
+-- This ensures the engine's drop won't race with our custom logic.
+local function handlePartialDrop(actionName, inputState, inputObject)
+	if inputState ~= Enum.UserInputState.Begin then
+		return Enum.ContextActionResult.Sink
+	end
+
+	local tool = getToolEquipped()
+	if not tool then
+		return Enum.ContextActionResult.Sink
+	end
+
+	if not tool.CanBeDropped then
+		-- If CanBeDropped is false, still allow our custom drop behavior
+	end
+
+	local toolObject = inventoryHandler:getObjectFromTool(tool)
+	local amount = tool:GetAttribute("amount") or 1
+
+	if amount > 1 then
+		tool:SetAttribute("amount", amount - 1)
+
+		local dropClone = tool:Clone()
+		dropClone:SetAttribute("amount", 1)
+
+		local character = player.Character
+		local hrp = character and character:FindFirstChild("HumanoidRootPart")
+		local dropPos = hrp and (hrp.Position + (camera.CFrame.LookVector * 3) + Vector3.new(0, 2, 0))
+			or (camera.CFrame.Position + camera.CFrame.LookVector * 3)
+
+		-- Parent first so physics and descendants exist in the world
+		dropClone.Parent = workspace
+
+		-- Ensure all BaseParts are physical (not anchored) and collide, to behave like a real dropped tool
+		for _, desc in pairs(dropClone:GetDescendants()) do
+			if desc:IsA("BasePart") then
+				desc.Anchored = false
+				desc.CanCollide = true
+			end
+		end
+
+		local handle = dropClone:FindFirstChild("Handle", true)
+		if handle and handle:IsA("BasePart") then
+			-- Position handle and give a small forward + upward velocity to avoid tunneling
+			handle.CFrame = CFrame.new(dropPos)
+			-- small impulse to move it forward
+			if pcall(function()
+				return handle.AssemblyLinearVelocity
+			end) then
+				handle.AssemblyLinearVelocity = camera.CFrame.LookVector * 18 + Vector3.new(0, 6, 0)
+			else
+				-- fallback: try ApplyImpulse if available
+				if pcall(function()
+					return handle.ApplyImpulse
+				end) then
+					handle:ApplyImpulse(camera.CFrame.LookVector * 18 + Vector3.new(0, 6, 0))
+				end
+			end
+		end
+	else
+		-- Drop full tool
+		tool.Parent = workspace
+	end
+
+	return Enum.ContextActionResult.Sink
+end
+
+ContextActionService:BindAction("PartialDrop", handlePartialDrop, false, Enum.KeyCode.Backspace)
+
 UserInputService.InputChanged:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseWheel and inventoryHandler.SETTINGS.SCROLL_HOTBAR_WITH_WHEEL then
 		local direction = input.Position.Z
