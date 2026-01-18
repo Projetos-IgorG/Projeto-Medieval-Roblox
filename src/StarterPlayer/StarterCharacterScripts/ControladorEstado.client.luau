@@ -125,14 +125,14 @@ AtualizarVelocidadeLocal = function()
 		or estadoAtual.estadoAcao == "CarregandoPesado"
 		or estadoAtual.estadoAcao == "AtaquePesado"
 	)
-	
+
 	if emCombate then
 		-- Velocidade de ataque: VelocidadeBloqueando * 1.5
 		local velBloq = cfg.VelocidadeBloqueando or 8
 		humanoid.WalkSpeed = velBloq * 1.5
 		return
 	end
-	
+
 	-- Se está defendendo, usa velocidade de defesa
 	if estadoAtual.estadoAcao == "Defendendo" or estadoAtual.bloqueando then
 		humanoid.WalkSpeed = cfg.VelocidadeBloqueando or 8
@@ -562,20 +562,20 @@ local function OnHeavyAttackTerminou()
 	heavyAttackState.animacao = nil
 	heavyAttackState.aguardandoSoltar = false
 	heavyAttackState.earlyCancelExecutado = false
-	
+
 	-- Atualiza estado local
 	estadoAtual.estadoAcao = "Nenhuma"
-	
+
 	-- Se o jogador está segurando Shift, volta a correr LOCALMENTE
 	if isShiftHeld then
 		movementFlags.isRunning = true
 		estadoAtual.estadoMov = "Correndo"
 		estadoAtual.correndo = true
 	end
-	
+
 	-- Atualiza velocidade ao sair de combate (client-side)
 	AtualizarVelocidadeLocal()
-	
+
 	AtualizarAnimacaoMovimento()
 
 	-- Notifica o servidor que a animação de ação terminou (para completar estado e resetar velocidade)
