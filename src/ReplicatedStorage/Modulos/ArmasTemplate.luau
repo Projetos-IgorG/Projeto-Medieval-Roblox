@@ -45,7 +45,7 @@ ArmasTemplate.ConfiguracaoGlobal = {
 	-- Permite mudar estado para Normal antes da animação terminar completamente
 	-- O valor é em segundos ANTES do fim da animação
 	JanelaCancelamentoComboFinal = 0.6, -- Quanto tempo antes do fim do último golpe leve
-	JanelaCancelamentoAtaquePesado = 0.6, -- Quanto tempo antes do fim do ataque pesado
+	JanelaCancelamentoAtaquePesado = 0.5, -- Quanto tempo antes do fim do ataque pesado
 
 	-- Janela de Cancelamento por Defesa (Defense Cancel)
 	-- Permite cancelar um ataque ao iniciar bloqueio nos primeiros X segundos
