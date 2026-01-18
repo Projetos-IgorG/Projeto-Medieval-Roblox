@@ -528,8 +528,9 @@ end
 function ControladorCombate.ProcessarHeavyAttackEarlyCancel(entidade: Model)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
-	-- Completa a ação se ainda está em ataque pesado
-	if maquina:ObterEstadoAcao() == "AtaquePesado" then
+	-- Completa a ação se ainda está em ataque pesado (SoltandoPesado ou AtaquePesado)
+	local estadoAcao = maquina:ObterEstadoAcao()
+	if estadoAcao == "SoltandoPesado" or estadoAcao == "AtaquePesado" then
 		maquina:CompletarAcao()
 
 		-- Resetar velocidade para normal
@@ -559,7 +560,10 @@ function ControladorCombate.ProcessarCancelarAtaquePorDefesa(entidade: Model, ti
 	local podeCancel = false
 	if tipoAtaque == "AtaqueLeve" and estadoAcao == "AtacandoLeve" then
 		podeCancel = true
-	elseif tipoAtaque == "CarregandoPesado" and (estadoAcao == "CarregandoPesado" or estadoAcao == "AtaquePesado") then
+	elseif
+		tipoAtaque == "CarregandoPesado"
+		and (estadoAcao == "CarregandoPesado" or estadoAcao == "SoltandoPesado" or estadoAcao == "AtaquePesado")
+	then
 		podeCancel = true
 	end
 
@@ -666,6 +670,9 @@ function ControladorCombate.ProcessarSoltarPesado(entidade: Model)
 	-- A animação continua de onde parou, apenas com velocidade diferente
 	ControladorCombate._AplicarImpulsoAtacante(entidade, "AtaquePesado")
 
+	-- Sincroniza estado para notificar cliente que mudou para SoltandoPesado
+	ControladorCombate._SincronizarEstado(entidade)
+
 	-- Hitbox será criada pelo marcador HeavyAttack na animação
 	-- O cliente notifica o servidor via TentarAcao quando o marcador é atingido
 
@@ -673,16 +680,41 @@ function ControladorCombate.ProcessarSoltarPesado(entidade: Model)
 end
 
 --- Processa hitbox do ataque pesado (chamado pelo cliente quando o marcador HeavyAttack é atingido)
+--- Transiciona de SoltandoPesado para AtaquePesado e cria o hitbox
 function ControladorCombate.ProcessarHeavyAttackHitbox(entidade: Model)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
-	-- Verifica se está no estado correto (AtaquePesado)
-	if maquina.dados.estadoAcao ~= "AtaquePesado" then
-		DebugPrint(string.format("[Combate] %s: HeavyAttackHitbox FALHOU - não está em AtaquePesado", entidade.Name))
+	-- Verifica se está no estado correto (SoltandoPesado - M1 foi solto, mas ataque ainda não aconteceu)
+	if maquina.dados.estadoAcao ~= "SoltandoPesado" then
+		DebugPrint(
+			string.format(
+				"[Combate] %s: HeavyAttackHitbox FALHOU - não está em SoltandoPesado (está em %s)",
+				entidade.Name,
+				maquina.dados.estadoAcao
+			)
+		)
 		return false, "EstadoInvalido"
 	end
 
-	DebugPrint(string.format("[Combate] %s: HeavyAttackHitbox - criando hitbox", entidade.Name))
+	-- Transiciona para AtaquePesado (momento real do ataque)
+	local sucesso, motivo = maquina:TenteExecutarPesado()
+	if not sucesso then
+		DebugPrint(
+			string.format(
+				"[Combate] %s: HeavyAttackHitbox FALHOU - TenteExecutarPesado: %s",
+				entidade.Name,
+				motivo or "?"
+			)
+		)
+		return false, motivo
+	end
+
+	DebugPrint(
+		string.format("[Combate] %s: HeavyAttackHitbox - estado mudou para AtaquePesado, criando hitbox", entidade.Name)
+	)
+
+	-- Sincroniza estado para notificar cliente que mudou para AtaquePesado
+	ControladorCombate._SincronizarEstado(entidade)
 
 	-- Cria hitbox e processa hits
 	local alvos = ControladorCombate._CriarHitbox(entidade, "AtaquePesado")
@@ -1256,10 +1288,11 @@ AcaoAnimacaoTerminou.OnServerEvent:Connect(function(player, nomeAcao)
 	end
 
 	local estadoAcao = maquina:ObterEstadoAcao()
-	-- Se estiver em um estado de ataque ou carregando, completa a ação
+	-- Se estiver em um estado de ataque ou carregando/soltando, completa a ação
 	if
 		estadoAcao == MaquinaDeEstados.EstadoAcao.AtacandoLeve
 		or estadoAcao == MaquinaDeEstados.EstadoAcao.CarregandoPesado
+		or estadoAcao == MaquinaDeEstados.EstadoAcao.SoltandoPesado
 		or estadoAcao == MaquinaDeEstados.EstadoAcao.AtaquePesado
 	then
 		DebugPrint(

@@ -123,6 +123,7 @@ AtualizarVelocidadeLocal = function()
 	local emCombate = (
 		estadoAtual.estadoAcao == "AtacandoLeve"
 		or estadoAtual.estadoAcao == "CarregandoPesado"
+		or estadoAtual.estadoAcao == "SoltandoPesado"
 		or estadoAtual.estadoAcao == "AtaquePesado"
 	)
 
@@ -1577,6 +1578,7 @@ AtualizarAnimacaoMovimento = function()
 		local emAtacando = (
 			estadoAtual.estadoAcao == "AtacandoLeve"
 			or estadoAtual.estadoAcao == "CarregandoPesado"
+			or estadoAtual.estadoAcao == "SoltandoPesado"
 			or estadoAtual.estadoAcao == "AtaquePesado"
 		)
 
@@ -1658,6 +1660,7 @@ local function ProcessarSincronizacao(entidade: Model, dados)
 	if
 		estadoAtual.estadoAcao == "AtacandoLeve"
 		or estadoAtual.estadoAcao == "CarregandoPesado"
+		or estadoAtual.estadoAcao == "SoltandoPesado"
 		or estadoAtual.estadoAcao == "AtaquePesado"
 		or estadoAtual.estadoAcao == "Defendendo"
 	then
@@ -1686,12 +1689,16 @@ local function ProcessarSincronizacao(entidade: Model, dados)
 		end
 	end
 
-	-- Se terminou uma ação de ataque (AtacandoLeve / CarregandoPesado / AtaquePesado)
+	-- Se terminou uma ação de ataque (AtacandoLeve / CarregandoPesado / SoltandoPesado / AtaquePesado)
 	-- e o jogador está segurando Shift, restaura corrida LOCALMENTE.
 	-- NÃO envia para servidor - corrida é 100% client-side
 	if
-		(acaoAnterior == "AtacandoLeve" or acaoAnterior == "CarregandoPesado" or acaoAnterior == "AtaquePesado")
-		and estadoAtual.estadoAcao == "Nenhuma"
+		(
+			acaoAnterior == "AtacandoLeve"
+			or acaoAnterior == "CarregandoPesado"
+			or acaoAnterior == "SoltandoPesado"
+			or acaoAnterior == "AtaquePesado"
+		) and estadoAtual.estadoAcao == "Nenhuma"
 	then
 		if isShiftHeld then
 			movementFlags.isRunning = true -- Restaura flag local
@@ -1792,6 +1799,7 @@ local function AtualizarEstadoMovimento()
 		local emCombate = (
 			estadoAtual.estadoAcao == "AtacandoLeve"
 			or estadoAtual.estadoAcao == "CarregandoPesado"
+			or estadoAtual.estadoAcao == "SoltandoPesado"
 			or estadoAtual.estadoAcao == "AtaquePesado"
 			or estadoAtual.estadoAcao == "Defendendo"
 		)
@@ -1836,6 +1844,7 @@ local function AtualizarEstadoMovimento()
 	local emCombate = (
 		estadoAtual.estadoAcao == "AtacandoLeve"
 		or estadoAtual.estadoAcao == "CarregandoPesado"
+		or estadoAtual.estadoAcao == "SoltandoPesado"
 		or estadoAtual.estadoAcao == "AtaquePesado"
 		or estadoAtual.estadoAcao == "Defendendo"
 	)
@@ -1863,6 +1872,7 @@ local function AtualizarEstadoMovimento()
 			emCombate = (
 				estadoAtual.estadoAcao == "AtacandoLeve"
 				or estadoAtual.estadoAcao == "CarregandoPesado"
+				or estadoAtual.estadoAcao == "SoltandoPesado"
 				or estadoAtual.estadoAcao == "AtaquePesado"
 				or estadoAtual.estadoAcao == "Defendendo"
 			)
@@ -1967,6 +1977,7 @@ local function OnStateChanged(oldState, newState)
 					local emCombate = (
 						estadoAtual.estadoAcao == "AtacandoLeve"
 						or estadoAtual.estadoAcao == "CarregandoPesado"
+						or estadoAtual.estadoAcao == "SoltandoPesado"
 						or estadoAtual.estadoAcao == "AtaquePesado"
 						or estadoAtual.estadoAcao == "Defendendo"
 					)

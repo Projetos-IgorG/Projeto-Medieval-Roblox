@@ -8,8 +8,13 @@
     - Parado, Andando, Correndo, Pulando, Caindo, Escalando, Nadando, Agachado
     
     Estados de Ação (estadoAcao):
-    - Nenhuma, AtacandoLeve, CarregandoPesado, AtaquePesado, Defendendo,
+    - Nenhuma, AtacandoLeve, CarregandoPesado, SoltandoPesado, AtaquePesado, Defendendo,
       DefesaQuebrada, Aparando, Aparado, Stunado, Equipando, Desequipando, Morto
+    
+    Fluxo Ataque Pesado:
+    - CarregandoPesado: M1 sendo segurado, animação pausada no AttackRelease
+    - SoltandoPesado: M1 solto, animação continua até marcador HeavyAttack
+    - AtaquePesado: Marcador HeavyAttack atingido, hitbox criada
     
     Funções seguem o padrão "Tente[Ação]" retornando sucesso/falha.
 ]]
@@ -49,7 +54,8 @@ MaquinaDeEstados.EstadoAcao = {
 	Nenhuma = "Nenhuma",
 	AtacandoLeve = "AtacandoLeve",
 	CarregandoPesado = "CarregandoPesado",
-	AtaquePesado = "AtaquePesado",
+	SoltandoPesado = "SoltandoPesado", -- M1 solto, animação continua até marcador HeavyAttack
+	AtaquePesado = "AtaquePesado", -- Marcador HeavyAttack atingido, hitbox criada
 	Defendendo = "Defendendo",
 	DefesaQuebrada = "DefesaQuebrada",
 	Aparando = "Aparando",
@@ -264,10 +270,11 @@ function MaquinaDeEstados:TentePular(): (boolean, string?)
 		return false, "Bloqueando"
 	end
 
-	-- Não pode pular enquanto ataca (leve, pesado, carregando)
+	-- Não pode pular enquanto ataca (leve, pesado, carregando, soltando)
 	if
 		self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.AtacandoLeve
 		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.CarregandoPesado
+		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.SoltandoPesado
 		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.AtaquePesado
 		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Defendendo
 	then
@@ -479,8 +486,23 @@ function MaquinaDeEstados:TenteSoltarPesado(): (boolean, string?)
 		return false, "NaoCarregando"
 	end
 
+	-- NÃO marca cooldown aqui - será marcado quando o ataque realmente acontecer (TenteExecutarPesado)
+	-- Muda para SoltandoPesado (estado intermediário até o marcador HeavyAttack)
+	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.SoltandoPesado)
+	return true, nil
+end
+
+--- Tenta executar o ataque pesado (chamado quando o marcador HeavyAttack é atingido)
+--- Muda de SoltandoPesado para AtaquePesado e marca o cooldown
+---@return boolean sucesso
+---@return string? motivo
+function MaquinaDeEstados:TenteExecutarPesado(): (boolean, string?)
+	if self.dados.estadoAcao ~= MaquinaDeEstados.EstadoAcao.SoltandoPesado then
+		return false, "NaoSoltando"
+	end
+
 	local agora = tick()
-	-- Marca cooldown específico para ataque pesado
+	-- Marca cooldown específico para ataque pesado AGORA (quando o ataque realmente acontece)
 	self.dados.ultimoAtaqueTipos["AtaquePesado"] = agora
 	-- Backwards compatibility
 	self.dados.ultimoAtaque = agora
@@ -654,6 +676,7 @@ function MaquinaDeEstados:TenteCorrer(): (boolean, string?)
 	if
 		self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.AtacandoLeve
 		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.CarregandoPesado
+		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.SoltandoPesado
 		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.AtaquePesado
 		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Defendendo
 	then
