@@ -123,26 +123,27 @@ function ControladorCombate._SincronizarEstado(entidade: Model)
 		)
 	)
 
-	-- Ajusta WalkSpeed no servidor quando a ação terminou (estadoAcao == "Nenhuma").
-	-- Se havia um pedido de correr enquanto ação estava em andamento, aplica-o agora.
+	-- NOTA: WalkSpeed de corrida agora é controlado 100% pelo cliente para evitar lag
+	-- O servidor só ajusta WalkSpeed durante ações de combate específicas
+	-- Quando estadoAcao == "Nenhuma", o cliente controla a velocidade baseado em isShiftHeld
 	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		local cfg = ArmasTemplate.ConfiguracaoGlobal
 		if dados.estadoAcao == "Nenhuma" then
-			-- Se cliente pediu para correr durante a ação, aplica corrida agora
+			-- Se cliente pediu para correr durante a ação, mantém a flag
+			-- mas NÃO ajusta velocidade - o cliente faz isso localmente
 			if maquina.dados.correndoIntent then
 				maquina.dados.correndoIntent = nil
 				maquina.dados.correndo = true
-				humanoid.WalkSpeed = cfg.VelocidadeCorrendo or 25
-			elseif dados.agachado then
+				-- NÃO ajusta WalkSpeed aqui - cliente controla corrida
+			end
+			-- Para agachado/bloqueando, ainda ajustamos pois são estados do servidor
+			if dados.agachado then
 				humanoid.WalkSpeed = cfg.VelocidadeAgachado or 12
-			elseif dados.correndo then
-				humanoid.WalkSpeed = cfg.VelocidadeCorrendo or 25
 			elseif dados.bloqueando then
 				humanoid.WalkSpeed = cfg.VelocidadeBloqueando or 8
-			else
-				humanoid.WalkSpeed = cfg.VelocidadeNormal or 16
 			end
+			-- Corrida normal é controlada pelo cliente
 		end
 	end
 
@@ -774,11 +775,9 @@ function ControladorCombate.ProcessarPararBloqueio(entidade: Model)
 		end
 	end
 
-	-- Restaura velocidade
-	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		humanoid.WalkSpeed = ArmasTemplate.ConfiguracaoGlobal.VelocidadeNormal
-	end
+	-- NOTA: Velocidade não é mais ajustada aqui
+	-- O cliente controla velocidade ao sair de defesa via AtualizarVelocidadeLocal()
+	-- Isso permite restaurar corrida se Shift estiver pressionado
 
 	-- Sincroniza estado (client irá parar animação de defesa)
 	ControladorCombate._SincronizarEstado(entidade)
@@ -995,11 +994,9 @@ function ControladorCombate.ProcessarCorrer(entidade: Model)
 
 	DebugPrint(string.format("[Combate] %s: Correr OK", entidade.Name))
 
-	-- Aumenta velocidade usando config
-	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		humanoid.WalkSpeed = ArmasTemplate.ConfiguracaoGlobal.VelocidadeCorrendo or 25
-	end
+	-- NOTA: WalkSpeed não é mais ajustado aqui
+	-- Corrida é 100% client-side para evitar lag e spam de requests
+	-- O cliente ajusta WalkSpeed localmente via AtualizarVelocidadeLocal()
 
 	ControladorCombate._SincronizarEstado(entidade)
 	return true
@@ -1013,17 +1010,14 @@ function ControladorCombate.ProcessarPararCorrer(entidade: Model)
 
 	DebugPrint(string.format("[Combate] %s: PararCorrer OK", entidade.Name))
 
-	-- Restaura velocidade usando config
+	-- NOTA: WalkSpeed não é mais ajustado aqui
+	-- Corrida é 100% client-side para evitar lag e spam de requests
+	-- O cliente ajusta WalkSpeed localmente via AtualizarVelocidadeLocal()
+
+	-- Limpamos qualquer pedido enfileirado de corrida
 	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 	if humanoid then
-		-- Limpamos qualquer pedido enfileirado de corrida
 		maquina.dados.correndoIntent = nil
-
-		if maquina.dados.bloqueando then
-			humanoid.WalkSpeed = ArmasTemplate.ConfiguracaoGlobal.VelocidadeBloqueando or 8
-		else
-			humanoid.WalkSpeed = ArmasTemplate.ConfiguracaoGlobal.VelocidadeNormal or 16
-		end
 	end
 
 	ControladorCombate._SincronizarEstado(entidade)

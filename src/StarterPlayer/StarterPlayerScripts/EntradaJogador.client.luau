@@ -73,6 +73,9 @@ local Configuracao = {
 	-- Cooldowns
 	CooldownDefesa = 0.5, -- Cooldown de 0.5 segundos para defesa
 
+	-- Debounce para evitar spam de requests
+	DebounceAcao = 0.05, -- Tempo mínimo entre ações iguais
+
 	-- Teclas
 	TeclaAgachar = Enum.KeyCode.C,
 	TeclaCorrer = Enum.KeyCode.LeftShift,
@@ -95,6 +98,32 @@ local estadoInput = {
 	carregandoPesado = false,
 	ataqueLevePendente = false,
 }
+
+-- ═══════════════════════════════════════════════════════════════════
+-- SISTEMA DE DEBOUNCE PARA EVITAR SPAM DE REQUESTS
+-- ═══════════════════════════════════════════════════════════════════
+
+local ultimasAcoes = {} -- Tabela com o tempo da última vez que cada ação foi enviada
+
+--- Verifica se pode enviar uma ação (debounce)
+--- Retorna true se passou tempo suficiente desde a última vez
+local function PodeEnviarAcao(nomeAcao: string): boolean
+	local agora = tick()
+	local ultimaVez = ultimasAcoes[nomeAcao] or 0
+	if (agora - ultimaVez) < Configuracao.DebounceAcao then
+		return false
+	end
+	ultimasAcoes[nomeAcao] = agora
+	return true
+end
+
+--- Envia ação para o servidor COM debounce
+--- Evita enviar a mesma ação múltiplas vezes em sequência rápida
+local function EnviarAcaoComDebounce(acao: string, dados: any?)
+	if PodeEnviarAcao(acao) then
+		TentarAcao:FireServer(acao, dados)
+	end
+end
 
 -- ═══════════════════════════════════════════════════════════════════
 -- FUNÇÕES GLOBAIS PARA VERIFICAÇÃO DE INPUT
@@ -521,18 +550,18 @@ end
 --- Processa agachar
 local function ProcessarAgacharPressionado()
 	estadoInput.agachadoAtivo = true
-	EnviarAcao("Agachar")
+	EnviarAcaoComDebounce("Agachar")
 end
 
 --- Processa levantar
 local function ProcessarAgacharSolto()
 	estadoInput.agachadoAtivo = false
-	EnviarAcao("Levantar")
+	EnviarAcaoComDebounce("Levantar")
 end
 
 --- Processa quebrar defesa
 local function ProcessarQuebrarDefesa()
-	EnviarAcao("QuebrarDefesa")
+	EnviarAcaoComDebounce("QuebrarDefesa")
 end
 
 --- Processa quando um Tool é equipado
@@ -702,12 +731,10 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if estadoInput.agachadoAtivo then
 			estadoInput.agachadoAtivo = false
 			EnviarAcao("Levantar")
-			task.delay(0.05, function()
-				EnviarAcao("Correr")
-			end)
-		else
-			EnviarAcao("Correr")
+			-- Corrida é tratada localmente pelo ControladorEstado via isShiftHeld
 		end
+		-- NÃO envia para servidor - corrida é 100% client-side
+		-- O ControladorEstado detecta isShiftHeld e ajusta animação/velocidade localmente
 		return
 	end
 
@@ -747,10 +774,8 @@ UserInputService.InputEnded:Connect(function(input, gameProcessed)
 	-- Teclado
 	if input.KeyCode == Configuracao.TeclaCorrer then
 		estadoInput.correndoAtivo = false
-		-- Evita enviar PararCorrer se ainda estivermos agachados (isso pode resetar animação de agachar)
-		if not estadoInput.agachadoAtivo then
-			EnviarAcao("PararCorrer")
-		end
+		-- NÃO envia para servidor - corrida é 100% client-side
+		-- O ControladorEstado detecta isShiftHeld e ajusta animação/velocidade localmente
 		return
 	end
 

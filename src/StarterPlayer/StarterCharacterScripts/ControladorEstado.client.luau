@@ -106,6 +106,49 @@ local movementFlags = {
 -- Flag global para saber se Shift está sendo segurado (independente de estado)
 local isShiftHeld = false
 
+-- ═══════════════════════════════════════════════════════════════════
+-- SISTEMA DE VELOCIDADE CLIENT-SIDE
+-- A corrida é 100% client-side para evitar lag e spam de requests
+-- ═══════════════════════════════════════════════════════════════════
+
+-- Forward declaration
+local AtualizarVelocidadeLocal
+
+--- Atualiza a velocidade de movimento localmente baseado no estado atual
+--- Chamada sempre que o estado muda (correndo, parado, etc)
+AtualizarVelocidadeLocal = function()
+	local cfg = ArmasTemplate.ConfiguracaoGlobal
+
+	-- Se está em ação de combate, usa velocidade de combate
+	local emCombate = (
+		estadoAtual.estadoAcao == "AtacandoLeve"
+		or estadoAtual.estadoAcao == "CarregandoPesado"
+		or estadoAtual.estadoAcao == "AtaquePesado"
+	)
+	
+	if emCombate then
+		-- Velocidade de ataque: VelocidadeBloqueando * 1.5
+		local velBloq = cfg.VelocidadeBloqueando or 8
+		humanoid.WalkSpeed = velBloq * 1.5
+		return
+	end
+	
+	-- Se está defendendo, usa velocidade de defesa
+	if estadoAtual.estadoAcao == "Defendendo" or estadoAtual.bloqueando then
+		humanoid.WalkSpeed = cfg.VelocidadeBloqueando or 8
+		return
+	end
+
+	-- Determina velocidade baseado no estado de corrida (client-side)
+	if estadoAtual.agachado then
+		humanoid.WalkSpeed = cfg.VelocidadeAgachado or 12
+	elseif movementFlags.isRunning then
+		humanoid.WalkSpeed = cfg.VelocidadeCorrendo or 25
+	else
+		humanoid.WalkSpeed = cfg.VelocidadeNormal or 16
+	end
+end
+
 -- Cache de animações
 local animacoesCarregadas = {}
 local animacaoAtualMov = nil
@@ -229,13 +272,16 @@ local function OnComboAnimacaoTerminou()
 	-- Notifica servidor que combo terminou
 	TentarAcao:FireServer("ComboTerminou")
 
-	-- Se o jogador está segurando Shift, volta a correr
+	-- Se o jogador está segurando Shift, volta a correr LOCALMENTE
+	-- Não envia para servidor - corrida é 100% client-side
 	if isShiftHeld then
 		movementFlags.isRunning = true
-		TentarAcao:FireServer("Correr")
 		estadoAtual.estadoMov = "Correndo"
 		estadoAtual.correndo = true
 	end
+
+	-- Atualiza velocidade ao sair de combate (client-side)
+	AtualizarVelocidadeLocal()
 
 	-- Volta para animação de movimento
 	AtualizarAnimacaoMovimento()
@@ -370,13 +416,16 @@ local function OnMarkerAtaque(indiceGolpe: string)
 						-- Notifica servidor para mudar estado antecipadamente
 						TentarAcao:FireServer("ComboEarlyCancel")
 
-						-- Se o jogador está segurando Shift, volta a correr
+						-- Se o jogador está segurando Shift, volta a correr LOCALMENTE
+						-- Não envia para servidor - corrida é 100% client-side
 						if isShiftHeld then
 							movementFlags.isRunning = true
-							TentarAcao:FireServer("Correr")
 							estadoAtual.estadoMov = "Correndo"
 							estadoAtual.correndo = true
 						end
+
+						-- Atualiza velocidade ao sair de combate (client-side)
+						AtualizarVelocidadeLocal()
 
 						-- Atualiza animação de movimento (a animação de combo vai terminar naturalmente em background)
 						AtualizarAnimacaoMovimento()
@@ -513,6 +562,20 @@ local function OnHeavyAttackTerminou()
 	heavyAttackState.animacao = nil
 	heavyAttackState.aguardandoSoltar = false
 	heavyAttackState.earlyCancelExecutado = false
+	
+	-- Atualiza estado local
+	estadoAtual.estadoAcao = "Nenhuma"
+	
+	-- Se o jogador está segurando Shift, volta a correr LOCALMENTE
+	if isShiftHeld then
+		movementFlags.isRunning = true
+		estadoAtual.estadoMov = "Correndo"
+		estadoAtual.correndo = true
+	end
+	
+	-- Atualiza velocidade ao sair de combate (client-side)
+	AtualizarVelocidadeLocal()
+	
 	AtualizarAnimacaoMovimento()
 
 	-- Notifica o servidor que a animação de ação terminou (para completar estado e resetar velocidade)
@@ -592,13 +655,16 @@ local function OnMarkerHeavyAttack()
 					-- Notifica servidor para mudar estado antecipadamente
 					TentarAcao:FireServer("HeavyAttackEarlyCancel")
 
-					-- Se o jogador está segurando Shift, volta a correr
+					-- Se o jogador está segurando Shift, volta a correr LOCALMENTE
+					-- Não envia para servidor - corrida é 100% client-side
 					if isShiftHeld then
 						movementFlags.isRunning = true
-						TentarAcao:FireServer("Correr")
 						estadoAtual.estadoMov = "Correndo"
 						estadoAtual.correndo = true
 					end
+
+					-- Atualiza velocidade ao sair de combate (client-side)
+					AtualizarVelocidadeLocal()
 
 					-- Atualiza animação de movimento (a animação de ataque pesado vai terminar naturalmente em background)
 					AtualizarAnimacaoMovimento()
@@ -1597,6 +1663,10 @@ local function ProcessarSincronizacao(entidade: Model, dados)
 	then
 		-- Não precisamos mais salvar runIntentDuringAction pois usamos isShiftHeld
 		movementFlags.isRunning = false
+		-- Atualiza velocidade para velocidade de combate (client-side)
+		AtualizarVelocidadeLocal()
+		-- Atualiza animação de movimento para refletir que não está mais correndo
+		AtualizarAnimacaoMovimento()
 	end
 
 	-- Se estadoAcao mudou para "Nenhuma", para animação de ação
@@ -1617,19 +1687,21 @@ local function ProcessarSincronizacao(entidade: Model, dados)
 	end
 
 	-- Se terminou uma ação de ataque (AtacandoLeve / CarregandoPesado / AtaquePesado)
-	-- e o jogador está segurando Shift, solicitar correr ao servidor.
+	-- e o jogador está segurando Shift, restaura corrida LOCALMENTE.
+	-- NÃO envia para servidor - corrida é 100% client-side
 	if
 		(acaoAnterior == "AtacandoLeve" or acaoAnterior == "CarregandoPesado" or acaoAnterior == "AtaquePesado")
 		and estadoAtual.estadoAcao == "Nenhuma"
 	then
 		if isShiftHeld then
 			movementFlags.isRunning = true -- Restaura flag local
-			TentarAcao:FireServer("Correr")
 			-- Forçar localmente estado de corrida para responsividade
 			estadoAtual.estadoMov = "Correndo"
 			estadoAtual.correndo = true
-			AtualizarAnimacaoMovimento()
 		end
+		-- Sempre atualiza velocidade ao sair de combate (seja correndo ou não)
+		AtualizarVelocidadeLocal()
+		AtualizarAnimacaoMovimento()
 	end
 
 	-- NÃO atualiza animação de movimento se está correndo no ar (evita flick)
@@ -1642,16 +1714,18 @@ local function ProcessarSincronizacao(entidade: Model, dados)
 	-- Atualiza animação de movimento
 	AtualizarAnimacaoMovimento()
 
-	-- Se saiu de Defendendo e o jogador ainda está segurando Shift, pedir para correr
+	-- Se saiu de Defendendo e o jogador ainda está segurando Shift, restaura corrida LOCALMENTE
+	-- NÃO envia para servidor - corrida é 100% client-side
 	if acaoAnterior == "Defendendo" and estadoAtual.estadoAcao == "Nenhuma" then
 		if isShiftHeld then
 			movementFlags.isRunning = true -- Restaura flag local
-			TentarAcao:FireServer("Correr")
 			-- Forçar localmente estado de corrida para responsividade
 			estadoAtual.estadoMov = "Correndo"
 			estadoAtual.correndo = true
-			AtualizarAnimacaoMovimento()
 		end
+		-- Sempre atualiza velocidade ao sair de defesa (seja correndo ou não)
+		AtualizarVelocidadeLocal()
+		AtualizarAnimacaoMovimento()
 	end
 end
 
@@ -1901,8 +1975,8 @@ local function OnStateChanged(oldState, newState)
 					end
 				end
 				-- Sincroniza com servidor sem mudar para Parado
+				-- NÃO envia Correr para servidor - corrida é 100% client-side
 				TentarAcao:FireServer("SincronizarMovimento", "Correndo")
-				TentarAcao:FireServer("Correr")
 				return -- Não chama AtualizarEstadoMovimento
 			end
 
@@ -1935,6 +2009,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if input.KeyCode == Enum.KeyCode.LeftShift then
 		movementFlags.isRunning = true
 		isShiftHeld = true
+		AtualizarVelocidadeLocal() -- Atualiza velocidade imediatamente (client-side)
 		AtualizarEstadoMovimento()
 	end
 end)
@@ -1943,6 +2018,7 @@ UserInputService.InputEnded:Connect(function(input, gameProcessed)
 	if input.KeyCode == Enum.KeyCode.LeftShift then
 		movementFlags.isRunning = false
 		isShiftHeld = false
+		AtualizarVelocidadeLocal() -- Atualiza velocidade imediatamente (client-side)
 		AtualizarEstadoMovimento()
 	end
 end)
