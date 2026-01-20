@@ -31,8 +31,8 @@ local CONFIG = {
 	-- Movement offsets & FOV
 	WalkOffset = Vector3.new(0, -0.1, -0.3), -- Pequeno deslocamento ao andar
 	RunOffset = Vector3.new(0, -0.2, -0.4), -- Deslocamento extra ao correr
-	WalkFOV = 72, -- FOV ao andar (se desejar)
-	RunFOV = 77, -- FOV ao correr
+	WalkFOV = 70, -- FOV ao andar (se desejar)
+	RunFOV = 78, -- FOV ao correr
 	DefaultFOV = 70, -- Valor base de FOV (padrão)
 	FOVTransitionTime = 0.3, -- Tempo de transição do FOV
 	RunSpeedThreshold = 18, -- Velocidade acima da qual é considerado corrida
