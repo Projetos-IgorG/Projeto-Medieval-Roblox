@@ -60,14 +60,13 @@ ArmasTemplate.ConfiguracaoGlobal = {
 	CooldownBloqueio = 0.5,
 
 	-- Velocidades de movimento
-	VelocidadeNormal = 16,
-	VelocidadeCorrendo = 25,
-	VelocidadeBloqueando = 8,
-	VelocidadeDefesaQuebrada = 3,
-	VelocidadeAgachado = 12,
-	VelocidadeAparado = 3,
-	VelocidadeEscalando = 12,
-
+	VelocidadeNormal = 13, -- Velocidade padrão: 16
+	VelocidadeCorrendo = 21, -- Velocidade ao correr, padrão: 25
+	VelocidadeBloqueando = 8, -- Velocidade ao bloquear, padrão: 8
+	VelocidadeDefesaQuebrada = 3, -- Velocidade com defesa quebrada, padrão: 3
+	VelocidadeAgachado = 10, -- Velocidade agachado, padrão: 12
+	VelocidadeAparado = 3, -- Velocidade ao ser aparado, padrão: 3
+	VelocidadeEscalando = 12, -- Velocidade ao escalar, padrão: 12
 	-- Dash/Roll
 	CooldownDash = 1.5, -- Cooldown entre dashes (segundos)
 	ForcaDash = 45, -- Força do impulso sustentado
