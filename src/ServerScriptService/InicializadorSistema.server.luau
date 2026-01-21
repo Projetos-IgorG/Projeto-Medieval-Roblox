@@ -89,8 +89,9 @@ CriarRemoto(Remotos, "MudarShiftLock", "Event")
 CriarRemoto(Remotos, "SincronizarEstado", "Event")
 CriarRemoto(Remotos, "TocarAnimacao", "Event")
 CriarRemoto(Remotos, "EquipAnimacaoTerminou", "Event")
-CriarRemoto(Remotos, "AcaoAnimacaoTerminou", "Event") -- Notifica quando animação de AÇÃO (ataque, etc) termina
-CriarRemoto(Remotos, "AcaoRejeitada", "Event") -- Notifica cliente quando uma ação foi rejeitada (motivo)
+CriarRemoto(Remotos, "AcaoAnimacaoTerminou", "Event")
+CriarRemoto(Remotos, "AcaoRejeitada", "Event")
+CriarRemoto(Remotos, "ArrastarItem", "Event") -- Sistema de arrastar itens
 
 -- BindableEvents: server-side apenas
 CriarBindable(Bindables, "SpawnNPC", "Event")
