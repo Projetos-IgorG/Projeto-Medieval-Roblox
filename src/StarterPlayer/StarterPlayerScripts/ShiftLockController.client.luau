@@ -31,9 +31,9 @@ local CONFIG = {
 	-- Movement offsets & FOV
 	WalkOffset = Vector3.new(0, -0.1, -0.3), -- Pequeno deslocamento ao andar
 	RunOffset = Vector3.new(0, -0.2, -0.4), -- Deslocamento extra ao correr
-	WalkFOV = 70, -- FOV ao andar (se desejar)
-	RunFOV = 78, -- FOV ao correr
-	DefaultFOV = 70, -- Valor base de FOV (padrão)
+	WalkFOV = 78, -- FOV ao andar (se desejar)
+	RunFOV = 86, -- FOV ao correr
+	DefaultFOV = 78, -- Valor base de FOV (padrão)
 	FOVTransitionTime = 0.3, -- Tempo de transição do FOV
 	RunSpeedThreshold = 18, -- Velocidade acima da qual é considerado corrida
 }
@@ -425,8 +425,9 @@ local function onCharacterAdded(char)
 		characterComponents.Humanoid = hum
 
 		-- Guarda FOV padrão ao spawnar
-		defaultFOV = camera.FieldOfView or CONFIG.DefaultFOV
-		lastFOV = defaultFOV
+		-- Guarda FOV padrão ao spawnar: use o valor configurado (CONFIG.DefaultFOV)
+		defaultFOV = CONFIG.DefaultFOV
+		lastFOV = camera.FieldOfView or defaultFOV
 
 		-- Detecta movimento (Walking/Running) via evento Running
 		hum.Running:Connect(function(speed)
