@@ -39,17 +39,17 @@ local CONFIG = {
 	DISTANCIA_MAXIMA = 12,
 
 	-- Distância que o item fica do jogador enquanto arrasta
-	DISTANCIA_SEGURAR = 6,
+	DISTANCIA_SEGURAR = 5,
 
 	-- Velocidade máxima de movimento do item (studs/segundo)
 	-- Se o jogador andar mais rápido que isso, o item não consegue acompanhar
 	VELOCIDADE_MAXIMA_ITEM = 14,
-	
+
 	-- Distância em que o item começa a "perder" o jogador e cair
 	-- Quando a distância real > DISTANCIA_SEGURAR, o item tenta alcançar
 	-- Quando a distância real > DISTANCIA_SOLTAR, o item é solto
-	DISTANCIA_SOLTAR = 15,
-	
+	DISTANCIA_SOLTAR = 13,
+
 	-- Velocidade de "catch up" quando o item está atrasado (studs/segundo)
 	-- Menor que VELOCIDADE_MAXIMA_ITEM para que o jogador possa escapar
 	VELOCIDADE_CATCHUP = 12,
@@ -63,12 +63,12 @@ local CONFIG = {
 	-- Configurações de peso/gravidade
 	-- Força gravitacional extra por unidade de peso (acima de 1.0)
 	GRAVIDADE_POR_PESO = 3.5,
-	
+
 	-- Offset vertical máximo causado pela gravidade do peso
 	OFFSET_GRAVIDADE_MAXIMO = 4.0,
-	
+
 	-- Quão rápido o item "cede" à gravidade (suavização)
-	SUAVIZACAO_GRAVIDADE = 0.08,
+	SUAVIZACAO_GRAVIDADE = 0.05,
 
 	-- Nome da ação para ContextActionService (mobile)
 	NOME_ACAO_ARRASTAR = "ArrastarItem",
@@ -112,10 +112,10 @@ local estado = {
 
 	-- Posição atual do item (controlada manualmente para velocidade fixa)
 	posicaoAtualItem = nil :: Vector3?,
-	
+
 	-- Offset de gravidade atual (suavizado)
 	offsetGravidadeAtual = 0 :: number,
-	
+
 	-- Peso do objeto atual
 	pesoAtual = 1.0 :: number,
 }
@@ -278,7 +278,7 @@ end
 local function CriarConstraints(partePrincipal: BasePart, peso: number)
 	-- Limpa constraints anteriores
 	LimparConstraints()
-	
+
 	-- Guarda o peso atual
 	estado.pesoAtual = peso
 
@@ -304,7 +304,7 @@ local function CriarConstraints(partePrincipal: BasePart, peso: number)
 
 	alignPosition.Parent = partePrincipal
 	estado.alignPosition = alignPosition
-	
+
 	-- Cria VectorForce para aplicar gravidade extra baseada no peso
 	-- Isso faz objetos pesados "penderem" para baixo naturalmente
 	if peso > 1.0 then
@@ -313,16 +313,16 @@ local function CriarConstraints(partePrincipal: BasePart, peso: number)
 		vectorForce.Attachment0 = attachment
 		vectorForce.ApplyAtCenterOfMass = true
 		vectorForce.RelativeTo = Enum.ActuatorRelativeTo.World
-		
+
 		-- Força gravitacional extra proporcional ao peso acima de 1.0
 		-- Multiplicamos pela massa para ter efeito consistente
 		local massaTotal = partePrincipal.AssemblyMass
 		local forcaGravidade = (peso - 1.0) * CONFIG.GRAVIDADE_POR_PESO * massaTotal * workspace.Gravity * 0.1
 		vectorForce.Force = Vector3.new(0, -forcaGravidade, 0)
-		
+
 		vectorForce.Parent = partePrincipal
 		estado.vectorForce = vectorForce
-		
+
 		DebugPrint("Gravidade extra aplicada - Peso:", peso, "Força:", forcaGravidade)
 	end
 
@@ -339,7 +339,7 @@ function LimparConstraints()
 		estado.alignPosition:Destroy()
 		estado.alignPosition = nil
 	end
-	
+
 	if estado.vectorForce then
 		estado.vectorForce:Destroy()
 		estado.vectorForce = nil
@@ -514,7 +514,7 @@ local function PararArrasto()
 			-- Objetos pesados são muito mais difíceis de jogar pra cima
 			velocidade = Vector3.new(velocidade.X, velocidade.Y / (peso * peso), velocidade.Z)
 		end
-		
+
 		-- Objetos pesados também perdem velocidade horizontal
 		if peso > 1.0 then
 			local reducaoHorizontal = 1.0 / math.sqrt(peso)
@@ -560,19 +560,19 @@ local function AtualizarArrasto(deltaTime: number)
 		PararArrasto()
 		return
 	end
-	
+
 	local hrp = ObterHRP()
 	if not hrp then
 		PararArrasto()
 		return
 	end
-	
+
 	-- Posição atual real do item
 	local posicaoRealItem = partePrincipal.Position
-	
+
 	-- Calcula distância do jogador ao item
 	local distanciaDoJogador = (posicaoRealItem - hrp.Position).Magnitude
-	
+
 	-- Se o item está muito longe, solta
 	if distanciaDoJogador > CONFIG.DISTANCIA_SOLTAR then
 		DebugPrint("Item muito longe, soltando. Distância:", distanciaDoJogador)
@@ -582,7 +582,7 @@ local function AtualizarArrasto(deltaTime: number)
 
 	-- Calcula posição alvo (onde o jogador quer que o item esteja)
 	local posicaoAlvoBase = CalcularPosicaoAlvo()
-	
+
 	-- Calcula offset de gravidade baseado no peso
 	-- Objetos pesados "pendem" para baixo naturalmente
 	local peso = estado.pesoAtual
@@ -591,27 +591,28 @@ local function AtualizarArrasto(deltaTime: number)
 		-- Quanto mais pesado, mais o objeto pende
 		offsetGravidadeAlvo = math.min((peso - 1.0) * CONFIG.GRAVIDADE_POR_PESO * 0.3, CONFIG.OFFSET_GRAVIDADE_MAXIMO)
 	end
-	
+
 	-- Suaviza o offset de gravidade para movimento natural
-	estado.offsetGravidadeAtual = estado.offsetGravidadeAtual + (offsetGravidadeAlvo - estado.offsetGravidadeAtual) * CONFIG.SUAVIZACAO_GRAVIDADE
-	
+	estado.offsetGravidadeAtual = estado.offsetGravidadeAtual
+		+ (offsetGravidadeAlvo - estado.offsetGravidadeAtual) * CONFIG.SUAVIZACAO_GRAVIDADE
+
 	-- Aplica o offset de gravidade na posição alvo
 	local posicaoAlvoComGravidade = posicaoAlvoBase - Vector3.new(0, estado.offsetGravidadeAtual, 0)
-	
+
 	-- Inicializa posição atual se necessário
 	if not estado.posicaoAtualItem then
 		estado.posicaoAtualItem = posicaoRealItem
 	end
-	
+
 	-- Calcula direção e distância da posição atual para o alvo
 	local direcaoParaAlvo = posicaoAlvoComGravidade - estado.posicaoAtualItem
 	local distanciaParaAlvo = direcaoParaAlvo.Magnitude
-	
+
 	-- Move a posição atual em direção ao alvo com velocidade fixa
 	if distanciaParaAlvo > 0.01 then
 		-- Determina qual velocidade usar
 		local velocidadeUsar: number
-		
+
 		-- Se o item está "atrasado" (longe do alvo), usa velocidade de catch-up
 		-- Caso contrário, usa velocidade normal
 		if distanciaParaAlvo > 2.0 then
@@ -619,13 +620,13 @@ local function AtualizarArrasto(deltaTime: number)
 		else
 			velocidadeUsar = CONFIG.VELOCIDADE_MAXIMA_ITEM
 		end
-		
+
 		-- Objetos pesados são mais lentos para se mover
 		velocidadeUsar = velocidadeUsar / math.sqrt(peso)
-		
+
 		-- Calcula quanto pode mover neste frame
 		local movimentoMaximo = velocidadeUsar * deltaTime
-		
+
 		if distanciaParaAlvo <= movimentoMaximo then
 			-- Pode alcançar o alvo neste frame
 			estado.posicaoAtualItem = posicaoAlvoComGravidade
