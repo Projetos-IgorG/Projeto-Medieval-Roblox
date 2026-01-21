@@ -3,7 +3,7 @@ module.OBJECTS.HotBar = {}
 module.OBJECTS.Inventory = {}
 
 -- SETTINGS
-local SETTINGS = module.SETTINGS
+local SETTINGS: { [string]: any } = module.SETTINGS
 SETTINGS.DEFAULT_COLOR = Color3.fromRGB(0, 0, 0) -- ToolFrame background color when unequipped
 SETTINGS.EQUIPPED_COLOR = Color3.fromRGB(128, 128, 128) -- ToolFrame background color when equipped
 SETTINGS.DISABLED_COLOR = Color3.fromRGB(128, 64, 65) -- ToolFrame background color when the tool is disabled
@@ -177,6 +177,7 @@ function module:getObjectFromTool(tool: Tool) -- Returns the ToolObject of a Too
 				return toolObject
 			end
 		end
+		return nil
 	end
 
 	return searchToolObject(self.OBJECTS.HotBar) or searchToolObject(self.OBJECTS.Inventory)
@@ -231,10 +232,12 @@ function module:newTool(tool: Tool)
 		length += 1
 	end
 
-	module:addTool(tool, length == self.slotAmount and "Inventory" or "HotBar", tool:GetAttribute("position"))
+	local rawPosition = tool:GetAttribute("position")
+	local position = typeof(rawPosition) == "number" and rawPosition or nil
+	module:addTool(tool, length == self.slotAmount and "Inventory" or "HotBar", position)
 end
 
-function module:addTool(tool: Tool, parent: string, position: number)
+function module:addTool(tool: Tool, parent: string, position: number?)
 	tool:SetAttribute("position", nil)
 	if position == -1 then
 		parent = "Inventory"

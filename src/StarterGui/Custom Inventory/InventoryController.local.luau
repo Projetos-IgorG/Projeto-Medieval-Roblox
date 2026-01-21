@@ -99,7 +99,6 @@ local function reloadInventory(character)
 	character.ChildAdded:Connect(newTool)
 end
 local function updateHudPosition()
-	local viewPortSize = camera.ViewportSize
 	local slotSize = UDim2.fromOffset(hotBar.AbsoluteSize.Y, hotBar.AbsoluteSize.Y)
 
 	Inventory.Frame.Grid.CellSize = slotSize
@@ -154,7 +153,7 @@ end
 
 -- Use ContextActionService to capture Backspace and block the default Roblox drop action.
 -- This ensures the engine's drop won't race with our custom logic.
-local function handlePartialDrop(actionName, inputState, inputObject)
+local function handlePartialDrop(_, inputState, _)
 	if inputState ~= Enum.UserInputState.Begin then
 		return Enum.ContextActionResult.Sink
 	end
@@ -168,7 +167,6 @@ local function handlePartialDrop(actionName, inputState, inputObject)
 		-- If CanBeDropped is false, still allow our custom drop behavior
 	end
 
-	local toolObject = inventoryHandler:getObjectFromTool(tool)
 	local amount = tool:GetAttribute("amount") or 1
 
 	if amount > 1 then
