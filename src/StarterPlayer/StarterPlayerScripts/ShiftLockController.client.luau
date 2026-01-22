@@ -18,7 +18,7 @@ local CONFIG = {
 	ToggleKey = Enum.KeyCode.LeftControl,
 	SmoothFactor = 0.3, -- Suavidade do giro
 	OffsetShoulder = Vector3.new(2, 0, 1), -- Câmera de lado
-	OffsetFP = Vector3.new(0, 0, -0.9), -- Câmera em 1ª pessoa
+	OffsetFP = Vector3.new(0, 0.27, -1), -- Câmera em 1ª pessoa
 	OffsetCrouch = Vector3.new(0, -0.5, 0), -- Deslocamento ao agachar (Configurável)
 	TransitionTime = 0.35, -- Tempo da animação
 	ZoomRangeOn = { Min = 0.5, Max = 15 },
