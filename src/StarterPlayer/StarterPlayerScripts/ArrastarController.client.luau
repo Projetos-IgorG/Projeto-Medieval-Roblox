@@ -65,13 +65,21 @@ local CONFIG = {
 	GRAVIDADE_POR_PESO = 3.5,
 
 	-- Offset vertical máximo causado pela gravidade do peso
-	OFFSET_GRAVIDADE_MAXIMO = 4.0,
+	OFFSET_GRAVIDADE_MAXIMO = 2.0,
 
 	-- Quão rápido o item "cede" à gravidade (suavização)
 	SUAVIZACAO_GRAVIDADE = 0.05,
 
 	-- Nome da ação para ContextActionService (mobile)
 	NOME_ACAO_ARRASTAR = "ArrastarItem",
+
+	-- ═══════════════════════════════════════════════════════════════════
+	-- CONFIGURAÇÕES DE ROTAÇÃO
+	-- ═══════════════════════════════════════════════════════════════════
+	-- Velocidade de rotação horizontal (radianos/segundo) - mais rápida
+	VELOCIDADE_ROTACAO_HORIZONTAL = 4.0,
+	-- Responsividade da constraint de orientação
+	RESPONSIVIDADE_ORIENTACAO = 15,
 }
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -107,11 +115,22 @@ local estado = {
 
 	-- Constraints criadas para física
 	alignPosition = nil :: AlignPosition?,
+	alignOrientation = nil :: AlignOrientation?,
 	attachment = nil :: Attachment?,
+	attachmentOrientacao = nil :: Attachment?, -- Para orientação (world-space)
 	vectorForce = nil :: VectorForce?, -- Para gravidade do peso
 
 	-- Posição atual do item (controlada manualmente para velocidade fixa)
 	posicaoAtualItem = nil :: Vector3?,
+
+	-- Rotação relativa inicial (offset entre objeto e direção do jogador)
+	rotacaoRelativaInicial = nil :: CFrame?,
+
+	-- Ângulos de rotação atual (suavizados)
+	anguloHorizontalAtual = 0 :: number,
+
+	-- Direção horizontal inicial do jogador para o objeto
+	direcaoHorizontalInicial = nil :: Vector3?,
 
 	-- Offset de gravidade atual (suavizado)
 	offsetGravidadeAtual = 0 :: number,
@@ -152,6 +171,11 @@ end
 
 -- Verifica se o objeto é arrastável
 local function EhArrastavel(objeto: Instance): boolean
+	-- Tools should always be draggable even without the "Draggable" attribute
+	if objeto:IsA("Tool") then
+		return true
+	end
+
 	return objeto:GetAttribute("Draggable") == true
 end
 
@@ -305,6 +329,33 @@ local function CriarConstraints(partePrincipal: BasePart, peso: number)
 	alignPosition.Parent = partePrincipal
 	estado.alignPosition = alignPosition
 
+	-- ═══════════════════════════════════════════════════════════════════
+	-- CONFIGURAÇÃO DE ORIENTAÇÃO
+	-- ═══════════════════════════════════════════════════════════════════
+	-- Cria attachment separado para orientação (no centro do objeto)
+	local attachmentOrientacao = Instance.new("Attachment")
+	attachmentOrientacao.Name = "ArrastarAttachmentOrientacao"
+	attachmentOrientacao.Parent = partePrincipal
+	estado.attachmentOrientacao = attachmentOrientacao
+
+	-- Cria AlignOrientation para controlar a rotação do objeto
+	local alignOrientation = Instance.new("AlignOrientation")
+	alignOrientation.Name = "ArrastarAlignOrientation"
+	alignOrientation.Mode = Enum.OrientationAlignmentMode.OneAttachment
+	alignOrientation.Attachment0 = attachmentOrientacao
+	alignOrientation.RigidityEnabled = false
+
+	-- Configuração suave para rotação
+	alignOrientation.MaxTorque = 50000
+	alignOrientation.MaxAngularVelocity = 5
+	alignOrientation.Responsiveness = CONFIG.RESPONSIVIDADE_ORIENTACAO
+
+	alignOrientation.Parent = partePrincipal
+	estado.alignOrientation = alignOrientation
+
+	-- Inicializa a orientação alvo com a orientação atual do objeto
+	alignOrientation.CFrame = partePrincipal.CFrame - partePrincipal.CFrame.Position
+
 	-- Cria VectorForce para aplicar gravidade extra baseada no peso
 	-- Isso faz objetos pesados "penderem" para baixo naturalmente
 	if peso > 1.0 then
@@ -335,9 +386,19 @@ function LimparConstraints()
 		estado.attachment = nil
 	end
 
+	if estado.attachmentOrientacao then
+		estado.attachmentOrientacao:Destroy()
+		estado.attachmentOrientacao = nil
+	end
+
 	if estado.alignPosition then
 		estado.alignPosition:Destroy()
 		estado.alignPosition = nil
+	end
+
+	if estado.alignOrientation then
+		estado.alignOrientation:Destroy()
+		estado.alignOrientation = nil
 	end
 
 	if estado.vectorForce then
@@ -482,6 +543,27 @@ local function IniciarArrasto()
 	estado.posicaoAtualItem = partePrincipal.Position
 	estado.offsetGravidadeAtual = 0
 
+	-- ═══════════════════════════════════════════════════════════════════
+	-- INICIALIZAÇÃO DA ROTAÇÃO
+	-- ═══════════════════════════════════════════════════════════════════
+	-- Guarda a rotação inicial do objeto (será mantida relativa ao jogador)
+	estado.rotacaoRelativaInicial = partePrincipal.CFrame - partePrincipal.CFrame.Position
+
+	-- Calcula a direção horizontal inicial do jogador para o objeto
+	local hrpInicio = ObterHRP()
+	if hrpInicio then
+		local direcaoParaObjeto = (partePrincipal.Position - hrpInicio.Position)
+		-- Remove componente Y para ter apenas direção horizontal
+		estado.direcaoHorizontalInicial = Vector3.new(direcaoParaObjeto.X, 0, direcaoParaObjeto.Z).Unit
+	else
+		estado.direcaoHorizontalInicial = camera.CFrame.LookVector
+		estado.direcaoHorizontalInicial =
+			Vector3.new(estado.direcaoHorizontalInicial.X, 0, estado.direcaoHorizontalInicial.Z).Unit
+	end
+
+	-- Inicializa ângulos de rotação em zero (será ajustado relativamente)
+	estado.anguloHorizontalAtual = 0
+
 	-- Cria constraints para física
 	local peso = ObterPeso(objeto)
 	estado.pesoAtual = peso
@@ -539,6 +621,9 @@ local function PararArrasto()
 	estado.posicaoAtualItem = nil
 	estado.offsetGravidadeAtual = 0
 	estado.pesoAtual = 1.0
+	estado.rotacaoRelativaInicial = nil
+	estado.direcaoHorizontalInicial = nil
+	estado.anguloHorizontalAtual = 0
 	LimparHistoricoPosicoes()
 
 	DebugPrint("Arrasto parado")
@@ -643,6 +728,55 @@ local function AtualizarArrasto(deltaTime: number)
 	-- Atualiza a posição alvo do AlignPosition
 	if estado.alignPosition then
 		estado.alignPosition.Position = estado.posicaoAtualItem
+	end
+
+	-- ═══════════════════════════════════════════════════════════════════
+	-- ATUALIZAÇÃO DA ROTAÇÃO
+	-- ═══════════════════════════════════════════════════════════════════
+	if estado.alignOrientation and estado.rotacaoRelativaInicial and estado.direcaoHorizontalInicial then
+		-- Calcula a direção horizontal atual do jogador para o objeto
+		local direcaoAtualParaObjeto = (estado.posicaoAtualItem - hrp.Position)
+		local direcaoHorizontalAtual = Vector3.new(direcaoAtualParaObjeto.X, 0, direcaoAtualParaObjeto.Z)
+
+		-- Evita divisão por zero se o objeto está exatamente acima/abaixo
+		if direcaoHorizontalAtual.Magnitude > 0.01 then
+			direcaoHorizontalAtual = direcaoHorizontalAtual.Unit
+
+			-- Calcula o ângulo horizontal que mudou desde o início
+			-- Isso representa quanto o jogador "girou" em torno do objeto
+			local anguloHorizontalAlvo = math.atan2(
+				estado.direcaoHorizontalInicial:Cross(direcaoHorizontalAtual).Y,
+				estado.direcaoHorizontalInicial:Dot(direcaoHorizontalAtual)
+			)
+
+			-- Suaviza a rotação horizontal (mais rápida)
+			local deltaHorizontal = anguloHorizontalAlvo - estado.anguloHorizontalAtual
+			-- Normaliza para -PI a PI para evitar giros longos
+			while deltaHorizontal > math.pi do
+				deltaHorizontal = deltaHorizontal - 2 * math.pi
+			end
+			while deltaHorizontal < -math.pi do
+				deltaHorizontal = deltaHorizontal + 2 * math.pi
+			end
+
+			-- A velocidade máxima de correção horizontal diminui com o peso
+			-- Objetos mais pesados viram mais devagar (dividimos por sqrt(peso))
+			local fatorPeso = 8
+			if peso and peso > 0 then
+				fatorPeso = math.sqrt(peso)
+			end
+			local maxRotacaoHorizontal = (CONFIG.VELOCIDADE_ROTACAO_HORIZONTAL / fatorPeso) * deltaTime
+			if math.abs(deltaHorizontal) > maxRotacaoHorizontal then
+				deltaHorizontal = math.sign(deltaHorizontal) * maxRotacaoHorizontal
+			end
+			estado.anguloHorizontalAtual = estado.anguloHorizontalAtual + deltaHorizontal
+
+			-- Constrói a rotação final (apenas horizontal):
+			local rotacaoCompensacaoHorizontal = CFrame.Angles(0, estado.anguloHorizontalAtual, 0)
+			local rotacaoFinal = rotacaoCompensacaoHorizontal * estado.rotacaoRelativaInicial
+
+			estado.alignOrientation.CFrame = rotacaoFinal
+		end
 	end
 end
 

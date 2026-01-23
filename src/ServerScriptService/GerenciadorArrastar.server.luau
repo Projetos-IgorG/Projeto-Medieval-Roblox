@@ -172,6 +172,11 @@ end
 
 -- Verifica se o objeto é arrastável
 local function EhArrastavel(objeto: Instance): boolean
+	-- Tools should always be draggable even without the "Draggable" attribute
+	if objeto:IsA("Tool") then
+		return true
+	end
+
 	return objeto:GetAttribute("Draggable") == true
 end
 

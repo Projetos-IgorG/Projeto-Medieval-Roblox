@@ -4,7 +4,8 @@ local ProximityPromptService = game:GetService("ProximityPromptService")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local CorInteragirProx = require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Utils"):WaitForChild("CorInteragirProx"))
+local CorInteragirProx =
+	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Utils"):WaitForChild("CorInteragirProx"))
 
 ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPrompt)
 	if promptInstance.Style == Enum.ProximityPromptStyle.Default then
