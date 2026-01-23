@@ -172,16 +172,40 @@ end
 
 -- Verifica se o objeto é arrastável
 local function EhArrastavel(objeto: Instance): boolean
-	-- Tools should always be draggable even without the "Draggable" attribute
+	-- Se for uma Tool, procuramos pelo BoolValue Draggable dentro de um Folder chamado "Dados"
 	if objeto:IsA("Tool") then
-		return true
+		local dados = objeto:FindFirstChild("Dados")
+		if dados and dados:IsA("Folder") then
+			local draggableValue = dados:FindFirstChild("Draggable")
+			if draggableValue and draggableValue:IsA("BoolValue") then
+				return draggableValue.Value == true
+			end
+		end
+		return false
 	end
 
+	-- Para outros tipos, mantemos o comportamento baseado em Attributes
 	return objeto:GetAttribute("Draggable") == true
 end
 
 -- Obtém o peso do objeto (multiplicador)
 local function ObterPeso(objeto: Instance): number
+	-- Se for uma Tool, procuramos por um NumberValue "Peso" dentro de um Folder chamado "Dados"
+	if objeto:IsA("Tool") then
+		local dados = objeto:FindFirstChild("Dados")
+		if dados and dados:IsA("Folder") then
+			local pesoValue = dados:FindFirstChild("Peso")
+			if pesoValue and pesoValue:IsA("NumberValue") then
+				local p = pesoValue.Value
+				if typeof(p) == "number" and p > 0 then
+					return p
+				end
+			end
+		end
+		return 1.0
+	end
+
+	-- Para outros tipos, mantemos o comportamento baseado em Attributes
 	local peso = objeto:GetAttribute("Peso")
 	if typeof(peso) == "number" and peso > 0 then
 		return peso

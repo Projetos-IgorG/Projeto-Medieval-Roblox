@@ -184,9 +184,19 @@ local function ObterModoDoTool(tool: Tool): string?
 	if not tool then
 		return nil
 	end
-	local modoValue = tool:FindFirstChild("modoAnimacao")
-	if modoValue and modoValue:IsA("StringValue") and modoValue.Value ~= "" and modoValue.Value ~= "Base" then
-		return modoValue.Value
+	-- Procura dentro do Folder 'Dados' quando for uma Tool (novo padrão)
+	local dados = tool:FindFirstChild("Dados")
+	if dados and dados:IsA("Folder") then
+		local modoValue = dados:FindFirstChild("modoAnimacao")
+		if modoValue and modoValue:IsA("StringValue") and modoValue.Value ~= "" and modoValue.Value ~= "Base" then
+			return modoValue.Value
+		end
+	else
+		-- Fallback: procura diretamente na Tool por compatibilidade
+		local modoValue = tool:FindFirstChild("modoAnimacao")
+		if modoValue and modoValue:IsA("StringValue") and modoValue.Value ~= "" and modoValue.Value ~= "Base" then
+			return modoValue.Value
+		end
 	end
 	return nil
 end
@@ -821,11 +831,18 @@ local function OnChildAdded(child)
 			local humanoid = char:FindFirstChild("Humanoid")
 			if humanoid and humanoid.Health <= 0 then
 				-- Jogador está morto - desseleciona o tool automaticamente
-				if child:FindFirstChild("modoAnimacao") then
-					-- Se tem modoAnimacao, desequipa
-					humanoid:UnequipTools()
-					DebugPrint("[EntradaJogador] Tool desequipado automaticamente (jogador morto):", child.Name)
-				end
+						-- Verifica novo padrão: Dados/modoAnimacao
+						local dados = child:FindFirstChild("Dados")
+						local temModo = false
+						if dados and dados:IsA("Folder") then
+							temModo = dados:FindFirstChild("modoAnimacao") ~= nil
+						else
+							temModo = child:FindFirstChild("modoAnimacao") ~= nil
+						end
+						if temModo then
+							humanoid:UnequipTools()
+							DebugPrint("[EntradaJogador] Tool desequipado automaticamente (jogador morto):", child.Name)
+						end
 				return
 			end
 		end
