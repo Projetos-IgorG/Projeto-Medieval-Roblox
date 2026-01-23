@@ -831,18 +831,18 @@ local function OnChildAdded(child)
 			local humanoid = char:FindFirstChild("Humanoid")
 			if humanoid and humanoid.Health <= 0 then
 				-- Jogador está morto - desseleciona o tool automaticamente
-						-- Verifica novo padrão: Dados/modoAnimacao
-						local dados = child:FindFirstChild("Dados")
-						local temModo = false
-						if dados and dados:IsA("Folder") then
-							temModo = dados:FindFirstChild("modoAnimacao") ~= nil
-						else
-							temModo = child:FindFirstChild("modoAnimacao") ~= nil
-						end
-						if temModo then
-							humanoid:UnequipTools()
-							DebugPrint("[EntradaJogador] Tool desequipado automaticamente (jogador morto):", child.Name)
-						end
+				-- Verifica novo padrão: Dados/modoAnimacao
+				local dados = child:FindFirstChild("Dados")
+				local temModo = false
+				if dados and dados:IsA("Folder") then
+					temModo = dados:FindFirstChild("modoAnimacao") ~= nil
+				else
+					temModo = child:FindFirstChild("modoAnimacao") ~= nil
+				end
+				if temModo then
+					humanoid:UnequipTools()
+					DebugPrint("[EntradaJogador] Tool desequipado automaticamente (jogador morto):", child.Name)
+				end
 				return
 			end
 		end
