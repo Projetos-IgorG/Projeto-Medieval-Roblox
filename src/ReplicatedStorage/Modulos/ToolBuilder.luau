@@ -261,21 +261,25 @@ function ToolBuilder.CriarTool(itemData, parent)
 		warn("[ToolBuilder] ArmaEquipada configurada como não dropável")
 	end
 
-	-- Configurar Draggable = false quando Tool for para backpack/inventário
+	-- Configurar Draggable como false para Tools na backpack
 	local dadosFolder = novoTool:FindFirstChild("Dados")
 	if dadosFolder then
 		local draggableValue = dadosFolder:FindFirstChild("Draggable")
 		if draggableValue and draggableValue:IsA("BoolValue") then
 			draggableValue.Value = false
-			warn("[ToolBuilder] Draggable definido como false (backpack/inventário)")
+			warn("[ToolBuilder] Draggable definido como false")
 		end
 	end
 
-	-- Deletar ProximityPrompt se existir (não é necessário em backpack)
-	local proximityPrompt = novoTool:FindFirstChildOfClass("ProximityPrompt", true)
-	if proximityPrompt then
-		proximityPrompt:Destroy()
-		warn("[ToolBuilder] ProximityPrompt removido do Tool")
+	-- Remover qualquer ProximityPrompt se existir (buscar por tipo, não por nome)
+	local handle = novoTool:FindFirstChild("Handle")
+	if handle then
+		for _, child in ipairs(handle:GetChildren()) do
+			if child:IsA("ProximityPrompt") then
+				child:Destroy()
+				warn("[ToolBuilder] ProximityPrompt removido do Tool")
+			end
+		end
 	end
 
 	-- Parentar o Tool
@@ -351,13 +355,14 @@ function ToolBuilder.CriarToolNoMundo(itemData, cframe)
 	-- Mover folder Dados para o Model
 	local dadosFolder = toolClone:FindFirstChild("Dados")
 	if dadosFolder then
-		-- Configurar Draggable = true para itens no mundo
+		dadosFolder.Parent = itemModel
+
+		-- Configurar Draggable como true para items no mundo
 		local draggableValue = dadosFolder:FindFirstChild("Draggable")
 		if draggableValue and draggableValue:IsA("BoolValue") then
 			draggableValue.Value = true
-			warn("[ToolBuilder] Draggable definido como true (item no mundo)")
+			warn("[ToolBuilder] Draggable definido como true para item no mundo")
 		end
-		dadosFolder.Parent = itemModel
 	end
 
 	-- Destruir o Tool (não precisamos dele, só o Handle e Dados)
@@ -369,10 +374,9 @@ function ToolBuilder.CriarToolNoMundo(itemData, cframe)
 	prompt.ObjectText = itemData.Nome
 	prompt.MaxActivationDistance = 5
 	prompt.RequiresLineOfSight = false
-	prompt.Enabled = true
 	prompt.Parent = handle
 
-	warn("[ToolBuilder] ProximityPrompt criado e ativado")
+	warn("[ToolBuilder] ProximityPrompt criado")
 
 	-- Definir PrimaryPart
 	itemModel.PrimaryPart = handle
