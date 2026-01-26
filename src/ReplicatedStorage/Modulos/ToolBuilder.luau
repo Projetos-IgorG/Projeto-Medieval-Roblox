@@ -282,6 +282,14 @@ function ToolBuilder.CriarTool(itemData, parent)
 		end
 	end
 
+	-- Adicionar script DropTool ao Tool para gerenciar drops
+	local dropToolScript = ReplicatedStorage:FindFirstChild("DropTool")
+	if dropToolScript and dropToolScript:IsA("Script") then
+		local scriptClone = dropToolScript:Clone()
+		scriptClone.Parent = novoTool
+		warn("[ToolBuilder] Script DropTool adicionado ao Tool")
+	end
+
 	-- Parentar o Tool
 	novoTool.Parent = parent
 	warn("[ToolBuilder] Tool criado e parentado com sucesso:", novoTool.Name)
@@ -296,7 +304,7 @@ end
     
     @param itemData (table): Dados do item
     @param cframe (CFrame): Posição onde spawnar o item
-    @return (Model|nil): Model do item dropado ou nil se falhar
+    @return (Tool|nil): Tool dropado no mundo ou nil se falhar
 ]]
 function ToolBuilder.CriarToolNoMundo(itemData, cframe)
 	warn("[ToolBuilder] ========================================")
@@ -320,10 +328,6 @@ function ToolBuilder.CriarToolNoMundo(itemData, cframe)
 		return nil
 	end
 
-	-- Criar Model wrapper
-	local itemModel = Instance.new("Model")
-	itemModel.Name = "ItemDropado_" .. itemData.Id
-
 	-- Clonar template
 	local toolClone = template:Clone()
 	warn("[ToolBuilder] Template clonado para o mundo")
@@ -332,7 +336,6 @@ function ToolBuilder.CriarToolNoMundo(itemData, cframe)
 	local sucesso = AtualizarDados(toolClone, itemData)
 	if not sucesso then
 		warn("[ToolBuilder] ERRO: Falha ao atualizar dados!")
-		itemModel:Destroy()
 		toolClone:Destroy()
 		return nil
 	end
@@ -341,23 +344,13 @@ function ToolBuilder.CriarToolNoMundo(itemData, cframe)
 	local handle = toolClone:FindFirstChild("Handle")
 	if not handle then
 		warn("[ToolBuilder] ERRO: Handle não encontrado no template!")
-		itemModel:Destroy()
 		toolClone:Destroy()
 		return nil
 	end
 
-	-- Configurar Handle para o mundo
-	handle.Anchored = true
-	handle.CanCollide = true
-	handle.CFrame = cframe
-	handle.Parent = itemModel
-
-	-- Mover folder Dados para o Model
+	-- Configurar Draggable como true para items no mundo
 	local dadosFolder = toolClone:FindFirstChild("Dados")
 	if dadosFolder then
-		dadosFolder.Parent = itemModel
-
-		-- Configurar Draggable como true para items no mundo
 		local draggableValue = dadosFolder:FindFirstChild("Draggable")
 		if draggableValue and draggableValue:IsA("BoolValue") then
 			draggableValue.Value = true
@@ -365,28 +358,23 @@ function ToolBuilder.CriarToolNoMundo(itemData, cframe)
 		end
 	end
 
-	-- Destruir o Tool (não precisamos dele, só o Handle e Dados)
-	toolClone:Destroy()
+	-- Configurar Tool para não poder ser dropado novamente (evita loops)
+	toolClone.CanBeDropped = false
 
-	-- Criar ProximityPrompt
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Coletar"
-	prompt.ObjectText = itemData.Nome
-	prompt.MaxActivationDistance = 5
-	prompt.RequiresLineOfSight = false
-	prompt.Parent = handle
+	-- Parentar o Tool completo ao workspace PRIMEIRO
+	toolClone.Parent = workspace
+	warn("[ToolBuilder] Tool parentado ao workspace")
 
-	warn("[ToolBuilder] ProximityPrompt criado")
+	-- Configurar Handle DEPOIS de parentar (ancorado e colidível)
+	handle.Anchored = false
+	handle.CanCollide = true
+	handle.CFrame = cframe
+	warn("[ToolBuilder] Handle posicionado em:", cframe.Position)
 
-	-- Definir PrimaryPart
-	itemModel.PrimaryPart = handle
-
-	-- Parentar ao workspace
-	itemModel.Parent = workspace
-	warn("[ToolBuilder] Item dropado criado no mundo:", itemModel.Name)
+	warn("[ToolBuilder] Tool dropado criado no mundo:", toolClone.Name)
 	warn("[ToolBuilder] ========================================")
 
-	return itemModel
+	return toolClone
 end
 
 --[[
@@ -428,20 +416,26 @@ end
 
 --[[
     ExtrairDadosDoMundo
-    Extrai os dados de um item dropado no mundo (Model com folder "Dados").
+    Extrai os dados de um item dropado no mundo (Tool ou Model com folder "Dados").
     
-    @param itemModel (Model): Model do item no mundo
+    @param itemInstance (Tool|Model): Tool ou Model do item no mundo
     @return (table|nil): Tabela com os dados ou nil se falhar
 ]]
-function ToolBuilder.ExtrairDadosDoMundo(itemModel)
-	if not itemModel or not itemModel:IsA("Model") then
-		warn("[ToolBuilder] ERRO: Model inválido fornecido para ExtrairDadosDoMundo!")
+function ToolBuilder.ExtrairDadosDoMundo(itemInstance)
+	if not itemInstance then
+		warn("[ToolBuilder] ERRO: Instância inválida fornecida para ExtrairDadosDoMundo!")
 		return nil
 	end
 
-	local dadosFolder = itemModel:FindFirstChild("Dados")
+	-- Aceitar tanto Tool quanto Model
+	if not (itemInstance:IsA("Tool") or itemInstance:IsA("Model")) then
+		warn("[ToolBuilder] ERRO: ExtrairDadosDoMundo espera Tool ou Model, recebeu:", itemInstance.ClassName)
+		return nil
+	end
+
+	local dadosFolder = itemInstance:FindFirstChild("Dados")
 	if not dadosFolder then
-		warn("[ToolBuilder] ERRO: Folder 'Dados' não encontrado no Model:", itemModel.Name)
+		warn("[ToolBuilder] ERRO: Folder 'Dados' não encontrado em:", itemInstance.Name)
 		return nil
 	end
 
@@ -459,7 +453,7 @@ function ToolBuilder.ExtrairDadosDoMundo(itemModel)
 		end
 	end
 
-	warn("[ToolBuilder] Dados extraídos do mundo:", itemModel.Name)
+	warn("[ToolBuilder] Dados extraídos do mundo:", itemInstance.Name)
 	return dados
 end
 
