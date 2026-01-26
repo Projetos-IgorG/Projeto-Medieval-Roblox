@@ -1,15 +1,16 @@
 --[[
 	DropTool - Sistema de Drop de Ferramentas
-	ReplicatedStorage > DropTool.server.luau
+	ServerScriptService > DropTool.server.luau
 	
-	Detecta quando um player dropa uma ferramenta e recria o item no mundo
+	Recebe solicitações de drop do cliente e recria o item no mundo
 	usando o ToolBuilder para garantir consistência.
 	
 	FUNCIONAMENTO:
-	1. Detecta quando um Tool é removido da Backpack do player
-	2. Extrai os dados do Tool que foi dropado
-	3. Apaga o Tool físico original
-	4. Recria o Tool no mundo usando ToolBuilder.CriarToolNoMundo
+	1. Cliente solicita drop via RemoteEvent "DroparTool"
+	2. Servidor valida a solicitação
+	3. Extrai os dados do Tool que foi dropado
+	4. Apaga o Tool físico original
+	5. Recria o Tool no mundo usando ToolBuilder.CriarToolNoMundo
 --]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -18,6 +19,10 @@ local PhysicsService = game:GetService("PhysicsService")
 
 -- Módulos
 local ToolBuilder = require(ReplicatedStorage.Modulos.ToolBuilder)
+
+-- RemoteEvent
+local Remotos = ReplicatedStorage:WaitForChild("Remotos")
+local DroparToolEvent = Remotos:WaitForChild("DroparTool")
 
 -- ============================================
 -- CONFIGURAÇÃO
@@ -116,95 +121,12 @@ local function ConfigurarCollisionTool(tool)
 end
 
 -- ============================================
--- SISTEMA DE DETECÇÃO DE DROP
--- ============================================
-
--- Rastreia os Tools que estão sendo monitorados por player
-local toolsMonitorados = {} -- [player] = {[tool] = true}
-
--- Monitora um Tool específico para detectar quando é dropado
-local function MonitorarTool(player, tool)
-	if not tool:IsA("Tool") then
-		return
-	end
-
-	-- Inicializar tabela do player se não existir
-	if not toolsMonitorados[player] then
-		toolsMonitorados[player] = {}
-	end
-
-	-- Evitar monitorar o mesmo tool múltiplas vezes
-	if toolsMonitorados[player][tool] then
-		return
-	end
-
-	toolsMonitorados[player][tool] = true
-	DebugLog("Monitorando Tool:", tool.Name, "do player:", player.Name)
-
-	-- Detectar quando o Tool é equipado (vai para o Character)
-	local conexaoEquipado = tool.AncestryChanged:Connect(function(_, parent)
-		-- Se foi equipado (parent agora é o character)
-		if parent == player.Character then
-			DebugLog("Tool equipado:", tool.Name)
-
-			-- Detectar quando é desequipado/dropado
-			local conexaoDrop = tool.AncestryChanged:Connect(function(_, newParent)
-				-- Se foi dropado (parent agora é workspace ou nil)
-				if newParent == workspace or newParent == nil then
-					DebugLog("Tool DROPADO detectado:", tool.Name)
-
-					-- Processar o drop
-					task.spawn(function()
-						ProcessarDrop(player, tool)
-					end)
-				end
-			end)
-
-			-- Limpar conexão quando tool for destruído ou voltar para backpack
-			tool.AncestryChanged:Connect(function(_, p)
-				if p == player:FindFirstChild("Backpack") or p == nil then
-					conexaoDrop:Disconnect()
-				end
-			end)
-		end
-	end)
-
-	-- Limpar quando o tool for removido/destruído
-	tool.Destroying:Connect(function()
-		if toolsMonitorados[player] then
-			toolsMonitorados[player][tool] = nil
-		end
-		conexaoEquipado:Disconnect()
-	end)
-end
-
--- Monitora a Backpack de um player para novos Tools
-local function MonitorarBackpack(player)
-	local backpack = player:WaitForChild("Backpack")
-
-	-- Monitorar Tools existentes
-	for _, item in ipairs(backpack:GetChildren()) do
-		if item:IsA("Tool") then
-			MonitorarTool(player, item)
-		end
-	end
-
-	-- Monitorar novos Tools adicionados
-	backpack.ChildAdded:Connect(function(child)
-		if child:IsA("Tool") then
-			DebugLog("Novo Tool adicionado à backpack:", child.Name)
-			MonitorarTool(player, child)
-		end
-	end)
-end
-
--- ============================================
 -- PROCESSAMENTO DO DROP
 -- ============================================
 
-function ProcessarDrop(player, toolDropado)
+local function ProcessarDrop(player, toolNome, quantidade)
 	DebugLog("========================================")
-	DebugLog("Processando drop do Tool:", toolDropado.Name)
+	DebugLog("Processando drop do Tool:", toolNome, "Quantidade:", quantidade)
 
 	-- Verificar se o player ainda está no jogo
 	if not player or not player.Parent then
@@ -218,8 +140,15 @@ function ProcessarDrop(player, toolDropado)
 		return
 	end
 
+	-- Buscar o Tool na Backpack ou no Character
+	local tool = player.Backpack:FindFirstChild(toolNome) or character:FindFirstChild(toolNome)
+	if not tool or not tool:IsA("Tool") then
+		warn("[DropTool] Tool não encontrado:", toolNome)
+		return
+	end
+
 	-- Extrair dados do Tool
-	local itemData = ToolBuilder.ExtrairDados(toolDropado)
+	local itemData = ToolBuilder.ExtrairDados(tool)
 	if not itemData then
 		warn("[DropTool] ERRO: Não foi possível extrair dados do Tool!")
 		return
@@ -227,20 +156,24 @@ function ProcessarDrop(player, toolDropado)
 
 	DebugLog("Dados extraídos:", itemData.Nome or "N/A")
 
+	-- Se a quantidade for menor que a quantidade total, ajustar
+	local quantidadeAtual = itemData.Quantidade or 1
+	if quantidade < quantidadeAtual then
+		-- Reduzir quantidade do Tool no inventário
+		ToolBuilder.AtualizarQuantidade(tool, quantidadeAtual - quantidade)
+		itemData.Quantidade = quantidade
+		DebugLog("Dropando quantidade parcial:", quantidade, "Restando:", quantidadeAtual - quantidade)
+	else
+		-- Dropar tudo - destruir o Tool original
+		DebugLog("Dropando quantidade total - destruindo Tool original")
+		tool:Destroy()
+	end
+
 	-- Calcular posição de drop
 	local cframeDrop = CalcularPosicaoDrop(character)
 	if not cframeDrop then
 		warn("[DropTool] ERRO: Não foi possível calcular posição de drop!")
 		return
-	end
-
-	-- Apagar o Tool físico original
-	DebugLog("Destruindo Tool físico original...")
-	toolDropado:Destroy()
-
-	-- Limpar da tabela de monitoramento
-	if toolsMonitorados[player] then
-		toolsMonitorados[player][toolDropado] = nil
 	end
 
 	-- Criar novo Tool no mundo usando ToolBuilder
@@ -259,51 +192,57 @@ function ProcessarDrop(player, toolDropado)
 end
 
 -- ============================================
+-- LISTENER DO REMOTEEVENT
+-- ============================================
+
+DroparToolEvent.OnServerEvent:Connect(function(player, toolNome, quantidade)
+	DebugLog("RemoteEvent recebido de:", player.Name, "Tool:", toolNome, "Quantidade:", quantidade)
+
+	-- Validações básicas
+	if type(toolNome) ~= "string" then
+		warn("[DropTool] Nome do Tool inválido!")
+		return
+	end
+
+	if type(quantidade) ~= "number" or quantidade <= 0 then
+		warn("[DropTool] Quantidade inválida!")
+		return
+	end
+
+	-- Processar o drop
+	ProcessarDrop(player, toolNome, quantidade)
+end)
+
+-- ============================================
 -- INICIALIZAÇÃO
 -- ============================================
 
 -- Configurar collision groups no início
 ConfigurarCollisionGroups()
 
--- Monitorar players que entram
+-- Configurar collision nos characters dos players
 Players.PlayerAdded:Connect(function(player)
-	DebugLog("Player entrou:", player.Name)
-
-	-- Aguardar character carregar
 	player.CharacterAdded:Connect(function(character)
 		DebugLog("Character carregado para:", player.Name)
-
-		-- Configurar collision no character
 		character:WaitForChild("HumanoidRootPart")
 		ConfigurarCollisionCharacter(character)
-
-		MonitorarBackpack(player)
 	end)
 
-	-- Se já tem character, monitorar agora
+	-- Se já tem character, configurar agora
 	if player.Character then
 		ConfigurarCollisionCharacter(player.Character)
-		MonitorarBackpack(player)
 	end
 end)
 
--- Limpar dados quando player sair
-Players.PlayerRemoving:Connect(function(player)
-	DebugLog("Player saindo:", player.Name)
-	toolsMonitorados[player] = nil
-end)
-
--- Monitorar players que já estão no jogo
+-- Processar players que já estão no jogo
 for _, player in ipairs(Players:GetPlayers()) do
 	if player.Character then
 		ConfigurarCollisionCharacter(player.Character)
-		MonitorarBackpack(player)
 	end
 
 	player.CharacterAdded:Connect(function(character)
 		character:WaitForChild("HumanoidRootPart")
 		ConfigurarCollisionCharacter(character)
-		MonitorarBackpack(player)
 	end)
 end
 

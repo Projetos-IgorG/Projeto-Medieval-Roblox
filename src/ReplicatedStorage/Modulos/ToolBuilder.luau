@@ -282,14 +282,6 @@ function ToolBuilder.CriarTool(itemData, parent)
 		end
 	end
 
-	-- Adicionar script DropTool ao Tool para gerenciar drops
-	local dropToolScript = ReplicatedStorage:FindFirstChild("DropTool")
-	if dropToolScript and dropToolScript:IsA("Script") then
-		local scriptClone = dropToolScript:Clone()
-		scriptClone.Parent = novoTool
-		warn("[ToolBuilder] Script DropTool adicionado ao Tool")
-	end
-
 	-- Parentar o Tool
 	novoTool.Parent = parent
 	warn("[ToolBuilder] Tool criado e parentado com sucesso:", novoTool.Name)

@@ -151,6 +151,13 @@ local function getToolEquipped()
 	return character and character:FindFirstChildOfClass("Tool")
 end
 
+-- ============================================
+-- SISTEMA DE DROP CUSTOMIZADO
+-- ============================================
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Remotos = ReplicatedStorage:WaitForChild("Remotos")
+local DroparToolEvent = Remotos:WaitForChild("DroparTool")
+
 -- Use ContextActionService to capture Backspace and block the default Roblox drop action.
 -- This ensures the engine's drop won't race with our custom logic.
 local function handlePartialDrop(_, inputState, _)
@@ -163,56 +170,29 @@ local function handlePartialDrop(_, inputState, _)
 		return Enum.ContextActionResult.Sink
 	end
 
-	if not tool.CanBeDropped then
-		-- If CanBeDropped is false, still allow our custom drop behavior
+	-- Verificar se o Tool tem a pasta "Dados" (é um Tool customizado)
+	local dadosFolder = tool:FindFirstChild("Dados")
+	if not dadosFolder then
+		warn("[InventoryController] Tool sem pasta 'Dados' - usando sistema padrão")
+		return Enum.ContextActionResult.Pass -- Permitir drop padrão do Roblox
 	end
 
-	local amount = tool:GetAttribute("amount") or 1
+	-- Extrair quantidade do Tool
+	local quantidadeValue = dadosFolder:FindFirstChild("Quantidade")
+	local amount = quantidadeValue and quantidadeValue.Value or 1
 
-	if amount > 1 then
-		tool:SetAttribute("amount", amount - 1)
+	-- Determinar quanto dropar
+	local quantidadeDropar = 1 -- Por padrão, dropa 1 unidade
 
-		local dropClone = tool:Clone()
-		dropClone:SetAttribute("amount", 1)
-
-		local character = player.Character
-		local hrp = character and character:FindFirstChild("HumanoidRootPart")
-		local dropPos = hrp and (hrp.Position + (camera.CFrame.LookVector * 3) + Vector3.new(0, 2, 0))
-			or (camera.CFrame.Position + camera.CFrame.LookVector * 3)
-
-		-- Parent first so physics and descendants exist in the world
-		dropClone.Parent = workspace
-
-		-- Ensure all BaseParts are physical (not anchored) and collide, to behave like a real dropped tool
-		for _, desc in pairs(dropClone:GetDescendants()) do
-			if desc:IsA("BasePart") then
-				desc.Anchored = false
-				desc.CanCollide = true
-			end
-		end
-
-		local handle = dropClone:FindFirstChild("Handle", true)
-		if handle and handle:IsA("BasePart") then
-			-- Position handle and give a small forward + upward velocity to avoid tunneling
-			handle.CFrame = CFrame.new(dropPos)
-			-- small impulse to move it forward
-			if pcall(function()
-				return handle.AssemblyLinearVelocity
-			end) then
-				handle.AssemblyLinearVelocity = camera.CFrame.LookVector * 18 + Vector3.new(0, 6, 0)
-			else
-				-- fallback: try ApplyImpulse if available
-				if pcall(function()
-					return handle.ApplyImpulse
-				end) then
-					handle:ApplyImpulse(camera.CFrame.LookVector * 18 + Vector3.new(0, 6, 0))
-				end
-			end
-		end
-	else
-		-- Drop full tool
-		tool.Parent = workspace
+	-- Se shift está pressionado e tem mais de 1, dropa tudo
+	local shiftPressed = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+		or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+	if shiftPressed and amount > 1 then
+		quantidadeDropar = amount
 	end
+
+	-- Chamar o servidor para processar o drop
+	DroparToolEvent:FireServer(tool.Name, quantidadeDropar)
 
 	return Enum.ContextActionResult.Sink
 end

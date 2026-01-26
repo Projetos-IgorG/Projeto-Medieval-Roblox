@@ -46,6 +46,19 @@ local EnumKeys = {
 	Enum.KeyCode.Eight,
 	Enum.KeyCode.Nine,
 }
+-- Função helper para obter quantidade do Tool
+local function getToolQuantidade(tool)
+	local dadosFolder = tool:FindFirstChild("Dados")
+	if dadosFolder then
+		local quantidadeValue = dadosFolder:FindFirstChild("Quantidade")
+		if quantidadeValue then
+			return quantidadeValue.Value
+		end
+	end
+	-- Fallback para o sistema antigo de Attributes
+	return tool:GetAttribute("amount") or 1
+end
+
 -- tool object methods
 local toolObjectMetatable = {}
 toolObjectMetatable.__index = toolObjectMetatable
@@ -258,7 +271,7 @@ function module:addTool(tool: Tool, parent: string, position: number?)
 	end
 
 	local frame = toolButton:Clone()
-	local amount = tool:GetAttribute("amount") or 1
+	local amount = getToolQuantidade(tool)
 	if amount > 1 then
 		frame.toolAmount.Text = "x" .. amount
 	end
@@ -386,14 +399,31 @@ function module:addTool(tool: Tool, parent: string, position: number?)
 	object.CONNECTIONS.TextureIdChanged = tool:GetPropertyChangedSignal("TextureId"):Connect(function()
 		object:updateIcon()
 	end)
-	object.CONNECTIONS.AmountChanged = tool:GetAttributeChangedSignal("amount"):Connect(function()
-		amount = tool:GetAttribute("amount") or 1
-		if amount > 1 then
-			frame.toolAmount.Text = "x" .. amount
-		else
-			frame.toolAmount.Text = ""
+	-- Monitorar mudanças na quantidade (pasta Dados)
+	local dadosFolder = tool:FindFirstChild("Dados")
+	if dadosFolder then
+		local quantidadeValue = dadosFolder:FindFirstChild("Quantidade")
+		if quantidadeValue then
+			object.CONNECTIONS.QuantidadeChanged = quantidadeValue:GetPropertyChangedSignal("Value"):Connect(function()
+				amount = quantidadeValue.Value
+				if amount > 1 then
+					frame.toolAmount.Text = "x" .. amount
+				else
+					frame.toolAmount.Text = ""
+				end
+			end)
 		end
-	end)
+	else
+		-- Fallback para sistema antigo de Attributes
+		object.CONNECTIONS.AmountChanged = tool:GetAttributeChangedSignal("amount"):Connect(function()
+			amount = tool:GetAttribute("amount") or 1
+			if amount > 1 then
+				frame.toolAmount.Text = "x" .. amount
+			else
+				frame.toolAmount.Text = ""
+			end
+		end)
+	end
 	object.CONNECTIONS.MouseEnter = frame.MouseEnter:Connect(function()
 		if object.isGrabbed then
 			return
