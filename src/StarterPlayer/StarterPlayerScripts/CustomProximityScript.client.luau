@@ -4,15 +4,32 @@ local ProximityPromptService = game:GetService("ProximityPromptService")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local CorInteragirProx =
-	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Utils"):WaitForChild("CorInteragirProx"))
+-- ========================================
+-- Funcionalidade de Cor por Tipo (ex-módulo)
+-- ========================================
+local COLOR_MAP = {
+	Ferramenta = Color3.fromRGB(149, 149, 149), -- Cinza
+	Recurso = Color3.fromRGB(186, 134, 104), -- Marrom
+	Interagir = Color3.fromRGB(218, 218, 218), -- Cinza claro
+	NPC = Color3.fromRGB(218, 218, 218), -- Cinza claro
+}
+
+local DEFAULT_COLOR = Color3.fromRGB(218, 218, 218)
+
+local function GetColorByType(tipo)
+	if typeof(tipo) ~= "string" then
+		return DEFAULT_COLOR
+	end
+	return COLOR_MAP[tipo] or DEFAULT_COLOR
+end
+-- ========================================
 
 ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPrompt)
 	if promptInstance.Style == Enum.ProximityPromptStyle.Default then
 		return
 	end
 
-	local CustomProximity = game.ReplicatedStorage:WaitForChild("CustomProximity"):Clone()
+	local CustomProximity = ReplicatedStorage:WaitForChild("CustomProximity"):Clone()
 
 	-- Acessa o KeyText (Frame circular) e o KeyLabel (texto da tecla)
 	local KeyText = CustomProximity:FindFirstChild("KeyText", true)
@@ -32,7 +49,7 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 	if objectText then
 		objectText.Text = promptInstance.ObjectText
 		local tipo = promptInstance:GetAttribute("Tipo")
-		objectText.TextColor3 = CorInteragirProx.GetColor(tipo)
+		objectText.TextColor3 = GetColorByType(tipo)
 	end
 
 	CustomProximity.Parent = promptInstance.Parent
