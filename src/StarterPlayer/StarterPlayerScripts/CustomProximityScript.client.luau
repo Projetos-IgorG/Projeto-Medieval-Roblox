@@ -3,6 +3,7 @@
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 
 -- ========================================
 -- Funcionalidade de Cor por Tipo (ex-módulo)
@@ -23,6 +24,13 @@ local function GetColorByType(tipo)
 	return COLOR_MAP[tipo] or DEFAULT_COLOR
 end
 -- ========================================
+
+-- Criar ScreenGui para hospedar prompts (permite TextButton funcionar)
+local player = Players.LocalPlayer
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "CustomPromptsGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
 
 ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPrompt)
 	if promptInstance.Style == Enum.ProximityPromptStyle.Default then
@@ -52,18 +60,67 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 		objectText.TextColor3 = GetColorByType(tipo)
 	end
 
-	CustomProximity.Parent = promptInstance.Parent
+	-- Configura o BillboardGui para usar Adornee e ficar no PlayerGui
+	CustomProximity.Active = true -- IMPORTANTE: permite detectar input
+	CustomProximity.Adornee = promptInstance.Parent
+	CustomProximity.Parent = screenGui
+
+	-- ========================================
+	-- TextButton para detectar clique/touch (usa o existente no template)
+	-- ========================================
+	local clickButton = CustomProximity:FindFirstChild("ClickDetector", true)
+
+	if clickButton then
+		local buttonDown = false
+
+		clickButton.InputBegan:Connect(function(input)
+			if
+				(
+					input.UserInputType == Enum.UserInputType.Touch
+					or input.UserInputType == Enum.UserInputType.MouseButton1
+				) and input.UserInputState ~= Enum.UserInputState.Change
+			then
+				promptInstance:InputHoldBegin()
+				buttonDown = true
+			end
+		end)
+
+		clickButton.InputEnded:Connect(function(input)
+			if
+				input.UserInputType == Enum.UserInputType.Touch
+				or input.UserInputType == Enum.UserInputType.MouseButton1
+			then
+				if buttonDown then
+					buttonDown = false
+					promptInstance:InputHoldEnd()
+				end
+			end
+		end)
+	end
+	-- ========================================
 
 	local Progress = KeyText and KeyText:FindFirstChild("Progress")
+	local ProgressHoldBg = KeyText and KeyText:FindFirstChild("ProgressHoldBg")
 	local currentTween
+	local currentBgTween
 
 	local holdBeganConnection = promptInstance.PromptButtonHoldBegan:Connect(function()
 		if Progress then
 			Progress.Size = UDim2.new(0, 0, 0, 0)
 			currentTween = TweenService:Create(Progress, TweenInfo.new(promptInstance.HoldDuration), {
-				Size = UDim2.new(1, 0, 1, 0),
+				Size = UDim2.new(0.94, 0, 0.94, 0),
 			})
 			currentTween:Play()
+		end
+		-- Mostrar o background de hold com animação suave
+		if ProgressHoldBg then
+			if currentBgTween then
+				currentBgTween:Cancel()
+			end
+			currentBgTween = TweenService:Create(ProgressHoldBg, TweenInfo.new(0.2), {
+				BackgroundTransparency = 0.8,
+			})
+			currentBgTween:Play()
 		end
 	end)
 
@@ -73,6 +130,16 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 		end
 		if Progress then
 			Progress.Size = UDim2.new(0, 0, 0, 0)
+		end
+		-- Esconder o background de hold com animação suave
+		if ProgressHoldBg then
+			if currentBgTween then
+				currentBgTween:Cancel()
+			end
+			currentBgTween = TweenService:Create(ProgressHoldBg, TweenInfo.new(0.15), {
+				BackgroundTransparency = 1,
+			})
+			currentBgTween:Play()
 		end
 	end)
 
