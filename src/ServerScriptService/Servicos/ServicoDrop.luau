@@ -1,6 +1,6 @@
 --[[
-	DropTool - Sistema de Drop de Ferramentas
-	ServerScriptService > DropTool.server.luau
+	ServicoDrop - Serviço de Drop de Ferramentas
+	ServerScriptService > Servicos > ServicoDrop.luau
 	
 	Recebe solicitações de drop do cliente e recria o item no mundo
 	usando o ToolBuilder para garantir consistência.
@@ -13,6 +13,8 @@
 	5. Recria o Tool no mundo usando ToolBuilder.CriarToolNoMundo
 --]]
 
+local ServicoDrop = {}
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local PhysicsService = game:GetService("PhysicsService")
@@ -20,16 +22,12 @@ local PhysicsService = game:GetService("PhysicsService")
 -- Módulos
 local ToolBuilder = require(ReplicatedStorage.Modulos.ToolBuilder)
 
--- RemoteEvent
-local Remotos = ReplicatedStorage:WaitForChild("Remotos")
-local DroparToolEvent = Remotos:WaitForChild("DroparTool")
-
 -- ============================================
 -- CONFIGURAÇÃO
 -- ============================================
 local ALTURA_DROP = 2 -- Altura acima do character para dropar o item
 local DISTANCIA_FRENTE = 3 -- Distância na frente do character
-local DEBUG = true -- Ativar logs de debug
+local DEBUG = false -- Ativar logs de debug
 
 -- Collision Groups
 local COLLISION_GROUP_PLAYERS = "Players"
@@ -41,7 +39,7 @@ local COLLISION_GROUP_TOOLS = "DroppedTools"
 
 local function DebugLog(...)
 	if DEBUG then
-		print("[DropTool]", ...)
+		print("[ServicoDrop]", ...)
 	end
 end
 
@@ -49,7 +47,7 @@ end
 local function CalcularPosicaoDrop(character)
 	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
 	if not humanoidRootPart then
-		warn("[DropTool] HumanoidRootPart não encontrada!")
+		warn("[ServicoDrop] HumanoidRootPart não encontrada!")
 		return nil
 	end
 
@@ -62,7 +60,6 @@ local function CalcularPosicaoDrop(character)
 	local cframeBase = CFrame.new(posicao) * rotacaoPlayer
 
 	-- Rotacionar 90 graus para a esquerda (deitado)
-	-- CFrame.Angles(pitch, yaw, roll) - rotacionar no eixo Z para deitar
 	local cframeFinal = cframeBase * CFrame.Angles(0, 0, math.rad(90))
 
 	return cframeFinal
@@ -111,7 +108,6 @@ end
 
 -- Define o Handle do Tool no collision group de DroppedTools
 local function ConfigurarCollisionTool(tool)
-	-- Configurar todas as BaseParts dentro do Tool
 	for _, part in ipairs(tool:GetDescendants()) do
 		if part:IsA("BasePart") then
 			part.CollisionGroup = COLLISION_GROUP_TOOLS
@@ -130,27 +126,27 @@ local function ProcessarDrop(player, toolNome, quantidade)
 
 	-- Verificar se o player ainda está no jogo
 	if not player or not player.Parent then
-		warn("[DropTool] Player não está mais no jogo!")
+		warn("[ServicoDrop] Player não está mais no jogo!")
 		return
 	end
 
 	local character = player.Character
 	if not character then
-		warn("[DropTool] Character não encontrado!")
+		warn("[ServicoDrop] Character não encontrado!")
 		return
 	end
 
 	-- Buscar o Tool na Backpack ou no Character
 	local tool = player.Backpack:FindFirstChild(toolNome) or character:FindFirstChild(toolNome)
 	if not tool or not tool:IsA("Tool") then
-		warn("[DropTool] Tool não encontrado:", toolNome)
+		warn("[ServicoDrop] Tool não encontrado:", toolNome)
 		return
 	end
 
 	-- Extrair dados do Tool
 	local itemData = ToolBuilder.ExtrairDados(tool)
 	if not itemData then
-		warn("[DropTool] ERRO: Não foi possível extrair dados do Tool!")
+		warn("[ServicoDrop] ERRO: Não foi possível extrair dados do Tool!")
 		return
 	end
 
@@ -172,7 +168,7 @@ local function ProcessarDrop(player, toolNome, quantidade)
 	-- Calcular posição de drop
 	local cframeDrop = CalcularPosicaoDrop(character)
 	if not cframeDrop then
-		warn("[DropTool] ERRO: Não foi possível calcular posição de drop!")
+		warn("[ServicoDrop] ERRO: Não foi possível calcular posição de drop!")
 		return
 	end
 
@@ -185,65 +181,72 @@ local function ProcessarDrop(player, toolNome, quantidade)
 		ConfigurarCollisionTool(toolNoMundo)
 		DebugLog("Tool criado no mundo com sucesso:", toolNoMundo.Name)
 	else
-		warn("[DropTool] ERRO: Falha ao criar Tool no mundo!")
+		warn("[ServicoDrop] ERRO: Falha ao criar Tool no mundo!")
 	end
 
 	DebugLog("========================================")
 end
 
 -- ============================================
--- LISTENER DO REMOTEEVENT
+-- INICIALIZAÇÃO DO SERVIÇO
 -- ============================================
 
-DroparToolEvent.OnServerEvent:Connect(function(player, toolNome, quantidade)
-	DebugLog("RemoteEvent recebido de:", player.Name, "Tool:", toolNome, "Quantidade:", quantidade)
+function ServicoDrop:Iniciar()
+	DebugLog("Inicializando ServicoDrop...")
 
-	-- Validações básicas
-	if type(toolNome) ~= "string" then
-		warn("[DropTool] Nome do Tool inválido!")
-		return
-	end
+	-- Obter referências
+	local Remotos = ReplicatedStorage:WaitForChild("Remotos")
+	local DroparToolEvent = Remotos:WaitForChild("DroparTool")
 
-	if type(quantidade) ~= "number" or quantidade <= 0 then
-		warn("[DropTool] Quantidade inválida!")
-		return
-	end
+	-- Configurar collision groups no início
+	ConfigurarCollisionGroups()
 
-	-- Processar o drop
-	ProcessarDrop(player, toolNome, quantidade)
-end)
+	-- Listener do RemoteEvent
+	DroparToolEvent.OnServerEvent:Connect(function(player, toolNome, quantidade)
+		DebugLog("RemoteEvent recebido de:", player.Name, "Tool:", toolNome, "Quantidade:", quantidade)
 
--- ============================================
--- INICIALIZAÇÃO
--- ============================================
+		-- Validações básicas
+		if type(toolNome) ~= "string" then
+			warn("[ServicoDrop] Nome do Tool inválido!")
+			return
+		end
 
--- Configurar collision groups no início
-ConfigurarCollisionGroups()
+		if type(quantidade) ~= "number" or quantidade <= 0 then
+			warn("[ServicoDrop] Quantidade inválida!")
+			return
+		end
 
--- Configurar collision nos characters dos players
-Players.PlayerAdded:Connect(function(player)
-	player.CharacterAdded:Connect(function(character)
-		DebugLog("Character carregado para:", player.Name)
-		character:WaitForChild("HumanoidRootPart")
-		ConfigurarCollisionCharacter(character)
+		-- Processar o drop
+		ProcessarDrop(player, toolNome, quantidade)
 	end)
 
-	-- Se já tem character, configurar agora
-	if player.Character then
-		ConfigurarCollisionCharacter(player.Character)
-	end
-end)
+	-- Configurar collision nos characters dos players
+	Players.PlayerAdded:Connect(function(player)
+		player.CharacterAdded:Connect(function(character)
+			DebugLog("Character carregado para:", player.Name)
+			character:WaitForChild("HumanoidRootPart")
+			ConfigurarCollisionCharacter(character)
+		end)
 
--- Processar players que já estão no jogo
-for _, player in ipairs(Players:GetPlayers()) do
-	if player.Character then
-		ConfigurarCollisionCharacter(player.Character)
-	end
-
-	player.CharacterAdded:Connect(function(character)
-		character:WaitForChild("HumanoidRootPart")
-		ConfigurarCollisionCharacter(character)
+		-- Se já tem character, configurar agora
+		if player.Character then
+			ConfigurarCollisionCharacter(player.Character)
+		end
 	end)
+
+	-- Processar players que já estão no jogo
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player.Character then
+			ConfigurarCollisionCharacter(player.Character)
+		end
+
+		player.CharacterAdded:Connect(function(character)
+			character:WaitForChild("HumanoidRootPart")
+			ConfigurarCollisionCharacter(character)
+		end)
+	end
+
+	DebugLog("ServicoDrop inicializado!")
 end
 
-DebugLog("Sistema DropTool inicializado!")
+return ServicoDrop

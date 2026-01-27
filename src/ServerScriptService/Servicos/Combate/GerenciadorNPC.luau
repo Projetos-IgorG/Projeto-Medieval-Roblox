@@ -31,7 +31,8 @@ local ArmasTemplate = require(Modulos:WaitForChild("ArmasTemplate"))
 local MaquinaDeEstados = require(Modulos:WaitForChild("MaquinaDeEstados"))
 
 local ServerScriptService = game:GetService("ServerScriptService")
-local Combate = ServerScriptService:WaitForChild("Combate")
+local Servicos = ServerScriptService:WaitForChild("Servicos")
+local Combate = Servicos:WaitForChild("Combate")
 local ControladorCombate = require(Combate:WaitForChild("ControladorCombate"))
 
 local GerenciadorNPC = {}

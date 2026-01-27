@@ -1,10 +1,11 @@
 --[[
-    InicializadorSistema.server.luau
+    ConfigIniciar.server.luau
     
     Script unificado que prepara o sistema de combate e jogadores:
-    1. Cria RemoteEvents/RemoteFunctions (antes era InicializadorRemotos)
-    2. Configura pasta Status de cada jogador (antes era Setup)
-    3. Inicializa máquina de estados e NPC (antes era InicializadorCombate)
+    1. Cria RemoteEvents/RemoteFunctions
+    2. Configura pasta Status de cada jogador
+    3. Inicializa máquina de estados e NPC
+    4. Carrega e inicializa todos os Serviços
     
     Execução: Este script deve rodar PRIMEIRO na ServerScriptService
 ]]
@@ -24,7 +25,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 local Players = game:GetService("Players")
 
-DebugPrint("[InicializadorSistema] Iniciando...")
+DebugPrint("[ConfigIniciar] Iniciando...")
 
 -- ═══════════════════════════════════════════════════════════════════
 -- PARTE 1: CRIAR REMOTOS E BINDABLES
@@ -97,19 +98,17 @@ CriarRemoto(Remotos, "DroparTool", "Event") -- Sistema de drop customizado
 -- BindableEvents: server-side apenas
 CriarBindable(Bindables, "SpawnNPC", "Event")
 
-DebugPrint("[InicializadorSistema] Remotos criados")
+DebugPrint("[ConfigIniciar] Remotos criados")
 
 -- ═══════════════════════════════════════════════════════════════════
 -- PARTE 2: SETUP DO STATUS FOLDER PARA JOGADORES
 -- ═══════════════════════════════════════════════════════════════════
 
 local function ConfigurarStatusPasta(Character)
-	-- Cria pasta Status dentro do Character
 	local statusFolder = Instance.new("Folder")
 	statusFolder.Name = "Status"
 	statusFolder.Parent = Character
 
-	-- Função para criar valor se não existir
 	local function createValue(className, name, default)
 		local v = Instance.new(className)
 		v.Name = name
@@ -120,7 +119,6 @@ local function ConfigurarStatusPasta(Character)
 		return v
 	end
 
-	-- Cria os valores esperados pelo sistema de combate
 	-- Estados
 	createValue("StringValue", "modoAnimacao", "Base")
 	createValue("StringValue", "estadoMov", "Parado")
@@ -142,7 +140,6 @@ local function ConfigurarStatusPasta(Character)
 end
 
 local function RemoverAcessoriosNaoHair(Character)
-	-- Remove acessórios que não sejam cabelo
 	local parts = Character:GetChildren()
 	for i = 1, #parts do
 		local instanceA = parts[i]
@@ -154,20 +151,17 @@ local function RemoverAcessoriosNaoHair(Character)
 	end
 end
 
--- Listener para quando novo jogador entra
 Players.PlayerAdded:Connect(function(Player)
 	Player.CharacterAdded:Connect(function(Character)
-		-- Cria Status folder
 		ConfigurarStatusPasta(Character)
 	end)
 
 	Player.CharacterAppearanceLoaded:Connect(function(Character)
-		-- Remove acessórios
 		RemoverAcessoriosNaoHair(Character)
 	end)
 end)
 
-DebugPrint("[InicializadorSistema] Setup de Status configurado")
+DebugPrint("[ConfigIniciar] Setup de Status configurado")
 
 -- ═══════════════════════════════════════════════════════════════════
 -- PARTE 3: LISTENER DO SHIFTLOCKCHANGED
@@ -196,21 +190,35 @@ ShiftLockChanged.OnServerEvent:Connect(function(player, estado)
 	end
 end)
 
-DebugPrint("[InicializadorSistema] Listener ShiftLock conectado")
+DebugPrint("[ConfigIniciar] Listener ShiftLock conectado")
 
 -- ═══════════════════════════════════════════════════════════════════
--- PARTE 4: CARREGAMENTO DE MÓDULOS E INICIALIZAÇÃO NPC/COMBATE
+-- PARTE 4: CARREGAMENTO DE MÓDULOS DE COMBATE
 -- ═══════════════════════════════════════════════════════════════════
 
--- Aguarda que o InicializadorSistema tenha criado os Remotos
-local Combate = ServerScriptService:WaitForChild("Combate")
+local Servicos = ServerScriptService:WaitForChild("Servicos")
+local Combate = Servicos:WaitForChild("Combate")
 local _GerenciadorNPC = require(Combate:WaitForChild("GerenciadorNPC"))
 local _ControladorCombate = require(Combate:WaitForChild("ControladorCombate"))
 
-DebugPrint("[InicializadorSistema] Módulos de combate carregados")
+DebugPrint("[ConfigIniciar] Módulos de combate carregados")
 
 -- ═══════════════════════════════════════════════════════════════════
--- PARTE 5: CRIAR PASTA NPCS
+-- PARTE 5: CARREGAR E INICIAR SERVIÇOS
+-- ═══════════════════════════════════════════════════════════════════
+
+local ServicoDrop = require(Servicos:WaitForChild("ServicoDrop"))
+local ServicoArrastar = require(Servicos:WaitForChild("ServicoArrastar"))
+local ServicoPortal = require(Servicos:WaitForChild("ServicoPortal"))
+
+ServicoDrop:Iniciar()
+ServicoArrastar:Iniciar()
+ServicoPortal:Iniciar()
+
+DebugPrint("[ConfigIniciar] Serviços inicializados")
+
+-- ═══════════════════════════════════════════════════════════════════
+-- PARTE 6: CRIAR PASTA NPCS
 -- ═══════════════════════════════════════════════════════════════════
 
 local pastaNPCs = workspace:FindFirstChild("NPCs")
@@ -218,27 +226,25 @@ if not pastaNPCs then
 	pastaNPCs = Instance.new("Folder")
 	pastaNPCs.Name = "NPCs"
 	pastaNPCs.Parent = workspace
-	DebugPrint("[InicializadorSistema] Pasta NPCs criada")
+	DebugPrint("[ConfigIniciar] Pasta NPCs criada")
 end
 
 -- ═══════════════════════════════════════════════════════════════════
--- PARTE 6: TEMPLATE NPC BÁSICO E LISTENER SPAWNNPC
+-- PARTE 7: TEMPLATE NPC BÁSICO E LISTENER SPAWNNPC
 -- ═══════════════════════════════════════════════════════════════════
 
-local function CriarNPCBasico(dados: { vida: number?, nome: string?, modo: string?, cframe: CFrame? }): Model?
+local function CriarNPCBasico(dados)
 	local posicao = dados.cframe or CFrame.new(0, 5, 0)
 	local nome = dados.nome or "NPC_" .. math.random(1000, 9999)
 	local vida = dados.vida or 100
 	local modoCombate = dados.modo or "Punhos"
 
-	-- Procura um template de NPC na ServerStorage
 	local template = game.ServerStorage:FindFirstChild("NPCTemplate")
-	local npc: Model? = nil
+	local npc = nil
 
 	if template then
 		npc = template:Clone()
 	else
-		-- Tenta clonar o StarterCharacter se existir
 		local starterCharacter = game.StarterPlayer:FindFirstChild("StarterCharacter")
 		if starterCharacter then
 			npc = starterCharacter:Clone()
@@ -246,39 +252,34 @@ local function CriarNPCBasico(dados: { vida: number?, nome: string?, modo: strin
 	end
 
 	if not npc then
-		warn("[InicializadorSistema] Nenhum template de NPC encontrado. Crie um modelo NPCTemplate na ServerStorage.")
+		warn("[ConfigIniciar] Nenhum template de NPC encontrado. Crie um modelo NPCTemplate na ServerStorage.")
 		return nil
 	end
 
 	npc.Name = nome
 
-	-- Configura posição
 	local humanoidRoot = npc:FindFirstChild("HumanoidRootPart")
 	if humanoidRoot then
 		humanoidRoot.CFrame = posicao
 	end
 
-	-- Configura vida
 	local humanoid = npc:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		humanoid.MaxHealth = vida
 		humanoid.Health = vida
 	end
 
-	-- Define modo de combate como atributo
 	npc:SetAttribute("ModoCombate", modoCombate)
-
 	npc.Parent = pastaNPCs
 	return npc
 end
 
--- Listener do BindableEvent SpawnNPC
 local SpawnNPC = Bindables:WaitForChild("SpawnNPC", 5)
 if SpawnNPC then
 	SpawnNPC.Event:Connect(function(dados)
 		DebugPrint(
 			string.format(
-				"[InicializadorSistema] SpawnNPC chamado: nome=%s, vida=%s, modo=%s",
+				"[ConfigIniciar] SpawnNPC chamado: nome=%s, vida=%s, modo=%s",
 				tostring(dados.nome),
 				tostring(dados.vida),
 				tostring(dados.modo)
@@ -288,37 +289,34 @@ if SpawnNPC then
 		local npc = CriarNPCBasico(dados)
 
 		if npc then
-			DebugPrint(string.format("[InicializadorSistema] NPC '%s' criado com sucesso!", npc.Name))
+			DebugPrint(string.format("[ConfigIniciar] NPC '%s' criado com sucesso!", npc.Name))
 		else
-			warn("[InicializadorSistema] Falha ao criar NPC. Verifique se há um template.")
+			warn("[ConfigIniciar] Falha ao criar NPC. Verifique se há um template.")
 		end
 	end)
 
-	DebugPrint("[InicializadorSistema] Listener SpawnNPC conectado")
+	DebugPrint("[ConfigIniciar] Listener SpawnNPC conectado")
 else
-	warn("[InicializadorSistema] BindableEvent SpawnNPC não encontrado!")
+	warn("[ConfigIniciar] BindableEvent SpawnNPC não encontrado!")
 end
 
 -- ═══════════════════════════════════════════════════════════════════
--- PARTE 7: INICIALIZAÇÃO DE JOGADORES (MÁQUINA DE ESTADOS)
+-- PARTE 8: INICIALIZAÇÃO DE JOGADORES (MÁQUINA DE ESTADOS)
 -- ═══════════════════════════════════════════════════════════════════
 
 Players.PlayerAdded:Connect(function(jogador)
 	jogador.CharacterAdded:Connect(function(personagem)
-		-- Pequeno delay para garantir que o personagem está pronto
 		task.wait(0.5)
-
 		if personagem:FindFirstChildOfClass("Humanoid") then
-			DebugPrint(string.format("[InicializadorSistema] Jogador %s carregado", jogador.Name))
+			DebugPrint(string.format("[ConfigIniciar] Jogador %s carregado", jogador.Name))
 		end
 	end)
 end)
 
--- Processa jogadores já conectados
 for _, jogador in ipairs(Players:GetPlayers()) do
 	if jogador.Character and jogador.Character:FindFirstChildOfClass("Humanoid") then
-		DebugPrint(string.format("[InicializadorSistema] Jogador existente %s detectado", jogador.Name))
+		DebugPrint(string.format("[ConfigIniciar] Jogador existente %s detectado", jogador.Name))
 	end
 end
 
-DebugPrint("[InicializadorSistema] Inicializado com sucesso!")
+DebugPrint("[ConfigIniciar] Inicializado com sucesso!")
