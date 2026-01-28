@@ -170,11 +170,15 @@ local TEMPO_MANTER_ANIMACAO = 0.27 -- Tempo para manter animação pausada antes
 local VELOCIDADE_PAUSA = 0.2 -- Velocidade durante pausa (mantém movimento sutil)
 local timerPararAnimacao = nil -- Timer para parar a animação após tempo
 
--- Sistema de preservação de tempo para transições suaves entre animações laterais
-local tempoPreservadoTransicao = 0 -- Tempo preservado da animação anterior para transição suave
-local velocidadePreservadaTransicao = 1 -- Velocidade preservada para calcular tempo correto
-local ultimaTrocaLateralTime = 0 -- Timestamp da última troca de animação lateral (debounce)
 local DEBOUNCE_TROCA_LATERAL = 0.1 -- Tempo mínimo entre trocas de animação lateral
+local ultimaTrocaLateralTime = 0 -- Timestamp da última troca de animação lateral (debounce)
+
+-- Estado persistente do ciclo de caminhada (para preservação entre pulos/pausas)
+local walkCycleState = {
+	time = 0,
+	speed = 1,
+	lastWalkAnimName = nil,
+}
 
 -- Animações que usam sistema de direção reversa
 local ANIMACOES_COM_DIRECAO = {
@@ -1315,6 +1319,13 @@ local function PararAnimacaoMov(forcarParar: boolean?)
 		end
 
 		if forcarParar then
+			-- Salva ciclo antes de parar se for uma animação de movimento direcional
+			if ANIMACOES_COM_DIRECAO[ultimaAnimacaoMovNome] then
+				walkCycleState.time = animacaoAtualMov.TimePosition
+				walkCycleState.speed = velocidadeAnimacaoAtual
+				walkCycleState.lastWalkAnimName = ultimaAnimacaoMovNome
+			end
+
 			-- Para imediatamente
 			animacaoAtualMov:Stop(TIMINGS.MoveFadeOut)
 			animacaoAtualMov = nil
@@ -1328,6 +1339,13 @@ local function PararAnimacaoMov(forcarParar: boolean?)
 			-- Agenda parada real após tempo
 			timerPararAnimacao = task.delay(TEMPO_MANTER_ANIMACAO, function()
 				if animacaoMovPausada and animacaoAtualMov then
+					-- Salva ciclo antes de parar definitivamente
+					if ANIMACOES_COM_DIRECAO[ultimaAnimacaoMovNome] then
+						walkCycleState.time = animacaoAtualMov.TimePosition
+						walkCycleState.speed = velocidadeAnimacaoAtual
+						walkCycleState.lastWalkAnimName = ultimaAnimacaoMovNome
+					end
+
 					animacaoAtualMov:Stop(TIMINGS.MoveFadeOut)
 					animacaoAtualMov = nil
 					animacaoMovPausada = false
@@ -1454,9 +1472,42 @@ local function TocarAnimacaoMov(nomeAnimacao: string, velocidadeBase: number?)
 
 	-- Se não tinha animação ou era diferente, inicia nova
 	if not animacaoAtualMov or not animacaoAtualMov.IsPlaying then
+		-- Tenta restaurar ciclo de caminhada se for uma animação direcional
+		local tempoParaRestaurar = 0
+		if usaDirecao then
+			-- Prioridade: Se a animação ANTERIOR era direcional, usa o tempo dela
+			-- Se não (ex: pulando, caindo), usa o walkCycleState salvo
+
+			-- Verifica se havia uma animação rodando e se ela era direcional
+			-- Precisamos saber o nome da animação anterior para saber se é direcional
+			-- Como animacaoAtualMov está mudando, o 'track' não é mais o anterior
+			-- Mas ainda não trocamos `animacaoAtualMov` aqui dentro do if... espere!
+			-- Este bloco roda quando `animacaoAtualMov` é nil ou != track.
+			-- Se fosse != track, nós chamamos PararAnimacaoMov(true) acima.
+			-- PararAnimacaoMov(true) salva o state e zera animacaoAtualMov.
+			-- PORTANTO: animacaoAtualMov aqui SEMPRE SERÁ NIL na prática (ou parado).
+			-- Então sempre devemos confiar no walkCycleState.
+
+			if walkCycleState.time > 0 then
+				tempoParaRestaurar = walkCycleState.time
+				-- Inverte tempo se mudou de direção principal (frente/trás) desde o save
+				local multAtual = CalcularMultiplicadorDirecao()
+				local multAntigo = walkCycleState.speed > 0 and 1 or -1
+				if multAtual ~= multAntigo then
+					tempoParaRestaurar = track.Length - (tempoParaRestaurar % track.Length)
+				end
+			end
+		end
+
 		track.Priority = Enum.AnimationPriority.Core
 		track.Looped = deveLoop
 		track:Play(TIMINGS.MoveFadeIn)
+
+		-- Restaura tempo se disponível
+		if tempoParaRestaurar > 0 then
+			track.TimePosition = tempoParaRestaurar % track.Length
+			walkCycleState.time = 0 -- Consome o tempo salvo
+		end
 
 		-- Aplica velocidade inicial imediatamente com direção preservada
 		if usaDirecao then
@@ -1481,6 +1532,8 @@ local function TocarAnimacaoMov(nomeAnimacao: string, velocidadeBase: number?)
 			jumpAnimState.conexaoTermino = track.Stopped:Connect(OnJumpAnimacaoTerminou)
 			DebugPrint("[ControladorEstado] Animação de Pulando iniciada (sem loop, aguardando término)")
 		end
+
+		animacaoAtualMov = track
 	end
 
 	-- Configura sistema de direção
@@ -1497,8 +1550,6 @@ local function TocarAnimacaoMov(nomeAnimacao: string, velocidadeBase: number?)
 		-- Animação normal sem sistema de direção
 		velocidadeAnimacaoAlvo = velocidade
 	end
-
-	animacaoAtualMov = track
 end
 
 --- Toca animação de ação
@@ -1712,24 +1763,10 @@ AtualizarAnimacaoMovimento = function()
 	if nomeAnimacao == "Andando" and not estadoAtual.agachado then
 		local tipoLateral, velocidadeLateral = CalcularMovimentoLateral()
 		if tipoLateral ~= "Nenhum" then
-			-- Preservar tempo da animação atual para transição suave
-			-- Usa tempo local se disponível, senão usa tempo preservado do loop de atualização
-			local tempoAtual = 0
-			local velocidadeAnterior = velocidadeAnimacaoAtual
-			if animacaoAtualMov and animacaoAtualMov.IsPlaying then
-				tempoAtual = animacaoAtualMov.TimePosition
-				velocidadeAnterior = animacaoAtualMov.Speed
-			elseif tempoPreservadoTransicao > 0 then
-				-- Usa tempo preservado do AtualizarDirecaoAnimacao
-				tempoAtual = tempoPreservadoTransicao
-				velocidadeAnterior = velocidadePreservadaTransicao
-			end
-
 			-- Se já está na animação lateral correta, não precisa trocar
 			if ultimaAnimacaoMovNome == tipoLateral and animacaoAtualMov and animacaoAtualMov.IsPlaying then
 				-- Apenas atualiza a velocidade alvo
 				velocidadeAnimacaoAlvo = velocidadeLateral
-				tempoPreservadoTransicao = 0 -- Limpa tempo preservado
 				return
 			end
 
@@ -1740,16 +1777,34 @@ AtualizarAnimacaoMovimento = function()
 				if ultimaAnimacaoMovNome == "AndandoDireita" or ultimaAnimacaoMovNome == "AndandoEsquerda" then
 					velocidadeAnimacaoAlvo = velocidadeLateral
 				end
-				tempoPreservadoTransicao = 0
 				return
 			end
 
-			-- Toca a animação lateral com preservação de tempo
+			-- Preservar ciclo da animação atual antes de trocar (ou usar salvo se veio de Caindo)
+			local tempoAtual = 0
+			local velocidadeAnterior = velocidadeAnimacaoAtual
+
+			-- Só herda tempo da animação atual se ela for DIRECIONAL (Andando/Correndo)
+			-- Se for Pulando/Caindo, devemos ignorar e usar o state salvo
+			local animacaoAtualEhDirecional = animacaoAtualMov
+				and animacaoAtualMov.IsPlaying
+				and ultimaAnimacaoMovNome
+				and ANIMACOES_COM_DIRECAO[ultimaAnimacaoMovNome]
+
+			if animacaoAtualEhDirecional then
+				tempoAtual = animacaoAtualMov.TimePosition
+				velocidadeAnterior = animacaoAtualMov.Speed
+			elseif walkCycleState.time > 0 then
+				tempoAtual = walkCycleState.time
+				velocidadeAnterior = walkCycleState.speed
+			end
+
+			-- Toca a animação lateral
 			local animId = ArmasTemplate.ObterAnimacao(estadoAtual.modoAnimacao, tipoLateral)
 			if animId then
 				local track = ObterAnimacao(animId)
 				if track then
-					-- Para animação anterior se for diferente
+					-- Para animação anterior (forçado)
 					if animacaoAtualMov and animacaoAtualMov ~= track then
 						PararAnimacaoMov(true)
 					end
@@ -1759,19 +1814,18 @@ AtualizarAnimacaoMovimento = function()
 					track.Looped = true
 					track:Play(TIMINGS.MoveFadeIn)
 
-					-- Preserva o tempo da animação anterior para transição suave
+					-- Restaura tempo para continuidade
 					if tempoAtual > 0 then
 						local tempoAlvo = tempoAtual
-						-- Verifica se precisa inverter o tempo baseado na mudança de direção
+						-- Inverte tempo se mudou de direção (frente -> trás ou vice-versa)
 						local estaEmReverso = velocidadeLateral < 0
 						local estavaEmReverso = velocidadeAnterior < 0
 
 						if estaEmReverso ~= estavaEmReverso then
-							-- Mudou de direção (frente -> trás ou vice-versa)
-							-- Precisa inverter o tempo para continuidade visual
 							tempoAlvo = track.Length - (tempoAtual % track.Length)
 						end
 						track.TimePosition = tempoAlvo % track.Length
+						walkCycleState.time = 0 -- Consome
 					end
 
 					track:AdjustSpeed(velocidadeLateral)
@@ -1785,56 +1839,51 @@ AtualizarAnimacaoMovimento = function()
 
 					-- Atualiza direção atual baseada na velocidade
 					direcaoAtual = velocidadeLateral > 0 and 1 or -1
-
-					-- Limpa tempo preservado e atualiza timestamp de debounce
-					tempoPreservadoTransicao = 0
 					ultimaTrocaLateralTime = tick()
 				end
 			end
 			return
 		else
 			-- Não está em movimento lateral MAS pode estar saindo de uma animação lateral
-			-- Se a animação atual é lateral, precisa voltar para Andando normal
 			local emAnimacaoLateral = (
 				ultimaAnimacaoMovNome == "AndandoDireita" or ultimaAnimacaoMovNome == "AndandoEsquerda"
 			)
 			if emAnimacaoLateral then
-				-- Preservar tempo para transição suave
-				-- Usa tempo local se disponível, senão usa tempo preservado
+				-- Preservar ciclo
 				local tempoAtual = 0
 				local velocidadeAnterior = velocidadeAnimacaoAtual
-				if animacaoAtualMov and animacaoAtualMov.IsPlaying then
+
+				local animacaoAtualEhDirecional = animacaoAtualMov
+					and animacaoAtualMov.IsPlaying
+					and ultimaAnimacaoMovNome
+					and ANIMACOES_COM_DIRECAO[ultimaAnimacaoMovNome]
+
+				if animacaoAtualEhDirecional then
 					tempoAtual = animacaoAtualMov.TimePosition
 					velocidadeAnterior = animacaoAtualMov.Speed
-				elseif tempoPreservadoTransicao > 0 then
-					tempoAtual = tempoPreservadoTransicao
-					velocidadeAnterior = velocidadePreservadaTransicao
+				elseif walkCycleState.time > 0 then
+					tempoAtual = walkCycleState.time
+					velocidadeAnterior = walkCycleState.speed
 				end
 
 				-- Toca Andando normal
 				TocarAnimacaoMov(nomeAnimacao, velocidade)
 
-				-- Aplica tempo preservado se ainda tem animação
+				-- Aplica tempo preservado
 				if animacaoAtualMov and tempoAtual > 0 then
 					local tempoAlvo = tempoAtual
-					-- Se estava em reverso e agora vai para frente, inverte tempo
 					local estaEmReverso = velocidadeAnimacaoAtual < 0
 					local estavaEmReverso = velocidadeAnterior < 0
 					if estaEmReverso ~= estavaEmReverso then
 						tempoAlvo = animacaoAtualMov.Length - (tempoAtual % animacaoAtualMov.Length)
 					end
 					animacaoAtualMov.TimePosition = tempoAlvo % animacaoAtualMov.Length
+					walkCycleState.time = 0 -- Consome
 				end
-
-				-- Limpa tempo preservado
-				tempoPreservadoTransicao = 0
 				return
 			end
 		end
 	end
-
-	-- Limpa tempo preservado após sucesso na animação lateral
-	tempoPreservadoTransicao = 0
 
 	TocarAnimacaoMov(nomeAnimacao, velocidade)
 end
@@ -2320,11 +2369,6 @@ local function AtualizarDirecaoAnimacao(deltaTime: number)
 		if tipoLateral ~= "Nenhum" then
 			-- Verifica se precisa trocar de animação lateral (ex: Direita -> Esquerda)
 			if emAnimacaoLateral and ultimaAnimacaoMovNome ~= tipoLateral then
-				-- Preserva tempo antes de trocar
-				if animacaoAtualMov and animacaoAtualMov.IsPlaying then
-					tempoPreservadoTransicao = animacaoAtualMov.TimePosition
-					velocidadePreservadaTransicao = velocidadeAnimacaoAtual
-				end
 				AtualizarAnimacaoMovimento()
 				return
 			elseif emAnimacaoLateral then
@@ -2332,20 +2376,10 @@ local function AtualizarDirecaoAnimacao(deltaTime: number)
 				velocidadeAnimacaoAlvo = velocidadeLateral
 				direcaoAtual = velocidadeLateral > 0 and 1 or -1
 			elseif not emAnimacaoLateral then
-				-- Preserva tempo antes de começar animação lateral
-				if animacaoAtualMov and animacaoAtualMov.IsPlaying then
-					tempoPreservadoTransicao = animacaoAtualMov.TimePosition
-					velocidadePreservadaTransicao = velocidadeAnimacaoAtual
-				end
 				AtualizarAnimacaoMovimento()
 				return
 			end
 		elseif emAnimacaoLateral then
-			-- Preserva tempo antes de voltar ao normal
-			if animacaoAtualMov and animacaoAtualMov.IsPlaying then
-				tempoPreservadoTransicao = animacaoAtualMov.TimePosition
-				velocidadePreservadaTransicao = velocidadeAnimacaoAtual
-			end
 			AtualizarAnimacaoMovimento()
 			return
 		end
