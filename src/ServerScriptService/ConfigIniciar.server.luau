@@ -319,4 +319,14 @@ for _, jogador in ipairs(Players:GetPlayers()) do
 	end
 end
 
+-- ═══════════════════════════════════════════════════════════════════
+-- PARTE 9: LIMPEZA DE WORKSPACE
+-- ═══════════════════════════════════════════════════════════════════
+
+local folderDeletar = workspace:FindFirstChild("Deletar")
+if folderDeletar then
+	folderDeletar:Destroy()
+	DebugPrint("[ConfigIniciar] Pasta 'Deletar' removida do Workspace")
+end
+
 DebugPrint("[ConfigIniciar] Inicializado com sucesso!")
