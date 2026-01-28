@@ -66,7 +66,10 @@ local lastSentState = nil
 local currentOffsetTween = nil
 local lastTargetOffset = Vector3.zero
 local lastMaxZoom = CONFIG.ZoomRangeOff.Max
-local characterComponents: { HRP: BasePart?, Humanoid: Humanoid? } = {}
+local characterComponents: { HRP: BasePart?, Humanoid: Humanoid?, Head: BasePart? } = {}
+local raycastParams = RaycastParams.new()
+raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+raycastParams.IgnoreWater = true
 
 local function getStatusValue()
 	local char = plr.Character or plr.CharacterAdded:Wait()
@@ -362,6 +365,27 @@ local function updateState()
 	end
 	targetOffset = targetOffset + movementOffset
 
+	-- CORREÇÃO DE CAMERA: Raycast para evitar clipping na parede em 1ª pessoa
+	if isFirstPersonMode and characterComponents.Head then
+		local head = characterComponents.Head
+		local headCF = head.CFrame
+		local origin = headCF.Position
+
+		-- Onde a câmera 'quer' estar no mundo
+		local idealPos = headCF:ToWorldSpace(CFrame.new(targetOffset)).Position
+		local direction = idealPos - origin
+
+		if direction.Magnitude > 0.001 then
+			local result = Workspace:Raycast(origin, direction, raycastParams)
+			if result then
+				-- Se bateu na parede, puxa a câmera para mais perto da cabeça
+				local safeDist = math.max(0, result.Distance - 0.1) -- margem de segurança
+				local scale = safeDist / direction.Magnitude
+				targetOffset = targetOffset * scale
+			end
+		end
+	end
+
 	-- Tween do offset apenas se mudou (Evita recriar tweens todo frame)
 	if targetOffset ~= lastTargetOffset then
 		lastTargetOffset = targetOffset
@@ -419,10 +443,14 @@ local function onCharacterAdded(char)
 	characterComponents = {}
 	local hrp = char:WaitForChild("HumanoidRootPart", 5)
 	local hum = char:WaitForChild("Humanoid", 5)
+	local head = char:WaitForChild("Head", 5)
 
-	if hrp and hum then
+	if hrp and hum and head then
 		characterComponents.HRP = hrp
 		characterComponents.Humanoid = hum
+		characterComponents.Head = head
+
+		raycastParams.FilterDescendantsInstances = { char }
 
 		-- Guarda FOV padrão ao spawnar
 		-- Guarda FOV padrão ao spawnar: use o valor configurado (CONFIG.DefaultFOV)
