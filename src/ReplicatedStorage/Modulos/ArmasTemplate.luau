@@ -95,6 +95,8 @@ ArmasTemplate.Armas = {
 			-- Movimento Normal
 			Idle = "rbxassetid://82165471407920",
 			Andando = "rbxassetid://104395502422213",
+			AndandoDireita = "rbxassetid://109982570649734",
+			AndandoEsquerda = "rbxassetid://99089536362364",
 			Correndo = "rbxassetid://84638257154650",
 			Pulando = "rbxassetid://117966230491995",
 			Caindo = "rbxassetid://139130630712682",
@@ -241,6 +243,8 @@ ArmasTemplate.Armas = {
 			-- Movimento Normal
 			Idle = "rbxassetid://140496395460979",
 			Andando = "rbxassetid://105404528392497",
+			AndandoDireita = "rbxassetid://109982570649734",
+			AndandoEsquerda = "rbxassetid://99089536362364",
 			Correndo = "rbxassetid://128600831352375",
 			Pulando = "rbxassetid://93655898591525",
 			Caindo = "rbxassetid://110317645536592",
@@ -378,6 +382,8 @@ ArmasTemplate.Armas = {
 			-- Movimento Normal
 			Idle = "rbxassetid://97506647521728",
 			Andando = "rbxassetid://101405606853852",
+			AndandoDireita = "rbxassetid://109982570649734",
+			AndandoEsquerda = "rbxassetid://99089536362364",
 			Correndo = "rbxassetid://105489781294318",
 			Pulando = "rbxassetid://126513416555386", -- Igual ao Base
 			Caindo = "rbxassetid://120023331153028", -- Igual ao Base

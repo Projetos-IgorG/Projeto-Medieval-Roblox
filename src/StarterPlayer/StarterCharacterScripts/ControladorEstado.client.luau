@@ -170,11 +170,19 @@ local TEMPO_MANTER_ANIMACAO = 0.27 -- Tempo para manter animação pausada antes
 local VELOCIDADE_PAUSA = 0.2 -- Velocidade durante pausa (mantém movimento sutil)
 local timerPararAnimacao = nil -- Timer para parar a animação após tempo
 
+-- Sistema de preservação de tempo para transições suaves entre animações laterais
+local tempoPreservadoTransicao = 0 -- Tempo preservado da animação anterior para transição suave
+local velocidadePreservadaTransicao = 1 -- Velocidade preservada para calcular tempo correto
+local ultimaTrocaLateralTime = 0 -- Timestamp da última troca de animação lateral (debounce)
+local DEBOUNCE_TROCA_LATERAL = 0.1 -- Tempo mínimo entre trocas de animação lateral
+
 -- Animações que usam sistema de direção reversa
 local ANIMACOES_COM_DIRECAO = {
 	Andando = true,
 	Correndo = true,
 	AndandoAgachado = true,
+	AndandoDireita = true,
+	AndandoEsquerda = true,
 }
 
 -- Animações que NÃO devem loopar (tocam uma vez e param)
@@ -1172,6 +1180,90 @@ local function CalcularMultiplicadorDirecao(): number
 	end
 end
 
+--- Calcula se o jogador está em movimento lateral (ShiftLock/FirstPerson)
+--- Retorna o nome da animação lateral e a velocidade (1 ou -1)
+--- Só ativa se tiver componente lateral E frontal/traseiro ao mesmo tempo
+---@return string Nome da animação ("Nenhum", "AndandoDireita", "AndandoEsquerda")
+---@return number Velocidade da animação (1 = frente, -1 = trás/reverso)
+local function CalcularMovimentoLateral(): (string, number)
+	-- Verifica se está em ShiftLock ou FirstPerson
+	local shiftLockOnOuFirstPerson = (
+		UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter
+		or player.CameraMode == Enum.CameraMode.LockFirstPerson
+	)
+
+	if not shiftLockOnOuFirstPerson then
+		return "Nenhum", 1
+	end
+
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return "Nenhum", 1
+	end
+
+	local moveDir = humanoid.MoveDirection
+	if moveDir.Magnitude < 0.1 then
+		return "Nenhum", 1
+	end
+
+	local lookVector = hrp.CFrame.LookVector
+	local rightVector = hrp.CFrame.RightVector
+	local lookXZ = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
+	local rightXZ = Vector3.new(rightVector.X, 0, rightVector.Z).Unit
+	local moveXZ = Vector3.new(moveDir.X, 0, moveDir.Z).Unit
+
+	local dotForward = lookXZ:Dot(moveXZ)
+	local dotRight = rightXZ:Dot(moveXZ)
+
+	-- Thresholds para considerar movimento
+	local thresholdLateral = 0.3
+	local thresholdFrontal = 0.3
+
+	local temComponenteLateral = math.abs(dotRight) > thresholdLateral
+	local temComponenteFrontal = math.abs(dotForward) > thresholdFrontal
+
+	-- Precisa ter componente lateral para ativar animação lateral
+	if not temComponenteLateral then
+		return "Nenhum", 1
+	end
+
+	-- Lógica de animação:
+	-- Se tem componente lateral + frontal/traseiro:
+	--   Direita + Frente = AndandoDireita (speed 1)
+	--   Direita + Trás = AndandoEsquerda (speed -1)
+	--   Esquerda + Frente = AndandoEsquerda (speed 1)
+	--   Esquerda + Trás = AndandoDireita (speed -1)
+	-- Se tem APENAS componente lateral (sem frontal/traseiro):
+	--   Direita = AndandoDireita (speed 1, como se estivesse indo pra frente+direita)
+	--   Esquerda = AndandoEsquerda (speed 1, como se estivesse indo pra frente+esquerda)
+	local indoParaDireita = dotRight > 0
+	local indoParaFrente = dotForward > 0
+
+	if temComponenteFrontal then
+		-- Tem componente frontal/traseiro, usa lógica completa
+		if indoParaDireita then
+			if indoParaFrente then
+				return "AndandoDireita", 1
+			else
+				return "AndandoEsquerda", -1
+			end
+		else
+			if indoParaFrente then
+				return "AndandoEsquerda", 1
+			else
+				return "AndandoDireita", -1
+			end
+		end
+	else
+		-- APENAS movimento lateral, sempre velocidade 1 (como se estivesse indo pra frente)
+		if indoParaDireita then
+			return "AndandoDireita", 1
+		else
+			return "AndandoEsquerda", 1
+		end
+	end
+end
+
 --- Define a velocidade base da animação de movimento respeitando o sistema de direção
 --- Se a animação usa direção reversa, atualiza velocidadeAnimacaoAlvo para interpolação suave
 ---@param velocidadeBase number Velocidade base (positiva)
@@ -1614,6 +1706,135 @@ AtualizarAnimacaoMovimento = function()
 		PararAnimacaoMov(false) -- Pausa suave
 		return
 	end
+
+	-- Verifica se precisa tocar animação lateral (ShiftLock/FirstPerson + andando para o lado)
+	-- Só verifica se está andando (não agachado, não correndo)
+	if nomeAnimacao == "Andando" and not estadoAtual.agachado then
+		local tipoLateral, velocidadeLateral = CalcularMovimentoLateral()
+		if tipoLateral ~= "Nenhum" then
+			-- Preservar tempo da animação atual para transição suave
+			-- Usa tempo local se disponível, senão usa tempo preservado do loop de atualização
+			local tempoAtual = 0
+			local velocidadeAnterior = velocidadeAnimacaoAtual
+			if animacaoAtualMov and animacaoAtualMov.IsPlaying then
+				tempoAtual = animacaoAtualMov.TimePosition
+				velocidadeAnterior = animacaoAtualMov.Speed
+			elseif tempoPreservadoTransicao > 0 then
+				-- Usa tempo preservado do AtualizarDirecaoAnimacao
+				tempoAtual = tempoPreservadoTransicao
+				velocidadeAnterior = velocidadePreservadaTransicao
+			end
+
+			-- Se já está na animação lateral correta, não precisa trocar
+			if ultimaAnimacaoMovNome == tipoLateral and animacaoAtualMov and animacaoAtualMov.IsPlaying then
+				-- Apenas atualiza a velocidade alvo
+				velocidadeAnimacaoAlvo = velocidadeLateral
+				tempoPreservadoTransicao = 0 -- Limpa tempo preservado
+				return
+			end
+
+			-- Debounce: evita trocas de animação lateral muito rápidas
+			local tempoDesdeUltimaTroca = tick() - ultimaTrocaLateralTime
+			if tempoDesdeUltimaTroca < DEBOUNCE_TROCA_LATERAL then
+				-- Ainda em período de debounce, apenas atualiza velocidade se já está em lateral
+				if ultimaAnimacaoMovNome == "AndandoDireita" or ultimaAnimacaoMovNome == "AndandoEsquerda" then
+					velocidadeAnimacaoAlvo = velocidadeLateral
+				end
+				tempoPreservadoTransicao = 0
+				return
+			end
+
+			-- Toca a animação lateral com preservação de tempo
+			local animId = ArmasTemplate.ObterAnimacao(estadoAtual.modoAnimacao, tipoLateral)
+			if animId then
+				local track = ObterAnimacao(animId)
+				if track then
+					-- Para animação anterior se for diferente
+					if animacaoAtualMov and animacaoAtualMov ~= track then
+						PararAnimacaoMov(true)
+					end
+
+					-- Inicia nova animação
+					track.Priority = Enum.AnimationPriority.Core
+					track.Looped = true
+					track:Play(TIMINGS.MoveFadeIn)
+
+					-- Preserva o tempo da animação anterior para transição suave
+					if tempoAtual > 0 then
+						local tempoAlvo = tempoAtual
+						-- Verifica se precisa inverter o tempo baseado na mudança de direção
+						local estaEmReverso = velocidadeLateral < 0
+						local estavaEmReverso = velocidadeAnterior < 0
+
+						if estaEmReverso ~= estavaEmReverso then
+							-- Mudou de direção (frente -> trás ou vice-versa)
+							-- Precisa inverter o tempo para continuidade visual
+							tempoAlvo = track.Length - (tempoAtual % track.Length)
+						end
+						track.TimePosition = tempoAlvo % track.Length
+					end
+
+					track:AdjustSpeed(velocidadeLateral)
+					velocidadeAnimacaoAtual = velocidadeLateral
+					velocidadeAnimacaoAlvo = velocidadeLateral
+
+					animacaoAtualMov = track
+					animacaoUsaDirecao = true
+					animacaoMovPausada = false
+					ultimaAnimacaoMovNome = tipoLateral
+
+					-- Atualiza direção atual baseada na velocidade
+					direcaoAtual = velocidadeLateral > 0 and 1 or -1
+
+					-- Limpa tempo preservado e atualiza timestamp de debounce
+					tempoPreservadoTransicao = 0
+					ultimaTrocaLateralTime = tick()
+				end
+			end
+			return
+		else
+			-- Não está em movimento lateral MAS pode estar saindo de uma animação lateral
+			-- Se a animação atual é lateral, precisa voltar para Andando normal
+			local emAnimacaoLateral = (
+				ultimaAnimacaoMovNome == "AndandoDireita" or ultimaAnimacaoMovNome == "AndandoEsquerda"
+			)
+			if emAnimacaoLateral then
+				-- Preservar tempo para transição suave
+				-- Usa tempo local se disponível, senão usa tempo preservado
+				local tempoAtual = 0
+				local velocidadeAnterior = velocidadeAnimacaoAtual
+				if animacaoAtualMov and animacaoAtualMov.IsPlaying then
+					tempoAtual = animacaoAtualMov.TimePosition
+					velocidadeAnterior = animacaoAtualMov.Speed
+				elseif tempoPreservadoTransicao > 0 then
+					tempoAtual = tempoPreservadoTransicao
+					velocidadeAnterior = velocidadePreservadaTransicao
+				end
+
+				-- Toca Andando normal
+				TocarAnimacaoMov(nomeAnimacao, velocidade)
+
+				-- Aplica tempo preservado se ainda tem animação
+				if animacaoAtualMov and tempoAtual > 0 then
+					local tempoAlvo = tempoAtual
+					-- Se estava em reverso e agora vai para frente, inverte tempo
+					local estaEmReverso = velocidadeAnimacaoAtual < 0
+					local estavaEmReverso = velocidadeAnterior < 0
+					if estaEmReverso ~= estavaEmReverso then
+						tempoAlvo = animacaoAtualMov.Length - (tempoAtual % animacaoAtualMov.Length)
+					end
+					animacaoAtualMov.TimePosition = tempoAlvo % animacaoAtualMov.Length
+				end
+
+				-- Limpa tempo preservado
+				tempoPreservadoTransicao = 0
+				return
+			end
+		end
+	end
+
+	-- Limpa tempo preservado após sucesso na animação lateral
+	tempoPreservadoTransicao = 0
 
 	TocarAnimacaoMov(nomeAnimacao, velocidade)
 end
@@ -2086,6 +2307,48 @@ local function AtualizarDirecaoAnimacao(deltaTime: number)
 			animacaoAtualMov:AdjustSpeed(velocidadeAnimacaoAtual)
 		end
 		return
+	end
+
+	-- Verifica continuamente se precisa atualizar animação lateral
+	-- Isso garante transições suaves quando o input muda durante o movimento
+	if estadoAtual.estadoMov == "Andando" and not estadoAtual.agachado then
+		local tipoLateral, velocidadeLateral = CalcularMovimentoLateral()
+		local emAnimacaoLateral = (
+			ultimaAnimacaoMovNome == "AndandoDireita" or ultimaAnimacaoMovNome == "AndandoEsquerda"
+		)
+
+		if tipoLateral ~= "Nenhum" then
+			-- Verifica se precisa trocar de animação lateral (ex: Direita -> Esquerda)
+			if emAnimacaoLateral and ultimaAnimacaoMovNome ~= tipoLateral then
+				-- Preserva tempo antes de trocar
+				if animacaoAtualMov and animacaoAtualMov.IsPlaying then
+					tempoPreservadoTransicao = animacaoAtualMov.TimePosition
+					velocidadePreservadaTransicao = velocidadeAnimacaoAtual
+				end
+				AtualizarAnimacaoMovimento()
+				return
+			elseif emAnimacaoLateral then
+				-- Mesma animação lateral, apenas atualiza velocidade alvo
+				velocidadeAnimacaoAlvo = velocidadeLateral
+				direcaoAtual = velocidadeLateral > 0 and 1 or -1
+			elseif not emAnimacaoLateral then
+				-- Preserva tempo antes de começar animação lateral
+				if animacaoAtualMov and animacaoAtualMov.IsPlaying then
+					tempoPreservadoTransicao = animacaoAtualMov.TimePosition
+					velocidadePreservadaTransicao = velocidadeAnimacaoAtual
+				end
+				AtualizarAnimacaoMovimento()
+				return
+			end
+		elseif emAnimacaoLateral then
+			-- Preserva tempo antes de voltar ao normal
+			if animacaoAtualMov and animacaoAtualMov.IsPlaying then
+				tempoPreservadoTransicao = animacaoAtualMov.TimePosition
+				velocidadePreservadaTransicao = velocidadeAnimacaoAtual
+			end
+			AtualizarAnimacaoMovimento()
+			return
+		end
 	end
 
 	-- Calcula nova direção baseada no movimento atual
