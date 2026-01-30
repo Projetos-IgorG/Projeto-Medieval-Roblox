@@ -71,6 +71,14 @@ ArmasTemplate.ConfiguracaoGlobal = {
 	CooldownDash = 1.5, -- Cooldown entre dashes (segundos)
 	ForcaDash = 45, -- Força do impulso sustentado
 	VelocidadeAnimacaoDash = 1.0, -- Velocidade da animação de dash (0-3)
+
+	-- Impulso de Ataque (aplicado ao atacante)
+	MagnitudeImpulsoAtaqueLeve = 50, -- Impulso para AtaqueLeve normal, padrão: 50
+	MagnitudeImpulsoAtaquePesado = 100, -- Impulso para AtaquePesado e AtaqueLeveFinal, padrão: 100
+
+	-- Knockback (aplicado ao alvo)
+	MagnitudeKnockbackLeve = 200, -- Knockback para ataques leves, padrão: 200
+	MagnitudeKnockbackPesado = 200, -- Knockback para AtaquePesado e AtaqueLeveFinal, padrão: 200
 }
 
 -- ═══════════════════════════════════════════════════════════════════

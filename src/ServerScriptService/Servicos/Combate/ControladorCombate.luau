@@ -26,7 +26,6 @@ end
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 
 local Modulos = ReplicatedStorage:WaitForChild("Modulos")
 local ArmasTemplate = require(Modulos:WaitForChild("ArmasTemplate"))
@@ -48,6 +47,9 @@ local MudarShiftLock = Remotos:WaitForChild("MudarShiftLock")
 local SincronizarEstado = Remotos:WaitForChild("SincronizarEstado")
 local TocarAnimacao = Remotos:WaitForChild("TocarAnimacao")
 local EquipAnimacaoTerminou = Remotos:WaitForChild("EquipAnimacaoTerminou")
+
+-- RemoteEvent para knockback físico (pode não existir ainda)
+local AplicarKnockback = Remotos:FindFirstChild("AplicarKnockback")
 
 -- ═══════════════════════════════════════════════════════════════════
 -- FUNÇÕES AUXILIARES
@@ -188,59 +190,52 @@ function ControladorCombate._AplicarImpulsoAtacante(entidade: Model, tipoAtaque:
 	humanoidRoot:ApplyImpulse(direcao * (humanoidRoot.AssemblyMass or 1))
 end
 
---- Aplica knockback com curva Bezier
+--- Aplica knockback físico baseado na direção que o atacante está virado
+--- Usa impulso físico em vez de animação de posição por Bezier
 function ControladorCombate._AplicarKnockback(alvo: Model, atacante: Model, tipoAtaque: string)
-	local maquinaAtacante = maquinasDeEstado[atacante]
-	if not maquinaAtacante then
-		return
-	end
-
-	local ataque = ArmasTemplate.ObterAtaque(maquinaAtacante:ObterModo(), tipoAtaque)
-	if not ataque or not ataque.impulsoAlvo then
-		return
-	end
-
-	local alvoRoot = alvo:FindFirstChild("HumanoidRootPart")
 	local atacanteRoot = atacante:FindFirstChild("HumanoidRootPart")
-	if not alvoRoot or not atacanteRoot then
+	if not atacanteRoot then
 		return
 	end
 
-	local impulso = ataque.impulsoAlvo
-	local direcao = (alvoRoot.Position - atacanteRoot.Position).Unit
-	direcao = Vector3.new(direcao.X, 0, direcao.Z).Unit -- Apenas horizontal
+	-- Direção que o ATACANTE está virado (não atacante→alvo)
+	local direcao = atacanteRoot.CFrame.LookVector
+	direcao = Vector3.new(direcao.X, 0, direcao.Z).Unit
 
-	local pontoInicial = alvoRoot.Position
-	local pontoFinal = pontoInicial + direcao * impulso.distancia
-	local pontoControle = (pontoInicial + pontoFinal) / 2 + Vector3.new(0, impulso.altura, 0)
-
-	-- Anima via Bezier
-	local duracao = impulso.duracao
-	local tempoInicio = tick()
-
-	-- Desativa física durante knockback
-	local humanoid = alvo:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		humanoid.PlatformStand = true
+	-- Obter magnitude baseada no tipo de ataque
+	local config = ArmasTemplate.ConfiguracaoGlobal
+	local magnitude
+	if tipoAtaque == "AtaquePesado" or tipoAtaque == "AtaqueLeveFinal" then
+		magnitude = config.MagnitudeKnockbackPesado or 35
+	else
+		magnitude = config.MagnitudeKnockbackLeve or 20
 	end
 
-	local conexao
-	conexao = RunService.Heartbeat:Connect(function()
-		local tempoDecorrido = tick() - tempoInicio
-		local t = math.min(tempoDecorrido / duracao, 1)
-
-		-- Curva Bezier quadrática
-		local posicao = (1 - t) ^ 2 * pontoInicial + 2 * (1 - t) * t * pontoControle + t ^ 2 * pontoFinal
-
-		alvoRoot.CFrame = CFrame.new(posicao) * CFrame.Angles(0, math.atan2(-direcao.X, -direcao.Z), 0)
-
-		if t >= 1 then
-			conexao:Disconnect()
-			if humanoid then
-				humanoid.PlatformStand = false
-			end
+	-- Tenta enviar para cliente do alvo aplicar knockback
+	local player = Players:GetPlayerFromCharacter(alvo)
+	if player and AplicarKnockback then
+		AplicarKnockback:FireClient(player, direcao, magnitude)
+		DebugPrint(
+			string.format("[Combate] Knockback enviado para cliente: %s (magnitude: %.1f)", player.Name, magnitude)
+		)
+	else
+		-- NPC ou RemoteEvent não existe: aplicar diretamente no servidor
+		local alvoRoot = alvo:FindFirstChild("HumanoidRootPart")
+		if alvoRoot then
+			local velocidadeAtual = alvoRoot.AssemblyLinearVelocity
+			alvoRoot.AssemblyLinearVelocity = Vector3.new(
+				direcao.X * magnitude,
+				velocidadeAtual.Y + 5, -- Leve elevação
+				direcao.Z * magnitude
+			)
+			DebugPrint(
+				string.format(
+					"[Combate] Knockback aplicado diretamente no servidor (NPC ou fallback): magnitude=%.1f",
+					magnitude
+				)
+			)
 		end
-	end)
+	end
 end
 
 --- Cria hitbox e detecta colisões

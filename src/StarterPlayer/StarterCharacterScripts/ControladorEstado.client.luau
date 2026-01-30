@@ -388,6 +388,14 @@ local function OnMarkerAtaque(indiceGolpe: string)
 
 	DebugPrint(string.format("[ControladorEstado] Marker Attack - golpe %s (índice %d)", indiceGolpe, indice))
 
+	-- Determina tipo de ataque baseado no índice do combo
+	local tipoAtaque = ArmasTemplate.ObterTipoAtaquePorIndice(estadoAtual.modoAnimacao, indice)
+
+	-- Aplica impulso de ataque no cliente (feedback imediato)
+	if _G.AplicarImpulsoAtaque then
+		_G.AplicarImpulsoAtaque(tipoAtaque)
+	end
+
 	-- Notifica servidor para criar hitbox
 	TentarAcao:FireServer("ComboHitbox", indice)
 
@@ -631,6 +639,12 @@ end
 --- Processa o marcador "HeavyAttack" - momento de criar hitbox
 local function OnMarkerHeavyAttack()
 	DebugPrint("[ControladorEstado] Marcador HeavyAttack atingido - notificando servidor para criar hitbox")
+
+	-- Aplica impulso de ataque pesado no cliente (feedback imediato)
+	if _G.AplicarImpulsoAtaque then
+		_G.AplicarImpulsoAtaque("AtaquePesado")
+	end
+
 	-- Notifica o servidor para criar o hitbox do ataque pesado
 	TentarAcao:FireServer("HeavyAttackHitbox")
 
@@ -1144,6 +1158,92 @@ local function OnDashAnimacaoTerminou()
 
 	-- Atualiza animação de movimento
 	AtualizarAnimacaoMovimento()
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- SISTEMA DE IMPULSO DE ATAQUE
+-- ═══════════════════════════════════════════════════════════════════
+
+--[[
+	Sistema de impulso único aplicado ao atacante durante ataques.
+	Diferente do Dash (contínuo), este aplica velocidade uma única vez.
+	A direção é baseada na orientação do personagem (LookVector).
+]]
+
+--- Aplica impulso único ao atacante na direção que está virado
+--- @param tipoAtaque string Tipo do ataque ("AtaqueLeve", "AtaqueLeveFinal", "AtaquePesado")
+local function AplicarImpulsoAtaque(tipoAtaque: string)
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return
+	end
+
+	local config = ArmasTemplate.ConfiguracaoGlobal
+
+	-- Determina magnitude baseada no tipo de ataque
+	local magnitude
+	if tipoAtaque == "AtaquePesado" or tipoAtaque == "AtaqueLeveFinal" then
+		magnitude = config.MagnitudeImpulsoAtaquePesado or 25
+	else
+		magnitude = config.MagnitudeImpulsoAtaqueLeve or 15
+	end
+
+	-- Direção que o atacante está virado (LookVector)
+	local direcao = hrp.CFrame.LookVector
+	direcao = Vector3.new(direcao.X, 0, direcao.Z).Unit
+
+	-- Aplica velocidade única (substitui XZ, mantém Y)
+	local velocidadeAtual = hrp.AssemblyLinearVelocity
+	local impulso = direcao * magnitude
+	hrp.AssemblyLinearVelocity = Vector3.new(impulso.X, velocidadeAtual.Y, impulso.Z)
+
+	DebugPrint(
+		string.format("[ControladorEstado] Impulso de ataque aplicado: %s (magnitude: %.1f)", tipoAtaque, magnitude)
+	)
+end
+
+-- Expõe para uso interno
+_G.AplicarImpulsoAtaque = AplicarImpulsoAtaque
+
+-- ═══════════════════════════════════════════════════════════════════
+-- SISTEMA DE KNOCKBACK (RECEPTOR)
+-- ═══════════════════════════════════════════════════════════════════
+
+--[[
+	Sistema de knockback físico recebido do servidor.
+	Aplica impulso na direção enviada pelo servidor (baseada no atacante).
+	Substitui o sistema antigo de animação de posição por Bezier.
+]]
+
+--- Aplica knockback recebido do servidor usando impulso físico
+--- @param direcao Vector3 Direção normalizada do knockback
+--- @param magnitude number Força do impulso
+local function AplicarKnockbackRecebido(direcao: Vector3, magnitude: number)
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return
+	end
+
+	-- Normaliza para XZ
+	direcao = Vector3.new(direcao.X, 0, direcao.Z).Unit
+
+	-- Aplica impulso com leve elevação
+	local velocidadeAtual = hrp.AssemblyLinearVelocity
+	hrp.AssemblyLinearVelocity = Vector3.new(
+		direcao.X * magnitude,
+		velocidadeAtual.Y + 5, -- Leve elevação para feedback visual
+		direcao.Z * magnitude
+	)
+
+	DebugPrint(string.format("[ControladorEstado] Knockback recebido: magnitude=%.1f", magnitude))
+end
+
+-- Conecta ao RemoteEvent de knockback (será criado se não existir)
+local AplicarKnockbackRemote = Remotos:FindFirstChild("AplicarKnockback")
+if AplicarKnockbackRemote then
+	AplicarKnockbackRemote.OnClientEvent:Connect(function(direcao, magnitude)
+		AplicarKnockbackRecebido(direcao, magnitude)
+	end)
 end
 
 -- ═══════════════════════════════════════════════════════════════════

@@ -94,6 +94,7 @@ CriarRemoto(Remotos, "AcaoAnimacaoTerminou", "Event")
 CriarRemoto(Remotos, "AcaoRejeitada", "Event")
 CriarRemoto(Remotos, "ArrastarItem", "Event") -- Sistema de arrastar itens
 CriarRemoto(Remotos, "DroparTool", "Event") -- Sistema de drop customizado
+CriarRemoto(Remotos, "AplicarKnockback", "Event") -- Sistema de knockback físico
 
 -- BindableEvents: server-side apenas
 CriarBindable(Bindables, "SpawnNPC", "Event")
