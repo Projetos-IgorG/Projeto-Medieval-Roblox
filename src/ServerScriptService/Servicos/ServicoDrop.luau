@@ -143,6 +143,16 @@ local function ProcessarDrop(player, toolNome, quantidade)
 		return
 	end
 
+	-- Verificar se o Tool é do tipo 'ArmasEquipadas'
+	local dadosFolder = tool:FindFirstChild("Dados")
+	if dadosFolder then
+		local tipoValue = dadosFolder:FindFirstChild("Tipo")
+		if tipoValue and tipoValue.Value == "ArmasEquipadas" then
+			warn("[ServicoDrop] Tentativa de dropar Tool do tipo 'ArmasEquipadas' bloqueada!")
+			return
+		end
+	end
+
 	-- Extrair dados do Tool
 	local itemData = ToolBuilder.ExtrairDados(tool)
 	if not itemData then

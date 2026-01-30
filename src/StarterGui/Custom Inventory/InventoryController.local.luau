@@ -208,7 +208,15 @@ local function handlePartialDrop(_, inputState, _)
 			return Enum.ContextActionResult.Sink
 		end
 
+		-- Verificar se o Tool é do tipo 'ArmasEquipadas'
 		local dadosFolder = tool:FindFirstChild("Dados")
+		if dadosFolder then
+			local tipoValue = dadosFolder:FindFirstChild("Tipo")
+			if tipoValue and tipoValue.Value == "ArmasEquipadas" then
+				return Enum.ContextActionResult.Sink
+			end
+		end
+
 		if not dadosFolder then
 			warn("[InventoryController] Tool sem pasta 'Dados' - usando sistema padrão")
 			return Enum.ContextActionResult.Pass

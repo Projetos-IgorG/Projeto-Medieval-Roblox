@@ -32,7 +32,7 @@
     TEMPLATES DOS TOOLS:
     ReplicatedStorage
     └── ToolsTemplates
-        ├── Recursos
+        ├── Materiais
         │   ├── madeira_carvalho (Tool)
         │   ├── pedra_comum (Tool)
         │   └── ...
@@ -196,8 +196,8 @@ local function ValidarItemData(itemData)
 	end
 
 	-- Validação de tipos específicos
-	if itemData.Tipo == "Recurso" and not itemData.Quantidade then
-		warn("[ToolBuilder] AVISO: Recurso sem campo 'Quantidade', definindo como 1")
+	if itemData.Tipo == "Materiais" and not itemData.Quantidade then
+		warn("[ToolBuilder] AVISO: Materiais sem campo 'Quantidade', definindo como 1")
 		itemData.Quantidade = 1
 	end
 
@@ -294,9 +294,9 @@ function ToolBuilder.CriarTool(itemData, parent)
 	end
 
 	-- Configurações adicionais baseadas no tipo
-	if itemData.Tipo == "ArmaEquipada" then
+	if itemData.Tipo == "ArmasEquipadas" then
 		novoTool.CanBeDropped = false
-		warn("[ToolBuilder] ArmaEquipada configurada como não dropável")
+		warn("[ToolBuilder] ArmasEquipadas configurada como não dropável")
 	end
 
 	-- Configurar Draggable como false para Tools na backpack
@@ -506,13 +506,13 @@ function ToolBuilder.PodeEmpilhar(itemA, itemB)
 		return false
 	end
 
-	-- Recursos empilham livremente
-	if itemA.Tipo == "Recurso" then
+	-- Materiais empilham livremente
+	if itemA.Tipo == "Materiais" then
 		return true
 	end
 
 	-- Armas, Armaduras e Ferramentas empilham apenas se todos atributos forem idênticos
-	if itemA.Tipo == "Arma" or itemA.Tipo == "Armadura" or itemA.Tipo == "Ferramenta" then
+	if itemA.Tipo == "Armas" or itemA.Tipo == "Armadura" or itemA.Tipo == "Ferramenta" then
 		local atributosParaComparar = { "MaterialBase", "Upgrade", "Dano", "Resistencia", "Eficiencia" }
 
 		for _, atributo in ipairs(atributosParaComparar) do
@@ -525,7 +525,7 @@ function ToolBuilder.PodeEmpilhar(itemA, itemB)
 	end
 
 	-- ArmasEquipadas não empilham
-	if itemA.Tipo == "ArmaEquipada" then
+	if itemA.Tipo == "ArmasEquipadas" then
 		return false
 	end
 
