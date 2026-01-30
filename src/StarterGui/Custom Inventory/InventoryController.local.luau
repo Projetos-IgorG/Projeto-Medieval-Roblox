@@ -2,6 +2,7 @@
 local StarterGui = game:GetService("StarterGui")
 local ContextActionService = game:GetService("ContextActionService")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
 -- references
 local player = game:GetService("Players").LocalPlayer
@@ -17,6 +18,14 @@ local Inventory = CustomInventoryGUI.Inventory
 local toolButton = script.toolButton
 
 local inventoryHandler = require(script.Parent.SETTINGS)
+
+-- Drop state
+local isDropping = false
+local dropConn = nil
+local dropStart = 0
+local dropTool = nil
+local DROP_MAX = 2 -- segundos para completar 100%
+local DROP_MIN_THRESHOLD = 0.1 -- segundos mínimos para reconhecer um hold
 
 local function showSlots()
 	for index = 1, inventoryHandler.slotAmount do
@@ -160,39 +169,146 @@ local DroparToolEvent = Remotos:WaitForChild("DroparTool")
 
 -- Use ContextActionService to capture Backspace and block the default Roblox drop action.
 -- This ensures the engine's drop won't race with our custom logic.
-local function handlePartialDrop(_, inputState, _)
-	if inputState ~= Enum.UserInputState.Begin then
-		return Enum.ContextActionResult.Sink
-	end
-
-	local tool = getToolEquipped()
+local function finalizeDrop(tool, elapsed, dropFrame)
 	if not tool then
-		return Enum.ContextActionResult.Sink
+		return
 	end
-
-	-- Verificar se o Tool tem a pasta "Dados" (é um Tool customizado)
 	local dadosFolder = tool:FindFirstChild("Dados")
 	if not dadosFolder then
-		warn("[InventoryController] Tool sem pasta 'Dados' - usando sistema padrão")
-		return Enum.ContextActionResult.Pass -- Permitir drop padrão do Roblox
+		return
 	end
-
-	-- Extrair quantidade do Tool
 	local quantidadeValue = dadosFolder:FindFirstChild("Quantidade")
-	local amount = quantidadeValue and quantidadeValue.Value or 1
-
-	-- Determinar quanto dropar
-	local quantidadeDropar = 1 -- Por padrão, dropa 1 unidade
-
-	-- Se shift está pressionado e tem mais de 1, dropa tudo
-	local shiftPressed = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
-		or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
-	if shiftPressed and amount > 1 then
-		quantidadeDropar = amount
+	local total = quantidadeValue and quantidadeValue.Value or 1
+	local fraction = math.clamp(elapsed / DROP_MAX, 0, 1)
+	local amountToDrop
+	if elapsed < DROP_MIN_THRESHOLD then
+		amountToDrop = 1
+	else
+		amountToDrop = math.floor(total * fraction)
+		if amountToDrop < 1 then
+			amountToDrop = 1
+		end
 	end
+	if amountToDrop >= 1 then
+		DroparToolEvent:FireServer(tool.Name, amountToDrop)
+	end
+	if dropFrame then
+		dropFrame.Visible = false
+	end
+end
 
-	-- Chamar o servidor para processar o drop
-	DroparToolEvent:FireServer(tool.Name, quantidadeDropar)
+local function handlePartialDrop(_, inputState, _)
+	if inputState == Enum.UserInputState.Begin then
+		if isDropping then
+			return Enum.ContextActionResult.Sink
+		end
+
+		local tool = getToolEquipped()
+		if not tool then
+			return Enum.ContextActionResult.Sink
+		end
+
+		local dadosFolder = tool:FindFirstChild("Dados")
+		if not dadosFolder then
+			warn("[InventoryController] Tool sem pasta 'Dados' - usando sistema padrão")
+			return Enum.ContextActionResult.Pass
+		end
+
+		-- localizar frame do slot no hotBar
+		local slotIndex = inventoryHandler:getToolPosition(tool)
+		local slotFrame = nil
+		if slotIndex then
+			slotFrame = hotBar:FindFirstChild(tostring(slotIndex))
+		end
+		if not slotFrame then
+			local toolObj = inventoryHandler.OBJECTS
+				and inventoryHandler.OBJECTS.HotBar
+				and inventoryHandler.OBJECTS.HotBar[slotIndex]
+			slotFrame = toolObj and toolObj.Frame
+		end
+
+		local dropFrame = nil
+		if slotFrame then
+			dropFrame = slotFrame:FindFirstChild("DropProgress")
+			if not dropFrame then
+				dropFrame = Instance.new("Frame")
+				dropFrame.Name = "DropProgress"
+				dropFrame.AnchorPoint = Vector2.new(0, 1)
+				dropFrame.Position = UDim2.new(0, 0, 1, 0)
+				dropFrame.Size = UDim2.new(1, 0, 0, 0)
+				dropFrame.BackgroundColor3 = Color3.new(1, 1, 1)
+				dropFrame.BackgroundTransparency = 0.8
+				dropFrame.BorderSizePixel = 0
+				dropFrame.ZIndex = slotFrame.ZIndex and slotFrame.ZIndex + 1 or 5
+				dropFrame.Visible = false
+				dropFrame.Parent = slotFrame
+			end
+			dropFrame.Visible = true
+		end
+
+		-- iniciar o processo de hold
+		isDropping = true
+		dropStart = tick()
+		dropTool = tool
+
+		dropConn = RunService.RenderStepped:Connect(function()
+			if not isDropping then
+				return
+			end
+			local elapsed = tick() - dropStart
+			if not dropTool or not dropTool.Parent then
+				-- ferramenta removida/cancelada
+				isDropping = false
+				if dropConn then
+					dropConn:Disconnect()
+					dropConn = nil
+				end
+				if dropFrame then
+					dropFrame.Visible = false
+				end
+				dropTool = nil
+				return
+			end
+
+			local fraction = math.clamp(elapsed / DROP_MAX, 0, 1)
+			if dropFrame then
+				dropFrame.Size = UDim2.new(1, 0, fraction, 0)
+				dropFrame.Position = UDim2.new(0, 0, 1, 0)
+			end
+
+			if fraction >= 1 then
+				finalizeDrop(dropTool, elapsed, dropFrame)
+				isDropping = false
+				if dropConn then
+					dropConn:Disconnect()
+					dropConn = nil
+				end
+				dropTool = nil
+			end
+		end)
+
+		return Enum.ContextActionResult.Sink
+	elseif inputState == Enum.UserInputState.End then
+		if not isDropping then
+			return Enum.ContextActionResult.Sink
+		end
+
+		local elapsed = tick() - dropStart
+		local slotIndex = dropTool and inventoryHandler:getToolPosition(dropTool)
+		local slotFrame = slotIndex and hotBar:FindFirstChild(tostring(slotIndex))
+		local dropFrame = slotFrame and slotFrame:FindFirstChild("DropProgress")
+
+		finalizeDrop(dropTool, elapsed, dropFrame)
+
+		isDropping = false
+		if dropConn then
+			dropConn:Disconnect()
+			dropConn = nil
+		end
+		dropTool = nil
+
+		return Enum.ContextActionResult.Sink
+	end
 
 	return Enum.ContextActionResult.Sink
 end

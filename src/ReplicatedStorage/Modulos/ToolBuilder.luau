@@ -236,6 +236,44 @@ function ToolBuilder.CriarTool(itemData, parent)
 		return nil
 	end
 
+	-- If parent is a player's Backpack, try to stack with an existing Tool
+	if parent and parent:IsA("Backpack") then
+		-- First, check if the player has the same item equipped (in Character)
+		local player = parent.Parent
+		if player and player:IsA("Player") then
+			local character = player.Character
+			if character then
+				local equippedTool = character:FindFirstChildOfClass("Tool")
+				if equippedTool then
+					local dadosEquipped = ToolBuilder.ExtrairDados(equippedTool)
+					if dadosEquipped and ToolBuilder.PodeEmpilhar(dadosEquipped, itemData) then
+						local quantidadeAtual = dadosEquipped.Quantidade or 1
+						local adicionar = itemData.Quantidade or 1
+						local novaQuantidade = quantidadeAtual + adicionar
+						ToolBuilder.AtualizarQuantidade(equippedTool, novaQuantidade)
+						warn("[ToolBuilder] Item empilhado no Tool equipado. Nova quantidade:", novaQuantidade)
+						return equippedTool
+					end
+				end
+			end
+		end
+
+		-- If not stacked with equipped tool, check Backpack
+		for _, child in ipairs(parent:GetChildren()) do
+			if child and child:IsA("Tool") then
+				local dadosExist = ToolBuilder.ExtrairDados(child)
+				if dadosExist and ToolBuilder.PodeEmpilhar(dadosExist, itemData) then
+					local quantidadeAtual = dadosExist.Quantidade or 1
+					local adicionar = itemData.Quantidade or 1
+					local novaQuantidade = quantidadeAtual + adicionar
+					ToolBuilder.AtualizarQuantidade(child, novaQuantidade)
+					warn("[ToolBuilder] Item empilhado na Backpack. Nova quantidade:", novaQuantidade)
+					return child
+				end
+			end
+		end
+	end
+
 	-- Obter template
 	local template = ObterTemplate(itemData)
 	if not template then

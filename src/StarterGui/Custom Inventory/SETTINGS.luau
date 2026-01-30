@@ -5,7 +5,7 @@ module.OBJECTS.Inventory = {}
 -- SETTINGS
 local SETTINGS: { [string]: any } = module.SETTINGS
 SETTINGS.DEFAULT_COLOR = Color3.fromRGB(0, 0, 0) -- ToolFrame background color when unequipped
-SETTINGS.EQUIPPED_COLOR = Color3.fromRGB(128, 128, 128) -- ToolFrame background color when equipped
+SETTINGS.EQUIPPED_COLOR = Color3.fromRGB(100, 100, 100) -- ToolFrame background color when equipped
 SETTINGS.DISABLED_COLOR = Color3.fromRGB(128, 64, 65) -- ToolFrame background color when the tool is disabled
 SETTINGS.DEFAULT_IMAGEID = ""
 SETTINGS.EQUIPPED_IMAGEID = ""
@@ -279,6 +279,18 @@ function module:addTool(tool: Tool, parent: string, position: number?)
 	frame.Parent = parent == "Inventory" and inventoryFrame.Frame or hotbar
 	frame.Name = parent == "Inventory" and tool.Name or position
 	frame.toolNumber.Text = parent == "Inventory" and "" or position
+
+	local dropProgress = Instance.new("Frame")
+	dropProgress.Name = "DropProgress"
+	dropProgress.AnchorPoint = Vector2.new(0, 1)
+	dropProgress.Position = UDim2.new(0, 0, 1, 0)
+	dropProgress.Size = UDim2.new(1, 0, 0, 0)
+	dropProgress.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	dropProgress.BackgroundTransparency = 0.8
+	dropProgress.BorderSizePixel = 0
+	dropProgress.ZIndex = frame.ZIndex + 1
+	dropProgress.Visible = false
+	dropProgress.Parent = frame
 
 	local object = {}
 	setmetatable(object, toolObjectMetatable)

@@ -136,6 +136,9 @@ local function ObterPeso(objeto)
 			if pesoValue and pesoValue:IsA("NumberValue") then
 				local p = pesoValue.Value
 				if typeof(p) == "number" and p > 0 then
+					if p < 1 then
+						p = 0.8
+					end
 					return p
 				end
 			end
@@ -144,6 +147,9 @@ local function ObterPeso(objeto)
 	end
 	local peso = objeto:GetAttribute("Peso")
 	if typeof(peso) == "number" and peso > 0 then
+		if peso < 1 then
+			peso = 0.8
+		end
 		return peso
 	end
 	return 1.0
