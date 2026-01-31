@@ -33,7 +33,7 @@ local humanoid = character:WaitForChild("Humanoid")
 local animator = humanoid:WaitForChild("Animator")
 
 local Modulos = ReplicatedStorage:WaitForChild("Modulos")
-local ArmasTemplate = require(Modulos:WaitForChild("ArmasTemplate"))
+local Modulo_Configuracoes = require(Modulos:WaitForChild("Combate"):WaitForChild("Modulo_Configuracoes"))
 
 -- ═══════════════════════════════════════════════════════════════════
 -- CONFIGURAÇÕES LOCAIS (espelhando ArmasTemplate para responsividade)
@@ -117,7 +117,12 @@ local AtualizarVelocidadeLocal
 --- Atualiza a velocidade de movimento localmente baseado no estado atual
 --- Chamada sempre que o estado muda (correndo, parado, etc)
 AtualizarVelocidadeLocal = function()
-	local cfg = ArmasTemplate.ConfiguracaoGlobal
+	-- Acessa via ObterConfiguracao para cada valor, ou faz um cache local se necessário
+	-- Para velocidade, vamos puxar direto
+	local VelBloq = Modulo_Configuracoes.ObterConfiguracao("VelocidadeBloqueando")
+	local VelAgachado = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAgachado")
+	local VelCorrendo = Modulo_Configuracoes.ObterConfiguracao("VelocidadeCorrendo")
+	local VelNormal = Modulo_Configuracoes.ObterConfiguracao("VelocidadeNormal")
 
 	-- Se está em ação de combate, usa velocidade de combate
 	local emCombate = (
@@ -129,24 +134,24 @@ AtualizarVelocidadeLocal = function()
 
 	if emCombate then
 		-- Velocidade de ataque: VelocidadeBloqueando * 1.5
-		local velBloq = cfg.VelocidadeBloqueando or 8
+		local velBloq = VelBloq or 8
 		humanoid.WalkSpeed = velBloq * 1.5
 		return
 	end
 
 	-- Se está defendendo, usa velocidade de defesa
 	if estadoAtual.estadoAcao == "Defendendo" or estadoAtual.bloqueando then
-		humanoid.WalkSpeed = cfg.VelocidadeBloqueando or 8
+		humanoid.WalkSpeed = VelBloq or 8
 		return
 	end
 
 	-- Determina velocidade baseado no estado de corrida (client-side)
 	if estadoAtual.agachado then
-		humanoid.WalkSpeed = cfg.VelocidadeAgachado or 12
+		humanoid.WalkSpeed = VelAgachado or 12
 	elseif movementFlags.isRunning then
-		humanoid.WalkSpeed = cfg.VelocidadeCorrendo or 25
+		humanoid.WalkSpeed = VelCorrendo or 25
 	else
-		humanoid.WalkSpeed = cfg.VelocidadeNormal or 16
+		humanoid.WalkSpeed = VelNormal or 16
 	end
 end
 
@@ -320,7 +325,7 @@ local function OnMarkerJanelaCombo(indiceGolpe: string)
 	DebugPrint(string.format("[ControladorEstado] Janela de combo ativada (golpe %d)", indice))
 
 	-- Obtém configuração do combo
-	local combo = ArmasTemplate.ObterCombo(estadoAtual.modoAnimacao)
+	local combo = Modulo_Configuracoes.ObterConfiguracaoCombo(estadoAtual.modoAnimacao)
 	if not combo then
 		return
 	end
@@ -389,15 +394,20 @@ local function OnMarkerAtaque(indiceGolpe: string)
 	DebugPrint(string.format("[ControladorEstado] Marker Attack - golpe %s (índice %d)", indiceGolpe, indice))
 
 	-- Determina tipo de ataque baseado no índice do combo
-	local tipoAtaque = ArmasTemplate.ObterTipoAtaquePorIndice(estadoAtual.modoAnimacao, indice)
+	local tipoAtaque = Modulo_Configuracoes.ObterTipoAtaquePorIndice(estadoAtual.modoAnimacao, indice)
 
 	-- Aplica impulso de ataque no cliente (feedback imediato)
 	if _G.AplicarImpulsoAtaque then
 		_G.AplicarImpulsoAtaque(tipoAtaque)
 	end
 
-	-- Notifica servidor para criar hitbox
-	TentarAcao:FireServer("ComboHitbox", indice)
+	-- Notifica servidor para criar hitbox - envia CFrame atual para sincronia fina
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	local dados = {
+		indice = indice,
+		cframe = hrp and hrp.CFrame or nil,
+	}
+	TentarAcao:FireServer("ComboHitbox", dados)
 
 	-- Se é o golpe 4 (final), configura early cancel e aguarda animação terminar
 	if indice >= 4 then
@@ -407,7 +417,7 @@ local function OnMarkerAtaque(indiceGolpe: string)
 		-- Configura timer de early cancel baseado no tempo restante da animação
 		if comboState.animacaoAtiva and comboState.animacaoAtiva.IsPlaying then
 			local track = comboState.animacaoAtiva
-			local janelaEarlyCancel = ArmasTemplate.ConfiguracaoGlobal.JanelaCancelamentoComboFinal or 0.15
+			local janelaEarlyCancel = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelamentoComboFinal") or 0.15
 			local tempoRestante = (track.Length - track.TimePosition) / track.Speed
 
 			-- Só agenda early cancel se houver tempo suficiente
@@ -462,7 +472,7 @@ end
 local function ConfigurarMarkersCombo(track: AnimationTrack)
 	LimparConexoesMarkers() -- Limpa anteriores
 
-	local combo = ArmasTemplate.ObterCombo(estadoAtual.modoAnimacao)
+	local combo = Modulo_Configuracoes.ObterConfiguracaoCombo(estadoAtual.modoAnimacao)
 	if not combo or not combo.marcadores then
 		return
 	end
@@ -645,13 +655,17 @@ local function OnMarkerHeavyAttack()
 		_G.AplicarImpulsoAtaque("AtaquePesado")
 	end
 
-	-- Notifica o servidor para criar o hitbox do ataque pesado
-	TentarAcao:FireServer("HeavyAttackHitbox")
+	-- Notifica o servidor para criar o hitbox do ataque pesado - envia CFrame para sincronia
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	local dados = {
+		cframe = hrp and hrp.CFrame or nil,
+	}
+	TentarAcao:FireServer("HeavyAttackHitbox", dados)
 
 	-- Configura timer de early cancel baseado no tempo restante da animação
 	if heavyAttackState.animacao and heavyAttackState.animacao.IsPlaying then
 		local track = heavyAttackState.animacao
-		local janelaEarlyCancel = ArmasTemplate.ConfiguracaoGlobal.JanelaCancelamentoAtaquePesado or 0.2
+		local janelaEarlyCancel = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelamentoAtaquePesado") or 0.2
 		local speed = math.max(track.Speed, 0.1) -- Evita divisão por zero
 		local tempoRestante = (track.Length - track.TimePosition) / speed
 
@@ -739,7 +753,7 @@ function _G.ContinuarAtaquePesado()
 	end
 
 	-- Obtém velocidade configurável para quando solta M1
-	local velocidadeSoltar = ArmasTemplate.ConfiguracaoGlobal.VelocidadeSoltarPesado or 1.0
+	local velocidadeSoltar = Modulo_Configuracoes.ObterConfiguracao("VelocidadeSoltarPesado") or 1.0
 
 	if heavyAttackState.aguardandoSoltar then
 		-- Estava pausado (velocidade 0), continua a animação com velocidade de soltar
@@ -776,10 +790,9 @@ end
 --- @return string? tipoAtaque O tipo de ataque que foi cancelado ("AtaqueLeve" ou "CarregandoPesado")
 function _G.TentarCancelarAtaquePorDefesa()
 	local agora = tick()
-	local config = ArmasTemplate.ConfiguracaoGlobal
 
 	-- Verifica cooldown de cancelamento
-	local cooldown = config.CooldownCancelamentoPorDefesa or 1.0
+	local cooldown = Modulo_Configuracoes.ObterConfiguracao("CooldownCancelamentoPorDefesa") or 1.0
 	if (agora - defenseCancelState.ultimoCancelamento) < cooldown then
 		DebugPrint("[ControladorEstado] Defense cancel em cooldown")
 		return false, nil
@@ -788,7 +801,7 @@ function _G.TentarCancelarAtaquePorDefesa()
 	-- Verifica se está em ataque leve (combo) dentro da janela
 	if comboState.animacaoAtiva and comboState.animacaoAtiva.IsPlaying then
 		local tempoDecorrido = agora - comboState.tempoInicio
-		local janelaAtaque = config.JanelaCancelamentoAtaquePorDefesa or 0.15
+		local janelaAtaque = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelamentoAtaquePorDefesa") or 0.15
 
 		-- Só permite cancelar no primeiro golpe do combo (índice 1) e dentro da janela
 		if comboState.indiceAtual <= 1 and tempoDecorrido <= janelaAtaque then
@@ -831,16 +844,16 @@ function _G.TentarCancelarAtaquePorDefesa()
 	-- Verifica se está carregando ataque pesado dentro da janela
 	if heavyAttackState.animacao and heavyAttackState.animacao.IsPlaying then
 		local tempoDecorrido = agora - heavyAttackState.tempoInicio
-		local janelaCarregamento = config.JanelaCancelamentoCarregamentoPorDefesa or 0.2
+		local janelaCarregar = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelamentoCarregamentoPorDefesa") or 0.92
 
 		-- Só permite cancelar se ainda não passou do marcador AttackRelease (ainda carregando)
 		-- E se estiver dentro da janela
-		if tempoDecorrido <= janelaCarregamento then
+		if tempoDecorrido <= janelaCarregar then
 			DebugPrint(
 				string.format(
 					"[ControladorEstado] Defense cancel: Cancelando carregamento pesado (%.3fs dentro da janela de %.3fs)",
 					tempoDecorrido,
-					janelaCarregamento
+					janelaCarregar
 				)
 			)
 
@@ -1082,8 +1095,7 @@ local function IniciarImpulsoDash(direcao: string)
 		return
 	end
 
-	local config = ArmasTemplate.ConfiguracaoGlobal
-	local forcaDash = config.ForcaDash or 50
+	local forcaDash = Modulo_Configuracoes.ObterConfiguracao("ForcaDash") or 50
 
 	-- Cria conexão para aplicar velocidade sustentada durante o dash
 	if dashState.velocityConnection then
@@ -1178,14 +1190,12 @@ local function AplicarImpulsoAtaque(tipoAtaque: string)
 		return
 	end
 
-	local config = ArmasTemplate.ConfiguracaoGlobal
-
 	-- Determina magnitude baseada no tipo de ataque
 	local magnitude
 	if tipoAtaque == "AtaquePesado" or tipoAtaque == "AtaqueLeveFinal" then
-		magnitude = config.MagnitudeImpulsoAtaquePesado or 25
+		magnitude = Modulo_Configuracoes.ObterConfiguracao("MagnitudeImpulsoAtaquePesado") or 25
 	else
-		magnitude = config.MagnitudeImpulsoAtaqueLeve or 15
+		magnitude = Modulo_Configuracoes.ObterConfiguracao("MagnitudeImpulsoAtaqueLeve") or 15
 	end
 
 	-- Direção que o atacante está virado (LookVector)
@@ -1516,7 +1526,7 @@ end
 ---@param nomeAnimacao string Nome da animação
 ---@param velocidadeBase number? Velocidade base (será multiplicada pela direção se aplicável)
 local function TocarAnimacaoMov(nomeAnimacao: string, velocidadeBase: number?)
-	local animId = ArmasTemplate.ObterAnimacao(estadoAtual.modoAnimacao, nomeAnimacao)
+	local animId = Modulo_Configuracoes.ObterIdAnimacao(estadoAtual.modoAnimacao, nomeAnimacao)
 	if not animId then
 		return
 	end
@@ -1757,7 +1767,7 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 
 	-- Verifica se é uma animação de combo para configurar markers
 	local ehCombo = nomeAnimacao and (nomeAnimacao == "AtaqueLeve" or nomeAnimacao:match("^AtaqueLeve"))
-	local combo = ArmasTemplate.ObterCombo(estadoAtual.modoAnimacao)
+	local combo = Modulo_Configuracoes.ObterConfiguracaoCombo(estadoAtual.modoAnimacao)
 
 	if ehCombo and combo and nomeAnimacao then
 		-- Configura sistema de combo por marcadores
@@ -1900,7 +1910,7 @@ AtualizarAnimacaoMovimento = function()
 			end
 
 			-- Toca a animação lateral
-			local animId = ArmasTemplate.ObterAnimacao(estadoAtual.modoAnimacao, tipoLateral)
+			local animId = Modulo_Configuracoes.ObterIdAnimacao(estadoAtual.modoAnimacao, tipoLateral)
 			if animId then
 				local track = ObterAnimacao(animId)
 				if track then
@@ -2529,7 +2539,7 @@ RunService.RenderStepped:Connect(AtualizarDirecaoAnimacao)
 
 --- Pré-carrega todas as animações para evitar lag na primeira execução
 local function PreCarregarAnimacoes()
-	local todasAnimacoes = ArmasTemplate.ObterTodasAnimacoes()
+	local todasAnimacoes = Modulo_Configuracoes.ObterTodasAnimacoes()
 	local total = #todasAnimacoes
 	local carregadas = 0
 

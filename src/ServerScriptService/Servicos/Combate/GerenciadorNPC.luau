@@ -23,12 +23,11 @@ local function DebugPrint(...)
 end
 
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+-- local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local Modulos = ReplicatedStorage:WaitForChild("Modulos")
-local ArmasTemplate = require(Modulos:WaitForChild("ArmasTemplate"))
-local MaquinaDeEstados = require(Modulos:WaitForChild("MaquinaDeEstados"))
+-- local Modulos = ReplicatedStorage:WaitForChild("Modulos")
+-- local MaquinaDeEstados = require(Modulos:WaitForChild("MaquinaDeEstados")) -- Removido se não usado diretamente
 
 local ServerScriptService = game:GetService("ServerScriptService")
 local Servicos = ServerScriptService:WaitForChild("Servicos")

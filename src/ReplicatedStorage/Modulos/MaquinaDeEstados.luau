@@ -31,6 +31,8 @@ local function DebugPrint(...)
 end
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Modulo_Configuracoes =
+	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Combate"):WaitForChild("Modulo_Configuracoes"))
 
 local MaquinaDeEstados = {}
 MaquinaDeEstados.__index = MaquinaDeEstados
@@ -121,6 +123,7 @@ export type DadosEstado = {
 	dashando: boolean,
 	ultimoDash: number,
 	direcaoDash: string,
+	correndoIntent: boolean?,
 }
 
 --- Cria nova instância da máquina de estados
@@ -356,11 +359,10 @@ function MaquinaDeEstados:TenteAtacarLeveEmPe(): (boolean, string?, string?)
 		return false, nil, "Bloqueando"
 	end
 
-	-- Carrega ArmasTemplate para verificar cooldown
-	local ArmasTemplate = require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("ArmasTemplate"))
-	local arma = ArmasTemplate.ObterArma(self.dados.modoAnimacao)
+	-- Carrega Configuração do Modo para verificar permissão
+	local configModo = Modulo_Configuracoes.ObterModoAnimacao(self.dados.modoAnimacao)
 
-	if not arma or not ArmasTemplate.PodeCombater(self.dados.modoAnimacao) then
+	if not configModo or configModo.tipo ~= "Combate" then
 		return false, nil, "SemCombate"
 	end
 
@@ -372,21 +374,35 @@ function MaquinaDeEstados:TenteAtacarLeveEmPe(): (boolean, string?, string?)
 			-- Marca que deve continuar o combo
 			self.dados.continuarCombo = true
 			DebugPrint(string.format("[MaquinaDeEstados] %s: Combo continuado na janela!", self.entidade.Name))
-			return true, nil, "ComboContinuado"
+			return false, nil, "ComboContinuado"
 		else
 			-- Não está na janela, ignora input
 			return false, nil, "ForaDaJanela"
 		end
 	end
 
-	-- Novo ataque - verifica cooldown (por tipo: AtaqueLeve)
-	local ataque = ArmasTemplate.ObterAtaque(self.dados.modoAnimacao, "AtaqueLeve")
-	local ultimoLeve = self.dados.ultimoAtaqueTipos and self.dados.ultimoAtaqueTipos["AtaqueLeve"] or 0
-	if ataque and ultimoLeve > 0 then
-		local cooldown = ataque.tempoRecarga or 0.5
-		if (agora - ultimoLeve) < cooldown then
-			return false, nil, "Cooldown"
-		end
+	-- Se está em qualquer OUTRO estado que não seja Nenhuma, não pode iniciar ataque leve
+	if self.dados.estadoAcao ~= MaquinaDeEstados.EstadoAcao.Nenhuma then
+		DebugPrint(
+			string.format(
+				"[MaquinaDeEstados] %s: Ataque leve bloqueado - estadoAcao=%s",
+				self.entidade.Name,
+				self.dados.estadoAcao
+			)
+		)
+		return false, nil, "AcaoEmAndamento"
+	end
+
+	-- Novo ataque - verifica cooldown (por tipo: AtaqueLeve e AtaquePesado)
+	local cooldown = Modulo_Configuracoes.ObterConfiguracao("CooldownComboLeve") or 0.5
+	local dadosAtaque = self.dados.ultimoAtaqueTipos
+	local ultimoLeve = dadosAtaque and dadosAtaque["AtaqueLeve"] or 0
+	local ultimoPesado = dadosAtaque and dadosAtaque["AtaquePesado"] or 0
+
+	local ultimoAtaque = math.max(ultimoLeve, ultimoPesado)
+
+	if ultimoAtaque > 0 and (agora - ultimoAtaque) < cooldown then
+		return false, nil, "Cooldown"
 	end
 
 	-- Inicia novo combo
@@ -422,13 +438,33 @@ function MaquinaDeEstados:TenteAtacarLeveAgachado(): (boolean, string?, string?)
 		return false, nil, "Bloqueando"
 	end
 
-	local ArmasTemplate = require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("ArmasTemplate"))
+	local configModo = Modulo_Configuracoes.ObterModoAnimacao(self.dados.modoAnimacao)
 
-	if not ArmasTemplate.PodeCombater(self.dados.modoAnimacao) then
+	if not configModo or configModo.tipo ~= "Combate" then
 		return false, nil, "SemCombate"
 	end
 
+	-- Se está em qualquer estado que não seja Nenhuma, não pode iniciar ataque leve agachado
+	if self.dados.estadoAcao ~= MaquinaDeEstados.EstadoAcao.Nenhuma then
+		return false, nil, "AcaoEmAndamento"
+	end
+
+	-- Verifica cooldown
+	local agora = tick()
+	local cooldown = Modulo_Configuracoes.ObterConfiguracao("CooldownComboLeve") or 0.5
+	local dadosAtaque = self.dados.ultimoAtaqueTipos
+	local ultimoLeve = dadosAtaque and dadosAtaque["AtaqueLeve"] or 0
+	local ultimoPesado = dadosAtaque and dadosAtaque["AtaquePesado"] or 0
+
+	local ultimoAtaque = math.max(ultimoLeve, ultimoPesado)
+
+	if ultimoAtaque > 0 and (agora - ultimoAtaque) < cooldown then
+		return false, nil, "Cooldown"
+	end
+
 	-- Ataque agachado não tem combo
+	self.dados.ultimoAtaqueTipos["AtaqueLeve"] = agora
+	self.dados.ultimoAtaque = agora
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.AtacandoLeve)
 	self.dados.indiceCombo = 1
 
@@ -455,20 +491,23 @@ function MaquinaDeEstados:TenteCarregarPesado(): (boolean, string?)
 		return false, "Bloqueando"
 	end
 
-	local ArmasTemplate = require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("ArmasTemplate"))
+	local configModo = Modulo_Configuracoes.ObterModoAnimacao(self.dados.modoAnimacao)
 
-	if not ArmasTemplate.PodeCombater(self.dados.modoAnimacao) then
+	if not configModo or configModo.tipo ~= "Combate" then
 		return false, "SemCombate"
 	end
 
+	-- Se está em qualquer estado que não seja Nenhuma, não pode carregar pesado
+	if self.dados.estadoAcao ~= MaquinaDeEstados.EstadoAcao.Nenhuma then
+		return false, "AcaoEmAndamento"
+	end
+
 	-- Verifica cooldown do ataque pesado (por tipo: AtaquePesado)
-	local ataque = ArmasTemplate.ObterAtaque(self.dados.modoAnimacao, "AtaquePesado")
-	if ataque then
-		local agora = tick()
-		local ultimoPesado = self.dados.ultimoAtaqueTipos and self.dados.ultimoAtaqueTipos["AtaquePesado"] or 0
-		if ultimoPesado > 0 and (agora - ultimoPesado) < ataque.tempoRecarga then
-			return false, "Cooldown"
-		end
+	local cooldown = Modulo_Configuracoes.ObterConfiguracao("CooldownAtaquePesado") or 2.0
+	local agora = tick()
+	local ultimoPesado = self.dados.ultimoAtaqueTipos and self.dados.ultimoAtaqueTipos["AtaquePesado"] or 0
+	if ultimoPesado > 0 and (agora - ultimoPesado) < cooldown then
+		return false, "Cooldown"
 	end
 
 	-- Para de correr ao carregar ataque pesado (se estava correndo no chão)
@@ -567,9 +606,9 @@ function MaquinaDeEstados:TenteBloquear(): (boolean, string?)
 		return false, "MovimentoInvalido"
 	end
 
-	local ArmasTemplate = require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("ArmasTemplate"))
+	local configModo = Modulo_Configuracoes.ObterModoAnimacao(self.dados.modoAnimacao)
 
-	if not ArmasTemplate.PodeCombater(self.dados.modoAnimacao) then
+	if not configModo or configModo.tipo ~= "Combate" then
 		return false, "SemCombate"
 	end
 
@@ -715,9 +754,9 @@ function MaquinaDeEstados:TenteEquipar(modo: string): (boolean, string?)
 		return false, "AcaoEmAndamento"
 	end
 
-	local ArmasTemplate = require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("ArmasTemplate"))
+	local configModo = Modulo_Configuracoes.ObterModoAnimacao(modo)
 
-	if not ArmasTemplate.ObterArma(modo) then
+	if not configModo then
 		return false, "ModoInvalido"
 	end
 
@@ -781,10 +820,8 @@ function MaquinaDeEstados:TenteDash(direcao: string): (boolean, string?)
 	end
 
 	-- Verifica cooldown
-	local ArmasTemplate = require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("ArmasTemplate"))
-	local config = ArmasTemplate.ConfiguracaoGlobal
 	local agora = tick()
-	local cooldown = config.CooldownDash or 1.5
+	local cooldown = Modulo_Configuracoes.ObterConfiguracao("CooldownDash") or 1.5
 
 	if (agora - self.dados.ultimoDash) < cooldown then
 		return false, "Cooldown"
@@ -829,6 +866,28 @@ function MaquinaDeEstados:AplicarStun(duracao: number)
 	-- Agendar remoção do stun
 	task.delay(duracao, function()
 		if self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Stunado then
+			self.dados.stunado = false
+			self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Nenhuma)
+		end
+	end)
+end
+
+--- Alias para AplicarStun (manter compatibilidade)
+---@param duracao number
+function MaquinaDeEstados:EntrarStun(duracao: number)
+	self:AplicarStun(duracao)
+end
+
+--- Aplica estado de defesa quebrada
+---@param duracao number
+function MaquinaDeEstados:QuebrarDefesa(duracao: number)
+	self.dados.stunado = true -- Considera stunado para inputs
+	self.dados.bloqueando = false
+	self.dados.prontoParaAparar = false
+	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.DefesaQuebrada)
+
+	task.delay(duracao, function()
+		if self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.DefesaQuebrada then
 			self.dados.stunado = false
 			self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Nenhuma)
 		end

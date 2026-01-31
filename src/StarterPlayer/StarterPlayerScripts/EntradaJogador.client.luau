@@ -36,6 +36,9 @@ local _ContextActionService = game:GetService("ContextActionService") -- Reserva
 
 local player = Players.LocalPlayer
 
+local Modulo_Configuracoes =
+	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Combate"):WaitForChild("Modulo_Configuracoes"))
+
 -- ═══════════════════════════════════════════════════════════════════
 -- REMOTE EVENTS
 -- ═══════════════════════════════════════════════════════════════════
@@ -98,6 +101,9 @@ local estadoInput = {
 	carregandoPesado = false,
 	ataqueLevePendente = false,
 }
+
+-- Conexões de eventos de Tool para limpeza
+local toolConexoes: { RBXScriptConnection } = {}
 
 -- ═══════════════════════════════════════════════════════════════════
 -- SISTEMA DE DEBOUNCE PARA EVITAR SPAM DE REQUESTS
@@ -516,8 +522,7 @@ local function ProcessarMouse2Pressionado()
 
 			-- NÃO inicia defesa imediatamente após cancelar
 			-- Aguarda um tempo para ver se o jogador continua segurando M2
-			local tempoParaDefesa = require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("ArmasTemplate")).ConfiguracaoGlobal.TempoSegurandoM2ParaDefesa
-				or 0.15
+			local tempoParaDefesa = Modulo_Configuracoes.ObterConfiguracao("TempoSegurandoM2ParaDefesa") or 0.15
 
 			task.delay(tempoParaDefesa, function()
 				-- Verifica se M2 ainda está pressionado após o delay
@@ -588,6 +593,29 @@ local function ProcessarToolEquipado(tool: Tool)
 	-- Atualiza o alvo
 	toolAlvo = tool
 
+	-- Configura detecção nativa de Tool (substitui MouseButton1)
+	-- Limpa conexões anteriores primeiro
+	for _, conexao in ipairs(toolConexoes) do
+		pcall(function()
+			conexao:Disconnect()
+		end)
+	end
+	table.clear(toolConexoes)
+
+	-- Conecta tool.Activated (clique/toque)
+	local conexaoActivated = tool.Activated:Connect(function()
+		ProcessarMouse1Pressionado()
+	end)
+	table.insert(toolConexoes, conexaoActivated)
+
+	-- Conecta tool.Deactivated (soltou clique/toque)
+	local conexaoDeactivated = tool.Deactivated:Connect(function()
+		ProcessarMouse1Solto()
+	end)
+	table.insert(toolConexoes, conexaoDeactivated)
+
+	DebugPrint("[EntradaJogador] Configurado tool.Activated/Deactivated para:", tool.Name)
+
 	-- Se idle, inicia ação diretamente
 	if estadoEquip == "idle" then
 		if toolAtualEquipado then
@@ -647,6 +675,15 @@ local function ProcessarToolDesequipado(tool: Tool)
 	if toolAlvo == tool then
 		toolAlvo = nil
 	end
+
+	-- Limpa conexões de tool.Activated/Deactivated
+	for _, conexao in ipairs(toolConexoes) do
+		pcall(function()
+			conexao:Disconnect()
+		end)
+	end
+	table.clear(toolConexoes)
+	DebugPrint("[EntradaJogador] Limpas conexões tool.Activated/Deactivated para:", tool.Name)
 
 	-- Se idle e este era o tool equipado, inicia desequip
 	if estadoEquip == "idle" then
@@ -723,12 +760,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		return
 	end
 
-	-- Mouse
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		ProcessarMouse1Pressionado()
-		return
-	end
-
+	-- MouseButton1 agora é detectado via tool.Activated (compatibilidade cross-platform)
+	-- Mantém MouseButton2 para bloqueio (sem equivalente nativo)
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		ProcessarMouse2Pressionado()
 		return
@@ -770,12 +803,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 UserInputService.InputEnded:Connect(function(input, gameProcessed)
-	-- Mouse
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		ProcessarMouse1Solto()
-		return
-	end
-
+	-- MouseButton1 agora é detectado via tool.Deactivated (compatibilidade cross-platform)
+	-- Mantém MouseButton2 para bloqueio (sem equivalente nativo)
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		ProcessarMouse2Solto()
 		return
