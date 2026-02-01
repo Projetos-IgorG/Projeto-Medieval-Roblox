@@ -160,6 +160,10 @@ local animacoesCarregadas = {}
 local animacaoAtualMov = nil
 local animacaoAtualAcao = nil
 
+-- Base Idle (camada de fundo contínua para manter postura)
+local animacaoBaseIdle = nil
+local idBaseIdleAtual = nil
+
 -- Sistema de direção reversa para andar/correr para trás
 local direcaoAtual = 1 -- 1 = frente, -1 = trás
 local velocidadeAnimacaoAlvo = 1 -- Velocidade alvo (para interpolação suave)
@@ -192,6 +196,8 @@ local ANIMACOES_COM_DIRECAO = {
 	AndandoAgachado = true,
 	AndandoDireita = true,
 	AndandoEsquerda = true,
+	CorrendoDireita = true,
+	CorrendoEsquerda = true,
 }
 
 -- Animações que NÃO devem loopar (tocam uma vez e param)
@@ -209,6 +215,41 @@ local jumpAnimState = {
 
 -- Forward declaration de funções usadas antes de serem definidas
 local AtualizarAnimacaoMovimento
+local AtualizarBaseIdle
+local ObterAnimacao
+local PararAnimacaoMov
+
+--- Atualiza a animação de Idle base (camada de fundo de prioridade Core)
+--- Isso garante que o personagem mantenha a postura do modo atual mesmo durante transições de movimento
+AtualizarBaseIdle = function()
+	local nomeIdle = estadoAtual.agachado and "IdleAgachado" or "Idle"
+	local animId = Modulo_Configuracoes.ObterIdAnimacao(estadoAtual.modoAnimacao, nomeIdle)
+
+	if not animId then
+		-- Fallback para Base Idle se o modo não tiver
+		animId = Modulo_Configuracoes.ObterIdAnimacao("Base", nomeIdle)
+	end
+
+	if not animId or animId == idBaseIdleAtual then
+		return
+	end
+
+	idBaseIdleAtual = animId
+	local novaTrack = ObterAnimacao(animId)
+
+	if novaTrack then
+		-- Para o idle anterior suavemente
+		if animacaoBaseIdle then
+			animacaoBaseIdle:Stop(TIMINGS.MoveFadeOut)
+		end
+
+		animacaoBaseIdle = novaTrack
+		animacaoBaseIdle.Priority = Enum.AnimationPriority.Core
+		animacaoBaseIdle.Looped = true
+		animacaoBaseIdle:Play(TIMINGS.MoveFadeIn)
+		DebugPrint(string.format("[ControladorEstado] BaseIdle atualizado para: %s (%s)", nomeIdle, animId))
+	end
+end
 
 -- ═══════════════════════════════════════════════════════════════════
 -- SISTEMA DE COMBO POR MARCADORES
@@ -300,6 +341,9 @@ local function OnComboAnimacaoTerminou()
 
 	-- Atualiza velocidade ao sair de combate (client-side)
 	AtualizarVelocidadeLocal()
+
+	-- Atualiza Base Idle imediatamente
+	AtualizarBaseIdle()
 
 	-- Volta para animação de movimento
 	AtualizarAnimacaoMovimento()
@@ -1353,27 +1397,30 @@ local function CalcularMovimentoLateral(): (string, number)
 	local indoParaDireita = dotRight > 0
 	local indoParaFrente = dotForward > 0
 
+	-- Determina prefixo baseado no estado de corrida
+	local prefixo = movementFlags.isRunning and "Correndo" or "Andando"
+
 	if temComponenteFrontal then
 		-- Tem componente frontal/traseiro, usa lógica completa
 		if indoParaDireita then
 			if indoParaFrente then
-				return "AndandoDireita", 1
+				return prefixo .. "Direita", 1
 			else
-				return "AndandoEsquerda", -1
+				return prefixo .. "Esquerda", -1
 			end
 		else
 			if indoParaFrente then
-				return "AndandoEsquerda", 1
+				return prefixo .. "Esquerda", 1
 			else
-				return "AndandoDireita", -1
+				return prefixo .. "Direita", -1
 			end
 		end
 	else
 		-- APENAS movimento lateral, sempre velocidade 1 (como se estivesse indo pra frente)
 		if indoParaDireita then
-			return "AndandoDireita", 1
+			return prefixo .. "Direita", 1
 		else
-			return "AndandoEsquerda", 1
+			return prefixo .. "Esquerda", 1
 		end
 	end
 end
@@ -1397,7 +1444,7 @@ local function DefinirVelocidadeMovimento(velocidadeBase: number)
 end
 
 --- Carrega ou obtém animação do cache
-local function ObterAnimacao(animId: string): AnimationTrack?
+ObterAnimacao = function(animId: string): AnimationTrack?
 	if animacoesCarregadas[animId] then
 		return animacoesCarregadas[animId]
 	end
@@ -1420,7 +1467,7 @@ end
 --- Para animação atual de movimento
 --- Se forcarParar = false, pausa suavemente (para retomar depois)
 --- Se forcarParar = true, para imediatamente
-local function PararAnimacaoMov(forcarParar: boolean?)
+PararAnimacaoMov = function(forcarParar: boolean?)
 	if animacaoAtualMov then
 		-- Cancela timer anterior se existir
 		if timerPararAnimacao then
@@ -1609,7 +1656,7 @@ local function TocarAnimacaoMov(nomeAnimacao: string, velocidadeBase: number?)
 			end
 		end
 
-		track.Priority = Enum.AnimationPriority.Core
+		track.Priority = Enum.AnimationPriority.Movement
 		track.Looped = deveLoop
 		track:Play(TIMINGS.MoveFadeIn)
 
@@ -1861,16 +1908,22 @@ AtualizarAnimacaoMovimento = function()
 	local animacaoQueUsaDirecao = ANIMACOES_COM_DIRECAO[ultimaAnimacaoMovNome]
 	local querIdle = (nomeAnimacao == "Idle" or nomeAnimacao == "IdleAgachado")
 
-	if querIdle and animacaoQueUsaDirecao and animacaoAtualMov and animacaoAtualMov.IsPlaying then
-		-- Ao invés de trocar para Idle, pausa a animação atual
-		-- Isso permite retomar suavemente se o jogador voltar a andar rapidamente
-		PararAnimacaoMov(false) -- Pausa suave
+	-- Se quer Idle, apenas para qualquer animação de movimento ativa
+	-- A camada BaseIdle (Core) aparecerá automaticamente
+	if querIdle then
+		if animacaoQueUsaDirecao and animacaoAtualMov and animacaoAtualMov.IsPlaying and not animacaoMovPausada then
+			-- Inicia pausa suave para permitir retorno rápido
+			PararAnimacaoMov(false)
+		elseif not animacaoMovPausada then
+			-- Para imediatamente se não for caso de pausa suave ou se já passou do tempo
+			PararAnimacaoMov(true)
+		end
 		return
 	end
 
-	-- Verifica se precisa tocar animação lateral (ShiftLock/FirstPerson + andando para o lado)
-	-- Só verifica se está andando (não agachado, não correndo)
-	if nomeAnimacao == "Andando" and not estadoAtual.agachado then
+	-- Verifica se precisa tocar animação lateral (ShiftLock/FirstPerson + andando/correndo para o lado)
+	-- Só verifica se está andando ou correndo (não agachado)
+	if (nomeAnimacao == "Andando" or nomeAnimacao == "Correndo") and not estadoAtual.agachado then
 		local tipoLateral, velocidadeLateral = CalcularMovimentoLateral()
 		if tipoLateral ~= "Nenhum" then
 			-- Se já está na animação lateral correta, não precisa trocar
@@ -1884,7 +1937,12 @@ AtualizarAnimacaoMovimento = function()
 			local tempoDesdeUltimaTroca = tick() - ultimaTrocaLateralTime
 			if tempoDesdeUltimaTroca < DEBOUNCE_TROCA_LATERAL then
 				-- Ainda em período de debounce, apenas atualiza velocidade se já está em lateral
-				if ultimaAnimacaoMovNome == "AndandoDireita" or ultimaAnimacaoMovNome == "AndandoEsquerda" then
+				if
+					ultimaAnimacaoMovNome == "AndandoDireita"
+					or ultimaAnimacaoMovNome == "AndandoEsquerda"
+					or ultimaAnimacaoMovNome == "CorrendoDireita"
+					or ultimaAnimacaoMovNome == "CorrendoEsquerda"
+				then
 					velocidadeAnimacaoAlvo = velocidadeLateral
 				end
 				return
@@ -1920,7 +1978,7 @@ AtualizarAnimacaoMovimento = function()
 					end
 
 					-- Inicia nova animação
-					track.Priority = Enum.AnimationPriority.Core
+					track.Priority = Enum.AnimationPriority.Movement
 					track.Looped = true
 					track:Play(TIMINGS.MoveFadeIn)
 
@@ -1956,7 +2014,10 @@ AtualizarAnimacaoMovimento = function()
 		else
 			-- Não está em movimento lateral MAS pode estar saindo de uma animação lateral
 			local emAnimacaoLateral = (
-				ultimaAnimacaoMovNome == "AndandoDireita" or ultimaAnimacaoMovNome == "AndandoEsquerda"
+				ultimaAnimacaoMovNome == "AndandoDireita"
+				or ultimaAnimacaoMovNome == "AndandoEsquerda"
+				or ultimaAnimacaoMovNome == "CorrendoDireita"
+				or ultimaAnimacaoMovNome == "CorrendoEsquerda"
 			)
 			if emAnimacaoLateral then
 				-- Preservar ciclo
@@ -2019,6 +2080,9 @@ local function ProcessarSincronizacao(entidade: Model, dados)
 	estadoAtual.bloqueando = dados.bloqueando
 	estadoAtual.agachado = dados.agachado
 	estadoAtual.correndo = dados.correndo
+
+	-- Atualiza Base Idle se necessário (mudança de modo ou agachado)
+	AtualizarBaseIdle()
 
 	-- Se o modo de animação mudou, força atualização da animação de movimento
 	-- Isso garante que ao equipar/desequipar, as animações troquem para o novo modo
@@ -2470,10 +2534,13 @@ local function AtualizarDirecaoAnimacao(deltaTime: number)
 
 	-- Verifica continuamente se precisa atualizar animação lateral
 	-- Isso garante transições suaves quando o input muda durante o movimento
-	if estadoAtual.estadoMov == "Andando" and not estadoAtual.agachado then
+	if (estadoAtual.estadoMov == "Andando" or estadoAtual.estadoMov == "Correndo") and not estadoAtual.agachado then
 		local tipoLateral, velocidadeLateral = CalcularMovimentoLateral()
 		local emAnimacaoLateral = (
-			ultimaAnimacaoMovNome == "AndandoDireita" or ultimaAnimacaoMovNome == "AndandoEsquerda"
+			ultimaAnimacaoMovNome == "AndandoDireita"
+			or ultimaAnimacaoMovNome == "AndandoEsquerda"
+			or ultimaAnimacaoMovNome == "CorrendoDireita"
+			or ultimaAnimacaoMovNome == "CorrendoEsquerda"
 		)
 
 		if tipoLateral ~= "Nenhum" then
@@ -2575,6 +2642,8 @@ player.CharacterAdded:Connect(function(novoCharacter)
 	animacoesCarregadas = {}
 	animacaoAtualMov = nil
 	animacaoAtualAcao = nil
+	animacaoBaseIdle = nil
+	idBaseIdleAtual = nil
 
 	-- Limpa estado de combo
 	LimparConexoesMarkers()
@@ -2624,6 +2693,7 @@ player.CharacterAdded:Connect(function(novoCharacter)
 	PreCarregarAnimacoes()
 
 	-- Começa com Idle
+	AtualizarBaseIdle()
 	AtualizarAnimacaoMovimento()
 end)
 
@@ -2635,6 +2705,7 @@ end)
 PreCarregarAnimacoes()
 
 -- Começa com Idle
+AtualizarBaseIdle()
 AtualizarAnimacaoMovimento()
 
 DebugPrint("[ControladorEstado] Inicializado - movimento input-based + StateChanged")
