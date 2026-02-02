@@ -960,11 +960,190 @@ local equipAnimState = {
 	conexaoTermino = nil, -- Conexão para detectar término
 	conexaoMonitor = nil, -- Conexão para monitorar TimePosition (quando velocidade negativa)
 	tempoInicio = 0, -- Tempo quando a animação iniciou (para calcular progresso)
+	-- Sistema de acessório de arma
+	acessorioClonado = nil, -- Referência ao Accessory clonado no character
+	conexaoMarkerEquip = nil, -- Conexão do marker "Equip" na animação
+	conexaoMarkerDesequip = nil, -- Conexão do marker "Desequip" na animação
+	acessorioJaClonado = false, -- Flag para evitar clonagens duplicadas
 }
+
+-- ═══════════════════════════════════════════════════════════════════
+-- SISTEMA DE ACESSÓRIO DE ARMA (CLONAGEM/REMOÇÃO)
+-- ═══════════════════════════════════════════════════════════════════
+
+--- Obtém o Tool atualmente equipado no character
+---@return Tool? O Tool equipado ou nil
+local function ObterToolEquipado(): Tool?
+	if not character then
+		return nil
+	end
+	return character:FindFirstChildOfClass("Tool")
+end
+
+--- Clona o acessório "AcessorioMaoDireita" do Tool para o character do jogador
+--- Usa Humanoid:AddAccessory() para posicionamento automático
+local function ClonarAcessorioParaJogador()
+	-- Evita clonagem duplicada
+	if equipAnimState.acessorioJaClonado then
+		DebugPrint("[ControladorEstado] Acessório já foi clonado, ignorando")
+		return
+	end
+
+	local tool = ObterToolEquipado()
+	if not tool then
+		DebugPrint("[ControladorEstado] Nenhum Tool equipado para clonar acessório")
+		return
+	end
+
+	-- Busca o acessório dentro do Tool
+	local acessorioOriginal = tool:FindFirstChild("AcessorioMaoDireita")
+	if not acessorioOriginal or not acessorioOriginal:IsA("Accessory") then
+		DebugPrint("[ControladorEstado] AcessorioMaoDireita não encontrado no Tool:", tool.Name)
+		return
+	end
+
+	-- Verifica se a mão existe para garantir que o AddAccessory terá onde prender
+	local hand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+	if not hand then
+		DebugPrint("[ControladorEstado] Mão (Right Arm/RightHand) não encontrada no character")
+		return
+	end
+
+	-- Verifica se já existe um acessório clonado no character (limpeza de segurança)
+	local acessorioExistente = character:FindFirstChild("AcessorioMaoDireita")
+	if acessorioExistente then
+		acessorioExistente:Destroy()
+	end
+
+	-- Clona o acessório (não destrói o original dentro do Tool)
+	local acessorioClone = acessorioOriginal:Clone()
+	local handle = acessorioClone:FindFirstChild("Handle")
+
+	if not handle then
+		DebugPrint("[ControladorEstado] Erro: Acessório clonado não possui um 'Handle'")
+		acessorioClone:Destroy()
+		return
+	end
+
+	-- Limpeza e Configuração Física
+	-- Importante: Peças ancoradas ou com colisão ativa podem impedir o grip correto ou causar problemas de física
+	for _, part in ipairs(acessorioClone:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.Anchored = false
+			part.CanCollide = false
+			part.CanTouch = false
+			part.CanQuery = false
+			part.Massless = true
+		elseif (part:IsA("Weld") or part:IsA("ManualWeld")) and part.Name == "AccessoryWeld" then
+			-- Remove AccessoryWeld antigo/sujo se existir para o AddAccessory criar um novo limpo
+			part:Destroy()
+		elseif part:IsA("ProximityPrompt") then
+			part:Destroy()
+		end
+	end
+
+	-- Adiciona o acessório ao Humanoid (posicionamento automático via AttachmentPoints)
+	humanoid:AddAccessory(acessorioClone)
+
+	-- Sistema de Grip Robusto:
+	-- Se o Roblox não criar o 'AccessoryWeld' automaticamente (pode ocorrer no cliente), fazemos manualmente.
+	local accessoryWeld = handle:FindFirstChild("AccessoryWeld")
+	if not accessoryWeld then
+		local bodyAttachment = hand:FindFirstChild("RightGripAttachment")
+		local handleAttachment = handle:FindFirstChild("RightGripAttachment")
+
+		if bodyAttachment and handleAttachment then
+			local newWeld = Instance.new("Weld")
+			newWeld.Name = "AccessoryWeld"
+			newWeld.Part0 = handle
+			newWeld.Part1 = hand
+			newWeld.C0 = handleAttachment.CFrame
+			newWeld.C1 = bodyAttachment.CFrame
+			newWeld.Parent = handle
+			DebugPrint("[ControladorEstado] Grip manual aplicado (Weld criado manualmente)")
+		else
+			DebugPrint("[ControladorEstado] Falha ao criar Grip: Attachments não encontrados na mão ou na arma")
+		end
+	end
+
+	-- Salva referência no estado
+	equipAnimState.acessorioClonado = acessorioClone
+	equipAnimState.acessorioJaClonado = true
+
+	DebugPrint("[ControladorEstado] Acessório clonado para o jogador:", acessorioClone.Name)
+end
+
+--- Remove o acessório "AcessorioMaoDireita" do character do jogador
+local function RemoverAcessorioDoJogador()
+	-- Primeiro tenta usar a referência salva
+	if equipAnimState.acessorioClonado then
+		if equipAnimState.acessorioClonado.Parent then
+			equipAnimState.acessorioClonado:Destroy()
+			DebugPrint("[ControladorEstado] Acessório removido via referência salva")
+		end
+		equipAnimState.acessorioClonado = nil
+		equipAnimState.acessorioJaClonado = false
+		return
+	end
+
+	-- Fallback: busca diretamente no character
+	if character then
+		local acessorio = character:FindFirstChild("AcessorioMaoDireita")
+		if acessorio then
+			acessorio:Destroy()
+			DebugPrint("[ControladorEstado] Acessório removido via busca no character")
+		end
+	end
+
+	equipAnimState.acessorioJaClonado = false
+end
+
+--- Limpa todas as conexões de markers de equip/desequip
+local function LimparConexoesMarkersEquip()
+	if equipAnimState.conexaoMarkerEquip then
+		equipAnimState.conexaoMarkerEquip:Disconnect()
+		equipAnimState.conexaoMarkerEquip = nil
+	end
+	if equipAnimState.conexaoMarkerDesequip then
+		equipAnimState.conexaoMarkerDesequip:Disconnect()
+		equipAnimState.conexaoMarkerDesequip = nil
+	end
+end
+
+--- Configura os listeners de markers para animação de equipar/desequipar
+--- @param track AnimationTrack A animação a ser monitorada
+--- @param ehEquipar boolean true se é animação de equipar, false se é desequipar
+local function ConfigurarMarkersEquip(track: AnimationTrack, ehEquipar: boolean)
+	-- Limpa conexões anteriores
+	LimparConexoesMarkersEquip()
+
+	if ehEquipar then
+		-- Animação de Equipar: conecta ao marker "Equip" para clonar acessório
+		equipAnimState.conexaoMarkerEquip = track:GetMarkerReachedSignal("Equip"):Connect(function()
+			-- Verifica se ainda está na direção de equipar (pode ter invertido)
+			if equipAnimState.direcao == 1 then
+				ClonarAcessorioParaJogador()
+				DebugPrint("[ControladorEstado] Marker 'Equip' atingido - acessório clonado")
+			end
+		end)
+	else
+		-- Animação de Desequipar: conecta ao marker "Desequip" para remover acessório
+		equipAnimState.conexaoMarkerDesequip = track:GetMarkerReachedSignal("Desequip"):Connect(function()
+			-- Verifica se ainda está na direção de desequipar (pode ter invertido)
+			if equipAnimState.direcao == -1 then
+				RemoverAcessorioDoJogador()
+				DebugPrint("[ControladorEstado] Marker 'Desequip' atingido - acessório removido")
+			end
+		end)
+	end
+end
 
 --- Callback para quando a animação de equipar/desequipar termina
 local function OnEquipAnimacaoTerminou()
 	local direcaoFinal = equipAnimState.direcao
+
+	-- Limpa conexões de markers
+	LimparConexoesMarkersEquip()
 
 	-- Limpa estado
 	if equipAnimState.conexaoTermino then
@@ -978,6 +1157,17 @@ local function OnEquipAnimacaoTerminou()
 	equipAnimState.animacao = nil
 	equipAnimState.direcao = 0
 	equipAnimState.modoAlvo = nil
+
+	-- Garante estado final correto do acessório
+	if direcaoFinal == 1 then
+		-- Terminou equipando: garante que acessório está clonado
+		if not equipAnimState.acessorioJaClonado then
+			ClonarAcessorioParaJogador()
+		end
+	elseif direcaoFinal == -1 then
+		-- Terminou desequipando: garante que acessório foi removido
+		RemoverAcessorioDoJogador()
+	end
 
 	-- Notifica EntradaJogador que a animação terminou
 	if _G.OnEquipAnimacaoTerminou then
@@ -1045,6 +1235,16 @@ function _G.InverterEquipAnimacao(novaDirecao: number)
 			equipAnimState.conexaoMonitor = nil
 		end
 	end
+
+	-- Reconfigura markers para a nova direção
+	-- Os markers "Equip" e "Desequip" são diferentes, então reconectamos
+	local ehEquiparAgora = (novaDirecao == 1)
+	ConfigurarMarkersEquip(equipAnimState.animacao, ehEquiparAgora)
+
+	-- Se inverteu de equipar para desequipar e já tinha clonado o acessório,
+	-- o marker "Desequip" vai removê-lo quando for atingido
+	-- Se inverteu de desequipar para equipar e o acessório ainda existe,
+	-- o marker "Equip" vai cloná-lo quando for atingido (evita duplicatas via flag)
 
 	DebugPrint(
 		"[ControladorEstado] Animação de equip invertida:",
@@ -1791,11 +1991,22 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 			equipAnimState.conexaoMonitor = nil
 		end
 
+		-- Determina se é animação de equipar ou desequipar
+		local ehEquiparDirecao = (nomeAnimacao == "Equipar")
+
 		equipAnimState.animacao = track
 		-- Direção: 1 para equipar, -1 para desequipar
 		-- IMPORTANTE: Isso determina o que o callback final vai reportar
-		equipAnimState.direcao = (nomeAnimacao == "Equipar") and 1 or -1
+		equipAnimState.direcao = ehEquiparDirecao and 1 or -1
 		equipAnimState.tempoInicio = tick()
+
+		-- Reseta flag de clonagem ao iniciar nova animação de equipar
+		if ehEquiparDirecao then
+			equipAnimState.acessorioJaClonado = false
+		end
+
+		-- Configura markers para controlar visibilidade do acessório
+		ConfigurarMarkersEquip(track, ehEquiparDirecao)
 
 		-- Conecta callback de término
 		equipAnimState.conexaoTermino = track.Stopped:Connect(function()
@@ -2653,6 +2864,24 @@ player.CharacterAdded:Connect(function(novoCharacter)
 	comboState.continuarCombo = false
 	comboState.pendingConsume = false
 	comboState.token = 0
+
+	-- Limpa estado de equipar/desequipar e remove acessório ao respawnar
+	LimparConexoesMarkersEquip()
+	if equipAnimState.conexaoTermino then
+		equipAnimState.conexaoTermino:Disconnect()
+		equipAnimState.conexaoTermino = nil
+	end
+	if equipAnimState.conexaoMonitor then
+		equipAnimState.conexaoMonitor:Disconnect()
+		equipAnimState.conexaoMonitor = nil
+	end
+	-- O acessório clonado será destruído junto com o character antigo
+	-- Apenas resetamos as referências
+	equipAnimState.animacao = nil
+	equipAnimState.direcao = 0
+	equipAnimState.modoAlvo = nil
+	equipAnimState.acessorioClonado = nil
+	equipAnimState.acessorioJaClonado = false
 
 	-- Reseta flags
 	movementFlags = {
