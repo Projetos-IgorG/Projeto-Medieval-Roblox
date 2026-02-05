@@ -1,5 +1,8 @@
 {
   "properties": {
+    "TextureContent": "http://www.roblox.com/asset/?id=22595979",
+    "CanBeDropped": false,
+    "SourceAssetId": 14002773553.0,
     "WorldPivotData": {
       "OptionalCFrame": {
         "position": [
@@ -26,8 +29,6 @@
         ]
       }
     },
-    "CanBeDropped": false,
-    "TextureContent": "http://www.roblox.com/asset/?id=22595979",
     "Grip": [
       0.550000011920929,
       -0.10000000149011612,
@@ -41,8 +42,7 @@
       -0.9888408780097961,
       0.0,
       -0.14897601306438446
-    ],
-    "SourceAssetId": 14002773553.0
+    ]
   },
   "className": "Tool"
 }

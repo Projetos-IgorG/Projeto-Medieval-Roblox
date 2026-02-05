@@ -66,6 +66,7 @@ export type ConfiguracaoGlobal = {
 	JanelaCancelamentoCarregamentoPorDefesa: number,
 	CooldownCancelamentoPorDefesa: number,
 	TempoSegurandoM2ParaDefesa: number,
+	VelocidadeReversaoCancelamento: number,
 
 	-- Cooldowns
 	CooldownComboLeve: number,
@@ -141,6 +142,7 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	JanelaCancelamentoCarregamentoPorDefesa = 0.9,
 	CooldownCancelamentoPorDefesa = 1.0,
 	TempoSegurandoM2ParaDefesa = 0.13,
+	VelocidadeReversaoCancelamento = -1.5,
 
 	-- Cooldowns
 	CooldownComboLeve = 0.5,

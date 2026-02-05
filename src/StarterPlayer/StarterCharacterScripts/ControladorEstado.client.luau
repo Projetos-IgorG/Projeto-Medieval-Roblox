@@ -279,6 +279,7 @@ local comboState = {
 	earlyCancelTimer = nil, -- Timer para cancelamento antecipado
 	earlyCancelExecutado = false, -- Se o cancelamento antecipado já foi executado
 	tempoInicio = 0, -- Momento em que o combo iniciou (para defense cancel)
+	conexaoMonitorReversao = nil :: RBXScriptConnection?, -- Conexão para monitorar reversão
 }
 
 -- Estado global para cancelamento por defesa
@@ -307,6 +308,12 @@ local function LimparConexoesMarkers()
 	if comboState.earlyCancelTimer then
 		pcall(task.cancel, comboState.earlyCancelTimer)
 		comboState.earlyCancelTimer = nil
+	end
+
+	-- Limpa monitor de reversão se existir
+	if comboState.conexaoMonitorReversao then
+		comboState.conexaoMonitorReversao:Disconnect()
+		comboState.conexaoMonitorReversao = nil
 	end
 end
 
@@ -607,6 +614,7 @@ local heavyAttackState = {
 	earlyCancelTimer = nil, -- Timer para cancelamento antecipado
 	earlyCancelExecutado = false, -- Se o cancelamento antecipado já foi executado
 	tempoInicio = 0, -- Momento em que o carregamento iniciou (para defense cancel)
+	conexaoMonitorReversao = nil :: RBXScriptConnection?, -- Conexão para monitorar reversão
 }
 
 --- Limpa conexões de markers do ataque pesado
@@ -627,6 +635,12 @@ local function LimparConexoesHeavyAttack()
 	if heavyAttackState.earlyCancelTimer then
 		pcall(task.cancel, heavyAttackState.earlyCancelTimer)
 		heavyAttackState.earlyCancelTimer = nil
+	end
+
+	-- Limpa monitor de reversão se existir
+	if heavyAttackState.conexaoMonitorReversao then
+		heavyAttackState.conexaoMonitorReversao:Disconnect()
+		heavyAttackState.conexaoMonitorReversao = nil
 	end
 end
 
@@ -857,8 +871,23 @@ function _G.TentarCancelarAtaquePorDefesa()
 				)
 			)
 
-			-- Para a animação
-			comboState.animacaoAtiva:Stop(0.1)
+			-- Reverte a animação gradualmente para evitar que o braço "dê uma volta" ao voltar pro Idle
+			local track = comboState.animacaoAtiva
+			local velReversao = Modulo_Configuracoes.ObterConfiguracao("VelocidadeReversaoCancelamento") or -1.5
+			track:AdjustSpeed(velReversao)
+
+			-- Monitora para parar quando chegar ao início
+			comboState.conexaoMonitorReversao = RunService.RenderStepped:Connect(function()
+				if not track or not track.IsPlaying or track.TimePosition <= 0.01 then
+					if comboState.conexaoMonitorReversao then
+						comboState.conexaoMonitorReversao:Disconnect()
+						comboState.conexaoMonitorReversao = nil
+					end
+					if track and track.IsPlaying then
+						track:Stop(0.1)
+					end
+				end
+			end)
 
 			-- Limpa estado
 			LimparConexoesMarkers()
@@ -901,8 +930,23 @@ function _G.TentarCancelarAtaquePorDefesa()
 				)
 			)
 
-			-- Para a animação
-			heavyAttackState.animacao:Stop(0.1)
+			-- Reverte a animação gradualmente
+			local track = heavyAttackState.animacao
+			local velReversao = Modulo_Configuracoes.ObterConfiguracao("VelocidadeReversaoCancelamento") or -1.5
+			track:AdjustSpeed(velReversao)
+
+			-- Monitora para parar quando chegar ao início
+			heavyAttackState.conexaoMonitorReversao = RunService.RenderStepped:Connect(function()
+				if not track or not track.IsPlaying or track.TimePosition <= 0.01 then
+					if heavyAttackState.conexaoMonitorReversao then
+						heavyAttackState.conexaoMonitorReversao:Disconnect()
+						heavyAttackState.conexaoMonitorReversao = nil
+					end
+					if track and track.IsPlaying then
+						track:Stop(0.1)
+					end
+				end
+			end)
 
 			-- Limpa estado
 			LimparConexoesHeavyAttack()
@@ -985,8 +1029,16 @@ end
 local function ClonarAcessorioParaJogador()
 	-- Evita clonagem duplicada
 	if equipAnimState.acessorioJaClonado then
-		DebugPrint("[ControladorEstado] Acessório já foi clonado, ignorando")
-		return
+		-- Robustez: Verifica se o acessório ainda existe e está no personagem
+		if equipAnimState.acessorioClonado and equipAnimState.acessorioClonado.Parent == character then
+			DebugPrint("[ControladorEstado] Acessório já foi clonado e existe, ignorando")
+			return
+		else
+			-- Estado inconsistente: diz que está clonado mas objeto sumiu
+			DebugPrint("[ControladorEstado] AVISO: acessorioJaClonado=true mas objeto sumiu. Resetando flag.")
+			equipAnimState.acessorioJaClonado = false
+			equipAnimState.acessorioClonado = nil
+		end
 	end
 
 	local tool = ObterToolEquipado()
@@ -2061,10 +2113,46 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 	end
 end
 
+--- Calcula o multiplicador de velocidade da animação baseado no estado atual
+---@return number O multiplicador (0.55 para defesa, 0.85 para ataque, etc.)
+local function ObterMultiplicadorVelocidadeAnimacao(): number
+	local estado = estadoAtual.estadoMov
+	local multiplicador = 1
+
+	-- Se está no ar correndo, usa velocidade reduzida
+	if estado == "Correndo" and (movementFlags.isJumping or movementFlags.isFalling) then
+		multiplicador = TIMINGS.RunInAirSpeed
+	end
+
+	-- Se está atacando ou defendendo e andando, usa multiplicadores distintos
+	if estado == "Andando" then
+		local emDefendendo = (estadoAtual.estadoAcao == "Defendendo")
+		local emAtacando = (
+			estadoAtual.estadoAcao == "AtacandoLeve"
+			or estadoAtual.estadoAcao == "CarregandoPesado"
+			or estadoAtual.estadoAcao == "SoltandoPesado"
+			or estadoAtual.estadoAcao == "AtaquePesado"
+		)
+
+		if emDefendendo then
+			multiplicador = 0.55
+		elseif emAtacando then
+			multiplicador = 0.85
+		end
+	end
+
+	-- Se está agachado andando
+	if estadoAtual.agachado and estado == "Andando" then
+		multiplicador = 0.8
+	end
+
+	return multiplicador
+end
+
 --- Atualiza animação de movimento baseado no estado
 AtualizarAnimacaoMovimento = function()
 	local estado = estadoAtual.estadoMov
-	local velocidade = nil
+	local velocidade = ObterMultiplicadorVelocidadeAnimacao()
 
 	-- Mapeia estado para nome de animação
 	local mapaAnimacoes = {
@@ -2078,36 +2166,11 @@ AtualizarAnimacaoMovimento = function()
 		Agachado = "Idle", -- TODO: Animação de agachado
 	}
 
-	-- Se está no ar correndo, usa velocidade reduzida
-	if estado == "Correndo" and (movementFlags.isJumping or movementFlags.isFalling) then
-		velocidade = TIMINGS.RunInAirSpeed
-	end
-
-	-- Se está atacando ou defendendo e andando, usa velocidades distintas
-	if estado == "Andando" then
-		local emDefendendo = (estadoAtual.estadoAcao == "Defendendo")
-		local emAtacando = (
-			estadoAtual.estadoAcao == "AtacandoLeve"
-			or estadoAtual.estadoAcao == "CarregandoPesado"
-			or estadoAtual.estadoAcao == "SoltandoPesado"
-			or estadoAtual.estadoAcao == "AtaquePesado"
-		)
-
-		if emDefendendo then
-			-- Velocidade da animação enquanto defende
-			velocidade = 0.55
-		elseif emAtacando then
-			-- Velocidade da animação enquanto ataca
-			velocidade = 0.85
-		end
-	end
-
 	-- Se está agachado, use animações específicas de agachado
 	local nomeAnimacao
 	if estadoAtual.agachado then
 		if estado == "Andando" then
 			nomeAnimacao = "AndandoAgachado"
-			velocidade = 0.8
 		else
 			nomeAnimacao = "IdleAgachado"
 		end
@@ -2140,7 +2203,7 @@ AtualizarAnimacaoMovimento = function()
 			-- Se já está na animação lateral correta, não precisa trocar
 			if ultimaAnimacaoMovNome == tipoLateral and animacaoAtualMov and animacaoAtualMov.IsPlaying then
 				-- Apenas atualiza a velocidade alvo
-				velocidadeAnimacaoAlvo = velocidadeLateral
+				velocidadeAnimacaoAlvo = velocidadeLateral * velocidade
 				return
 			end
 
@@ -2154,7 +2217,7 @@ AtualizarAnimacaoMovimento = function()
 					or ultimaAnimacaoMovNome == "CorrendoDireita"
 					or ultimaAnimacaoMovNome == "CorrendoEsquerda"
 				then
-					velocidadeAnimacaoAlvo = velocidadeLateral
+					velocidadeAnimacaoAlvo = velocidadeLateral * velocidade
 				end
 				return
 			end
@@ -2207,9 +2270,10 @@ AtualizarAnimacaoMovimento = function()
 						walkCycleState.time = 0 -- Consome
 					end
 
-					track:AdjustSpeed(velocidadeLateral)
-					velocidadeAnimacaoAtual = velocidadeLateral
-					velocidadeAnimacaoAlvo = velocidadeLateral
+					local velocidadeFinalScale = velocidadeLateral * velocidade
+					track:AdjustSpeed(velocidadeFinalScale)
+					velocidadeAnimacaoAtual = velocidadeFinalScale
+					velocidadeAnimacaoAlvo = velocidadeFinalScale
 
 					animacaoAtualMov = track
 					animacaoUsaDirecao = true
@@ -2761,7 +2825,7 @@ local function AtualizarDirecaoAnimacao(deltaTime: number)
 				return
 			elseif emAnimacaoLateral then
 				-- Mesma animação lateral, apenas atualiza velocidade alvo
-				velocidadeAnimacaoAlvo = velocidadeLateral
+				velocidadeAnimacaoAlvo = velocidadeLateral * ObterMultiplicadorVelocidadeAnimacao()
 				direcaoAtual = velocidadeLateral > 0 and 1 or -1
 			elseif not emAnimacaoLateral then
 				AtualizarAnimacaoMovimento()

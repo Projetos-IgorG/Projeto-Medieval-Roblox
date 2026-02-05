@@ -1,3 +1,23 @@
+--[[
+	============================================================================
+	ARQUIVO COMENTADO - FUNCIONALIDADE MIGRADA PARA O PLAYERMODULE
+	============================================================================
+	
+	Este arquivo foi desativado após a unificação do sistema de câmera customizado
+	com os scripts padrão do Roblox (PlayerModule).
+	
+	As funcionalidades foram migradas para:
+	- ReplicatedStorage/Modulos/Jogador/Modulo_ConfiguracoesJogador.luau (configurações)
+	- PlayerModule/CameraModule/init.luau (FOV dinâmico, snap para 1ª pessoa)
+	- PlayerModule/CameraModule/TransparencyController.luau (visibilidade do corpo)
+	- PlayerModule/CameraModule/MouseLockController.luau (ShiftLock com LeftControl)
+	
+	O código abaixo está preservado para referência futura.
+	============================================================================
+--]]
+
+--[=[
+
 -- StarterPlayer > StarterPlayerScripts > ShiftLockController
 
 local Players = game:GetService("Players")
@@ -555,3 +575,5 @@ if plr.Character then
 end
 
 Lighting.Changed:Connect(updateShadows)
+
+]=]

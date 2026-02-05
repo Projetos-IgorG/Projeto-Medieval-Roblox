@@ -1,5 +1,7 @@
 {
   "properties": {
+    "TextureContent": "rbxassetid://4980776503",
+    "CanBeDropped": false,
     "WorldPivotData": {
       "OptionalCFrame": {
         "position": [
@@ -26,8 +28,6 @@
         ]
       }
     },
-    "CanBeDropped": false,
-    "TextureContent": "rbxassetid://4980776503",
     "ModelMeshCFrame": [
       -8.83608627319336,
       -3.201976776123047,
