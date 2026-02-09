@@ -814,11 +814,18 @@ function MaquinaDeEstados:TenteDash(direcao: string): (boolean, string?)
 		return false, "Agachado"
 	end
 
-	-- Não pode dar dash no ar
+	-- Não pode dar dash no ar (verifica estado E material do chão para robustez)
 	if
 		self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Pulando
 		or self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Caindo
 	then
+		return false, "NoAr"
+	end
+
+	-- FIX: Verificação adicional via FloorMaterial para capturar edge cases
+	-- onde estadoMov pode estar dessincronizado
+	if self.humanoid and self.humanoid.FloorMaterial == Enum.Material.Air then
+		DebugPrint(string.format("[MaquinaDeEstados] %s: Dash bloqueado - FloorMaterial é Air", self.entidade.Name))
 		return false, "NoAr"
 	end
 

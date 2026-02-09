@@ -179,6 +179,22 @@ local function SincronizarStatusLocal()
 	atualizarValor("AgachadoOn", estadoAtual.agachado)
 	-- CorrendoOn é baseado em estadoMov para manter consistência visual
 	atualizarValor("CorrendoOn", estadoAtual.estadoMov == "Correndo")
+
+	-- Debug específico para CorrendoOn
+	if DEBUG_ENABLED then
+		local val = estadoAtual.estadoMov == "Correndo"
+		local obj = statusLocal:FindFirstChild("CorrendoOn")
+		if obj and obj.Value ~= val then
+			print(
+				string.format(
+					"[DEBUG] CorrendoOn mudou: %s -> %s | EstadoMov: %s",
+					tostring(obj.Value),
+					tostring(val),
+					estadoAtual.estadoMov
+				)
+			)
+		end
+	end
 	-- NOTA: ShiftLockOn é atualizado pelo CameraModule, não aqui
 end
 
@@ -2219,6 +2235,20 @@ AtualizarAnimacaoMovimento = function()
 		nomeAnimacao = mapaAnimacoes[estado] or "Idle"
 	end
 
+	-- ═══════════════════════════════════════════════════════════════════
+	-- FIX DEFINITIVO: Guarda defensiva para corrida no ar
+	-- Se isRunning = true, NUNCA toca animação de pulo/queda
+	-- Isso captura qualquer edge case que os handlers de evento possam ter perdido
+	-- ═══════════════════════════════════════════════════════════════════
+	if movementFlags.isRunning and (nomeAnimacao == "Pulando" or nomeAnimacao == "Caindo") then
+		if DEBUG_ENABLED then
+			print(string.format("[DEBUG] GUARD: Bloqueando %s enquanto corre -> forçando Correndo", nomeAnimacao))
+		end
+		nomeAnimacao = "Correndo"
+		estadoAtual.estadoMov = "Correndo"
+		velocidade = TIMINGS.RunInAirSpeed
+	end
+
 	-- Verifica se está parando de andar/correr para usar sistema de pausa
 	local animacaoQueUsaDirecao = ANIMACOES_COM_DIRECAO[ultimaAnimacaoMovNome]
 	local querIdle = (nomeAnimacao == "Idle" or nomeAnimacao == "IdleAgachado")
@@ -2621,6 +2651,20 @@ local function AtualizarEstadoMovimento()
 
 	-- Se estado mudou
 	if estadoAtual.estadoMov ~= novoEstado then
+		if DEBUG_ENABLED then
+			print(
+				string.format(
+					"[DEBUG] Heartbeat Change: %s -> %s | Jump: %s | Fall: %s | Floor: %s | MoveDir: %.2f",
+					estadoAtual.estadoMov,
+					novoEstado,
+					tostring(movementFlags.isJumping),
+					tostring(movementFlags.isFalling),
+					tostring(humanoid.FloorMaterial),
+					humanoid.MoveDirection.Magnitude
+				)
+			)
+		end
+
 		estadoAtual.estadoMov = novoEstado
 		AtualizarAnimacaoMovimento()
 		-- Sincroniza estado de movimento com servidor
@@ -2680,6 +2724,20 @@ end
 
 --- Listener para mudanças de estado do Humanoid
 local function OnStateChanged(oldState, newState)
+	if DEBUG_ENABLED then
+		print(
+			string.format(
+				"[DEBUG] StateChanged: %s -> %s | Material: %s | isRunning: %s | isJumping: %s | isFalling: %s",
+				tostring(oldState),
+				tostring(newState),
+				tostring(humanoid.FloorMaterial),
+				tostring(movementFlags.isRunning),
+				tostring(movementFlags.isJumping),
+				tostring(movementFlags.isFalling)
+			)
+		)
+	end
+
 	-- Atualiza flags de estados especiais
 	movementFlags.isClimbing = (newState == Enum.HumanoidStateType.Climbing)
 	movementFlags.isSwimming = (newState == Enum.HumanoidStateType.Swimming)
@@ -2689,11 +2747,17 @@ local function OnStateChanged(oldState, newState)
 		movementFlags.isJumping = true
 		movementFlags.isFalling = false
 
-		-- Se estava correndo, mantém a animação de corrida com velocidade reduzida
-		if movementFlags.isRunning and animacaoAtualMov then
-			DefinirVelocidadeMovimento(TIMINGS.RunInAirSpeed)
+		-- FIX: Se está correndo, SEMPRE mantém estado de corrida (remove dependência de animacaoAtualMov)
+		if movementFlags.isRunning then
 			estadoAtual.estadoMov = "Correndo"
-			return -- Não chama AtualizarEstadoMovimento
+			-- Garante que animação de corrida está tocando
+			if animacaoAtualMov and animacaoAtualMov.IsPlaying then
+				DefinirVelocidadeMovimento(TIMINGS.RunInAirSpeed)
+			else
+				-- Animação não está tocando, inicia ela
+				AtualizarAnimacaoMovimento()
+			end
+			return -- SEMPRE retorna, nunca cai no AtualizarEstadoMovimento
 		end
 		-- A transição para Caindo será controlada pelo callback OnJumpAnimacaoTerminou
 		-- quando a animação de Pulando terminar completamente
@@ -2707,10 +2771,19 @@ local function OnStateChanged(oldState, newState)
 			-- Não faz nada - mantém isJumping = true, isFalling = false
 			-- Não chama AtualizarEstadoMovimento
 			return
-		else
-			-- Queda direta (sem pulo ou após animação de pulo terminar)
-			movementFlags.isJumping = false
-			movementFlags.isFalling = true
+		end
+
+		-- Queda direta (sem pulo ou após animação de pulo terminar)
+		movementFlags.isJumping = false
+		movementFlags.isFalling = true
+
+		-- FIX: Se está correndo no ar, mantém estado Correndo e retorna
+		if movementFlags.isRunning then
+			estadoAtual.estadoMov = "Correndo"
+			if animacaoAtualMov and animacaoAtualMov.IsPlaying then
+				DefinirVelocidadeMovimento(TIMINGS.RunInAirSpeed)
+			end
+			return
 		end
 	end
 
@@ -2721,44 +2794,41 @@ local function OnStateChanged(oldState, newState)
 		or newState == Enum.HumanoidStateType.RunningNoPhysics
 		or newState == Enum.HumanoidStateType.GettingUp
 	then
-		-- Verifica se realmente aterrissou (material não é Air)
-		if humanoid.FloorMaterial ~= Enum.Material.Air then
-			movementFlags.isJumping = false
-			movementFlags.isFalling = false
+		-- FIX: Aterrissagem definitiva.
+		-- Removemos a verificação de FloorMaterial ~= Air aqui pois gera race condition
+		-- onde o evento Landed dispara mas o Material ainda não atualizou (flick de estado).
+		-- Se o Humanoid diz que está Running/Landed, confiamos no estado físico.
 
-			-- Limpa estado da animação de pulo (pode ter aterrissado antes de terminar)
-			LimparJumpAnimState()
+		movementFlags.isJumping = false
+		movementFlags.isFalling = false
 
-			-- Se está correndo, mantém Correndo e restaura velocidade normal
-			if movementFlags.isRunning then
-				estadoAtual.estadoMov = "Correndo"
-				if animacaoAtualMov then
-					-- Só restaura velocidade completa se não estiver em combate (para não sobrescrever 0.4)
-					local emCombate = (
-						estadoAtual.estadoAcao == "AtacandoLeve"
-						or estadoAtual.estadoAcao == "CarregandoPesado"
-						or estadoAtual.estadoAcao == "SoltandoPesado"
-						or estadoAtual.estadoAcao == "AtaquePesado"
-						or estadoAtual.estadoAcao == "Defendendo"
-					)
-					if not emCombate then
-						DefinirVelocidadeMovimento(1)
-					end
+		-- Limpa estado da animação de pulo (pode ter aterrissado antes de terminar)
+		LimparJumpAnimState()
+
+		-- Se está correndo, mantém Correndo e restaura velocidade normal
+		if movementFlags.isRunning then
+			estadoAtual.estadoMov = "Correndo"
+			if animacaoAtualMov then
+				-- Só restaura velocidade completa se não estiver em combate (para não sobrescrever 0.4)
+				local emCombate = (
+					estadoAtual.estadoAcao == "AtacandoLeve"
+					or estadoAtual.estadoAcao == "CarregandoPesado"
+					or estadoAtual.estadoAcao == "SoltandoPesado"
+					or estadoAtual.estadoAcao == "AtaquePesado"
+					or estadoAtual.estadoAcao == "Defendendo"
+				)
+				if not emCombate then
+					DefinirVelocidadeMovimento(1)
 				end
-				-- Sincroniza com servidor sem mudar para Parado
-				-- NÃO envia Correr para servidor - corrida é 100% client-side
-				TentarAcao:FireServer("SincronizarMovimento", "Correndo")
-				return -- Não chama AtualizarEstadoMovimento
 			end
-
-			-- Envia ação de aterrissar para o servidor
-			TentarAcao:FireServer("Aterrissar")
-		else
-			-- Ainda está no ar, muda para Caindo
-			movementFlags.isFalling = true
-			estadoAtual.estadoMov = "Caindo"
-			AtualizarAnimacaoMovimento()
+			-- Sincroniza com servidor sem mudar para Parado
+			-- NÃO envia Correr para servidor - corrida é 100% client-side
+			TentarAcao:FireServer("SincronizarMovimento", "Correndo")
+			return -- Não chama AtualizarEstadoMovimento
 		end
+
+		-- Envia ação de aterrissar para o servidor
+		TentarAcao:FireServer("Aterrissar")
 	end
 
 	-- Atualiza movimento imediatamente (só se não retornou antes)

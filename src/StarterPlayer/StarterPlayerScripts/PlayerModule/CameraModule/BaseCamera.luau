@@ -3,13 +3,11 @@
 -- BaseCamera - Abstract base class for camera control modules
 
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
 local VRService = game:GetService("VRService")
 local UserGameSettings = UserSettings():GetService("UserGameSettings")
 
 local CommonUtils = script.Parent.Parent:WaitForChild("CommonUtils")
 local ConnectionUtil = require(CommonUtils:WaitForChild("ConnectionUtil"))
-local FlagUtil = require(CommonUtils:WaitForChild("FlagUtil"))
 
 local CameraUtils = require(script.Parent:WaitForChild("CameraUtils"))
 local ZoomController = require(script.Parent:WaitForChild("ZoomController"))
@@ -40,7 +38,6 @@ local MAX_Y = math.rad(80)
 
 local VR_ANGLE = math.rad(15)
 
-local ZERO_VECTOR2 = Vector2.new(0, 0)
 local ZERO_VECTOR3 = Vector3.new(0, 0, 0)
 
 local SEAT_OFFSET = Vector3.new(0, 5, 0)
@@ -261,7 +258,7 @@ function BaseCamera:GetSubjectCFrame(): CFrame
 	elseif cameraSubject:IsA("Model") then
 		-- Model subjects are expected to have a PrimaryPart to determine orientation
 		if cameraSubject.PrimaryPart then
-			result = cameraSubject:GetPrimaryPartCFrame()
+			result = cameraSubject.PrimaryPart.CFrame
 		else
 			result = CFrame.new()
 		end
@@ -399,21 +396,21 @@ function BaseCamera:GetSubjectPosition(): Vector3?
 					heightOffset = ZERO_VECTOR3
 				end
 
-				result = bodyPartToFollow.CFrame.p
+				result = bodyPartToFollow.CFrame.Position
 					+ bodyPartToFollow.CFrame:vectorToWorldSpace(heightOffset + cameraOffset)
 			end
 		elseif cameraSubject:IsA("VehicleSeat") then
 			local offset = SEAT_OFFSET
-			result = cameraSubject.CFrame.p + cameraSubject.CFrame:vectorToWorldSpace(offset)
+			result = cameraSubject.CFrame.Position + cameraSubject.CFrame:vectorToWorldSpace(offset)
 		elseif cameraSubject:IsA("SkateboardPlatform") then
-			result = cameraSubject.CFrame.p + SEAT_OFFSET
+			result = cameraSubject.CFrame.Position + SEAT_OFFSET
 		elseif cameraSubject:IsA("BasePart") then
-			result = cameraSubject.CFrame.p
+			result = cameraSubject.CFrame.Position
 		elseif cameraSubject:IsA("Model") then
 			if cameraSubject.PrimaryPart then
-				result = cameraSubject:GetPrimaryPartCFrame().p
+				result = cameraSubject.PrimaryPart.CFrame.Position
 			else
-				result = cameraSubject:GetModelCFrame().p
+				result = cameraSubject:GetModelCFrame().Position
 			end
 		end
 	else
@@ -702,7 +699,7 @@ end
 function BaseCamera:GetMeasuredDistanceToFocus(): number?
 	local camera = game.Workspace.CurrentCamera
 	if camera then
-		return (camera.CoordinateFrame.p - camera.Focus.p).magnitude
+		return (camera.CFrame.Position - camera.Focus.Position).Magnitude
 	end
 	return nil
 end
@@ -730,7 +727,7 @@ end
 
 function BaseCamera:CalculateNewLookVectorVRFromArg(rotateInput: Vector2): Vector3
 	local subjectPosition: Vector3 = self:GetSubjectPosition()
-	local vecToSubject: Vector3 = (subjectPosition - (game.Workspace.CurrentCamera :: Camera).CFrame.p)
+	local vecToSubject: Vector3 = (subjectPosition - (game.Workspace.CurrentCamera :: Camera).CFrame.Position)
 	local currLookVector: Vector3 = (vecToSubject * X1_Y0_Z1).unit
 	local vrRotateInput: Vector2 = Vector2.new(rotateInput.X, 0)
 	local startCFrame: CFrame = CFrame.new(ZERO_VECTOR3, currLookVector)
@@ -764,12 +761,12 @@ function BaseCamera:GetHumanoidPartToFollow(humanoid: Humanoid, humanoidStateTyp
 	if humanoidStateType == Enum.HumanoidStateType.Dead then
 		local character = humanoid.Parent
 		if character then
-			return character:FindFirstChild("Head") or humanoid.Torso
+			return character:FindFirstChild("Head") or humanoid.RootPart
 		else
-			return humanoid.Torso
+			return humanoid.RootPart
 		end
 	else
-		return humanoid.Torso
+		return humanoid.RootPart
 	end
 end
 
