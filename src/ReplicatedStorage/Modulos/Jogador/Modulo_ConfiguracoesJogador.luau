@@ -36,7 +36,8 @@ export type ConfiguracaoCamera = {
 	ZoomRangeOn: ZoomRange, -- Limites com ShiftLock ativo
 	ZoomRangeOff: ZoomRange, -- Limites com ShiftLock desativado
 	DefaultZoomOut: number, -- Zoom ao sair da 1ª pessoa via toggle
-	FP_Threshold: number, -- Distância para considerar modo FPS
+	FP_ThresholdOn: number, -- Distância para modo FPS em ShiftLock
+	FP_ThresholdOff: number, -- Distância para modo FPS sem ShiftLock
 	HeadHideLimit: number, -- Zoom mínimo onde acessórios de cabeça somem
 
 	-- Dead Zone / Snap
@@ -75,11 +76,12 @@ local ConfiguracaoPadrao: ConfiguracaoCamera = {
 	ZoomRangeOn = { Min = 0.5, Max = 15 },
 	ZoomRangeOff = { Min = 0.5, Max = 50 },
 	DefaultZoomOut = 10,
-	FP_Threshold = 1.5,
+	FP_ThresholdOn = 4,
+	FP_ThresholdOff = 1.5,
 	HeadHideLimit = 0.6,
 
 	-- Dead Zone / Snap
-	DeadZoneSnapDelay = 0.2,
+	DeadZoneSnapDelay = 0.3,
 	SnapTransitionTime = 0.25,
 
 	-- FOV
@@ -158,18 +160,22 @@ function Modulo_ConfiguracoesJogador.EstaCorrendo(velocidade: number): boolean
 	return velocidade >= configuracaoAtual.RunSpeedThreshold
 end
 
---- Verifica se uma distância está na zona morta (entre HeadHideLimit e FP_Threshold)
+--- Verifica se uma distância está na zona morta (entre HeadHideLimit e o threshold configurado)
 ---@param distancia number Distância da câmera ao foco
+---@param isMouseLocked boolean Se o player está em ShiftLock
 ---@return boolean true se está na zona morta
-function Modulo_ConfiguracoesJogador.EstaEmZonaMorta(distancia: number): boolean
-	return distancia > configuracaoAtual.HeadHideLimit and distancia < configuracaoAtual.FP_Threshold
+function Modulo_ConfiguracoesJogador.EstaEmZonaMorta(distancia: number, isMouseLocked: boolean): boolean
+	local threshold = if isMouseLocked then configuracaoAtual.FP_ThresholdOn else configuracaoAtual.FP_ThresholdOff
+	return distancia > configuracaoAtual.HeadHideLimit and distancia < threshold
 end
 
 --- Verifica se uma distância é considerada primeira pessoa
 ---@param distancia number Distância da câmera ao foco
+---@param isMouseLocked boolean Se o player está em ShiftLock
 ---@return boolean true se está em primeira pessoa
-function Modulo_ConfiguracoesJogador.EstaEmPrimeiraPessoa(distancia: number): boolean
-	return distancia < configuracaoAtual.FP_Threshold
+function Modulo_ConfiguracoesJogador.EstaEmPrimeiraPessoa(distancia: number, isMouseLocked: boolean): boolean
+	local threshold = if isMouseLocked then configuracaoAtual.FP_ThresholdOn else configuracaoAtual.FP_ThresholdOff
+	return distancia < threshold
 end
 
 --- Obtém o FOV alvo baseado no estado de movimento

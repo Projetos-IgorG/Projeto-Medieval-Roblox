@@ -228,16 +228,21 @@ local function updateFOV(camera: Camera)
 end
 
 -- Lógica de snap para 1ª pessoa (dead zone)
-local function updateDeadZoneSnap(camera: Camera, activeCameraController: any)
+local function updateDeadZoneSnap(camera: Camera, activeCameraController: any, activeMouseLockController: any)
 	if not activeCameraController then
 		return
 	end
+
+	-- Verifica se o MouseLock está ativo
+	local isMouseLocked = activeMouseLockController
+		and activeMouseLockController.GetIsMouseLocked
+		and activeMouseLockController:GetIsMouseLocked()
 
 	-- Obtém distância atual da câmera ao foco
 	local distance = (camera.Focus.Position - camera.CFrame.Position).Magnitude
 
 	-- Verifica se está na zona morta
-	if ConfigJogador.EstaEmZonaMorta(distance) then
+	if ConfigJogador.EstaEmZonaMorta(distance, isMouseLocked) then
 		if not fovState.isInDeadZone then
 			fovState.isInDeadZone = true
 			fovState.deadZoneEntryTime = tick()
@@ -768,7 +773,7 @@ function CameraModule:Update(dt)
 		updateFOV(currentCamera)
 
 		-- Sistema de snap para 1ª pessoa (dead zone)
-		updateDeadZoneSnap(currentCamera, self.activeCameraController)
+		updateDeadZoneSnap(currentCamera, self.activeCameraController, self.activeMouseLockController)
 
 		-- Sincroniza Status.ShiftLockOn (para combate) baseado em 1ª pessoa ou MouseLock
 		checkFirstPersonAndUpdateStatus(self.activeCameraController, self.activeMouseLockController)

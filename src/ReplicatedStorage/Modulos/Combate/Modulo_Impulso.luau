@@ -139,7 +139,7 @@ function Modulo_Impulso.AplicarImpulso(atacante: Model, modoAnimacao: string, ti
 
 	-- Calcula direção (para frente)
 	local direcao = humanoidRoot.CFrame.LookVector
-	local elevacao = Vector3.new(0, 2, 0) -- Pequena elevação
+	local elevacao = Vector3.new(0, 5, 0) -- Pequena elevação
 
 	-- Aplica impulso com pcall para segurança
 	local sucesso, resultado = pcall(function()

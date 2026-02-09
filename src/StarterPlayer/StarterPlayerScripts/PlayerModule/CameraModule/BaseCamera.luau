@@ -15,6 +15,11 @@ local CameraToggleStateController = require(script.Parent:WaitForChild("CameraTo
 local CameraInput = require(script.Parent:WaitForChild("CameraInput"))
 local CameraUI = require(script.Parent:WaitForChild("CameraUI"))
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ConfigJogador = require(
+	ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Jogador"):WaitForChild("Modulo_ConfiguracoesJogador")
+)
+
 local player = Players.LocalPlayer
 
 local FFlagUserFixGamepadMaxZoom
@@ -29,7 +34,6 @@ local UNIT_Z = Vector3.new(0, 0, 1)
 local X1_Y0_Z1 = Vector3.new(1, 0, 1) --Note: not a unit vector, used for projecting onto XZ plane
 
 local DEFAULT_DISTANCE = 12.5 -- Studs
-local FIRST_PERSON_DISTANCE_THRESHOLD = 1.0 -- Below this value, snap into first person
 
 -- Note: DotProduct check in CoordinateFrame::lookAt() prevents using values within about
 -- 8.11 degrees of the +/- Y axis, that's why these limits are currently 80 degrees
@@ -83,7 +87,9 @@ function BaseCamera.new()
 	self.gamepadZoomLevels = { 0, 10, 20 } -- zoom levels that are cycled through on a gamepad R3 press
 
 	-- So that derived classes have access to this
-	self.FIRST_PERSON_DISTANCE_THRESHOLD = FIRST_PERSON_DISTANCE_THRESHOLD
+	self.FIRST_PERSON_DISTANCE_THRESHOLD = if self.inMouseLockedMode
+		then ConfigJogador.ObterConfiguracao("FP_ThresholdOn")
+		else ConfigJogador.ObterConfiguracao("FP_ThresholdOff")
 
 	self.cameraType = nil
 	self.cameraMovementMode = nil
@@ -334,13 +340,17 @@ function BaseCamera:StepZoom()
 
 		if zoomDelta > 0 then
 			newZoom = zoom + zoomDelta * (1 + zoom * ZOOM_SENSITIVITY_CURVATURE)
-			newZoom = math.max(newZoom, self.FIRST_PERSON_DISTANCE_THRESHOLD)
+			-- Garante que não fique preso abaixo do threshold ao dar zoom out
+			local threshold = if self.inMouseLockedMode
+				then ConfigJogador.ObterConfiguracao("FP_ThresholdOn")
+				else ConfigJogador.ObterConfiguracao("FP_ThresholdOff")
+			newZoom = math.max(newZoom, threshold)
 		else
 			newZoom = (zoom + zoomDelta) / (1 - zoomDelta * ZOOM_SENSITIVITY_CURVATURE)
 			newZoom = math.max(newZoom, FIRST_PERSON_DISTANCE_MIN)
 		end
 
-		if newZoom < self.FIRST_PERSON_DISTANCE_THRESHOLD then
+		if ConfigJogador.EstaEmPrimeiraPessoa(newZoom, self.inMouseLockedMode) then
 			newZoom = FIRST_PERSON_DISTANCE_MIN
 		end
 
@@ -617,7 +627,7 @@ function BaseCamera:SetCameraToSubjectDistance(desiredSubjectDistance: number): 
 	else
 		local newSubjectDistance =
 			math.clamp(desiredSubjectDistance, player.CameraMinZoomDistance, player.CameraMaxZoomDistance)
-		if newSubjectDistance < FIRST_PERSON_DISTANCE_THRESHOLD then
+		if ConfigJogador.EstaEmPrimeiraPessoa(newSubjectDistance, self.inMouseLockedMode) then
 			self.currentSubjectDistance = 0.5
 			if not self.inFirstPerson then
 				self:EnterFirstPerson()
@@ -660,6 +670,9 @@ end
 
 function BaseCamera:SetIsMouseLocked(mouseLocked: boolean)
 	self.inMouseLockedMode = mouseLocked
+	self.FIRST_PERSON_DISTANCE_THRESHOLD = if mouseLocked
+		then ConfigJogador.ObterConfiguracao("FP_ThresholdOn")
+		else ConfigJogador.ObterConfiguracao("FP_ThresholdOff")
 end
 
 function BaseCamera:GetIsMouseLocked(): boolean

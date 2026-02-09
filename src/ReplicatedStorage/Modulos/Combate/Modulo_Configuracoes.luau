@@ -90,6 +90,8 @@ export type ConfiguracaoGlobal = {
 	-- Impulso de Ataque
 	MagnitudeImpulsoAtaqueLeve: number,
 	MagnitudeImpulsoAtaquePesado: number,
+	DuracaoImpulsoAtaqueLeve: number,
+	DuracaoImpulsoAtaquePesado: number,
 
 	-- Knockback
 	MagnitudeKnockbackLeve: number,
@@ -166,6 +168,8 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	-- Impulso de Ataque (aplicado ao atacante)
 	MagnitudeImpulsoAtaqueLeve = 20,
 	MagnitudeImpulsoAtaquePesado = 50,
+	DuracaoImpulsoAtaqueLeve = 0.1,
+	DuracaoImpulsoAtaquePesado = 0.2,
 
 	-- Knockback (aplicado ao alvo)
 	MagnitudeKnockbackLeve = 15,

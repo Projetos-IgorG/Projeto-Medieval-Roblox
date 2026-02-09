@@ -1549,19 +1549,10 @@ local function PararImpulsoAtaque()
 		attackImpulseState.connection:Disconnect()
 		attackImpulseState.connection = nil
 	end
-
-	-- Remove constraint de velocidade se existir
-	local hrp = character:FindFirstChild("HumanoidRootPart")
-	if hrp then
-		local constraint = hrp:FindFirstChild("AttackImpulseVelocity")
-		if constraint then
-			constraint:Destroy()
-		end
-	end
 end
 
---- Aplica impulso sustentado ao atacante usando LinearVelocity constraint
---- Esta abordagem ignora completamente o atrito do chão
+--- Aplica impulso sustentado ao atacante manipulando AssemblyLinearVelocity
+--- Esta abordagem preserva a velocidade vertical (Y) permitindo pulos
 --- @param tipoAtaque string Tipo do ataque ("AtaqueLeve", "AtaqueLeveFinal", "AtaquePesado")
 local function AplicarImpulsoAtaque(tipoAtaque: string)
 	local hrp = character:FindFirstChild("HumanoidRootPart")
@@ -1572,47 +1563,27 @@ local function AplicarImpulsoAtaque(tipoAtaque: string)
 	-- Para qualquer impulso anterior
 	PararImpulsoAtaque()
 
-	-- Determina magnitude baseada no tipo de ataque
+	-- Determina magnitude e duração baseada no tipo de ataque
 	local magnitude
+	local duracao
+
 	if tipoAtaque == "AtaquePesado" or tipoAtaque == "AtaqueLeveFinal" then
 		magnitude = Modulo_Configuracoes.ObterConfiguracao("MagnitudeImpulsoAtaquePesado") or 25
+		duracao = Modulo_Configuracoes.ObterConfiguracao("DuracaoImpulsoAtaquePesado") or 0.1
 	else
 		magnitude = Modulo_Configuracoes.ObterConfiguracao("MagnitudeImpulsoAtaqueLeve") or 15
+		duracao = Modulo_Configuracoes.ObterConfiguracao("DuracaoImpulsoAtaqueLeve") or 0.1
 	end
-
-	-- Obtém duração do impulso
-	local duracao = Modulo_Configuracoes.ObterConfiguracao("DuracaoImpulsoAtaque") or 0.1
 
 	-- Define tempo de término
 	attackImpulseState.endTime = tick() + duracao
 
-	-- Captura a direção no momento do ataque (LookVector)
+	-- Captura a direção no momento do ataque (LookVector) e mantém constante
+	-- Isso faz o impulso ser "direcional" no início do ataque, como um dash
 	local direcaoAtaque = hrp.CFrame.LookVector
 	direcaoAtaque = Vector3.new(direcaoAtaque.X, 0, direcaoAtaque.Z).Unit
 
-	-- Cria LinearVelocity constraint para ignorar atrito completamente
-	local linearVelocity = Instance.new("LinearVelocity")
-	linearVelocity.Name = "AttackImpulseVelocity"
-	linearVelocity.Attachment0 = hrp:FindFirstChild("RootAttachment") or hrp:FindFirstChildOfClass("Attachment")
-
-	-- Se não tem attachment, cria um temporário
-	if not linearVelocity.Attachment0 then
-		local tempAttachment = Instance.new("Attachment")
-		tempAttachment.Name = "TempRootAttachment"
-		tempAttachment.Parent = hrp
-		linearVelocity.Attachment0 = tempAttachment
-	end
-
-	-- Configura a constraint para mover apenas horizontal (ignora Y)
-	linearVelocity.VelocityConstraintMode = Enum.VelocityConstraintMode.Plane
-	linearVelocity.PrimaryTangentAxis = direcaoAtaque
-	linearVelocity.SecondaryTangentAxis = Vector3.new(0, 1, 0) -- Eixo vertical como secundário
-	linearVelocity.PlaneVelocity = Vector2.new(magnitude, 0) -- X = direção primária (frente)
-	linearVelocity.MaxForce = 100000 -- Força alta para garantir movimento
-	linearVelocity.RelativeTo = Enum.ActuatorRelativeTo.World
-	linearVelocity.Parent = hrp
-
-	-- Cria conexão para monitorar tempo e limpar
+	-- Cria conexão para aplicar velocidade
 	attackImpulseState.connection = RunService.RenderStepped:Connect(function(_deltaTime)
 		-- Verifica se o tempo acabou
 		if tick() >= attackImpulseState.endTime then
@@ -1620,12 +1591,18 @@ local function AplicarImpulsoAtaque(tipoAtaque: string)
 			return
 		end
 
-		-- Verifica se constraint ainda existe (segurança contra edge cases)
 		local rootPart = character:FindFirstChild("HumanoidRootPart")
-		if not rootPart or not rootPart:FindFirstChild("AttackImpulseVelocity") then
+		if not rootPart then
 			PararImpulsoAtaque()
 			return
 		end
+
+		-- Aplica velocidade sustentada preservando Y (gravidade/pulo)
+		local velocidadeAtual = rootPart.AssemblyLinearVelocity
+		local velocidadeAlvo = direcaoAtaque * magnitude
+
+		-- Mantém componente Y (gravidade) e substitui XZ
+		rootPart.AssemblyLinearVelocity = Vector3.new(velocidadeAlvo.X, velocidadeAtual.Y, velocidadeAlvo.Z)
 	end)
 
 	DebugPrint(
