@@ -100,6 +100,10 @@ local fovState = {
 	isInDeadZone = false,
 }
 
+local zoomState = {
+	currentTween = nil :: Tween?,
+}
+
 -- ============================================================================
 -- SISTEMA DE SINCRONIZAÇÃO DO STATUS SHIFTLOCKON
 -- ============================================================================
@@ -142,6 +146,34 @@ local function checkFirstPersonAndUpdateStatus(activeCameraController: any, acti
 	-- ShiftLockOn é true se: está em 1ª pessoa OU mouse lock está ativo
 	local shouldBeShiftLocked = isInFirstPerson or isMouseLocked
 	updateShiftLockStatus(shouldBeShiftLocked)
+end
+
+-- Atualiza os limites de zoom baseado no estado do MouseLock (com transição suave)
+local function updateZoomLimits(player: Player, isMouseLocked: boolean)
+	-- Obtém os ranges de configuração
+	local zoomRange = if isMouseLocked
+		then ConfigJogador.ObterConfiguracao("ZoomRangeOn")
+		else ConfigJogador.ObterConfiguracao("ZoomRangeOff")
+
+	if zoomRange then
+		-- Cancela tween anterior se existir
+		if zoomState.currentTween then
+			zoomState.currentTween:Cancel()
+		end
+
+		-- Cria tween para os novos limites
+		-- Usa o mesmo tempo de transição das outras mecânicas (0.3s - 0.35s)
+		local tweenInfo = ConfigJogador.ObterTweenInfo()
+
+		-- Tween para Min e Max
+		local tween = TweenService:Create(player, tweenInfo, {
+			CameraMinZoomDistance = zoomRange.Min,
+			CameraMaxZoomDistance = zoomRange.Max,
+		})
+
+		zoomState.currentTween = tween
+		tween:Play()
+	end
 end
 
 -- Atualiza o FOV baseado na velocidade do jogador
@@ -331,6 +363,11 @@ function CameraModule.new()
 		toggleEvent:Connect(function()
 			self:OnMouseLockToggled()
 		end)
+	end
+
+	-- Inicializa limites de zoom
+	if self.activeMouseLockController then
+		updateZoomLimits(Players.LocalPlayer, self.activeMouseLockController:GetIsMouseLocked())
 	end
 
 	self:ActivateCameraController()
@@ -795,6 +832,9 @@ function CameraModule:OnMouseLockToggled()
 
 		-- Sincroniza Status.ShiftLockOn com o sistema de combate
 		checkFirstPersonAndUpdateStatus(self.activeCameraController, self.activeMouseLockController)
+
+		-- Atualiza limites de zoom com transição
+		updateZoomLimits(Players.LocalPlayer, mouseLocked)
 	end
 end
 

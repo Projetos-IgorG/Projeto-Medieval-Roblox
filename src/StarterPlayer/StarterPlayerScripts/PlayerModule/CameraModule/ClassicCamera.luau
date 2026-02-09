@@ -51,6 +51,8 @@ function ClassicCamera.new()
 
 	-- Estado para suavização de offsets dinâmicos
 	self.currentMovementOffset = Vector3.zero
+	self.currentMovementOffset = Vector3.zero
+	self.currentShoulderOffset = Vector3.zero
 	self.offsetLerpSpeed = 8 -- Velocidade do lerp (maior = mais rápido)
 
 	return self
@@ -140,19 +142,53 @@ function ClassicCamera:Update(dt)
 		local isFirstPerson = self:IsInFirstPerson()
 		local isMouseLocked = self:GetIsMouseLocked()
 
+		-- ============================================================================
+		-- TRANSICAO SUAVE DE OFFSET (SHIFTLOCK / 1ª PESSOA)
+		-- ============================================================================
+
+		local targetShoulderOffset = Vector3.zero
+		if isFirstPerson then
+			targetShoulderOffset = ConfigJogador.ObterConfiguracao("OffsetFP") or Vector3.zero
+		elseif isMouseLocked then
+			targetShoulderOffset = self:GetMouseLockOffset()
+		end
+
+		-- Interpola o offset atual para o alvo (suaviza entrada e saída do ShiftLock)
+		local lerpAlpha = math.clamp(self.offsetLerpSpeed * timeDelta, 0, 1)
+		self.currentShoulderOffset = self.currentShoulderOffset:Lerp(targetShoulderOffset, lerpAlpha)
+
+		-- Calcula a direção horizontal da câmera para aplicar o offset corretamente
+		-- Precisamos do vetor de olhar PREVISTO (com input de rotação aplicado)
+		local predictedLookVector = self:CalculateNewLookVectorFromArg(overrideCameraLookVector, rotateInput)
+		local lookVectorHorizontal = Vector3.new(predictedLookVector.X, 0, predictedLookVector.Z)
+		if lookVectorHorizontal.Magnitude > 0.001 then
+			lookVectorHorizontal = lookVectorHorizontal.Unit
+		else
+			lookVectorHorizontal = Vector3.new(0, 0, -1)
+		end
+
+		local rightVectorHorizontal = Vector3.new(0, 1, 0):Cross(lookVectorHorizontal).Unit
+
+		-- Aplica o offset globalmente (antes da lógica específica de modo)
+		local globalOffsetWorld = self.currentShoulderOffset.X * rightVectorHorizontal
+			+ Vector3.new(0, self.currentShoulderOffset.Y, 0) -- Y pode variar se configurado
+			+ self.currentShoulderOffset.Z * lookVectorHorizontal
+
+		if Util.IsFiniteVector3(globalOffsetWorld) then
+			subjectPosition = subjectPosition + globalOffsetWorld
+		end
+
+		-- ============================================================================
+		-- LÓGICA ESPECÍFICA DE MODO
+		-- ============================================================================
+
 		if isMouseLocked or isFirstPerson then
 			-- We need to use the right vector of the camera after rotation, not before
-			local newLookCFrame: CFrame = self:CalculateNewLookCFrameFromArg(overrideCameraLookVector, rotateInput)
+			-- local newLookCFrame: CFrame = self:CalculateNewLookCFrameFromArg(overrideCameraLookVector, rotateInput)
+			-- (newLookCFrame removed as it was unused and we use the outer scope vectors)
 
-			-- Determina o offset base (shoulder para MouseLock, FP para 1ª pessoa)
-			local offset: Vector3
-			if isFirstPerson then
-				-- Offset de 1ª pessoa do ConfigJogador
-				offset = ConfigJogador.ObterConfiguracao("OffsetFP") or Vector3.zero
-			else
-				-- Offset de shoulder (MouseLock) do MouseLockController
-				offset = self:GetMouseLockOffset()
-			end
+			-- Recalcula offset apenas para movimento e humanoid (Offset base já aplicado acima)
+			local offset = Vector3.zero
 
 			-- Adiciona offset de movimento dinâmico baseado no estado do humanoid
 			if humanoid then
@@ -163,7 +199,7 @@ function ClassicCamera:Update(dt)
 				local targetMovementOffset = Vector3.zero
 				local speed = humanoid.MoveDirection.Magnitude
 
-				-- Detecta agachamento via pasta Status do personagem (mais confiável)
+				-- Detecta agachamento via pasta Status do personagem
 				local character = humanoid.Parent
 				local statusFolder = character and character:FindFirstChild("Status")
 				local isAgachado = false
@@ -181,7 +217,6 @@ function ClassicCamera:Update(dt)
 				end
 
 				-- Offset de movimento (Walk/Run)
-				-- Verifica a velocidade REAL do personagem para decidir entre Andar e Correr
 				if speed > 0.1 then
 					local hrp = self:GetHumanoidRootPart()
 					local realSpeed = 0
@@ -190,14 +225,10 @@ function ClassicCamera:Update(dt)
 						realSpeed = Vector3.new(v.X, 0, v.Z).Magnitude
 					end
 
-					-- Verifica se está correndo usando o limiar configurado
 					local isCorrendo = ConfigJogador.EstaCorrendo(realSpeed)
-
 					local walkOffset = ConfigJogador.ObterConfiguracao("WalkOffset") or Vector3.zero
 					local runOffset = ConfigJogador.ObterConfiguracao("RunOffset") or Vector3.zero
 
-					-- Se está correndo, alvo é RunOffset. Se está andando, alvo é WalkOffset.
-					-- A transição suave (Lerp) é feita logo abaixo no update do currentMovementOffset
 					if isCorrendo then
 						targetMovementOffset = targetMovementOffset + runOffset
 					else
@@ -205,47 +236,30 @@ function ClassicCamera:Update(dt)
 					end
 				end
 
-				-- Suaviza a transição do offset usando lerp (elimina o "flick" brusco)
-				local lerpAlpha = math.clamp(self.offsetLerpSpeed * timeDelta, 0, 1)
+				-- Suaviza a transição do offset de movimento
 				self.currentMovementOffset = self.currentMovementOffset:Lerp(targetMovementOffset, lerpAlpha)
-
-				-- Offset de movimento é aplicado SEPARADAMENTE em coordenadas do personagem (não da câmera)
-				-- Isso garante que ao olhar para baixo, o offset Z vai para frente do personagem, não para o chão
 			end
 
-			-- Aplica offset base (shoulder/FP + humanoid) relativo à câmera DE FORMA ESTABILIZADA (Yaw only)
-			-- Isso evita que olhar para cima/baixo faça a câmera orbitar verticalmente (subir/descer)
-			-- X = Right (do personagem/camera horizontal)
-			-- Y = Global Up (altura fixa)
-			-- Z = Forward Horizontal (profundidade fixa no plano)
+			-- Aplica offsets relativos (Camera Base já foi, agora são os offsets de movimento/humanoide)
 
-			local lookVectorHorizontal = Vector3.new(newLookCFrame.LookVector.X, 0, newLookCFrame.LookVector.Z)
-			if lookVectorHorizontal.Magnitude > 0.001 then
-				lookVectorHorizontal = lookVectorHorizontal.Unit
-			else
-				lookVectorHorizontal = Vector3.new(0, 0, -1) -- Fallback se olhar perfeitamente vertical
-			end
-
-			local rightVectorHorizontal = Vector3.new(0, 1, 0):Cross(lookVectorHorizontal).Unit
+			-- NOTA: O código original aplicava offset.X/Y/Z usando rightVectorHorizontal e lookVectorHorizontal.
+			-- Aqui 'offset' contém apenas humanoid.CameraOffset.
+			-- E 'characterRelativeOffset' contém currentMovementOffset.
 
 			local cameraRelativeOffset: Vector3 = offset.X * rightVectorHorizontal
-				+ offset.Y * Vector3.new(0, 1, 0) -- Força Y global
+				+ offset.Y * Vector3.new(0, 1, 0)
 				+ offset.Z * lookVectorHorizontal
 
-			-- Aplica offset de movimento relativo ao PERSONAGEM (não à câmera)
-			-- Usa o CFrame do HumanoidRootPart para que o Z siga a direção do personagem, não da câmera
 			local characterRelativeOffset = Vector3.zero
 			if self.currentMovementOffset.Magnitude > 0.001 then
 				local hrp = self:GetHumanoidRootPart()
 				if hrp then
-					-- X = direita do personagem, Y = global (altura), Z = frente do personagem
 					characterRelativeOffset = self.currentMovementOffset.X * hrp.CFrame.RightVector
-						+ Vector3.new(0, self.currentMovementOffset.Y, 0) -- Y é global (altura)
+						+ Vector3.new(0, self.currentMovementOffset.Y, 0)
 						+ self.currentMovementOffset.Z * hrp.CFrame.LookVector
 				end
 			end
 
-			--offset can be NAN, NAN, NAN if newLookVector has only y component
 			if Util.IsFiniteVector3(cameraRelativeOffset) then
 				subjectPosition = subjectPosition + cameraRelativeOffset
 			end
