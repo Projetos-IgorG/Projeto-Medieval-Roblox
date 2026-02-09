@@ -120,18 +120,15 @@ local function ConfigurarStatusPasta(Character)
 		return v
 	end
 
-	-- Estados
-	createValue("StringValue", "modoAnimacao", "Base")
-	createValue("StringValue", "estadoMov", "Parado")
+	-- Estados de ação (server-authoritative)
+	-- NOTA: modoAnimacao, estadoMov, ShiftLockOn, AgachadoOn, CorrendoOn agora são gerenciados
+	-- pelo client na pasta StatusLocal (ver StatusLocal.client.luau)
 	createValue("StringValue", "estadoAcao", "Nenhuma")
 
-	-- Flags
-	createValue("BoolValue", "ShiftLockOn", false)
-	createValue("BoolValue", "AgachadoOn", false)
+	-- Flags de combate (server-authoritative)
 	createValue("BoolValue", "BloqueandoOn", false)
 	createValue("BoolValue", "ProntoAparar", false)
 	createValue("BoolValue", "StunadoOn", false)
-	createValue("BoolValue", "CorrendoOn", false)
 	createValue("BoolValue", "DashOn", false)
 
 	-- Atributos de combate
@@ -162,36 +159,12 @@ Players.PlayerAdded:Connect(function(Player)
 	end)
 end)
 
-DebugPrint("[ConfigIniciar] Setup de Status configurado")
+DebugPrint(
+	"[ConfigIniciar] Setup de Status configurado (server-only: estadoAcao, BloqueandoOn, ProntoAparar, StunadoOn, DashOn)"
+)
 
--- ═══════════════════════════════════════════════════════════════════
--- PARTE 3: LISTENER DO SHIFTLOCKCHANGED
--- ═══════════════════════════════════════════════════════════════════
-
-local ShiftLockChanged = ReplicatedStorage:FindFirstChild("ShiftLockChanged")
-if not ShiftLockChanged then
-	ShiftLockChanged = Instance.new("RemoteEvent")
-	ShiftLockChanged.Name = "ShiftLockChanged"
-	ShiftLockChanged.Parent = ReplicatedStorage
-end
-
-ShiftLockChanged.OnServerEvent:Connect(function(player, estado)
-	local character = player.Character
-	if not character then
-		return
-	end
-
-	local status = character:FindFirstChild("Status")
-	if status then
-		local shiftLockValue = status:FindFirstChild("ShiftLockOn")
-		if shiftLockValue then
-			shiftLockValue.Value = estado
-			DebugPrint(string.format("[ShiftLock] %s: ShiftLockOn atualizado para %s", player.Name, tostring(estado)))
-		end
-	end
-end)
-
-DebugPrint("[ConfigIniciar] Listener ShiftLock conectado")
+-- NOTA: ShiftLockChanged listener removido - client gerencia ShiftLockOn localmente
+-- e envia o estado junto com a ação de bloqueio quando necessário
 
 -- ═══════════════════════════════════════════════════════════════════
 -- PARTE 4: CARREGAMENTO DE MÓDULOS DE COMBATE

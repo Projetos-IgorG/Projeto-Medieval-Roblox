@@ -155,6 +155,33 @@ AtualizarVelocidadeLocal = function()
 	end
 end
 
+-- ═══════════════════════════════════════════════════════════════════
+-- SINCRONIZAÇÃO COM STATUSLOCAL FOLDER
+-- Atualiza a pasta StatusLocal (client-side) para DebugUI e outros scripts
+-- ═══════════════════════════════════════════════════════════════════
+
+local function SincronizarStatusLocal()
+	local statusLocal = character:FindFirstChild("StatusLocal")
+	if not statusLocal then
+		return
+	end
+
+	local function atualizarValor(nome, valor)
+		local obj = statusLocal:FindFirstChild(nome)
+		if obj and (obj:IsA("StringValue") or obj:IsA("BoolValue") or obj:IsA("NumberValue")) then
+			(obj :: any).Value = valor
+		end
+	end
+
+	-- Sincroniza estados de movimento (client-side)
+	atualizarValor("modoAnimacao", estadoAtual.modoAnimacao)
+	atualizarValor("estadoMov", estadoAtual.estadoMov)
+	atualizarValor("AgachadoOn", estadoAtual.agachado)
+	-- CorrendoOn é baseado em estadoMov para manter consistência visual
+	atualizarValor("CorrendoOn", estadoAtual.estadoMov == "Correndo")
+	-- NOTA: ShiftLockOn é atualizado pelo CameraModule, não aqui
+end
+
 -- Cache de animações
 local animacoesCarregadas = {}
 local animacaoAtualMov = nil
@@ -1649,8 +1676,19 @@ local function CalcularMovimentoLateral(): (string, number)
 	local indoParaDireita = dotRight > 0
 	local indoParaFrente = dotForward > 0
 
-	-- Determina prefixo baseado no estado de corrida
-	local prefixo = movementFlags.isRunning and "Correndo" or "Andando"
+	-- Verifica se está em ação de combate que impede correr (mesma lógica de AtualizarEstadoMovimento)
+	local emCombate = (
+		estadoAtual.estadoAcao == "AtacandoLeve"
+		or estadoAtual.estadoAcao == "CarregandoPesado"
+		or estadoAtual.estadoAcao == "SoltandoPesado"
+		or estadoAtual.estadoAcao == "AtaquePesado"
+		or estadoAtual.estadoAcao == "Defendendo"
+		or estadoAtual.bloqueando
+	)
+
+	-- Determina prefixo baseado no estado de corrida E combate
+	local podeCorrer = movementFlags.isRunning and not emCombate
+	local prefixo = podeCorrer and "Correndo" or "Andando"
 
 	if temComponenteFrontal then
 		-- Tem componente frontal/traseiro, usa lógica completa
@@ -2151,6 +2189,9 @@ end
 
 --- Atualiza animação de movimento baseado no estado
 AtualizarAnimacaoMovimento = function()
+	-- Sincroniza estado com pasta StatusLocal (para DebugUI e outros scripts)
+	SincronizarStatusLocal()
+
 	local estado = estadoAtual.estadoMov
 	local velocidade = ObterMultiplicadorVelocidadeAnimacao()
 
@@ -2739,6 +2780,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if input.KeyCode == Enum.KeyCode.LeftShift then
 		movementFlags.isRunning = true
 		isShiftHeld = true
+		estadoAtual.correndo = true -- Sync para StatusLocal
 		AtualizarVelocidadeLocal() -- Atualiza velocidade imediatamente (client-side)
 		AtualizarEstadoMovimento()
 	end
@@ -2748,6 +2790,7 @@ UserInputService.InputEnded:Connect(function(input, gameProcessed)
 	if input.KeyCode == Enum.KeyCode.LeftShift then
 		movementFlags.isRunning = false
 		isShiftHeld = false
+		estadoAtual.correndo = false -- Sync para StatusLocal
 		AtualizarVelocidadeLocal() -- Atualiza velocidade imediatamente (client-side)
 		AtualizarEstadoMovimento()
 	end

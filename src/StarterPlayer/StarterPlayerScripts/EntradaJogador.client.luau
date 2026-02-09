@@ -533,7 +533,9 @@ local function ProcessarMouse2Pressionado()
 						_G.CancelarCancelPendente()
 					end
 					estadoInput.ultimaDefesa = tick()
-					EnviarAcao("Bloquear")
+					-- Envia ShiftLock junto com ação de bloqueio (servidor precisa para validar)
+					local shiftLockAtivo = _G.LerStatusLocal and _G.LerStatusLocal("ShiftLockOn") or false
+					EnviarAcao("Bloquear", { shiftLock = shiftLockAtivo })
 				else
 					DebugPrint("[EntradaJogador] M2 solto após cancel - apenas cancelou, sem defesa")
 					-- Resolve o cancel pendente (volta ao Idle)
@@ -549,7 +551,9 @@ local function ProcessarMouse2Pressionado()
 
 	-- Se não cancelou nenhum ataque, inicia defesa normalmente
 	estadoInput.ultimaDefesa = agora
-	EnviarAcao("Bloquear")
+	-- Envia ShiftLock junto com ação de bloqueio (servidor precisa para validar)
+	local shiftLockAtivo = _G.LerStatusLocal and _G.LerStatusLocal("ShiftLockOn") or false
+	EnviarAcao("Bloquear", { shiftLock = shiftLockAtivo })
 end
 
 --- Processa soltar mouse 2

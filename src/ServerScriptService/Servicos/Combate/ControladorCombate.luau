@@ -117,7 +117,9 @@ function ControladorCombate._SincronizarEstado(entidade: Model)
 
 	local dados = maquina:ObterDados()
 
-	-- Atualiza pasta Status no character
+	-- Atualiza pasta Status no character (apenas atributos server-authoritative)
+	-- NOTA: modoAnimacao, estadoMov, AgachadoOn, CorrendoOn agora são gerenciados
+	-- pelo client na pasta StatusLocal
 	local status = entidade:FindFirstChild("Status")
 	if status then
 		local function atualizarValor(nome, valor)
@@ -130,14 +132,11 @@ function ControladorCombate._SincronizarEstado(entidade: Model)
 			end
 		end
 
-		atualizarValor("modoAnimacao", dados.modoAnimacao)
-		atualizarValor("estadoMov", dados.estadoMov)
+		-- Server-authoritative: apenas estadoAcao e flags de combate
 		atualizarValor("estadoAcao", dados.estadoAcao)
-		atualizarValor("AgachadoOn", dados.agachado)
 		atualizarValor("BloqueandoOn", dados.bloqueando)
 		atualizarValor("ProntoAparar", dados.prontoParaAparar)
 		atualizarValor("StunadoOn", dados.stunado)
-		atualizarValor("CorrendoOn", dados.correndo)
 		atualizarValor("DashOn", dados.dashando)
 	end
 
@@ -710,10 +709,11 @@ function ControladorCombate.ProcessarHeavyAttackHitbox(entidade: Model, dados: a
 end
 
 --- Processa início de bloqueio
-function ControladorCombate.ProcessarBloquear(entidade: Model): (boolean, string?)
+--- @param shiftLockAtivo boolean? Estado do ShiftLock enviado pelo cliente
+function ControladorCombate.ProcessarBloquear(entidade: Model, shiftLockAtivo: boolean?): (boolean, string?)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
-	local sucesso, motivo = maquina:TenteBloquear()
+	local sucesso, motivo = maquina:TenteBloquear(shiftLockAtivo)
 
 	if not sucesso then
 		DebugPrint(string.format("[Combate] %s: Bloquear FALHOU - %s", entidade.Name, motivo or "?"))
@@ -1158,7 +1158,11 @@ local MapaAcoes = {
 	CarregarPesado = ControladorCombate.ProcessarCarregarPesado,
 	SoltarPesado = ControladorCombate.ProcessarSoltarPesado,
 	HeavyAttackHitbox = ControladorCombate.ProcessarHeavyAttackHitbox,
-	Bloquear = ControladorCombate.ProcessarBloquear,
+	Bloquear = function(entidade, dados)
+		-- Cliente envia shiftLock junto com ação de bloqueio
+		local shiftLockAtivo = typeof(dados) == "table" and dados.shiftLock or nil
+		return ControladorCombate.ProcessarBloquear(entidade, shiftLockAtivo)
+	end,
 	PararBloqueio = ControladorCombate.ProcessarPararBloqueio,
 	QuebrarDefesa = ControladorCombate.ProcessarQuebrarDefesa,
 	Agachar = ControladorCombate.ProcessarAgachar,

@@ -104,28 +104,28 @@ local fovState = {
 -- SISTEMA DE SINCRONIZAÇÃO DO STATUS SHIFTLOCKON
 -- ============================================================================
 
--- Atualiza Status.ShiftLockOn para sincronizar com o sistema de combate
+-- Atualiza StatusLocal.ShiftLockOn (pasta client-side para sistema de combate)
+-- NOTA: Anteriormente escrevia em Status (server-side) e disparava evento remoto.
+-- Agora o ShiftLockOn é 100% client-side, e o estado é enviado junto com ações de bloqueio.
 local function updateShiftLockStatus(isLocked: boolean)
 	local character = Players.LocalPlayer.Character
 	if not character then
 		return
 	end
 
-	local status = character:FindFirstChild("Status")
-	if not status then
+	-- Escreve na pasta StatusLocal (client-side)
+	local statusLocal = character:FindFirstChild("StatusLocal")
+	if not statusLocal then
 		return
 	end
 
-	local shiftLockValue = status:FindFirstChild("ShiftLockOn")
+	local shiftLockValue = statusLocal:FindFirstChild("ShiftLockOn")
 	if shiftLockValue and shiftLockValue:IsA("BoolValue") then
 		shiftLockValue.Value = isLocked
 	end
 
-	-- Dispara evento remoto se existir
-	local shiftLockRemote = ReplicatedStorage:FindFirstChild("ShiftLockChanged")
-	if shiftLockRemote and shiftLockRemote:IsA("RemoteEvent") then
-		shiftLockRemote:FireServer(isLocked)
-	end
+	-- NOTA: Não envia mais para o servidor via RemoteEvent.
+	-- O estado é enviado junto com a ação de bloqueio quando necessário.
 end
 
 -- Verifica se está em primeira pessoa e atualiza o status

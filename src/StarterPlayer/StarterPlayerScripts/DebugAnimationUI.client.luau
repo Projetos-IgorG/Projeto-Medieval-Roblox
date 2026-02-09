@@ -3,14 +3,13 @@
 --[[
     DebugAnimationUI
     ----------------
-    UI leve para visualizar:
-    - Player.Status.modoAnimacao
-    - Player.Status.estadoMov
-    - Player.Status.estadoAcao
-    - Player.Status.ShiftLockOn
-    - Player.Status.AgachadoOn
-    - Player.Status.BloqueandoOn
-    - Player.Status.StunadoOn
+    UI leve para visualizar atributos de estado do jogador.
+    
+    Client-side (StatusLocal):
+    - modoAnimacao, estadoMov, ShiftLockOn, AgachadoOn, CorrendoOn
+    
+    Server-side (Status):
+    - estadoAcao, BloqueandoOn, ProntoAparar, StunadoOn, DashOn
 
     Útil para inspecionar a máquina de estados e validar transições.
 ]]
@@ -79,12 +78,30 @@ local function createLabelGui()
 	return labels
 end
 
-local function getStatusFld()
+-- Atributos que estão em StatusLocal (client-side)
+local CLIENT_SIDE_ATTRS = {
+	modoAnimacao = true,
+	estadoMov = true,
+	ShiftLockOn = true,
+	AgachadoOn = true,
+	CorrendoOn = true,
+}
+
+-- Atributos que estão em Status (server-side)
+local SERVER_SIDE_ATTRS = {
+	estadoAcao = true,
+	BloqueandoOn = true,
+	ProntoAparar = true,
+	StunadoOn = true,
+	DashOn = true,
+}
+
+local function getStatusFolders()
 	local char = player.Character
 	if not char then
-		return nil
+		return nil, nil
 	end
-	return char:FindFirstChild("Status")
+	return char:FindFirstChild("StatusLocal"), char:FindFirstChild("Status")
 end
 
 --==============================================================================
@@ -109,24 +126,38 @@ local function main()
 	local last = {}
 
 	RunService.RenderStepped:Connect(function()
-		local status = getStatusFld()
-		if not status then
-			for k, label in pairs(labels) do
-				label.Text = k .. ": [Status N/A]"
-			end
-			return
-		end
+		local statusLocal, status = getStatusFolders()
 
 		for _, key in ipairs(watchedKeys) do
-			local valObj = status:FindFirstChild(key)
+			local valObj = nil
+			local source = ""
+
+			-- Determina de qual pasta ler
+			if CLIENT_SIDE_ATTRS[key] then
+				if statusLocal then
+					valObj = statusLocal:FindFirstChild(key)
+					source = "L"
+				end
+			else
+				if status then
+					valObj = status:FindFirstChild(key)
+					source = "S"
+				end
+			end
+
 			local value
 			if valObj and valObj:IsA("ValueBase") then
 				value = tostring(valObj.Value)
+			elseif CLIENT_SIDE_ATTRS[key] and not statusLocal then
+				value = "[StatusLocal N/A]"
+			elseif SERVER_SIDE_ATTRS[key] and not status then
+				value = "[Status N/A]"
 			else
 				value = "[N/A]"
 			end
+
 			if last[key] ~= value then
-				labels[key].Text = key .. ": " .. value
+				labels[key].Text = key .. "(" .. source .. "): " .. value
 				last[key] = value
 			end
 		end

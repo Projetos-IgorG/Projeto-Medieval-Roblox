@@ -65,7 +65,7 @@ local ConfiguracaoPadrao: ConfiguracaoCamera = {
 
 	-- Offsets de câmera
 	-- Vector3.new(x (largura), y (altura), z (profundidade))
-	OffsetShoulder = Vector3.new(-2, 0, 2),
+	OffsetShoulder = Vector3.new(-2.5, 0, 2),
 	OffsetFP = Vector3.new(0, 0.27, 0.9),
 	OffsetCrouch = Vector3.new(0, -0.5, 0),
 	WalkOffset = Vector3.new(0, 0, 0.4),

@@ -550,37 +550,40 @@ function MaquinaDeEstados:TenteExecutarPesado(): (boolean, string?)
 end
 
 --- Tenta bloquear
+---@param shiftLockAtivo boolean? Estado do ShiftLock passado pelo cliente (obrigatório no servidor)
 ---@return boolean sucesso
 ---@return string? motivo
-function MaquinaDeEstados:TenteBloquear(): (boolean, string?)
+function MaquinaDeEstados:TenteBloquear(shiftLockAtivo: boolean?): (boolean, string?)
 	if self:_EstaBloqueado() then
 		return false, "EstadoBloqueante"
 	end
 
-	-- Verifica ShiftLock na pasta Status da entidade
-	local shiftLockAtivo = self.dados.shiftLock
-	local status = self.entidade:FindFirstChild("Status")
-	if status then
-		local shiftLockValue = status:FindFirstChild("ShiftLockOn")
-		if shiftLockValue then
-			shiftLockAtivo = shiftLockValue.Value
-			DebugPrint(
-				string.format(
-					"[MaquinaDeEstados] %s: ShiftLockOn lido da Status = %s",
-					self.entidade.Name,
-					tostring(shiftLockAtivo)
+	-- ShiftLock agora é passado pelo client como parâmetro
+	-- Fallback: tenta ler de StatusLocal (client-side) se não foi fornecido
+	local estaComShiftLock = shiftLockAtivo
+	if estaComShiftLock == nil then
+		-- Tenta ler de StatusLocal (pasta client-side)
+		local statusLocal = self.entidade:FindFirstChild("StatusLocal")
+		if statusLocal then
+			local shiftLockValue = statusLocal:FindFirstChild("ShiftLockOn")
+			if shiftLockValue and shiftLockValue:IsA("BoolValue") then
+				estaComShiftLock = shiftLockValue.Value
+				DebugPrint(
+					string.format(
+						"[MaquinaDeEstados] %s: ShiftLockOn lido de StatusLocal = %s",
+						self.entidade.Name,
+						tostring(estaComShiftLock)
+					)
 				)
-			)
-		else
-			DebugPrint(
-				string.format("[MaquinaDeEstados] %s: ShiftLockOn NAO ENCONTRADO na Status!", self.entidade.Name)
-			)
+			end
 		end
-	else
-		DebugPrint(string.format("[MaquinaDeEstados] %s: Pasta Status NAO ENCONTRADA!", self.entidade.Name))
+		-- Fallback final: usa o valor interno
+		if estaComShiftLock == nil then
+			estaComShiftLock = self.dados.shiftLock
+		end
 	end
 
-	if not shiftLockAtivo then
+	if not estaComShiftLock then
 		return false, "SemShiftLock"
 	end
 
