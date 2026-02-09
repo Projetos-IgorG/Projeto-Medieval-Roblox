@@ -388,12 +388,12 @@ function Invisicam:SmartCircleBehavior(castPoints)
 					castPoint = RayIntersection(hprime, v1, circlePoint, vp)
 
 					if castPoint.Magnitude > 0 then
-						local ray = Ray.new(hprime, castPoint - hprime)
-						local hit, hitPoint, hitNormal =
-							game.Workspace:FindPartOnRayWithIgnoreList(ray, { self.char }, false, false)
+						local checkRay = Ray.new(hprime, castPoint - hprime)
+						local checkHit, checkHitPoint, checkHitNormal =
+							game.Workspace:FindPartOnRayWithIgnoreList(checkRay, { self.char }, false, false)
 
-						if hit then
-							local hprime2 = hitPoint + 0.1 * hitNormal.unit
+						if checkHit then
+							local hprime2 = checkHitPoint + 0.1 * checkHitNormal.unit
 							castPoint = hprime2
 						end
 					else
@@ -403,12 +403,12 @@ function Invisicam:SmartCircleBehavior(castPoints)
 					castPoint = hprime
 				end
 
-				local ray = Ray.new(torsoPoint, (castPoint - torsoPoint))
-				local hit, hitPoint, hitNormal =
-					game.Workspace:FindPartOnRayWithIgnoreList(ray, { self.char }, false, false)
+				local finalRay = Ray.new(torsoPoint, (castPoint - torsoPoint))
+				local finalHit, finalHitPoint, _ =
+					game.Workspace:FindPartOnRayWithIgnoreList(finalRay, { self.char }, false, false)
 
-				if hit then
-					local castPoint2 = hitPoint - 0.1 * (castPoint - torsoPoint).unit
+				if finalHit then
+					local castPoint2 = finalHitPoint - 0.1 * (castPoint - torsoPoint).unit
 					castPoint = castPoint2
 				end
 			end
