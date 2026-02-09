@@ -183,23 +183,28 @@ local function updateFOV(camera: Camera)
 		return
 	end
 
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then
-		return
+	-- Acessa StatusLocal para determinar estado real (sem depender de velocidade física)
+	local statusLocal = character:FindFirstChild("StatusLocal")
+	local estadoMov = "Parado"
+	local isDashing = false
+
+	if statusLocal then
+		local estadoVal = statusLocal:FindFirstChild("estadoMov")
+		if estadoVal and estadoVal:IsA("StringValue") then
+			estadoMov = estadoVal.Value
+		end
+
+		local dashVal = statusLocal:FindFirstChild("DashOn")
+		if dashVal and dashVal:IsA("BoolValue") then
+			isDashing = dashVal.Value
+		end
 	end
 
-	local rootPart = humanoid.RootPart
-	if not rootPart then
-		return
-	end
-
-	-- Calcula velocidade horizontal (ignora Y)
-	local velocity = rootPart.AssemblyLinearVelocity
-	local horizontalSpeed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
-
-	-- Determina estado de movimento
-	local isMoving = horizontalSpeed > 0.5
-	local isRunning = ConfigJogador.EstaCorrendo(horizontalSpeed)
+	-- Determina estado de movimento baseado em intenção/estado, não física
+	-- Se está correndo ou em dash -> FOV de Corrida
+	-- Se está apenas andando -> FOV de Andar
+	local isRunning = (estadoMov == "Correndo") or isDashing
+	local isMoving = (estadoMov == "Andando") or isRunning
 
 	-- Só atualiza se o estado mudou
 	if isMoving ~= fovState.isMoving or isRunning ~= fovState.isRunning then

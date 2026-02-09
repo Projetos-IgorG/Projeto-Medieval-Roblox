@@ -179,6 +179,8 @@ local function SincronizarStatusLocal()
 	atualizarValor("AgachadoOn", estadoAtual.agachado)
 	-- CorrendoOn é baseado em estadoMov para manter consistência visual
 	atualizarValor("CorrendoOn", estadoAtual.estadoMov == "Correndo")
+	-- DashOn para efeitos de câmera/FOV
+	atualizarValor("DashOn", movementFlags.isDashing)
 
 	-- Debug específico para CorrendoOn
 	if DEBUG_ENABLED then
@@ -741,20 +743,22 @@ local function OnMarkerAttackRelease()
 		heavyAttackState.aguardandoSoltar = true
 		DebugPrint("[ControladorEstado] Animação pausada - aguardando soltar M1")
 	else
-		-- Já soltou M1, continua a animação normalmente
-		-- A velocidade já foi ajustada para 1 pelo SoltarPesado do servidor
-		DebugPrint("[ControladorEstado] M1 já foi solto - animação continua")
+		-- Já soltou M1, continua a animação normalmente e aplica impulso
+		-- O impulso é aplicado aqui pois a liberação do ataque ocorre após AttackRelease
+		if _G.AplicarImpulsoAtaque then
+			_G.AplicarImpulsoAtaque("AtaquePesado")
+		end
+		DebugPrint("[ControladorEstado] M1 já foi solto - animação continua, impulso aplicado")
 	end
 end
 
 --- Processa o marcador "HeavyAttack" - momento de criar hitbox
+--- NOTA: O impulso NÃO é aplicado aqui, mas sim ao soltar M1 (após AttackRelease)
 local function OnMarkerHeavyAttack()
 	DebugPrint("[ControladorEstado] Marcador HeavyAttack atingido - notificando servidor para criar hitbox")
 
-	-- Aplica impulso de ataque pesado no cliente (feedback imediato)
-	if _G.AplicarImpulsoAtaque then
-		_G.AplicarImpulsoAtaque("AtaquePesado")
-	end
+	-- NOTA: Impulso foi movido para OnMarkerAttackRelease e ContinuarAtaquePesado
+	-- O impulso deve ocorrer quando o golpe é "liberado", não quando causa dano
 
 	-- Notifica o servidor para criar o hitbox do ataque pesado - envia CFrame para sincronia
 	local hrp = character:FindFirstChild("HumanoidRootPart")
@@ -860,7 +864,17 @@ function _G.ContinuarAtaquePesado()
 		-- Estava pausado (velocidade 0), continua a animação com velocidade de soltar
 		heavyAttackState.animacao:AdjustSpeed(velocidadeSoltar)
 		heavyAttackState.aguardandoSoltar = false
-		DebugPrint("[ControladorEstado] Animação de ataque pesado retomada (velocidade:", velocidadeSoltar, ")")
+
+		-- Aplica impulso ao soltar M1 - este é o momento correto (após AttackRelease pausado)
+		if _G.AplicarImpulsoAtaque then
+			_G.AplicarImpulsoAtaque("AtaquePesado")
+		end
+
+		DebugPrint(
+			"[ControladorEstado] Animação de ataque pesado retomada com impulso (velocidade:",
+			velocidadeSoltar,
+			")"
+		)
 		return true
 	end
 
@@ -1516,18 +1530,47 @@ end
 -- ═══════════════════════════════════════════════════════════════════
 
 --[[
-	Sistema de impulso único aplicado ao atacante durante ataques.
-	Diferente do Dash (contínuo), este aplica velocidade uma única vez.
+	Sistema de impulso sustentado aplicado ao atacante durante ataques.
+	Similar ao Dash, aplica velocidade por alguns frames para superar o
+	atrito do chão. A duração é configurável via DuracaoImpulsoAtaque.
 	A direção é baseada na orientação do personagem (LookVector).
 ]]
 
---- Aplica impulso único ao atacante na direção que está virado
+-- Estado do impulso de ataque (para controlar conexão RenderStepped)
+local attackImpulseState = {
+	connection = nil :: RBXScriptConnection?, -- Conexão do RenderStepped
+	endTime = 0, -- Quando o impulso deve terminar
+}
+
+--- Para o impulso de ataque atual (se existir)
+local function PararImpulsoAtaque()
+	-- Para conexão do RenderStepped
+	if attackImpulseState.connection then
+		attackImpulseState.connection:Disconnect()
+		attackImpulseState.connection = nil
+	end
+
+	-- Remove constraint de velocidade se existir
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		local constraint = hrp:FindFirstChild("AttackImpulseVelocity")
+		if constraint then
+			constraint:Destroy()
+		end
+	end
+end
+
+--- Aplica impulso sustentado ao atacante usando LinearVelocity constraint
+--- Esta abordagem ignora completamente o atrito do chão
 --- @param tipoAtaque string Tipo do ataque ("AtaqueLeve", "AtaqueLeveFinal", "AtaquePesado")
 local function AplicarImpulsoAtaque(tipoAtaque: string)
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	if not hrp then
 		return
 	end
+
+	-- Para qualquer impulso anterior
+	PararImpulsoAtaque()
 
 	-- Determina magnitude baseada no tipo de ataque
 	local magnitude
@@ -1537,17 +1580,61 @@ local function AplicarImpulsoAtaque(tipoAtaque: string)
 		magnitude = Modulo_Configuracoes.ObterConfiguracao("MagnitudeImpulsoAtaqueLeve") or 15
 	end
 
-	-- Direção que o atacante está virado (LookVector)
-	local direcao = hrp.CFrame.LookVector
-	direcao = Vector3.new(direcao.X, 0, direcao.Z).Unit
+	-- Obtém duração do impulso
+	local duracao = Modulo_Configuracoes.ObterConfiguracao("DuracaoImpulsoAtaque") or 0.1
 
-	-- Aplica velocidade única (substitui XZ, mantém Y)
-	local velocidadeAtual = hrp.AssemblyLinearVelocity
-	local impulso = direcao * magnitude
-	hrp.AssemblyLinearVelocity = Vector3.new(impulso.X, velocidadeAtual.Y, impulso.Z)
+	-- Define tempo de término
+	attackImpulseState.endTime = tick() + duracao
+
+	-- Captura a direção no momento do ataque (LookVector)
+	local direcaoAtaque = hrp.CFrame.LookVector
+	direcaoAtaque = Vector3.new(direcaoAtaque.X, 0, direcaoAtaque.Z).Unit
+
+	-- Cria LinearVelocity constraint para ignorar atrito completamente
+	local linearVelocity = Instance.new("LinearVelocity")
+	linearVelocity.Name = "AttackImpulseVelocity"
+	linearVelocity.Attachment0 = hrp:FindFirstChild("RootAttachment") or hrp:FindFirstChildOfClass("Attachment")
+
+	-- Se não tem attachment, cria um temporário
+	if not linearVelocity.Attachment0 then
+		local tempAttachment = Instance.new("Attachment")
+		tempAttachment.Name = "TempRootAttachment"
+		tempAttachment.Parent = hrp
+		linearVelocity.Attachment0 = tempAttachment
+	end
+
+	-- Configura a constraint para mover apenas horizontal (ignora Y)
+	linearVelocity.VelocityConstraintMode = Enum.VelocityConstraintMode.Plane
+	linearVelocity.PrimaryTangentAxis = direcaoAtaque
+	linearVelocity.SecondaryTangentAxis = Vector3.new(0, 1, 0) -- Eixo vertical como secundário
+	linearVelocity.PlaneVelocity = Vector2.new(magnitude, 0) -- X = direção primária (frente)
+	linearVelocity.MaxForce = 100000 -- Força alta para garantir movimento
+	linearVelocity.RelativeTo = Enum.ActuatorRelativeTo.World
+	linearVelocity.Parent = hrp
+
+	-- Cria conexão para monitorar tempo e limpar
+	attackImpulseState.connection = RunService.RenderStepped:Connect(function(_deltaTime)
+		-- Verifica se o tempo acabou
+		if tick() >= attackImpulseState.endTime then
+			PararImpulsoAtaque()
+			return
+		end
+
+		-- Verifica se constraint ainda existe (segurança contra edge cases)
+		local rootPart = character:FindFirstChild("HumanoidRootPart")
+		if not rootPart or not rootPart:FindFirstChild("AttackImpulseVelocity") then
+			PararImpulsoAtaque()
+			return
+		end
+	end)
 
 	DebugPrint(
-		string.format("[ControladorEstado] Impulso de ataque aplicado: %s (magnitude: %.1f)", tipoAtaque, magnitude)
+		string.format(
+			"[ControladorEstado] Impulso de ataque iniciado: %s (magnitude: %.1f, duração: %.2fs)",
+			tipoAtaque,
+			magnitude,
+			duracao
+		)
 	)
 end
 
@@ -2685,6 +2772,9 @@ local function AtualizarEstadoMovimento()
 			end
 		end
 	end
+
+	-- Garante sincronia do StatusLocal a cada frame para sistemas externos (câmera, UI)
+	SincronizarStatusLocal()
 end
 
 -- ═══════════════════════════════════════════════════════════════════
