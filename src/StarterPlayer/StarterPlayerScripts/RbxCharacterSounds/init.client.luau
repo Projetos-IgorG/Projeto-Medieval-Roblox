@@ -16,11 +16,11 @@ local function loadFlag(flag: string)
 	return success and result
 end
 
-local FFlagUserSoundsUseRelativeVelocity = loadFlag('UserSoundsUseRelativeVelocity2')
-local FFlagUserNewCharacterSoundsApi = loadFlag('UserNewCharacterSoundsApi3')
-local FFlagUserFixCharSoundsEmitters = loadFlag('UserFixCharSoundsEmitters')
+local FFlagUserSoundsUseRelativeVelocity = loadFlag("UserSoundsUseRelativeVelocity2")
+local FFlagUserNewCharacterSoundsApi = loadFlag("UserNewCharacterSoundsApi3")
+local FFlagUserFixCharSoundsEmitters = loadFlag("UserFixCharSoundsEmitters")
 
-local SOUND_DATA : { [string]: {[string]: any}} = {
+local SOUND_DATA: { [string]: { [string]: any } } = {
 	Climbing = {
 		SoundId = "rbxasset://sounds/action_footsteps_plastic.mp3",
 		Looped = true,
@@ -56,7 +56,7 @@ local SOUND_DATA : { [string]: {[string]: any}} = {
 	},
 }
 
-local AUDIOPLAYER_DATA : { [string]: {[string]: any}} = {
+local AUDIOPLAYER_DATA: { [string]: { [string]: any } } = {
 	Climbing = {
 		AssetId = "rbxasset://sounds/action_footsteps_plastic.mp3",
 		Looping = true,
@@ -94,18 +94,18 @@ local AUDIOPLAYER_DATA : { [string]: {[string]: any}} = {
 
 -- map a value from one range to another
 local function map(x: number, inMin: number, inMax: number, outMin: number, outMax: number): number
-	return (x - inMin)*(outMax - outMin)/(inMax - inMin) + outMin
+	return (x - inMin) * (outMax - outMin) / (inMax - inMin) + outMin
 end
 
 local function getRelativeVelocity(cm, velocity)
 	if not cm then
 		return velocity
 	end
-	local activeSensor = cm.ActiveController and
-	(
-		(cm.ActiveController:IsA("GroundController") and cm.GroundSensor) or
-		(cm.ActiveController:IsA("ClimbController") and cm.ClimbSensor)
-	)
+	local activeSensor = cm.ActiveController
+		and (
+			(cm.ActiveController:IsA("GroundController") and cm.GroundSensor)
+			or (cm.ActiveController:IsA("ClimbController") and cm.ClimbSensor)
+		)
 	if activeSensor and activeSensor.SensedPart then
 		-- Calculate the platform relative velocity by subtracting the velocity of the surface we're attached to or standing on.
 		local platformVelocity = activeSensor.SensedPart:GetVelocityAtPosition(cm.RootPart.Position)
@@ -135,9 +135,9 @@ end
 
 local function playSoundIf(sound: Playable, condition: boolean)
 	if FFlagUserNewCharacterSoundsApi and sound:IsA("AudioPlayer") then
-		if (sound.IsPlaying and not condition) then
+		if sound.IsPlaying and not condition then
 			sound:Stop()
-		elseif (not sound.IsPlaying and condition) then
+		elseif not sound.IsPlaying and condition then
 			sound:Play()
 		end
 	else
@@ -168,10 +168,10 @@ local function initializeSoundSystem(instances: { [string]: Instance })
 	local cm = nil
 	if FFlagUserSoundsUseRelativeVelocity then
 		local character = humanoid.Parent
-		cm = character:FindFirstChild('ControllerManager')
+		cm = character:FindFirstChild("ControllerManager")
 	end
 
-	local sounds: {[string]: Playable} = {}
+	local sounds: { [string]: Playable } = {}
 
 	if FFlagUserNewCharacterSoundsApi and SoundService.CharacterSoundsUseNewApi == Enum.RolloutState.Enabled then
 		-- initialize Audio Emitter
@@ -185,11 +185,11 @@ local function initializeSoundSystem(instances: { [string]: Instance })
 			character = localPlayer.Character
 		end
 		local curve = {}
-		local i : number = 5
-		local step : number = 1.25 -- determines how fine-grained the curve gets sampled
+		local i: number = 5
+		local step: number = 1.25 -- determines how fine-grained the curve gets sampled
 		while i < 150 do
-			curve[i] = 5 / i;
-			i *= step;
+			curve[i] = 5 / i
+			i *= step
 		end
 		curve[150] = 0
 		if FFlagUserFixCharSoundsEmitters then
@@ -200,7 +200,7 @@ local function initializeSoundSystem(instances: { [string]: Instance })
 		audioEmitter.Name = "RbxCharacterSoundsEmitter"
 		audioEmitter:SetDistanceAttenuation(curve)
 		-- initialize sounds
-		for name: string, props: {[string]: any} in pairs(AUDIOPLAYER_DATA) do
+		for name: string, props: { [string]: any } in pairs(AUDIOPLAYER_DATA) do
 			local sound = Instance.new("AudioPlayer")
 			local audioPlayerWire: Wire = Instance.new("Wire")
 			sound.Name = name
@@ -219,7 +219,7 @@ local function initializeSoundSystem(instances: { [string]: Instance })
 		end
 	else
 		-- initialize sounds
-		for name: string, props: {[string]: any} in pairs(SOUND_DATA) do
+		for name: string, props: { [string]: any } in pairs(SOUND_DATA) do
 			local sound = Instance.new("Sound")
 			sound.Name = name
 			-- set default values
@@ -235,7 +235,7 @@ local function initializeSoundSystem(instances: { [string]: Instance })
 		end
 	end
 
-	local playingLoopedSounds: {[Playable]: boolean?} = {}
+	local playingLoopedSounds: { [Playable]: boolean? } = {}
 
 	local function stopPlayingLoopedSounds(except: Playable?)
 		except = except or nil --default value
@@ -248,7 +248,7 @@ local function initializeSoundSystem(instances: { [string]: Instance })
 	end
 
 	-- state transition callbacks.
-	local stateTransitions: {[Enum.HumanoidStateType]: () -> ()} = {
+	local stateTransitions: { [Enum.HumanoidStateType]: () -> () } = {
 		[Enum.HumanoidStateType.FallingDown] = function()
 			stopPlayingLoopedSounds()
 		end,
@@ -277,14 +277,14 @@ local function initializeSoundSystem(instances: { [string]: Instance })
 		[Enum.HumanoidStateType.Freefall] = function()
 			(sounds.FreeFalling :: any).Volume = 0
 			stopPlayingLoopedSounds(sounds.FreeFalling)
-			
+
 			setSoundLooped(sounds.FreeFalling, true)
 			if sounds.FreeFalling:IsA("Sound") then
 				sounds.FreeFalling.PlaybackRegionsEnabled = true
 			end
 			(sounds.FreeFalling :: any).LoopRegion = NumberRange.new(2, 9)
 			playSound(sounds.FreeFalling)
-			
+
 			playingLoopedSounds[sounds.FreeFalling] = true
 		end,
 
@@ -306,7 +306,9 @@ local function initializeSoundSystem(instances: { [string]: Instance })
 		[Enum.HumanoidStateType.Climbing] = function()
 			local sound = sounds.Climbing
 			local partVelocity = rootPart.AssemblyLinearVelocity
-			local velocity = if FFlagUserSoundsUseRelativeVelocity then getRelativeVelocity(cm, partVelocity) else partVelocity
+			local velocity = if FFlagUserSoundsUseRelativeVelocity
+				then getRelativeVelocity(cm, partVelocity)
+				else partVelocity
 			if math.abs(velocity.Y) > 0.1 then
 				playSound(sound, true)
 				stopPlayingLoopedSounds(sound)
@@ -327,7 +329,7 @@ local function initializeSoundSystem(instances: { [string]: Instance })
 	}
 
 	-- updaters for looped sounds
-	local loopedSoundUpdaters: {[Playable]: (number, Playable, Vector3) -> ()} = {
+	local loopedSoundUpdaters: { [Playable]: (number, Playable, Vector3) -> () } = {
 		[sounds.Climbing] = function(dt: number, sound: Playable, vel: Vector3)
 			local velocity = if FFlagUserSoundsUseRelativeVelocity then getRelativeVelocity(cm, vel) else vel
 			playSoundIf(sound, velocity.Magnitude > 0.1)
@@ -335,7 +337,7 @@ local function initializeSoundSystem(instances: { [string]: Instance })
 
 		[sounds.FreeFalling] = function(dt: number, sound: Playable, vel: Vector3): ()
 			if vel.Magnitude > 75 then
-				(sound :: any).Volume = math.clamp((sound :: any).Volume + 0.9*dt, 0, 1)
+				(sound :: any).Volume = math.clamp((sound :: any).Volume + 0.9 * dt, 0, 1)
 			else
 				(sound :: any).Volume = 0
 			end
@@ -347,7 +349,7 @@ local function initializeSoundSystem(instances: { [string]: Instance })
 	}
 
 	-- state substitutions to avoid duplicating entries in the state table
-	local stateRemap: {[Enum.HumanoidStateType]: Enum.HumanoidStateType} = {
+	local stateRemap: { [Enum.HumanoidStateType]: Enum.HumanoidStateType } = {
 		[Enum.HumanoidStateType.RunningNoPhysics] = Enum.HumanoidStateType.Running,
 	}
 
