@@ -531,6 +531,39 @@ function ControladorCombate.ProcessarHeavyAttackEarlyCancel(entidade: Model)
 	return true, nil
 end
 
+--- Processa notificação de early cancel do Dash
+--- Permite que o servidor marque o dash como terminado antes da animação cliente
+--- @param entidade Model Personagem
+function ControladorCombate.ProcessarDashEarlyCancel(entidade: Model)
+	local maquina = ControladorCombate.ObterMaquina(entidade)
+
+	if maquina:ObterEstadoAcao() == MaquinaDeEstados.EstadoAcao.Dashando then
+		-- Completa o dash no servidor
+		maquina:CompletarDash()
+
+		-- Resetar velocidade para normal (caso tenha sido alterada)
+		local humanoid = entidade:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeNormal") or 14
+		end
+
+		-- Atualiza status DashOn
+		local status = entidade:FindFirstChild("Status")
+		if status then
+			local dashOn = status:FindFirstChild("DashOn")
+			if dashOn and dashOn:IsA("BoolValue") then
+				dashOn.Value = false
+			end
+		end
+
+		ControladorCombate._SincronizarEstado(entidade)
+
+		DebugPrint(string.format("[Combate] %s: Dash early cancel executado", entidade.Name))
+	end
+
+	return true, nil
+end
+
 --- Processa cancelamento de ataque por defesa
 --- Chamado quando o jogador inicia bloqueio durante a janela de cancelamento de um ataque
 --- @param entidade Model Personagem atacante
@@ -925,38 +958,6 @@ function ControladorCombate.ProcessarDesequipar(entidade: Model)
 	return true, nil
 end
 
---- Processa inversão de animação de equipar/desequipar
---- Chamado quando o jogador toggle rapidamente entre equipar e desequipar
---- O cliente cuida de inverter a animação, aqui só atualizamos o estado
---- @param entidade Model
---- @param dados table { direcao: number, modo: string? }
-function ControladorCombate.ProcessarInverterEquipAnimacao(entidade: Model, dados: { direcao: number, modo: string? })
-	local maquina = ControladorCombate.ObterMaquina(entidade)
-
-	local direcao = dados.direcao
-	local modo = dados.modo
-
-	DebugPrint(string.format("[Combate] %s: Invertendo animação para direção %d", entidade.Name, direcao))
-
-	if direcao == 1 then
-		-- Inverteu de desequipando para equipando
-		-- Define o modo alvo
-		if modo then
-			maquina:DefinirModo(modo)
-		end
-	else
-		-- Inverteu de equipando para desequipando
-		-- Define modo Base após animação
-		task.delay(0.1, function()
-			maquina:DefinirModo("Base")
-			ControladorCombate._SincronizarEstado(entidade)
-		end)
-	end
-
-	-- Mantém estadoAcao (Equipando/Desequipando) até o cliente notificar que a animação terminou
-	return true, nil
-end
-
 --- Processa mudança de shift lock
 function ControladorCombate.ProcessarShiftLock(entidade: Model, ativo: boolean)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
@@ -1182,9 +1183,6 @@ local MapaAcoes = {
 		return ControladorCombate.ProcessarEquipar(entidade, dados)
 	end,
 	Desequipar = ControladorCombate.ProcessarDesequipar,
-	InverterEquipAnimacao = function(entidade, dados)
-		return ControladorCombate.ProcessarInverterEquipAnimacao(entidade, dados)
-	end,
 
 	-- Ações de combo por marcadores
 	ComboHitbox = function(entidade, dados)
@@ -1198,6 +1196,7 @@ local MapaAcoes = {
 	ComboTerminou = ControladorCombate.ProcessarComboTerminou,
 	ComboEarlyCancel = ControladorCombate.ProcessarComboEarlyCancel,
 	HeavyAttackEarlyCancel = ControladorCombate.ProcessarHeavyAttackEarlyCancel,
+	DashEarlyCancel = ControladorCombate.ProcessarDashEarlyCancel,
 
 	-- Cancelamento de ataque por defesa
 	CancelarAtaquePorDefesa = function(entidade, dados)

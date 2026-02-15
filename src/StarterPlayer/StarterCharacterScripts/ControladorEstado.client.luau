@@ -1050,7 +1050,7 @@ function _G.CancelarCancelPendente()
 end
 
 -- ═══════════════════════════════════════════════════════════════════
--- SISTEMA DE ANIMAÇÃO DE EQUIPAR/DESEQUIPAR REVERSÍVEL
+-- SISTEMA DE ANIMAÇÃO DE EQUIPAR/DESEQUIPAR
 -- ═══════════════════════════════════════════════════════════════════
 
 -- Estado da animação de equipar/desequipar
@@ -1059,7 +1059,6 @@ local equipAnimState = {
 	direcao = 0, -- 1 = equipando, -1 = desequipando
 	modoAlvo = nil, -- Modo para o qual está equipando
 	conexaoTermino = nil, -- Conexão para detectar término
-	conexaoMonitor = nil, -- Conexão para monitorar TimePosition (quando velocidade negativa)
 	tempoInicio = 0, -- Tempo quando a animação iniciou (para calcular progresso)
 	-- Sistema de acessório de arma
 	acessorioClonado = nil, -- Referência ao Accessory clonado no character
@@ -1259,10 +1258,6 @@ local function OnEquipAnimacaoTerminou()
 		equipAnimState.conexaoTermino:Disconnect()
 		equipAnimState.conexaoTermino = nil
 	end
-	if equipAnimState.conexaoMonitor then
-		equipAnimState.conexaoMonitor:Disconnect()
-		equipAnimState.conexaoMonitor = nil
-	end
 	equipAnimState.animacao = nil
 	equipAnimState.direcao = 0
 	equipAnimState.modoAlvo = nil
@@ -1289,91 +1284,27 @@ local function OnEquipAnimacaoTerminou()
 	DebugPrint("[ControladorEstado] Animação de equipar/desequipar terminou (direção:", direcaoFinal, ")")
 end
 
---- Monitora o TimePosition da animação quando está tocando em velocidade negativa
---- Detecta quando chega ao início (TimePosition <= 0) para parar a animação
-local function IniciarMonitoramentoReversao()
-	-- Remove monitor anterior se existir
-	if equipAnimState.conexaoMonitor then
-		equipAnimState.conexaoMonitor:Disconnect()
-	end
-
-	equipAnimState.conexaoMonitor = RunService.RenderStepped:Connect(function()
-		if not equipAnimState.animacao or not equipAnimState.animacao.IsPlaying then
-			-- Animação parou, limpa monitor
-			if equipAnimState.conexaoMonitor then
-				equipAnimState.conexaoMonitor:Disconnect()
-				equipAnimState.conexaoMonitor = nil
-			end
-			return
-		end
-
-		-- Se está tocando em velocidade negativa e chegou ao início
-		if equipAnimState.direcao == -1 and equipAnimState.animacao.TimePosition <= 0.01 then
-			-- Para a animação manualmente
-			equipAnimState.animacao:Stop(0.1)
-			-- O callback OnEquipAnimacaoTerminou será chamado pelo Stopped event
-		end
-	end)
-end
-
---- Inverte a direção da animação de equipar/desequipar
---- A inversão reverte a animação atual - se estava tocando pra frente, toca pra trás e vice-versa
---- @param novaDirecao number 1 para equipar, -1 para desequipar
-function _G.InverterEquipAnimacao(novaDirecao: number)
-	if not equipAnimState.animacao or not equipAnimState.animacao.IsPlaying then
-		DebugPrint("[ControladorEstado] Não há animação de equip ativa para inverter")
-		return false
-	end
-
-	local direcaoAnterior = equipAnimState.direcao
-	equipAnimState.direcao = novaDirecao
-
-	-- A velocidade da animação é invertida (negativa do que era)
-	-- Se estava em 1, vai para -1. Se estava em -1, vai para 1.
-	local velocidadeAtual = equipAnimState.animacao.Speed
-	local novaVelocidade = -velocidadeAtual
-	equipAnimState.animacao:AdjustSpeed(novaVelocidade)
-
-	-- Se a nova velocidade é negativa, inicia monitoramento para detectar quando chegar ao início
-	if novaVelocidade < 0 then
-		IniciarMonitoramentoReversao()
-	else
-		-- Se voltou para positivo, remove o monitor
-		if equipAnimState.conexaoMonitor then
-			equipAnimState.conexaoMonitor:Disconnect()
-			equipAnimState.conexaoMonitor = nil
-		end
-	end
-
-	-- Reconfigura markers para a nova direção
-	-- Os markers "Equip" e "Desequip" são diferentes, então reconectamos
-	local ehEquiparAgora = (novaDirecao == 1)
-	ConfigurarMarkersEquip(equipAnimState.animacao, ehEquiparAgora)
-
-	-- Se inverteu de equipar para desequipar e já tinha clonado o acessório,
-	-- o marker "Desequip" vai removê-lo quando for atingido
-	-- Se inverteu de desequipar para equipar e o acessório ainda existe,
-	-- o marker "Equip" vai cloná-lo quando for atingido (evita duplicatas via flag)
-
-	DebugPrint(
-		"[ControladorEstado] Animação de equip invertida:",
-		direcaoAnterior,
-		"->",
-		novaDirecao,
-		"velocidade:",
-		novaVelocidade
-	)
-	return true
-end
-
 --- Verifica se está em animação de equipar/desequipar
 function _G.EstaEmAnimacaoEquip()
 	return equipAnimState.animacao ~= nil and equipAnimState.animacao.IsPlaying
 end
 
---- Obtém a direção atual da animação de equip (1, -1 ou 0)
-function _G.ObterDirecaoEquip()
-	return equipAnimState.direcao
+--- Verifica se o jogador pode alterar o Tool equipado (equipar/desequipar/trocar)
+--- Retorna false se:
+---   - Há qualquer ação em andamento (ataque, defesa, dash, stun, etc.)
+---   - A animação de equipar/desequipar ainda está tocando (mesmo após early cancel)
+function _G.PodeAlterarTool()
+	-- Bloqueia se há qualquer ação em andamento
+	if estadoAtual.estadoAcao ~= "Nenhuma" then
+		return false
+	end
+
+	-- Bloqueia se a animação de equip/desequip ainda está tocando (early cancel não libera)
+	if equipAnimState.animacao ~= nil and equipAnimState.animacao.IsPlaying then
+		return false
+	end
+
+	return true
 end
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -1386,6 +1317,8 @@ local dashState = {
 	direcao = "Frente", -- Direção do dash atual
 	conexaoTermino = nil, -- Conexão do evento Stopped
 	velocityConnection = nil, -- Conexão do RenderStepped para impulso sustentado
+	earlyCancelTimer = nil, -- Timer para permitir early cancel do dash
+	earlyCancelExecutado = false, -- Se já executou early cancel
 }
 
 --- Calcula a direção do dash baseado no input de movimento
@@ -1517,6 +1450,14 @@ local function OnDashAnimacaoTerminou()
 		dashState.conexaoTermino:Disconnect()
 		dashState.conexaoTermino = nil
 	end
+
+	-- Cancela timer de early cancel se existir
+	if dashState.earlyCancelTimer then
+		pcall(task.cancel, dashState.earlyCancelTimer)
+		dashState.earlyCancelTimer = nil
+	end
+
+	dashState.earlyCancelExecutado = false
 
 	-- Notifica servidor que dash terminou
 	TentarAcao:FireServer("DashTerminou")
@@ -2098,10 +2039,9 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 	-- Verifica se é animação de dash
 	local ehDash = nomeAnimacao and (nomeAnimacao:match("^Dash"))
 
-	-- Se é equipar/desequipar e já tem uma animação de equip tocando, não para - vai inverter depois
+	-- Se é equipar/desequipar, não permite iniciar se já há uma equip tocando
 	if ehEquipar and equipAnimState.animacao and equipAnimState.animacao.IsPlaying then
-		-- A inversão será feita pelo sistema de InverterEquipAnimacao
-		-- Não inicia nova animação
+		DebugPrint("[ControladorEstado] Já há animação de equip tocando, ignorando")
 		return
 	end
 
@@ -2147,18 +2087,65 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 		IniciarImpulsoDash(direcao)
 
 		DebugPrint("[ControladorEstado] Animação de Dash iniciada:", nomeAnimacao)
+
+		-- Agenda early cancel para permitir ações finais durante o dash (ex: atacar no final)
+		-- Reseta flags anteriores
+		if dashState.earlyCancelTimer then
+			pcall(task.cancel, dashState.earlyCancelTimer)
+			dashState.earlyCancelTimer = nil
+		end
+		dashState.earlyCancelExecutado = false
+
+		if dashState.animacao and dashState.animacao.IsPlaying then
+			local dashTrack = dashState.animacao
+			local janelaEarlyCancel = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelamentoDash") or 0.12
+			local tempoRestante = (dashTrack.Length - dashTrack.TimePosition) / dashTrack.Speed
+
+			if tempoRestante > janelaEarlyCancel and janelaEarlyCancel > 0 then
+				local tempoParaEarlyCancel = tempoRestante - janelaEarlyCancel
+				DebugPrint(
+					string.format(
+						"[ControladorEstado] Dash early cancel agendado: %.2fs restante, early cancel em %.2fs",
+						tempoRestante,
+						tempoParaEarlyCancel
+					)
+				)
+
+				dashState.earlyCancelTimer = task.delay(tempoParaEarlyCancel, function()
+					if dashState.animacao and dashState.animacao.IsPlaying and not dashState.earlyCancelExecutado then
+						dashState.earlyCancelExecutado = true
+						DebugPrint("[ControladorEstado] Dash early cancel executado - mudando estado para Normal")
+
+						-- Atualiza estado local imediatamente
+						estadoAtual.estadoAcao = "Nenhuma"
+
+						-- Notifica servidor sobre early cancel do dash
+						TentarAcao:FireServer("DashEarlyCancel")
+
+						-- Se o jogador está segurando Shift, volta a correr LOCALMENTE
+						if isShiftHeld then
+							movementFlags.isRunning = true
+							estadoAtual.estadoMov = "Correndo"
+							estadoAtual.correndo = true
+						end
+
+						-- Atualiza velocidade ao sair de ação (client-side)
+						AtualizarVelocidadeLocal()
+
+						-- Atualiza animação de movimento (a animação de dash vai terminar naturalmente em background)
+						AtualizarAnimacaoMovimento()
+					end
+				end)
+			end
+		end
 		return
 	end
 
-	-- Configura sistema de equipar/desequipar reversível
+	-- Configura sistema de equipar/desequipar
 	if ehEquipar then
 		-- Limpa conexão anterior se existir
 		if equipAnimState.conexaoTermino then
 			equipAnimState.conexaoTermino:Disconnect()
-		end
-		if equipAnimState.conexaoMonitor then
-			equipAnimState.conexaoMonitor:Disconnect()
-			equipAnimState.conexaoMonitor = nil
 		end
 
 		-- Determina se é animação de equipar ou desequipar
@@ -3114,10 +3101,6 @@ player.CharacterAdded:Connect(function(novoCharacter)
 	if equipAnimState.conexaoTermino then
 		equipAnimState.conexaoTermino:Disconnect()
 		equipAnimState.conexaoTermino = nil
-	end
-	if equipAnimState.conexaoMonitor then
-		equipAnimState.conexaoMonitor:Disconnect()
-		equipAnimState.conexaoMonitor = nil
 	end
 	-- O acessório clonado será destruído junto com o character antigo
 	-- Apenas resetamos as referências

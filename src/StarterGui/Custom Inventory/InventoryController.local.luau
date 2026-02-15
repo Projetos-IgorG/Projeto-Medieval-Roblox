@@ -332,6 +332,11 @@ UserInputService.InputChanged:Connect(function(input)
 		local toolEquipped = getToolEquipped()
 		local toolPosition = inventoryHandler:getToolPosition(toolEquipped) or 0
 
+		-- Bloqueia troca por scroll se não pode alterar tool
+		if _G.PodeAlterarTool and not _G.PodeAlterarTool() then
+			return
+		end
+
 		for i = toolPosition + direction, direction < 0 and 1 or inventoryHandler.slotAmount, direction do
 			local toolObject = inventoryHandler.OBJECTS.HotBar[i]
 			if toolObject and humanoid then

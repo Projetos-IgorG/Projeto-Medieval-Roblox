@@ -43,9 +43,9 @@ local Modulo_Configuracoes =
 -- REMOTE EVENTS
 -- ═══════════════════════════════════════════════════════════════════
 
--- Referência ao GUI customizado
+-- Referência ao GUI customizado (reservado para uso futuro)
 local PlayerGui = player:WaitForChild("PlayerGui")
-local CustomInventoryGUI = PlayerGui:WaitForChild("Custom Inventory", 10) -- Aguarda até 10 segundos
+local _CustomInventoryGUI = PlayerGui:WaitForChild("Custom Inventory", 10) -- Aguarda até 10 segundos
 
 local Remotos = ReplicatedStorage:WaitForChild("Remotos")
 local TentarAcao = Remotos:WaitForChild("TentarAcao")
@@ -146,28 +146,31 @@ function _G.EstaCarregandoPesado()
 end
 
 -- ═══════════════════════════════════════════════════════════════════
--- SISTEMA DE FILA DE EQUIPAMENTO
+-- SISTEMA DE EQUIPAMENTO
 -- ═══════════════════════════════════════════════════════════════════
 --[[
-    Sistema de fila para gerenciar troca de tools com animações reversíveis.
+    Sistema de bloqueio para gerenciar troca de tools.
     
-    Estados possíveis:
-    - estadoEquip = "idle" → Nenhuma animação de equip em andamento
-    - estadoEquip = "equipando" → Animação de equipar tocando (velocidade positiva)
-    - estadoEquip = "desequipando" → Animação de desequipar tocando (velocidade positiva ou negativa)
+    Regras:
+    - Não é possível equipar/desequipar/trocar um Tool enquanto houver
+      qualquer ação em andamento (ataque, defesa, dash, stun, etc.)
+    - Não é possível equipar/desequipar/trocar um Tool enquanto a
+      animação de equipar/desequipar ainda estiver tocando (mesmo após early cancel)
+    - Tentativas bloqueadas são silenciosamente revertidas (re-equipa o mesmo Tool)
     
     Variáveis:
-    - toolAtualEquipado: Tool que está atualmente equipado (modo ativo no servidor)
-    - toolEmAnimacao: Tool cuja animação está tocando agora
-    - toolAlvo: Tool que queremos ter equipado no final (nil = queremos ficar sem arma)
+    - estadoEquip: "idle", "equipando" ou "desequipando"
+    - toolAtualEquipado: Tool que está efetivamente equipado (modo ativo no servidor)
+    - toolPendente: Tool aguardando para ser equipado após desequip do atual
+    - revertendoTool: Flag anti-loop para quando o sistema reverte uma ação do Roblox
 ]]
 
 local estadoEquip = "idle" -- "idle", "equipando", "desequipando"
 local toolAtualEquipado = nil -- Tool que está efetivamente equipado (modo ativo)
-local toolEmAnimacao = nil -- Tool cuja animação está tocando
-local toolAlvo = nil -- Tool que queremos ter no final (nil = Base)
+local toolPendente = nil -- Tool aguardando para ser equipado após desequip
+local revertendoTool = false -- Flag para evitar loops ao reverter ações do Roblox
 
---- Verifica se há animação de equip/desequip em andamento
+--- Verifica se há animação de equip/desequip em andamento (compatibilidade)
 function _G.EstaEmAnimacaoEquip()
 	return estadoEquip ~= "idle"
 end
@@ -207,159 +210,27 @@ local function ObterModoDoTool(tool: Tool): string?
 	return nil
 end
 
--- Forward declaration para permitir referência circular
-local ProcessarProximaAcao
-
--- Timeout para detectar se ação foi rejeitada pelo servidor
-local TIMEOUT_ACAO = 0.3 -- segundos
-local ultimoIdAcao = 0
-
---- Atualiza o estado do Inventory customizado (habilita/desabilita)
---- Esconde Inventory e HotBar durante animações de equip/desequip
---- Ao retornar ao idle, mostra apenas HotBar (Inventory permanece oculto)
-local function AtualizarBackpack()
-	local bloqueado = estadoEquip ~= "idle"
-	local success, result = pcall(function()
-		if CustomInventoryGUI then
-			local inventory = CustomInventoryGUI:FindFirstChild("Inventory")
-			local hotbar = CustomInventoryGUI:FindFirstChild("hotBar")
-
-			if bloqueado then
-				-- Durante animação: esconde ambos
-				if inventory then
-					inventory.Visible = false
-				end
-				if hotbar then
-					hotbar.Visible = false
-				end
-			else
-				-- Fora de animação: mostra apenas HotBar
-				if hotbar then
-					hotbar.Visible = true
-				end
-				-- Inventory permanece com sua visibilidade atual (não força mostrar)
-			end
-		end
-	end)
-	if not success then
-		DebugWarn("[EntradaJogador] Falha ao atualizar estado do inventário customizado:", result)
+--- Obtém o Humanoid do character atual
+local function ObterHumanoid(): Humanoid?
+	local char = player.Character
+	if char then
+		return char:FindFirstChildOfClass("Humanoid")
 	end
-end
-
---- Verifica se há animação ativa após timeout, senão reseta
-local function VerificarTimeoutAcao(idAcao: number)
-	-- Se o ID mudou, uma nova ação foi iniciada - ignora este timeout
-	if idAcao ~= ultimoIdAcao then
-		return
-	end
-
-	-- Se ainda estamos em estado não-idle mas não há animação, reseta
-	if estadoEquip ~= "idle" then
-		local temAnimacao = _G.EstaEmAnimacaoEquip and _G.EstaEmAnimacaoEquip()
-		if not temAnimacao then
-			DebugPrint("[EntradaJogador] Timeout: ação rejeitada pelo servidor, resetando estado")
-			estadoEquip = "idle"
-			toolEmAnimacao = nil
-			AtualizarBackpack()
-			ProcessarProximaAcao()
-		end
-	end
+	return nil
 end
 
 --- Inicia animação de equipar um tool
 local function IniciarEquipar(tool: Tool, modo: string)
 	estadoEquip = "equipando"
-	toolEmAnimacao = tool
-	ultimoIdAcao = ultimoIdAcao + 1
-	local idAtual = ultimoIdAcao
-	AtualizarBackpack() -- Bloqueia backpack durante animação
 	EnviarAcao("Equipar", modo)
 	DebugPrint("[EntradaJogador] Iniciando equipar:", tool.Name, "- Modo:", modo)
-
-	-- Configura timeout para detectar rejeição
-	task.delay(TIMEOUT_ACAO, function()
-		VerificarTimeoutAcao(idAtual)
-	end)
 end
 
 --- Inicia animação de desequipar
 local function IniciarDesequipar(tool: Tool)
 	estadoEquip = "desequipando"
-	toolEmAnimacao = tool
-	ultimoIdAcao = ultimoIdAcao + 1
-	local idAtual = ultimoIdAcao
-	AtualizarBackpack() -- Bloqueia backpack durante animação
 	EnviarAcao("Desequipar")
 	DebugPrint("[EntradaJogador] Iniciando desequipar:", tool and tool.Name or "?")
-
-	-- Configura timeout para detectar rejeição
-	task.delay(TIMEOUT_ACAO, function()
-		VerificarTimeoutAcao(idAtual)
-	end)
-end
-
---- Inverte a animação atual
---- Se não há animação para inverter, reseta estado e processa a fila
-local function InverterAnimacao(novaDirecao: number, modo: string?)
-	local sucesso = false
-	if _G.InverterEquipAnimacao then
-		sucesso = _G.InverterEquipAnimacao(novaDirecao)
-	end
-
-	if sucesso then
-		-- Inversão funcionou, atualiza estado e notifica servidor
-		EnviarAcao("InverterEquipAnimacao", { direcao = novaDirecao, modo = modo })
-
-		if novaDirecao == 1 then
-			estadoEquip = "equipando"
-			DebugPrint("[EntradaJogador] Invertendo para equipar. Modo:", modo or "?")
-		else
-			estadoEquip = "desequipando"
-			DebugPrint("[EntradaJogador] Invertendo para desequipar")
-		end
-	else
-		-- Não há animação para inverter - reseta estado e processa fila
-		DebugPrint("[EntradaJogador] Inversão falhou - resetando estado e processando fila")
-		estadoEquip = "idle"
-		toolEmAnimacao = nil
-		AtualizarBackpack() -- Libera backpack quando voltar para idle
-		-- Chama ProcessarProximaAcao após um pequeno delay para evitar recursão
-		task.defer(function()
-			ProcessarProximaAcao()
-		end)
-	end
-end
-
---- Processa a fila - chamado quando uma animação termina
-ProcessarProximaAcao = function()
-	-- Se toolAlvo é diferente do que temos, precisamos agir
-	if toolAlvo ~= toolAtualEquipado then
-		if toolAlvo then
-			-- Queremos equipar algo
-			local modo = ObterModoDoTool(toolAlvo)
-			if modo then
-				if toolAtualEquipado then
-					-- Primeiro precisa desequipar o atual
-					IniciarDesequipar(toolAtualEquipado)
-				else
-					-- Pode equipar direto
-					IniciarEquipar(toolAlvo, modo)
-				end
-			else
-				-- Tool não tem modo válido, ignora
-				toolAlvo = toolAtualEquipado
-			end
-		else
-			-- Queremos ficar sem arma
-			if toolAtualEquipado then
-				IniciarDesequipar(toolAtualEquipado)
-			end
-		end
-	else
-		-- Já temos o que queremos, idle
-		estadoEquip = "idle"
-		toolEmAnimacao = nil
-	end
 end
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -372,27 +243,47 @@ _G.OnEquipAnimacaoTerminou = function(direcaoFinal: number)
 	DebugPrint(
 		"[EntradaJogador] Animação terminou. Direção:",
 		direcaoFinal,
-		"Tool em animação:",
-		toolEmAnimacao and toolEmAnimacao.Name or "nil"
+		"Tool atual:",
+		toolAtualEquipado and toolAtualEquipado.Name or "nil",
+		"Tool pendente:",
+		toolPendente and toolPendente.Name or "nil"
 	)
 
 	if direcaoFinal == 1 then
 		-- Terminou equipando - agora temos o tool equipado
-		toolAtualEquipado = toolEmAnimacao
+		-- Busca o Tool no character (é a referência mais confiável)
+		local char = player.Character
+		if char then
+			local toolNoCharacter = char:FindFirstChildOfClass("Tool")
+			if toolNoCharacter then
+				toolAtualEquipado = toolNoCharacter
+			end
+		end
+		toolPendente = nil
 	elseif direcaoFinal == -1 then
 		-- Terminou desequipando - agora não temos tool
 		toolAtualEquipado = nil
 	end
 
-	toolEmAnimacao = nil
 	estadoEquip = "idle"
-	AtualizarBackpack() -- Libera backpack quando animação termina
 
 	-- Notifica o servidor que a animação de equip/desequip terminou
 	EquipAnimacaoTerminou:FireServer()
 
-	-- Processa próxima ação da fila
-	ProcessarProximaAcao()
+	-- Se terminou desequipando e há um tool pendente, equipa ele agora
+	if direcaoFinal == -1 and toolPendente then
+		local pendente = toolPendente
+		toolPendente = nil
+		local modo = ObterModoDoTool(pendente)
+		if modo then
+			-- Verifica se o tool pendente ainda está no character
+			if pendente.Parent == player.Character then
+				IniciarEquipar(pendente, modo)
+			else
+				DebugPrint("[EntradaJogador] Tool pendente não está mais no character, ignorando")
+			end
+		end
+	end
 end
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -583,9 +474,14 @@ local function ProcessarQuebrarDefesa()
 	EnviarAcaoComDebounce("QuebrarDefesa")
 end
 
---- Processa quando um Tool é equipado
---- Gerencia fila de equipamento e animações reversíveis
+--- Processa quando um Tool é equipado (adicionado ao character)
+--- Bloqueia a ação se o jogador está em qualquer estado que impeça troca
 local function ProcessarToolEquipado(tool: Tool)
+	-- Ignora se é o sistema revertendo (anti-loop)
+	if revertendoTool then
+		return
+	end
+
 	local modoDesejado = ObterModoDoTool(tool)
 	if not modoDesejado then
 		DebugWarn("[EntradaJogador] Tool '", tool.Name, "' não tem modoAnimacao válido")
@@ -594,8 +490,36 @@ local function ProcessarToolEquipado(tool: Tool)
 
 	DebugPrint("[EntradaJogador] Tool adicionado:", tool.Name, "- Estado atual:", estadoEquip)
 
-	-- Atualiza o alvo
-	toolAlvo = tool
+	-- Verifica se pode alterar o Tool (sem ação em andamento e sem animação de equip)
+	local podeAlterar = _G.PodeAlterarTool and _G.PodeAlterarTool()
+	if not podeAlterar then
+		-- BLOQUEIO: Reverte silenciosamente a ação do Roblox
+		DebugPrint("[EntradaJogador] Troca bloqueada - revertendo. Tool:", tool.Name)
+		local humanoid = ObterHumanoid()
+		if humanoid then
+			revertendoTool = true
+
+			if toolAtualEquipado and toolAtualEquipado ~= tool then
+				-- Tentou equipar outro tool enquanto estava bloqueado
+				-- Remove o novo e re-equipa o antigo
+				humanoid:UnequipTools()
+				task.defer(function()
+					if toolAtualEquipado and toolAtualEquipado.Parent then
+						humanoid:EquipTool(toolAtualEquipado)
+					end
+					revertendoTool = false
+				end)
+			elseif toolAtualEquipado == tool then
+				-- Re-equipou o mesmo tool (vindo de um revert de desequip)
+				revertendoTool = false
+			else
+				-- Tentou equipar sem ter nenhum, mas está bloqueado
+				humanoid:UnequipTools()
+				revertendoTool = false
+			end
+		end
+		return
+	end
 
 	-- Configura detecção nativa de Tool (substitui MouseButton1)
 	-- Limpa conexões anteriores primeiro
@@ -620,10 +544,11 @@ local function ProcessarToolEquipado(tool: Tool)
 
 	DebugPrint("[EntradaJogador] Configurado tool.Activated/Deactivated para:", tool.Name)
 
-	-- Se idle, inicia ação diretamente
+	-- Se idle, inicia ação
 	if estadoEquip == "idle" then
 		if toolAtualEquipado then
-			-- Precisa desequipar primeiro
+			-- Precisa desequipar o atual primeiro, depois equipar o novo
+			toolPendente = tool
 			IniciarDesequipar(toolAtualEquipado)
 		else
 			-- Pode equipar direto
@@ -632,53 +557,26 @@ local function ProcessarToolEquipado(tool: Tool)
 		return
 	end
 
-	-- Se estamos equipando
-	if estadoEquip == "equipando" then
-		if toolEmAnimacao == tool then
-			-- Re-equipando o mesmo tool que já está equipando - não faz nada
-			DebugPrint("[EntradaJogador] Já está equipando este tool")
-			return
-		else
-			-- Equipando tool A, mas queremos tool B
-			-- Precisa reverter animação de A para desequipar, depois equipar B
-			InverterAnimacao(-1, nil)
-			-- toolAlvo já está como tool B, será processado quando animação terminar
-			return
-		end
+	-- Se estamos desequipando, registra este tool como pendente para equipar após término
+	if estadoEquip == "desequipando" then
+		toolPendente = tool
+		DebugPrint("[EntradaJogador] Desequipando - tool pendente atualizado para:", tool.Name)
+		return
 	end
 
-	-- Se estamos desequipando
-	if estadoEquip == "desequipando" then
-		if toolEmAnimacao == tool then
-			-- Estava desequipando este tool, mas agora quer equipar novamente
-			-- Inverte a animação para equipar
-			InverterAnimacao(1, modoDesejado)
-			return
-		else
-			-- Estava desequipando tool A para equipar B, mas agora quer C
-			-- Continua desequipando A, toolAlvo atualizado para C será processado depois
-			DebugPrint("[EntradaJogador] Atualizando alvo para:", tool.Name)
-			return
-		end
-	end
+	-- Se estamos equipando (não deveria chegar aqui pelo bloqueio, mas por segurança)
+	DebugPrint("[EntradaJogador] Tool adicionado durante animação de equipar - ignorando")
 end
 
 --- Processa quando um Tool é desequipado (removido do character)
---- Gerencia fila de equipamento e animações reversíveis
+--- Bloqueia a ação se o jogador está em qualquer estado que impeça troca
 local function ProcessarToolDesequipado(tool: Tool)
-	DebugPrint(
-		"[EntradaJogador] Tool removido:",
-		tool.Name,
-		"- Estado atual:",
-		estadoEquip,
-		"- Tool alvo:",
-		toolAlvo and toolAlvo.Name or "nil"
-	)
-
-	-- Se o tool removido é o alvo, atualiza alvo para nil
-	if toolAlvo == tool then
-		toolAlvo = nil
+	-- Ignora se é o sistema revertendo (anti-loop)
+	if revertendoTool then
+		return
 	end
+
+	DebugPrint("[EntradaJogador] Tool removido:", tool.Name, "- Estado atual:", estadoEquip)
 
 	-- Limpa conexões de tool.Activated/Deactivated
 	for _, conexao in ipairs(toolConexoes) do
@@ -689,6 +587,20 @@ local function ProcessarToolDesequipado(tool: Tool)
 	table.clear(toolConexoes)
 	DebugPrint("[EntradaJogador] Limpas conexões tool.Activated/Deactivated para:", tool.Name)
 
+	-- Verifica se pode alterar o Tool
+	local podeAlterar = _G.PodeAlterarTool and _G.PodeAlterarTool()
+	if not podeAlterar then
+		-- BLOQUEIO: Reverte silenciosamente - re-equipa o tool que tentou tirar
+		DebugPrint("[EntradaJogador] Desequip bloqueado - revertendo. Tool:", tool.Name)
+		local humanoid = ObterHumanoid()
+		if humanoid and tool.Parent then
+			revertendoTool = true
+			humanoid:EquipTool(tool)
+			revertendoTool = false
+		end
+		return
+	end
+
 	-- Se idle e este era o tool equipado, inicia desequip
 	if estadoEquip == "idle" then
 		if toolAtualEquipado == tool then
@@ -697,29 +609,8 @@ local function ProcessarToolDesequipado(tool: Tool)
 		return
 	end
 
-	-- Se estamos equipando
-	if estadoEquip == "equipando" then
-		if toolEmAnimacao == tool then
-			-- Estava equipando este tool, mas foi removido - inverte para desequipar
-			InverterAnimacao(-1, nil)
-			return
-		else
-			-- Equipando outro tool, este foi removido - não afeta
-			return
-		end
-	end
-
-	-- Se estamos desequipando
-	if estadoEquip == "desequipando" then
-		if toolEmAnimacao == tool then
-			-- Já está desequipando este tool - continua normalmente
-			-- Se toolAlvo é nil, vai para idle. Se tem outro tool, vai equipar.
-			return
-		else
-			-- Desequipando outro tool - não afeta diretamente
-			return
-		end
-	end
+	-- Se estamos em animação (não deveria chegar aqui pelo bloqueio, mas por segurança)
+	DebugPrint("[EntradaJogador] Tool removido durante animação - ignorando (não deveria ocorrer)")
 end
 
 --- Processa pular
@@ -740,7 +631,7 @@ end
 --- Processa dash
 --- Calcula a direção baseado no MoveDirection do humanoid em relação ao LookVector
 local function ProcessarDash()
-	-- Bloqueia dash se há animação de equip em andamento
+	-- Bloqueia dash se não pode alterar tool (animação de equip em andamento)
 	if _G.EstaEmAnimacaoEquip and _G.EstaEmAnimacaoEquip() then
 		DebugPrint("[EntradaJogador] Dash bloqueado: Animação de equipamento em andamento")
 		return
@@ -906,27 +797,24 @@ local function ConfigurarCharacter(char)
 		ataqueLevePendente = false,
 	}
 
-	-- Resetar estado de fila/equipamento para evitar bloqueios após morrer
+	-- Resetar estado de equipamento para evitar bloqueios após morrer
 	estadoEquip = "idle"
 	toolAtualEquipado = nil
-	toolEmAnimacao = nil
-	toolAlvo = nil
-	ultimoIdAcao = 0
-
-	-- Habilita backpack ao nascer
-	AtualizarBackpack()
+	toolPendente = nil
+	revertendoTool = false
 
 	-- Conecta eventos de adicionar/remover filhos
 	char.ChildAdded:Connect(OnChildAdded)
 	char.ChildRemoved:Connect(OnChildRemoved)
 
-	-- Conecta ao evento de morte para habilitar backpack
+	-- Conecta ao evento de morte para resetar estado
 	local humanoid = char:WaitForChild("Humanoid")
 	humanoid.Died:Connect(function()
-		-- Ao morrer, reseta estado de equipamento e habilita backpack
+		-- Ao morrer, reseta estado de equipamento
 		estadoEquip = "idle"
-		AtualizarBackpack()
-		DebugPrint("[EntradaJogador] Jogador morreu - Backpack habilitada")
+		toolPendente = nil
+		revertendoTool = false
+		DebugPrint("[EntradaJogador] Jogador morreu - Estado resetado")
 	end)
 
 	-- Verifica se já tem algum Tool equipado

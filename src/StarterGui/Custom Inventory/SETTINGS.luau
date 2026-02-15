@@ -324,7 +324,7 @@ function module:addTool(tool: Tool, parent: string, position: number?)
 			or not tool.Parent
 			or inputState == Enum.UserInputState.End
 			or self.slotsLocked
-			or (_G.EstaEmAnimacaoEquip and _G.EstaEmAnimacaoEquip())
+			or (_G.PodeAlterarTool and not _G.PodeAlterarTool())
 			or (_G.EstaEmDash and _G.EstaEmDash())
 		then
 			return

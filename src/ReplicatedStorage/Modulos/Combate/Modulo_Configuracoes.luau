@@ -164,6 +164,7 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	CooldownDash = 1.5,
 	ForcaDash = 45,
 	VelocidadeAnimacaoDash = 1.0,
+	JanelaCancelamentoDash = 0.2, -- Tempo antes do fim da animação para early-cancel (segundos)
 
 	-- Impulso de Ataque (aplicado ao atacante)
 	MagnitudeImpulsoAtaqueLeve = 20,
