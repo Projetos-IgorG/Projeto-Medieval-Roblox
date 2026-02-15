@@ -32,8 +32,89 @@ screenGui.Name = "CustomPromptsGui"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
+-- ═══════════════════════════════════════════════════════════════════
+-- BLOQUEIO DE INTERAÇÃO (COMBATE/FERRAMENTA)
+-- Oculta e bloqueia todos os prompts enquanto modoAnimacao for de Combate ou Interação.
+-- Controla cada BillboardGui.Enabled individualmente (ScreenGui.Enabled não
+-- afeta BillboardGuis com Adornee de forma confiável).
+-- ═══════════════════════════════════════════════════════════════════
+
+local Modulo_Configuracoes =
+	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Combate"):WaitForChild("Modulo_Configuracoes"))
+
+local interacaoBloqueada = false
+
+-- Rastreia prompts atualmente visíveis (para desabilitar ao entrar em combate)
+local promptsVisiveis: { [ProximityPrompt]: boolean } = {}
+
+-- Prompts que desabilitamos via .Enabled = false (para reabilitar ao sair de combate)
+local promptsDesabilitados: { [ProximityPrompt]: boolean } = {}
+
+local function AtualizarBloqueioProximity(modoAnimacao: string)
+	local novoBloqueio = Modulo_Configuracoes.BloqueiaInteracao(modoAnimacao)
+	if novoBloqueio == interacaoBloqueada then
+		return
+	end
+
+	interacaoBloqueada = novoBloqueio
+
+	if interacaoBloqueada then
+		-- Entrou em combate: desabilita todos os prompts que já estão visíveis
+		for prompt in pairs(promptsVisiveis) do
+			if prompt and prompt.Parent then
+				prompt.Enabled = false
+				promptsDesabilitados[prompt] = true
+			end
+		end
+		promptsVisiveis = {}
+	else
+		-- Saiu de combate: reabilita todos os prompts que desabilitamos
+		for prompt in pairs(promptsDesabilitados) do
+			if prompt and prompt.Parent then
+				prompt.Enabled = true
+			end
+		end
+		promptsDesabilitados = {}
+	end
+end
+
+local function ConectarStatusLocalProximity(character: Model)
+	local statusLocal = character:WaitForChild("StatusLocal", 10)
+	if not statusLocal then
+		return
+	end
+	local modoVal = statusLocal:WaitForChild("modoAnimacao", 10)
+	if not modoVal then
+		return
+	end
+
+	modoVal.Changed:Connect(function(novoModo)
+		AtualizarBloqueioProximity(novoModo)
+	end)
+
+	AtualizarBloqueioProximity(modoVal.Value)
+end
+
+if player.Character then
+	task.spawn(ConectarStatusLocalProximity, player.Character)
+end
+
+player.CharacterAdded:Connect(function(character)
+	interacaoBloqueada = false
+	promptsVisiveis = {}
+	promptsDesabilitados = {}
+	task.spawn(ConectarStatusLocalProximity, character)
+end)
+
 ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPrompt)
 	if promptInstance.Style == Enum.ProximityPromptStyle.Default then
+		return
+	end
+
+	-- Se em combate/ferramenta, desabilita o prompt e não cria UI
+	if interacaoBloqueada then
+		promptInstance.Enabled = false
+		promptsDesabilitados[promptInstance] = true
 		return
 	end
 
@@ -64,6 +145,9 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 	CustomProximity.Active = true -- IMPORTANTE: permite detectar input
 	CustomProximity.Adornee = promptInstance.Parent
 	CustomProximity.Parent = screenGui
+
+	-- Registra como visível (para desabilitar se entrar em combate)
+	promptsVisiveis[promptInstance] = true
 
 	-- ========================================
 	-- TextButton para detectar clique/touch (usa o existente no template)
@@ -144,6 +228,9 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 	end)
 
 	promptInstance.PromptHidden:Once(function()
+		-- Remove do rastreamento
+		promptsVisiveis[promptInstance] = nil
+
 		if CustomProximity then
 			CustomProximity:Destroy()
 		end

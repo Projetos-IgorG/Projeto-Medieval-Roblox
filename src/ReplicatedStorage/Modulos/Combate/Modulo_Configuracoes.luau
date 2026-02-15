@@ -549,6 +549,18 @@ function Modulo_Configuracoes.EhInteracao(nomeModo: string): boolean
 	return modo and modo.tipo == "Interacao" or false
 end
 
+--- Verifica se um modo bloqueia interações com o mundo (proximity prompts, arrastar itens)
+--- Modos de Combate e Interação bloqueiam interações
+---@param nomeModo string
+---@return boolean
+function Modulo_Configuracoes.BloqueiaInteracao(nomeModo: string): boolean
+	local modo = Modulo_Configuracoes.ObterModoAnimacao(nomeModo)
+	if not modo then
+		return false
+	end
+	return modo.tipo == "Combate" or modo.tipo == "Interacao"
+end
+
 --- Obtém configuração de combo para um modo
 ---@param nomeModo string
 ---@return any?

@@ -94,6 +94,9 @@ local ArrastarItemEvent = Remotos:WaitForChild("ArrastarItem")
 local VFX = ReplicatedStorage:WaitForChild("VFX")
 local HighlightTemplate = VFX:WaitForChild("HighlightArrastar")
 
+local Modulo_Configuracoes =
+	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Combate"):WaitForChild("Modulo_Configuracoes"))
+
 -- ═══════════════════════════════════════════════════════════════════
 -- ESTADO
 -- ═══════════════════════════════════════════════════════════════════
@@ -137,6 +140,9 @@ local estado = {
 
 	-- Peso do objeto atual
 	pesoAtual = 1.0 :: number,
+
+	-- Interação bloqueada (combate/ferramenta equipada)
+	interacaoBloqueada = false,
 }
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -547,6 +553,9 @@ local function CalcularPosicaoAlvo(): Vector3
 end
 
 local function IniciarArrasto()
+	if estado.interacaoBloqueada then
+		return
+	end
 	if estado.arrastando then
 		return
 	end
@@ -860,6 +869,18 @@ UserInputService.InputEnded:Connect(OnInputEnded)
 
 -- Loop principal
 RunService.RenderStepped:Connect(function(deltaTime)
+	-- Bloqueio de interação: em combate/ferramenta, desativa arrasto e hover
+	if estado.interacaoBloqueada then
+		if estado.arrastando then
+			PararArrasto()
+		end
+		if estado.alvoHover then
+			AplicarHighlight(nil)
+			estado.alvoHover = nil
+		end
+		return
+	end
+
 	if estado.arrastando then
 		AtualizarArrasto(deltaTime)
 	else
@@ -882,5 +903,45 @@ if UserInputService.TouchEnabled then
 		Enum.UserInputType.Touch
 	)
 end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- BLOQUEIO DE INTERAÇÃO (COMBATE/FERRAMENTA)
+-- Desativa arrasto enquanto modoAnimacao for de Combate ou Interação
+-- ═══════════════════════════════════════════════════════════════════
+
+local function AtualizarBloqueioArrastar(modoAnimacao: string)
+	local bloqueado = Modulo_Configuracoes.BloqueiaInteracao(modoAnimacao)
+	estado.interacaoBloqueada = bloqueado
+
+	if bloqueado and estado.arrastando then
+		PararArrasto()
+	end
+end
+
+local function ConectarStatusLocalArrastar(character: Model)
+	local statusLocal = character:WaitForChild("StatusLocal", 10)
+	if not statusLocal then
+		return
+	end
+	local modoVal = statusLocal:WaitForChild("modoAnimacao", 10)
+	if not modoVal then
+		return
+	end
+
+	modoVal.Changed:Connect(function(novoModo)
+		AtualizarBloqueioArrastar(novoModo)
+	end)
+
+	AtualizarBloqueioArrastar(modoVal.Value)
+end
+
+if player.Character then
+	task.spawn(ConectarStatusLocalArrastar, player.Character)
+end
+
+player.CharacterAdded:Connect(function(character)
+	estado.interacaoBloqueada = false
+	task.spawn(ConectarStatusLocalArrastar, character)
+end)
 
 DebugPrint("Sistema de arrastar inicializado (cliente)")
