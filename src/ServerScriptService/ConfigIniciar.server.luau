@@ -135,6 +135,21 @@ local function ConfigurarStatusPasta(Character)
 	createValue("NumberValue", "Forca", 0)
 	createValue("NumberValue", "CritChance", 0)
 	createValue("NumberValue", "CritMult", 1.5)
+
+	-- Garantir templates de roupa padrão ao spawnar
+	local shirt = Character:FindFirstChildWhichIsA("Shirt") or Character:FindFirstChild("Shirt")
+	if not shirt then
+		shirt = Instance.new("Shirt")
+		shirt.Parent = Character
+	end
+	shirt.ShirtTemplate = "rbxassetid://79449264778033"
+
+	local pants = Character:FindFirstChildWhichIsA("Pants") or Character:FindFirstChild("Pants")
+	if not pants then
+		pants = Instance.new("Pants")
+		pants.Parent = Character
+	end
+	pants.PantsTemplate = "rbxassetid://73726278525951"
 end
 
 local function RemoverAcessoriosNaoHair(Character)
