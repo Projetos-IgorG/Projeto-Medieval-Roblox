@@ -28,15 +28,14 @@ local PROP_ALCANCE = "Alcance"
 local CONFIG_HITBOX = {
 	duracaoPadrao = 0.1,
 	alturaBase = 3.5,
-	larguraMultiplicador = 0.8,
-	profundidadeMultiplicador = 1.2,
+	larguraBase = 5, -- Largura fixa da hitbox
 }
 
--- Multiplicadores por tipo de ataque
+-- Multiplicadores por tipo de ataque (afetam apenas altura/largura se desejar, mas user quer fixo)
 local MULTIPLICADORES_HITBOX: { [string]: { tamanho: number, offset: number } } = {
 	AtaqueLeve = { tamanho = 1.0, offset = 1.0 },
-	AtaqueLeveFinal = { tamanho = 1.2, offset = 1.1 },
-	AtaquePesado = { tamanho = 1.4, offset = 1.2 },
+	AtaqueLeveFinal = { tamanho = 1.0, offset = 1.0 },
+	AtaquePesado = { tamanho = 1.0, offset = 1.0 },
 }
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -139,11 +138,13 @@ end
 function Modulo_Hitbox.CalcularDimensoesHitbox(alcance: number, tipoAtaque: string): ConfiguracaoHitbox
 	local mult = MULTIPLICADORES_HITBOX[tipoAtaque] or MULTIPLICADORES_HITBOX.AtaqueLeve
 
-	local largura = alcance * CONFIG_HITBOX.larguraMultiplicador * mult.tamanho
+	-- Dimensões fixas para largura e altura, profundidade baseada exatamente no alcance
+	local largura = CONFIG_HITBOX.larguraBase * mult.tamanho
 	local altura = CONFIG_HITBOX.alturaBase * mult.tamanho
-	local profundidade = alcance * CONFIG_HITBOX.profundidadeMultiplicador * mult.tamanho
+	local profundidade = alcance -- Valor fixo baseado no alcance (não é multiplicador)
 
-	local offsetZ = -(alcance / 2) * mult.offset
+	-- Offset Z para projetar a caixa para frente (metade da profundidade)
+	local offsetZ = -(alcance / 2)
 
 	return {
 		tamanho = Vector3.new(largura, altura, profundidade),

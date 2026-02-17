@@ -14,7 +14,7 @@
 -- ═══════════════════════════════════════════════════════════════════
 -- CONFIGURAÇÃO DE DEBUG
 -- ═══════════════════════════════════════════════════════════════════
-local DEBUG_ENABLED = true -- Altere para true para habilitar prints de debug
+local DEBUG_ENABLED = false -- Altere para true para habilitar prints de debug
 
 local function DebugPrint(...)
 	if DEBUG_ENABLED then
@@ -78,6 +78,7 @@ local Remotos = ReplicatedStorage:WaitForChild("Remotos")
 local SincronizarEstado = Remotos:WaitForChild("SincronizarEstado")
 local TocarAnimacao = Remotos:WaitForChild("TocarAnimacao")
 local TentarAcao = Remotos:WaitForChild("TentarAcao") -- Para enviar sincronização de movimento
+local EquipamentoAcao = Remotos:WaitForChild("EquipamentoAcao") -- Para acessórios server-side
 
 -- ═══════════════════════════════════════════════════════════════════
 -- ESTADO LOCAL
@@ -907,7 +908,7 @@ function _G.TentarCancelarAtaquePorDefesa()
 	local agora = tick()
 
 	-- Verifica cooldown de cancelamento
-	local cooldown = Modulo_Configuracoes.ObterConfiguracao("CooldownCancelamentoPorDefesa") or 1.0
+	local cooldown = Modulo_Configuracoes.ObterConfiguracao("CooldownCancel") or 1.0
 	if (agora - defenseCancelState.ultimoCancelamento) < cooldown then
 		DebugPrint("[ControladorEstado] Defense cancel em cooldown")
 		return false, nil
@@ -916,7 +917,7 @@ function _G.TentarCancelarAtaquePorDefesa()
 	-- Verifica se está em ataque leve (combo) dentro da janela
 	if comboState.animacaoAtiva and comboState.animacaoAtiva.IsPlaying then
 		local tempoDecorrido = agora - comboState.tempoInicio
-		local janelaAtaque = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelamentoAtaquePorDefesa") or 0.15
+		local janelaAtaque = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelAtaque") or 0.15
 
 		-- Só permite cancelar no primeiro golpe do combo (índice 1) e dentro da janela
 		if comboState.indiceAtual <= 1 and tempoDecorrido <= janelaAtaque then
@@ -974,7 +975,7 @@ function _G.TentarCancelarAtaquePorDefesa()
 	-- Verifica se está carregando ataque pesado dentro da janela
 	if heavyAttackState.animacao and heavyAttackState.animacao.IsPlaying then
 		local tempoDecorrido = agora - heavyAttackState.tempoInicio
-		local janelaCarregar = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelamentoCarregamentoPorDefesa") or 0.92
+		local janelaCarregar = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelAtaquePesado") or 0.92
 
 		-- Só permite cancelar se ainda não passou do marcador AttackRelease (ainda carregando)
 		-- E se estiver dentro da janela
@@ -1080,130 +1081,85 @@ local function ObterToolEquipado(): Tool?
 	return character:FindFirstChildOfClass("Tool")
 end
 
---- Clona o acessório "AcessorioMaoDireita" do Tool para o character do jogador
---- Usa Humanoid:AddAccessory() para posicionamento automático
+--- Solicita ao servidor a clonagem do acessório "AcessorioMaoDireita" para o character do jogador
+--- Server-side para que todos os jogadores vejam o equipamento
+--- NOTA: Só clona se o Tool equipado for do tipo "ArmasEquipadas" (não Punhos ou outros)
 local function ClonarAcessorioParaJogador()
-	-- Evita clonagem duplicada
+	-- Evita solicitação duplicada
 	if equipAnimState.acessorioJaClonado then
-		-- Robustez: Verifica se o acessório ainda existe e está no personagem
+		-- Verifica se o acessório (server-side) ainda existe no character
 		if equipAnimState.acessorioClonado and equipAnimState.acessorioClonado.Parent == character then
-			DebugPrint("[ControladorEstado] Acessório já foi clonado e existe, ignorando")
+			DebugPrint("[ControladorEstado] Acessório já existe, ignorando")
 			return
-		else
-			-- Estado inconsistente: diz que está clonado mas objeto sumiu
-			DebugPrint("[ControladorEstado] AVISO: acessorioJaClonado=true mas objeto sumiu. Resetando flag.")
-			equipAnimState.acessorioJaClonado = false
-			equipAnimState.acessorioClonado = nil
 		end
+		-- Referência perdida, resetar
+		equipAnimState.acessorioJaClonado = false
+		equipAnimState.acessorioClonado = nil
 	end
 
+	-- Verificar se há tool equipado
 	local tool = ObterToolEquipado()
 	if not tool then
 		DebugPrint("[ControladorEstado] Nenhum Tool equipado para clonar acessório")
 		return
 	end
 
-	-- Busca o acessório dentro do Tool
-	local acessorioOriginal = tool:FindFirstChild("AcessorioMaoDireita")
-	if not acessorioOriginal or not acessorioOriginal:IsA("Accessory") then
-		DebugPrint("[ControladorEstado] AcessorioMaoDireita não encontrado no Tool:", tool.Name)
-		return
-	end
-
-	-- Verifica se a mão existe para garantir que o AddAccessory terá onde prender
-	local hand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
-	if not hand then
-		DebugPrint("[ControladorEstado] Mão (Right Arm/RightHand) não encontrada no character")
-		return
-	end
-
-	-- Verifica se já existe um acessório clonado no character (limpeza de segurança)
-	local acessorioExistente = character:FindFirstChild("AcessorioMaoDireita")
-	if acessorioExistente then
-		acessorioExistente:Destroy()
-	end
-
-	-- Clona o acessório (não destrói o original dentro do Tool)
-	local acessorioClone = acessorioOriginal:Clone()
-	local handle = acessorioClone:FindFirstChild("Handle")
-
-	if not handle then
-		DebugPrint("[ControladorEstado] Erro: Acessório clonado não possui um 'Handle'")
-		acessorioClone:Destroy()
-		return
-	end
-
-	-- Limpeza e Configuração Física
-	-- Importante: Peças ancoradas ou com colisão ativa podem impedir o grip correto ou causar problemas de física
-	for _, part in ipairs(acessorioClone:GetDescendants()) do
-		if part:IsA("BasePart") then
-			part.Anchored = false
-			part.CanCollide = false
-			part.CanTouch = false
-			part.CanQuery = false
-			part.Massless = true
-		elseif (part:IsA("Weld") or part:IsA("ManualWeld")) and part.Name == "AccessoryWeld" then
-			-- Remove AccessoryWeld antigo/sujo se existir para o AddAccessory criar um novo limpo
-			part:Destroy()
-		elseif part:IsA("ProximityPrompt") then
-			part:Destroy()
+	-- Verificar se o Tool é do tipo ArmasEquipadas e não Punhos
+	local dadosFolder = tool:FindFirstChild("Dados")
+	if dadosFolder then
+		local tipoValue = dadosFolder:FindFirstChild("Tipo")
+		if not tipoValue or tipoValue.Value ~= "ArmasEquipadas" then
+			DebugPrint("[ControladorEstado] Tool não é ArmasEquipadas, ignorando clonagem de acessório:", tool.Name)
+			return
 		end
-	end
-
-	-- Adiciona o acessório ao Humanoid (posicionamento automático via AttachmentPoints)
-	humanoid:AddAccessory(acessorioClone)
-
-	-- Sistema de Grip Robusto:
-	-- Se o Roblox não criar o 'AccessoryWeld' automaticamente (pode ocorrer no cliente), fazemos manualmente.
-	local accessoryWeld = handle:FindFirstChild("AccessoryWeld")
-	if not accessoryWeld then
-		local bodyAttachment = hand:FindFirstChild("RightGripAttachment")
-		local handleAttachment = handle:FindFirstChild("RightGripAttachment")
-
-		if bodyAttachment and handleAttachment then
-			local newWeld = Instance.new("Weld")
-			newWeld.Name = "AccessoryWeld"
-			newWeld.Part0 = handle
-			newWeld.Part1 = hand
-			newWeld.C0 = handleAttachment.CFrame
-			newWeld.C1 = bodyAttachment.CFrame
-			newWeld.Parent = handle
-			DebugPrint("[ControladorEstado] Grip manual aplicado (Weld criado manualmente)")
-		else
-			DebugPrint("[ControladorEstado] Falha ao criar Grip: Attachments não encontrados na mão ou na arma")
+		-- Punhos é ArmasEquipadas mas não tem acessórios para clonar
+		local modoValue = dadosFolder:FindFirstChild("modoAnimacao")
+		if modoValue and modoValue.Value == "Punhos" then
+			DebugPrint("[ControladorEstado] Tool é Punhos, ignorando clonagem de acessório")
+			return
 		end
+	else
+		DebugPrint("[ControladorEstado] Tool sem Dados, ignorando clonagem de acessório:", tool.Name)
+		return
 	end
 
-	-- Salva referência no estado
-	equipAnimState.acessorioClonado = acessorioClone
+	-- Solicitar clonagem ao servidor (server-side, visível para todos)
+	EquipamentoAcao:FireServer("ClonarAcessorio", "RightArm")
+
+	-- Marcar como clonado (servidor irá criar o acessório)
 	equipAnimState.acessorioJaClonado = true
 
-	DebugPrint("[ControladorEstado] Acessório clonado para o jogador:", acessorioClone.Name)
+	-- Aguardar acessório aparecer no character (replicação do servidor)
+	task.defer(function()
+		local tentativas = 0
+		while tentativas < 20 do
+			if not character then
+				break
+			end
+			local acessorio = character:FindFirstChild("AcessorioMaoDireita")
+			if acessorio then
+				equipAnimState.acessorioClonado = acessorio
+				DebugPrint("[ControladorEstado] Acessório server-side detectado:", acessorio.Name)
+				break
+			end
+			task.wait(0.05)
+			tentativas += 1
+		end
+	end)
+
+	DebugPrint("[ControladorEstado] Solicitação de clonagem de acessório enviada ao servidor")
 end
 
---- Remove o acessório "AcessorioMaoDireita" do character do jogador
+--- Solicita ao servidor a remoção do acessório do character do jogador
 local function RemoverAcessorioDoJogador()
-	-- Primeiro tenta usar a referência salva
-	if equipAnimState.acessorioClonado then
-		if equipAnimState.acessorioClonado.Parent then
-			equipAnimState.acessorioClonado:Destroy()
-			DebugPrint("[ControladorEstado] Acessório removido via referência salva")
-		end
-		equipAnimState.acessorioClonado = nil
-		equipAnimState.acessorioJaClonado = false
-		return
-	end
+	-- Solicitar remoção ao servidor
+	EquipamentoAcao:FireServer("RemoverAcessorio", "RightArm")
 
-	-- Fallback: busca diretamente no character
-	if character then
-		local acessorio = character:FindFirstChild("AcessorioMaoDireita")
-		if acessorio then
-			acessorio:Destroy()
-			DebugPrint("[ControladorEstado] Acessório removido via busca no character")
-		end
-	end
-
+	-- Limpar estado local
+	equipAnimState.acessorioClonado = nil
 	equipAnimState.acessorioJaClonado = false
+
+	DebugPrint("[ControladorEstado] Solicitação de remoção de acessório enviada ao servidor")
 end
 
 --- Limpa todas as conexões de markers de equip/desequip
@@ -1461,6 +1417,19 @@ local function OnDashAnimacaoTerminou()
 
 	-- Notifica servidor que dash terminou
 	TentarAcao:FireServer("DashTerminou")
+
+	-- Atualiza estado local para "Nenhuma" (caso não tenha sido atualizado pelo early cancel)
+	estadoAtual.estadoAcao = "Nenhuma"
+
+	-- Se o jogador está segurando Shift, volta a correr LOCALMENTE
+	if isShiftHeld then
+		movementFlags.isRunning = true
+		estadoAtual.estadoMov = "Correndo"
+		estadoAtual.correndo = true
+	end
+
+	-- Atualiza velocidade ao sair de dash (client-side)
+	AtualizarVelocidadeLocal()
 
 	-- Atualiza animação de movimento
 	AtualizarAnimacaoMovimento()

@@ -62,9 +62,9 @@ export type ConfiguracaoGlobal = {
 	-- Janela de Cancelamento
 	JanelaCancelamentoComboFinal: number,
 	JanelaCancelamentoAtaquePesado: number,
-	JanelaCancelamentoAtaquePorDefesa: number,
-	JanelaCancelamentoCarregamentoPorDefesa: number,
-	CooldownCancelamentoPorDefesa: number,
+	JanelaCancelAtaque: number,
+	JanelaCancelAtaquePesado: number,
+	CooldownCancel: number,
 	TempoSegurandoM2ParaDefesa: number,
 	VelocidadeReversaoCancelamento: number,
 
@@ -140,9 +140,9 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	-- Janela de Cancelamento
 	JanelaCancelamentoComboFinal = 0.6,
 	JanelaCancelamentoAtaquePesado = 0.5,
-	JanelaCancelamentoAtaquePorDefesa = 0.3,
-	JanelaCancelamentoCarregamentoPorDefesa = 0.9,
-	CooldownCancelamentoPorDefesa = 1.0,
+	JanelaCancelAtaque = 0.3,
+	JanelaCancelAtaquePesado = 0.7,
+	CooldownCancel = 1.0,
 	TempoSegurandoM2ParaDefesa = 0.13,
 	VelocidadeReversaoCancelamento = -1.5,
 
@@ -402,6 +402,174 @@ Modulo_Configuracoes.ModoAnimacoes = {
 			Desequipar = "rbxassetid://0000000000",
 
 			-- Movimento Normal (TODO: Usar fallback Base)
+			Idle = "rbxassetid://0000000000",
+			Andando = "rbxassetid://0000000000",
+			AndandoDireita = "rbxassetid://0000000000",
+			AndandoEsquerda = "rbxassetid://0000000000",
+			Correndo = "rbxassetid://0000000000",
+			Pulando = "rbxassetid://0000000000",
+			Caindo = "rbxassetid://0000000000",
+			Escalando = "rbxassetid://0000000000",
+
+			-- Estado
+			Stunado = "rbxassetid://0000000000",
+		},
+	},
+
+	-- ───────────────────────────────────────────────────────────────
+	-- UMA MÃO (Espada/Adaga sem escudo — mão esquerda vazia)
+	-- Placeholder: usar animações do UmaMaoEscudo como fallback temporário
+	-- ───────────────────────────────────────────────────────────────
+	UmaMao = {
+		tipo = "Combate",
+		aplicaImpulso = true,
+		aplicaKnockback = true,
+		temCombo = true,
+		configCombo = {
+			velocidadeJanela = 0.4,
+			marcadores = {
+				janelasCombo = { "ComboEnd1", "ComboEnd2", "ComboEnd3" },
+				ataque = "Attack",
+			},
+		},
+		animacoes = {
+			-- Combate (TODO: Substituir por animações específicas de UmaMao)
+			AtaqueLeve = "rbxassetid://122280944254589",
+			AtaquePesado = "rbxassetid://125243003105031",
+			Defesa = "rbxassetid://127751906771957",
+			DefesaQuebrada = "rbxassetid://94588265013910",
+			Aparar = "rbxassetid://139881462472225",
+			Aparado = "rbxassetid://94588265013910",
+			Equipar = "rbxassetid://115099251307406",
+			Desequipar = "rbxassetid://119300191293903",
+
+			-- Movimento Normal
+			Idle = "rbxassetid://97506647521728",
+			Andando = "rbxassetid://101405606853852",
+			AndandoDireita = "rbxassetid://109982570649734",
+			AndandoEsquerda = "rbxassetid://99089536362364",
+			Correndo = "rbxassetid://105489781294318",
+			Pulando = "rbxassetid://126513416555386",
+			Caindo = "rbxassetid://120023331153028",
+			Escalando = "rbxassetid://128601601033320",
+
+			-- Estado
+			Stunado = "rbxassetid://111940476196229",
+		},
+	},
+
+	-- ───────────────────────────────────────────────────────────────
+	-- UMA MÃO DUPLA (Dual-Wield: duas armas de uma mão)
+	-- Placeholder: animações zeroed até serem criadas
+	-- ───────────────────────────────────────────────────────────────
+	UmaMaoDupla = {
+		tipo = "Combate",
+		aplicaImpulso = true,
+		aplicaKnockback = true,
+		temCombo = true,
+		configCombo = {
+			velocidadeJanela = 0.35,
+			marcadores = {
+				janelasCombo = { "ComboEnd1", "ComboEnd2", "ComboEnd3" },
+				ataque = "Attack",
+			},
+		},
+		animacoes = {
+			-- Combate (TODO: Substituir por animações específicas de UmaMaoDupla)
+			AtaqueLeve = "rbxassetid://122280944254589",
+			AtaquePesado = "rbxassetid://125243003105031",
+			Defesa = "rbxassetid://127751906771957",
+			DefesaQuebrada = "rbxassetid://94588265013910",
+			Aparar = "rbxassetid://139881462472225",
+			Aparado = "rbxassetid://94588265013910",
+			Equipar = "rbxassetid://115099251307406",
+			Desequipar = "rbxassetid://119300191293903",
+
+			-- Movimento Normal
+			Idle = "rbxassetid://97506647521728",
+			Andando = "rbxassetid://101405606853852",
+			AndandoDireita = "rbxassetid://109982570649734",
+			AndandoEsquerda = "rbxassetid://99089536362364",
+			Correndo = "rbxassetid://105489781294318",
+			Pulando = "rbxassetid://126513416555386",
+			Caindo = "rbxassetid://120023331153028",
+			Escalando = "rbxassetid://128601601033320",
+
+			-- Estado
+			Stunado = "rbxassetid://111940476196229",
+		},
+	},
+
+	-- ───────────────────────────────────────────────────────────────
+	-- DUAS MÃOS (Espada-longa, montante, etc.)
+	-- Placeholder: animações zeroed até serem criadas
+	-- ───────────────────────────────────────────────────────────────
+	DuasMaos = {
+		tipo = "Combate",
+		aplicaImpulso = true,
+		aplicaKnockback = true,
+		temCombo = true,
+		configCombo = {
+			velocidadeJanela = 0.5,
+			marcadores = {
+				janelasCombo = { "ComboEnd1", "ComboEnd2", "ComboEnd3" },
+				ataque = "Attack",
+			},
+		},
+		animacoes = {
+			-- Combate (TODO: Adicionar IDs de duas mãos)
+			AtaqueLeve = "rbxassetid://0000000000",
+			AtaquePesado = "rbxassetid://0000000000",
+			Defesa = "rbxassetid://0000000000",
+			DefesaQuebrada = "rbxassetid://0000000000",
+			Aparar = "rbxassetid://0000000000",
+			Aparado = "rbxassetid://0000000000",
+			Equipar = "rbxassetid://0000000000",
+			Desequipar = "rbxassetid://0000000000",
+
+			-- Movimento Normal (TODO: Adicionar IDs)
+			Idle = "rbxassetid://0000000000",
+			Andando = "rbxassetid://0000000000",
+			AndandoDireita = "rbxassetid://0000000000",
+			AndandoEsquerda = "rbxassetid://0000000000",
+			Correndo = "rbxassetid://0000000000",
+			Pulando = "rbxassetid://0000000000",
+			Caindo = "rbxassetid://0000000000",
+			Escalando = "rbxassetid://0000000000",
+
+			-- Estado
+			Stunado = "rbxassetid://0000000000",
+		},
+	},
+
+	-- ───────────────────────────────────────────────────────────────
+	-- PUNHOS + ESCUDO (Sem arma na mão direita, escudo na esquerda)
+	-- Placeholder: animações zeroed até serem criadas
+	-- ───────────────────────────────────────────────────────────────
+	PunhosEscudo = {
+		tipo = "Combate",
+		aplicaImpulso = true,
+		aplicaKnockback = true,
+		temCombo = true,
+		configCombo = {
+			velocidadeJanela = 0.4,
+			marcadores = {
+				janelasCombo = { "ComboEnd1", "ComboEnd2", "ComboEnd3" },
+				ataque = "Attack",
+			},
+		},
+		animacoes = {
+			-- Combate (TODO: Adicionar IDs de punhos+escudo)
+			AtaqueLeve = "rbxassetid://0000000000",
+			AtaquePesado = "rbxassetid://0000000000",
+			Defesa = "rbxassetid://0000000000",
+			DefesaQuebrada = "rbxassetid://0000000000",
+			Aparar = "rbxassetid://0000000000",
+			Aparado = "rbxassetid://0000000000",
+			Equipar = "rbxassetid://0000000000",
+			Desequipar = "rbxassetid://0000000000",
+
+			-- Movimento Normal (TODO: Adicionar IDs)
 			Idle = "rbxassetid://0000000000",
 			Andando = "rbxassetid://0000000000",
 			AndandoDireita = "rbxassetid://0000000000",

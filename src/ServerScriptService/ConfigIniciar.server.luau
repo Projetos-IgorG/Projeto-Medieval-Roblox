@@ -95,6 +95,7 @@ CriarRemoto(Remotos, "AcaoRejeitada", "Event")
 CriarRemoto(Remotos, "ArrastarItem", "Event") -- Sistema de arrastar itens
 CriarRemoto(Remotos, "DroparTool", "Event") -- Sistema de drop customizado
 CriarRemoto(Remotos, "AplicarKnockback", "Event") -- Sistema de knockback físico
+CriarRemoto(Remotos, "EquipamentoAcao", "Event") -- Sistema de equipamento
 
 -- BindableEvents: server-side apenas
 CriarBindable(Bindables, "SpawnNPC", "Event")
@@ -104,6 +105,42 @@ DebugPrint("[ConfigIniciar] Remotos criados")
 -- ═══════════════════════════════════════════════════════════════════
 -- PARTE 2: SETUP DO STATUS FOLDER PARA JOGADORES
 -- ═══════════════════════════════════════════════════════════════════
+
+local function ConfigurarEquipamentoPasta(Character)
+	local equipFolder = Instance.new("Folder")
+	equipFolder.Name = "Equipamento"
+
+	-- Bracos (ObjectValues para RightArm e LeftArm)
+	local bracosFolder = Instance.new("Folder")
+	bracosFolder.Name = "Bracos"
+	bracosFolder.Parent = equipFolder
+
+	local rightArm = Instance.new("ObjectValue")
+	rightArm.Name = "RightArm"
+	rightArm.Parent = bracosFolder
+
+	local leftArm = Instance.new("ObjectValue")
+	leftArm.Name = "LeftArm"
+	leftArm.Parent = bracosFolder
+
+	-- Corpo (ObjectValues para slots de armadura)
+	local corpoFolder = Instance.new("Folder")
+	corpoFolder.Name = "Corpo"
+	corpoFolder.Parent = equipFolder
+
+	for _, slotName in ipairs({ "Head", "Torso", "Legs", "Foot" }) do
+		local slotOV = Instance.new("ObjectValue")
+		slotOV.Name = slotName
+		slotOV.Parent = corpoFolder
+	end
+
+	-- EquipamentosAtivos (armazena Tools não-selecionáveis: escudos, flechas, armaduras)
+	local equipAtivos = Instance.new("Folder")
+	equipAtivos.Name = "EquipamentosAtivos"
+	equipAtivos.Parent = equipFolder
+
+	equipFolder.Parent = Character
+end
 
 local function ConfigurarStatusPasta(Character)
 	local statusFolder = Instance.new("Folder")
@@ -135,21 +172,6 @@ local function ConfigurarStatusPasta(Character)
 	createValue("NumberValue", "Forca", 0)
 	createValue("NumberValue", "CritChance", 0)
 	createValue("NumberValue", "CritMult", 1.5)
-
-	-- Garantir templates de roupa padrão ao spawnar
-	local shirt = Character:FindFirstChildWhichIsA("Shirt") or Character:FindFirstChild("Shirt")
-	if not shirt then
-		shirt = Instance.new("Shirt")
-		shirt.Parent = Character
-	end
-	shirt.ShirtTemplate = "rbxassetid://79449264778033"
-
-	local pants = Character:FindFirstChildWhichIsA("Pants") or Character:FindFirstChild("Pants")
-	if not pants then
-		pants = Instance.new("Pants")
-		pants.Parent = Character
-	end
-	pants.PantsTemplate = "rbxassetid://73726278525951"
 end
 
 local function RemoverAcessoriosNaoHair(Character)
@@ -164,13 +186,35 @@ local function RemoverAcessoriosNaoHair(Character)
 	end
 end
 
+--- Aplica roupa padrão medieval ao personagem
+--- Remove qualquer Clothing genérico e garante Shirt/Pants corretos
+local function AplicarRoupaPadrao(Character)
+	-- Remover TODAS as instâncias de Clothing (base class), Shirt e Pants existentes
+	for _, child in ipairs(Character:GetChildren()) do
+		if child:IsA("Clothing") then
+			child:Destroy()
+		end
+	end
+
+	-- Criar Shirt e Pants do zero com os templates medievais
+	local shirt = Instance.new("Shirt")
+	shirt.ShirtTemplate = "rbxassetid://79449264778033"
+	shirt.Parent = Character
+
+	local pants = Instance.new("Pants")
+	pants.PantsTemplate = "rbxassetid://73726278525951"
+	pants.Parent = Character
+end
+
 Players.PlayerAdded:Connect(function(Player)
 	Player.CharacterAdded:Connect(function(Character)
 		ConfigurarStatusPasta(Character)
+		ConfigurarEquipamentoPasta(Character)
 	end)
 
 	Player.CharacterAppearanceLoaded:Connect(function(Character)
 		RemoverAcessoriosNaoHair(Character)
+		AplicarRoupaPadrao(Character)
 	end)
 end)
 
@@ -200,9 +244,24 @@ local ServicoDrop = require(Servicos:WaitForChild("ServicoDrop"))
 local ServicoArrastar = require(Servicos:WaitForChild("ServicoArrastar"))
 local ServicoPortal = require(Servicos:WaitForChild("ServicoPortal"))
 
+-- Sistema de Equipamento
+local InventarioFolder = Servicos:FindFirstChild("Inventario")
+local ServicoEquipamento = nil
+if InventarioFolder then
+	local equipModule = InventarioFolder:FindFirstChild("ServicoEquipamento")
+	if equipModule then
+		ServicoEquipamento = require(equipModule)
+	end
+end
+
 ServicoDrop:Iniciar()
 ServicoArrastar:Iniciar()
 ServicoPortal:Iniciar()
+
+if ServicoEquipamento then
+	ServicoEquipamento:Iniciar()
+	DebugPrint("[ConfigIniciar] ServicoEquipamento inicializado")
+end
 
 DebugPrint("[ConfigIniciar] Serviços inicializados")
 

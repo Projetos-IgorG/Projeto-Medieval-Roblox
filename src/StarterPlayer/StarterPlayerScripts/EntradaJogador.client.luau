@@ -38,6 +38,7 @@ local player = Players.LocalPlayer
 
 local Modulo_Configuracoes =
 	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Combate"):WaitForChild("Modulo_Configuracoes"))
+local ModEquip = require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Modulo_Equipamento"))
 
 -- ═══════════════════════════════════════════════════════════════════
 -- REMOTE EVENTS
@@ -188,26 +189,41 @@ end
 -- FUNÇÕES AUXILIARES DE EQUIPAMENTO
 -- ═══════════════════════════════════════════════════════════════════
 
---- Obtém o modo de um Tool
+--- Obtém o modo resolvido de um Tool (considerando dual-wield, escudo, etc.)
 local function ObterModoDoTool(tool: Tool): string?
 	if not tool then
 		return nil
 	end
-	-- Procura dentro do Folder 'Dados' quando for uma Tool (novo padrão)
+
+	-- Leitura do modoAnimacao base do Tool
+	local modoBase = nil
 	local dados = tool:FindFirstChild("Dados")
 	if dados and dados:IsA("Folder") then
 		local modoValue = dados:FindFirstChild("modoAnimacao")
 		if modoValue and modoValue:IsA("StringValue") and modoValue.Value ~= "" and modoValue.Value ~= "Base" then
-			return modoValue.Value
+			modoBase = modoValue.Value
 		end
 	else
 		-- Fallback: procura diretamente na Tool por compatibilidade
 		local modoValue = tool:FindFirstChild("modoAnimacao")
 		if modoValue and modoValue:IsA("StringValue") and modoValue.Value ~= "" and modoValue.Value ~= "Base" then
-			return modoValue.Value
+			modoBase = modoValue.Value
 		end
 	end
-	return nil
+
+	if not modoBase then
+		return nil
+	end
+
+	-- Resolver modo ativo via Modulo_Equipamento (dual-wield, escudo, arco, etc.)
+	local toolEsq = _G.ObterEquipamentoBraco and _G.ObterEquipamentoBraco("LeftArm") or nil
+	local estadoEsq = ModEquip.ResolverEstadoMaoEsquerda(toolEsq)
+	local categoriaDir = _G.ObterCategoriaRightArm and _G.ObterCategoriaRightArm() or nil
+
+	local modoResolvido = ModEquip.ResolverModoAtivo(modoBase, estadoEsq, categoriaDir)
+	DebugPrint("[EntradaJogador] Modo base:", modoBase, "| Estado esq:", estadoEsq, "| Resolvido:", modoResolvido)
+
+	return modoResolvido
 end
 
 --- Obtém o Humanoid do character atual
@@ -480,6 +496,19 @@ local function ProcessarToolEquipado(tool: Tool)
 	-- Ignora se é o sistema revertendo (anti-loop)
 	if revertendoTool then
 		return
+	end
+
+	-- Ignorar Tools de Armas/Armaduras — gerenciados pelo EquipamentoController
+	local dadosFolder = tool:FindFirstChild("Dados")
+	if dadosFolder then
+		local tipoValue = dadosFolder:FindFirstChild("Tipo")
+		if tipoValue and tipoValue:IsA("StringValue") then
+			local tipo = tipoValue.Value
+			if tipo == "Armas" or tipo == "Armaduras" then
+				DebugPrint("[EntradaJogador] Tool de equipamento ignorado (EquipamentoController cuida):", tool.Name)
+				return
+			end
+		end
 	end
 
 	local modoDesejado = ObterModoDoTool(tool)

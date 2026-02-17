@@ -320,6 +320,9 @@ function ToolBuilder.CriarTool(itemData, parent)
 		end
 	end
 
+	-- Configurar componentes visuais e físicos para uso na mão (Backpack)
+	ToolBuilder.RestaurarComponentesTool(novoTool)
+
 	-- Parentar o Tool
 	novoTool.Parent = parent
 	warn("[ToolBuilder] Tool criado e parentado com sucesso:", novoTool.Name)
@@ -399,7 +402,32 @@ function ToolBuilder.CriarToolNoMundo(itemData, cframe)
 	handle.Anchored = false
 	handle.CanCollide = true
 	handle.CFrame = cframe
+
+	-- Garantir que todas as partes filhas do Handle também estejam visíveis e colidíveis (armaduras, etc.)
+	for _, desc in ipairs(handle:GetDescendants()) do
+		if desc:IsA("BasePart") then
+			desc.Transparency = 0
+			desc.Anchored = false
+			desc.CanCollide = true
+			desc.CanTouch = true
+			desc.CanQuery = true
+		end
+	end
+
 	warn("[ToolBuilder] Handle posicionado em:", cframe.Position)
+
+	-- Atualizar ObjectText do ProximityPrompt com quantidade (se > 1)
+	local quantidade = itemData.Quantidade or 1
+	if quantidade > 1 then
+		for _, child in ipairs(handle:GetChildren()) do
+			if child:IsA("ProximityPrompt") then
+				local nomeBase = child.ObjectText or ""
+				child.ObjectText = nomeBase .. " (x" .. tostring(quantidade) .. ")"
+				warn("[ToolBuilder] ProximityPrompt ObjectText atualizado com quantidade:", child.ObjectText)
+				break
+			end
+		end
+	end
 
 	warn("[ToolBuilder] Tool dropado criado no mundo:", toolClone.Name)
 	warn("[ToolBuilder] ========================================")
@@ -442,6 +470,40 @@ function ToolBuilder.ExtrairDados(tool)
 
 	warn("[ToolBuilder] Dados extraídos do Tool:", tool.Name)
 	return dados
+end
+
+--- Restaura as propriedades visuais de um Tool (para quando ele volta para a Backpack ou é criado)
+function ToolBuilder.RestaurarComponentesTool(tool: Tool)
+	for _, desc in ipairs(tool:GetDescendants()) do
+		if desc:IsA("BasePart") then
+			-- Verificar se a parte está dentro de um Accessory
+			local ehAcessorio = desc:FindFirstAncestorOfClass("Accessory")
+
+			if ehAcessorio then
+				-- Acessórios dentro do Tool ficam invisíveis, ancorados e sem colisão
+				desc.Transparency = 1
+				desc.CanCollide = false
+				desc.CanTouch = false
+				desc.CanQuery = false
+				desc.Massless = true
+				desc.Anchored = true
+			else
+				-- Parte principal do Tool (Handle/Handler) fica visível, mas sem colisão/toque
+				desc.Transparency = 0
+				desc.CanCollide = false
+				desc.CanTouch = false
+				desc.CanQuery = false
+				desc.Massless = false
+				desc.Anchored = false
+			end
+		elseif desc:IsA("Decal") or desc:IsA("Texture") then
+			local ehAcessorio = desc:FindFirstAncestorOfClass("Accessory")
+			desc.Transparency = if ehAcessorio then 1 else 0
+		elseif desc:IsA("Light") or desc:IsA("ParticleEmitter") or desc:IsA("Trail") or desc:IsA("Beam") then
+			local ehAcessorio = desc:FindFirstAncestorOfClass("Accessory")
+			desc.Enabled = not ehAcessorio
+		end
+	end
 end
 
 --[[
@@ -506,14 +568,20 @@ function ToolBuilder.PodeEmpilhar(itemA, itemB)
 		return false
 	end
 
-	-- Materiais empilham livremente
-	if itemA.Tipo == "Materiais" then
+	-- Materiais, Comidas, Bebidas, Pocoes e Ingredientes empilham livremente por ID
+	if
+		itemA.Tipo == "Materiais"
+		or itemA.Tipo == "Comidas"
+		or itemA.Tipo == "Bebidas"
+		or itemA.Tipo == "Pocoes"
+		or itemA.Tipo == "Ingredientes"
+	then
 		return true
 	end
 
 	-- Armas, Armaduras e Ferramentas empilham apenas se todos atributos forem idênticos
-	if itemA.Tipo == "Armas" or itemA.Tipo == "Armadura" or itemA.Tipo == "Ferramenta" then
-		local atributosParaComparar = { "MaterialBase", "Upgrade", "Dano", "Resistencia", "Eficiencia" }
+	if itemA.Tipo == "Armas" or itemA.Tipo == "Armaduras" or itemA.Tipo == "Ferramentas" then
+		local atributosParaComparar = { "MaterialBase", "Upgrade", "Dano", "Resistencia", "Eficiencia", "Slot" }
 
 		for _, atributo in ipairs(atributosParaComparar) do
 			if itemA[atributo] ~= itemB[atributo] then
@@ -576,6 +644,182 @@ function ToolBuilder.CalcularPesoTotal(itemData)
 	local pesoUnitario = itemData.Peso or 0
 	local quantidade = itemData.Quantidade or 1
 	return pesoUnitario * quantidade
+end
+
+--[[
+    CriarArmaEquipada
+    Cria um Tool do tipo ArmaEquipada a partir dos dados de uma arma original.
+
+    Fluxo:
+    1. Converte o Id da arma para o Id do template equipada (ex: "espada_ferro" → "espada_ferro-equipada")
+    2. Clona o template de ArmasEquipadas correspondente
+    3. Sobrescreve os Dados com os valores da arma original (Dano, Alcance, Peso, etc.)
+    4. NÃO altera Dados.modoAnimacao (mantém o valor do template)
+    5. Define CanBeDropped = false
+    6. Coloca no parent
+
+    @param dadosArma (table): Dados extraídos da arma original via ExtrairDados()
+    @param parent (Instance): Onde colocar a ArmaEquipada (tipicamente player.Backpack)
+    @return (Tool|nil): ArmaEquipada criada ou nil se falhar
+]]
+function ToolBuilder.CriarArmaEquipada(dadosArma, parent)
+	warn("[ToolBuilder] ========================================")
+	warn("[ToolBuilder] Criando ArmaEquipada a partir de:", dadosArma.Id)
+
+	if not dadosArma or not dadosArma.Id then
+		warn("[ToolBuilder] ERRO: dadosArma inválidos ou sem Id!")
+		return nil
+	end
+
+	if not parent then
+		warn("[ToolBuilder] ERRO: Parent não fornecido para ArmaEquipada!")
+		return nil
+	end
+
+	-- Resolver o Id do template equipada
+	local idEquipada = dadosArma.Id .. "-equipada"
+	warn("[ToolBuilder] Template equipada ID:", idEquipada)
+
+	-- Buscar o template na pasta ArmasEquipadas
+	local pastaEquipadas = TemplatesFolder:FindFirstChild("ArmasEquipadas")
+	if not pastaEquipadas then
+		warn("[ToolBuilder] ERRO: Pasta 'ArmasEquipadas' não encontrada em ToolsTemplates!")
+		return nil
+	end
+
+	local template = pastaEquipadas:FindFirstChild(idEquipada)
+	if not template then
+		warn("[ToolBuilder] ERRO: Template equipada não encontrado:", idEquipada)
+		return nil
+	end
+
+	if not template:IsA("Tool") then
+		warn("[ToolBuilder] ERRO: Template equipada não é um Tool:", idEquipada)
+		return nil
+	end
+
+	-- Clonar o template
+	local armaEquipada = template:Clone()
+	warn("[ToolBuilder] Template equipada clonado com sucesso")
+
+	-- Sobrescrever dados com valores da arma original
+	local dadosFolder = armaEquipada:FindFirstChild("Dados")
+	if dadosFolder then
+		-- Campos a sobrescrever da arma original
+		local camposSobrescrever = {
+			"Dano",
+			"Alcance",
+			"Peso",
+			"MaterialBase",
+			"Upgrade",
+			"Categoria",
+		}
+
+		for _, campo in ipairs(camposSobrescrever) do
+			local valor = dadosArma[campo]
+			if valor ~= nil then
+				local valueObject = dadosFolder:FindFirstChild(campo)
+				if valueObject then
+					-- Atualizar existente
+					if valueObject:IsA("StringValue") then
+						valueObject.Value = tostring(valor)
+					elseif valueObject:IsA("NumberValue") then
+						valueObject.Value = tonumber(valor) or 0
+					elseif valueObject:IsA("BoolValue") then
+						valueObject.Value = valor == true
+					elseif valueObject:IsA("IntValue") then
+						valueObject.Value = math.floor(tonumber(valor) or 0)
+					end
+				else
+					-- Criar novo se não existir
+					local tipoValor = type(valor)
+					local novoValue = nil
+
+					if tipoValor == "string" then
+						novoValue = Instance.new("StringValue")
+						novoValue.Value = valor
+					elseif tipoValor == "number" then
+						novoValue = Instance.new("NumberValue")
+						novoValue.Value = valor
+					elseif tipoValor == "boolean" then
+						novoValue = Instance.new("BoolValue")
+						novoValue.Value = valor
+					end
+
+					if novoValue then
+						novoValue.Name = campo
+						novoValue.Parent = dadosFolder
+					end
+				end
+				warn("[ToolBuilder]   Sobrescrito:", campo, "=", tostring(valor))
+			end
+		end
+
+		-- Garantir que Tipo está correto (sempre ArmasEquipadas)
+		local tipoValue = dadosFolder:FindFirstChild("Tipo")
+		if tipoValue and tipoValue:IsA("StringValue") then
+			tipoValue.Value = "ArmasEquipadas"
+		end
+
+		-- Quantidade sempre 1 para ArmaEquipada
+		local qtdValue = dadosFolder:FindFirstChild("Quantidade")
+		if qtdValue then
+			qtdValue.Value = 1
+		end
+	end
+
+	-- Configurar ArmaEquipada
+	armaEquipada.CanBeDropped = false
+
+	-- Remover ProximityPrompt se existir
+	local handle = armaEquipada:FindFirstChild("Handle")
+	if handle then
+		for _, child in ipairs(handle:GetChildren()) do
+			if child:IsA("ProximityPrompt") then
+				child:Destroy()
+			end
+		end
+	end
+
+	-- Ocultar componentes visuais internos do Tool
+	-- (só os clones no Character serão visíveis)
+	for _, desc in ipairs(armaEquipada:GetDescendants()) do
+		if desc:IsA("BasePart") then
+			-- Se for parte de um Acessório, ocultar e ancorar
+			local ehAcessorio = desc:FindFirstAncestorOfClass("Accessory")
+			if ehAcessorio then
+				desc.Transparency = 1
+				desc.CanCollide = false
+				desc.CanTouch = false
+				desc.CanQuery = false
+				desc.Massless = true
+				desc.Anchored = true
+			else
+				-- Se for parte da arma (Handle), deve ficar invisível mas NÃO ancorado
+				-- para poder ser usado pelo sistema de armas do Roblox
+				desc.Transparency = 1
+				desc.CanCollide = false
+				desc.CanTouch = false
+				desc.CanQuery = false
+				desc.Massless = true
+				desc.Anchored = false
+			end
+		elseif desc:IsA("Decal") or desc:IsA("Texture") then
+			desc.Transparency = 1
+		elseif desc:IsA("ParticleEmitter") or desc:IsA("Trail") or desc:IsA("Beam") then
+			desc.Enabled = false
+		elseif desc:IsA("Light") then
+			desc.Enabled = false
+		end
+	end
+	warn("[ToolBuilder]   Componentes visuais internos ocultados (Handle desancorado)")
+
+	-- Parentar
+	armaEquipada.Parent = parent
+	warn("[ToolBuilder] ArmaEquipada criada:", armaEquipada.Name, "→", parent:GetFullName())
+	warn("[ToolBuilder] ========================================")
+
+	return armaEquipada
 end
 
 return ToolBuilder

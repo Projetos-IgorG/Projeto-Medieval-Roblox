@@ -208,7 +208,7 @@ local function handlePartialDrop(_, inputState, _)
 			return Enum.ContextActionResult.Sink
 		end
 
-		-- Verificar se o Tool é do tipo 'ArmasEquipadas'
+		-- Verificar se o Tool é do tipo 'ArmasEquipadas' (não pode dropar arma equipada)
 		local dadosFolder = tool:FindFirstChild("Dados")
 		if dadosFolder then
 			local tipoValue = dadosFolder:FindFirstChild("Tipo")

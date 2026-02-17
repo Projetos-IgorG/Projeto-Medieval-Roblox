@@ -9,8 +9,15 @@ local Players = game:GetService("Players")
 -- Funcionalidade de Cor por Tipo (ex-módulo)
 -- ========================================
 local COLOR_MAP = {
-	Ferramenta = Color3.fromRGB(149, 149, 149), -- Cinza
-	Recurso = Color3.fromRGB(186, 134, 104), -- Marrom
+	Ferramentas = Color3.fromRGB(149, 149, 149), -- Cinza
+	Armas = Color3.fromRGB(149, 149, 149), -- Cinza
+	ArmasEquipadas = Color3.fromRGB(149, 149, 149), -- Cinza
+	Armaduras = Color3.fromRGB(149, 149, 149), -- Cinza
+	Materiais = Color3.fromRGB(167, 116, 96), -- Marrom
+	Comidas = Color3.fromRGB(186, 174, 104), -- Amarelo
+	Bebidas = Color3.fromRGB(104, 186, 159), -- Azul Claro
+	Pocoes = Color3.fromRGB(162, 104, 186), -- Roxo
+	Ingredientes = Color3.fromRGB(111, 186, 104), -- Verde
 	Interagir = Color3.fromRGB(218, 218, 218), -- Cinza claro
 	NPC = Color3.fromRGB(218, 218, 218), -- Cinza claro
 }
@@ -137,8 +144,31 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 	local objectText = CustomProximity:FindFirstChild("ObjectText", true)
 	if objectText then
 		objectText.Text = promptInstance.ObjectText
-		local tipo = promptInstance:GetAttribute("Tipo")
-		objectText.TextColor3 = GetColorByType(tipo)
+
+		-- Preferir o StringValue `Dados/Tipo` do Tool se existir (fallback para atributo do prompt)
+		local tipoFinal = nil
+		local adornee = promptInstance.Parent
+		if adornee then
+			local tool = adornee:FindFirstAncestorOfClass("Tool")
+			if not tool and adornee:IsA("Tool") then
+				tool = adornee
+			end
+			if tool then
+				local dadosFolder = tool:FindFirstChild("Dados")
+				if dadosFolder then
+					local tipoValue = dadosFolder:FindFirstChild("Tipo")
+					if tipoValue and tipoValue:IsA("StringValue") then
+						tipoFinal = tipoValue.Value
+					end
+				end
+			end
+		end
+
+		if not tipoFinal then
+			tipoFinal = promptInstance:GetAttribute("Tipo")
+		end
+
+		objectText.TextColor3 = GetColorByType(tipoFinal)
 	end
 
 	-- Configura o BillboardGui para usar Adornee e ficar no PlayerGui

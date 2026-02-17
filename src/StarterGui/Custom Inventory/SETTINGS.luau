@@ -59,6 +59,18 @@ local function getToolQuantidade(tool)
 	return tool:GetAttribute("amount") or 1
 end
 
+-- Função helper para obter nome de exibição do Tool
+local function getToolExibirNome(tool)
+	local dadosFolder = tool:FindFirstChild("Dados")
+	if dadosFolder then
+		local nomeValue = dadosFolder:FindFirstChild("Nome")
+		if nomeValue and nomeValue:IsA("StringValue") and nomeValue.Value ~= "" then
+			return nomeValue.Value
+		end
+	end
+	return tool.Name
+end
+
 -- tool object methods
 local toolObjectMetatable = {}
 toolObjectMetatable.__index = toolObjectMetatable
@@ -275,7 +287,7 @@ function module:addTool(tool: Tool, parent: string, position: number?)
 	if amount > 1 then
 		frame.toolAmount.Text = "x" .. amount
 	end
-	frame.toolName.Text = tool.Name
+	frame.toolName.Text = getToolExibirNome(tool)
 	frame.Parent = parent == "Inventory" and inventoryFrame.Frame or hotbar
 	frame.Name = parent == "Inventory" and tool.Name or position
 	frame.toolNumber.Text = parent == "Inventory" and "" or position
@@ -405,7 +417,7 @@ function module:addTool(tool: Tool, parent: string, position: number?)
 		updateEquipped()
 	end)
 	object.CONNECTIONS.NameChanged = tool:GetPropertyChangedSignal("Name"):Connect(function()
-		frame.toolName.Text = tool.Name
+		frame.toolName.Text = getToolExibirNome(tool)
 		object.Name = tool.Name
 	end)
 	object.CONNECTIONS.TextureIdChanged = tool:GetPropertyChangedSignal("TextureId"):Connect(function()

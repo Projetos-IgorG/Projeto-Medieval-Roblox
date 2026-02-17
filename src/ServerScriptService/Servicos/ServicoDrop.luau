@@ -44,7 +44,7 @@ local function DebugLog(...)
 end
 
 -- Calcula a posição e rotação onde o item deve ser dropado
-local function CalcularPosicaoDrop(character)
+local function CalcularPosicaoDrop(character, tipo)
 	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
 	if not humanoidRootPart then
 		warn("[ServicoDrop] HumanoidRootPart não encontrada!")
@@ -59,8 +59,15 @@ local function CalcularPosicaoDrop(character)
 	local rotacaoPlayer = humanoidRootPart.CFrame - humanoidRootPart.CFrame.Position
 	local cframeBase = CFrame.new(posicao) * rotacaoPlayer
 
-	-- Rotacionar 90 graus para a esquerda (deitado)
-	local cframeFinal = cframeBase * CFrame.Angles(0, 0, math.rad(90))
+	-- Rotação depende do tipo do item
+	local cframeFinal
+	if tipo == "Armaduras" then
+		-- Armaduras ficam deitadas para trás (rotação no eixo X)
+		cframeFinal = cframeBase * CFrame.Angles(math.rad(-90), 0, 0)
+	else
+		-- Armas/outros ficam deitados para o lado (rotação no eixo Z)
+		cframeFinal = cframeBase * CFrame.Angles(0, 0, math.rad(90))
+	end
 
 	return cframeFinal
 end
@@ -175,8 +182,8 @@ local function ProcessarDrop(player, toolNome, quantidade)
 		tool:Destroy()
 	end
 
-	-- Calcular posição de drop
-	local cframeDrop = CalcularPosicaoDrop(character)
+	-- Calcular posição de drop (tipo determina orientação)
+	local cframeDrop = CalcularPosicaoDrop(character, itemData.Tipo)
 	if not cframeDrop then
 		warn("[ServicoDrop] ERRO: Não foi possível calcular posição de drop!")
 		return
