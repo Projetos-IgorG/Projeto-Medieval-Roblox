@@ -1250,6 +1250,11 @@ end
 ---   - Há qualquer ação em andamento (ataque, defesa, dash, stun, etc.)
 ---   - A animação de equipar/desequipar ainda está tocando (mesmo após early cancel)
 function _G.PodeAlterarTool()
+	-- Bloqueia se está em diálogo
+	if _G.EmDialogo and _G.EmDialogo() then
+		return false
+	end
+
 	-- Bloqueia se há qualquer ação em andamento
 	if estadoAtual.estadoAcao ~= "Nenhuma" then
 		return false

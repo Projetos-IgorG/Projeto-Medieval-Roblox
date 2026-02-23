@@ -16,6 +16,8 @@
     - estadoAcao, BloqueandoOn, ProntoAparar, StunadoOn, DashOn
 ]]
 
+local debug = false
+
 local Players = game:GetService("Players")
 
 local player = Players.LocalPlayer
@@ -101,4 +103,6 @@ function _G.LerStatusLocal(nome: string): any
 	return nil
 end
 
-print("[StatusLocal] Pasta StatusLocal criada para", player.Name)
+if debug then
+	print("[StatusLocal] Pasta StatusLocal criada para", player.Name)
+end

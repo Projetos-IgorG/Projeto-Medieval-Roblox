@@ -18,7 +18,7 @@
 		    └── ... outros atributos
 	
 	USO:
-		local ToolBuilder = require(game.ServerScriptService.Modules.ToolBuilder)
+		local ToolBuilder = require(game.ReplicatedStorage.Modulos.Ferramentas.ToolBuilder)
 		
 		-- Criar Tool na backpack de um player
 		local tool = ToolBuilder.CriarTool(itemData, player.Backpack)

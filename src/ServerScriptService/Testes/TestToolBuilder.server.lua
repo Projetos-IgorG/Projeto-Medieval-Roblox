@@ -10,7 +10,8 @@ local Players = game:GetService("Players")
 
 -- Aguardar módulo ToolBuilder
 warn("[TEST] Aguardando módulo ToolBuilder...")
-local ToolBuilder = require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("ToolBuilder"))
+local ToolBuilder =
+	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Ferramentas"):WaitForChild("ToolBuilder"))
 warn("[TEST] Módulo ToolBuilder carregado com sucesso!")
 
 print("========================================")

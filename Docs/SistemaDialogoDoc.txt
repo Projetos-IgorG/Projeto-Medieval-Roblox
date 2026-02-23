@@ -1,0 +1,57 @@
+# Documentação: Sistema de Diálogo Modular
+
+O Sistema de Diálogo foi desenhado para ser totalmente procedural, escalável e centrado em tabelas de dados. Ele separa a Lógica de Interface (Client), Lógica de Validação e Recompensas (Server), Requisitos Universais (GerenciadorRequisitos) e Textos das Conversas (Módulos de Diálogos).
+
+---
+
+## 1. Estrutura Necessária no NPC (Workspace)
+Para que o DialogoClient reconheça um NPC como "conversável", o Model dele precisa ter:
+
+- HumanoidRootPart: Com um ProximityPrompt dentro. O campo ActionText deve ser exatamente "Falar".
+- Head: Deve conter um SurfaceGui chamado DialogoGui com dois frames fundamentais:
+  - FrameDialogo (Que dentro dele tenha um TextLabel chamado Dialogo)
+  - FrameNome (Opcional, mas útil na renderização visual).
+- Pasta Dados: Uma pasta literal chamada Dados, contendo as configurações vitais do NPC em formato de StringValue:
+  - Nome (Ex: "Leonard") -> *Este valor dita qual script em Dialogos/ o Client vai tentar ler!*
+  - Profissao (Ex: "Guarda Real")
+  - Estado (Ex: "Livre", "Dormindo", "EmCombate")
+  - TipoVoz (Ex: "HomemForte", "Mulher", "Crianca"). Controla o timbre do som do Typewriter.
+
+---
+
+## 2. Estrutura Necessária no Jogador (Para Requisitos)
+O GerenciadorRequisitos.luau lê de lugares genéricos do jogador.
+A estrutura base esperada no momento é:
+- Tags (Folder dentro do Player): Pasta contendo `StringValue`. O Gerenciador verifica se existe alguma ali com o `Value` sendo exatamente a Tag exigida (Ex: `StringValue` com Value="ConheceuGuarda").
+- leaderstats (Folder dentro do Player): Se o diálogo precisar checar "Moedas" ou "Level".
+- Backpack / Character: Se o requisito do diálogo for do tipo "Item", ele procura pelo nome do item equipado ou guardado no inventário.
+
+---
+
+## 3. O Fluxo Completo de uma Conversa
+
+1. Gatilho de Entrada: O jogador aperta o ProximityPrompt "Falar".
+2. Reconhecimento (Client): DialogoClient.luau intercepta. Ele lê o atributo Nome do NPC ("Leonard").
+3. Busca do Módulo: O script procura o módulo de conversa dentro de `ReplicatedStorage/Modulos/SistemaDialogo/Dialogos/` na seguinte ordem de Fallback:
+   - Primeiro pelo `Nome` ex: "Leonard" (`Leonard.luau`)
+   - Se não achar, pela `Profissao` ex: "Guarda Real" (`Guarda Real.luau`)
+   - Se não achar, procura pelo módulo genérico "Generico" (`Generico.luau`).
+4. Verificação de Estado:
+   - Se o Estado do NPC for Dormindo ou EmCombate, o sistema NÃO ABRIRÁ ESCOLHAS na tela. O NPC apenas toca uma frase genérica flutuante de Zzzzz ou Estou Ocupado.
+5. Abertura da Conversa Mútua: Se estiver Livre:
+   - Trava os controles e solta as ferramentas para garantir que o jogador não use itens. 
+   - A câmera Tweena para dar um leve zoom (FOV = 60).
+   - Avalia na lista de Inicio da tabela do NPC qual das falas o jogador está habilitado a receber (checando Requisitos e IgnorarSe). No caso de Tags, checará se há correspondência na pasta de Tags.
+6. Efeito Typewriter: Escreve a frase do NPC no SurfaceGui e na interface, focando agora também no Label do FrameNome.
+7. Montagem de Respostas: Após a fala, monta os botões sendo atrelados por número (1, 2...). 
+8. Ações Backend (Server) nas Escolhas: Se o jogador escolher uma resposta que contem um gatilho de ação pro servidor, por exemplo: `AcaoServidor = { Acao = "DarTag", Valor = "MinhaTag" }`, a ação é mandada instantaneamente ao `DialogoServer.luau` *no momento em que ele clica na opção*, alterando o banco e prosseguindo para a próxima fala.
+9. Ciclo ou Encerramento: Continua até escolher uma opção sem ramificação futura ou que possua FimDeDialogo = true. A câmera volta ao FOV 70 e tudo é destravado.
+
+---
+
+## 4. Como criar um Novo NPC 
+
+1. Duplique o Modelo de um NPC pronto.
+2. Troque os valores dentro da pasta Dados. Mude Nome para "Padeiro", por exemplo.
+3. Vá em Modulos/SistemaDialogo/Dialogos/ e crie um ModuleScript Padeiro.luau.
+4. Use o esqueleto base de dicionário (Igual ao Leonard.luau que fiz) para escrever os textos, quais requisitos ele engatilha e para qual IdFala as escolhas levam.

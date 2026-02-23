@@ -31,7 +31,7 @@ local Players = game:GetService("Players")
 -- ═══════════════════════════════════════════════════════════════════
 -- CONFIGURAÇÃO DE DEBUG
 -- ═══════════════════════════════════════════════════════════════════
-local DEBUG_ENABLED = true
+local DEBUG_ENABLED = false
 
 local function DebugPrint(...)
 	if DEBUG_ENABLED then
@@ -43,8 +43,8 @@ end
 -- MÓDULOS
 -- ═══════════════════════════════════════════════════════════════════
 local Modulos = ReplicatedStorage:WaitForChild("Modulos")
-local ToolBuilder = require(Modulos:WaitForChild("ToolBuilder"))
-local ModEquip = require(Modulos:WaitForChild("Modulo_Equipamento"))
+local ToolBuilder = require(Modulos:WaitForChild("Ferramentas"):WaitForChild("ToolBuilder"))
+local ModEquip = require(Modulos:WaitForChild("Jogador"):WaitForChild("Modulo_Equipamento"))
 
 --- Oculta todos os componentes visuais de um Tool (para Tools armazenados em EquipamentosAtivos)
 local function OcultarComponentesTool(tool: Tool)

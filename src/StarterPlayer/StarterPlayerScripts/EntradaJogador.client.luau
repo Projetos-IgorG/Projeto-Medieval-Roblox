@@ -38,7 +38,8 @@ local player = Players.LocalPlayer
 
 local Modulo_Configuracoes =
 	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Combate"):WaitForChild("Modulo_Configuracoes"))
-local ModEquip = require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Modulo_Equipamento"))
+local ModEquip =
+	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Jogador"):WaitForChild("Modulo_Equipamento"))
 
 -- ═══════════════════════════════════════════════════════════════════
 -- REMOTE EVENTS

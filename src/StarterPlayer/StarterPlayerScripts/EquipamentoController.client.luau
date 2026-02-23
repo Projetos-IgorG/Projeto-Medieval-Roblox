@@ -15,7 +15,7 @@
 -- ═══════════════════════════════════════════════════════════════════
 -- CONFIGURAÇÃO DE DEBUG
 -- ═══════════════════════════════════════════════════════════════════
-local DEBUG_ENABLED = true
+local DEBUG_ENABLED = false
 
 local function DebugPrint(...)
 	if DEBUG_ENABLED then
@@ -36,7 +36,7 @@ local playerGui = player:WaitForChild("PlayerGui")
 -- MÓDULOS
 -- ═══════════════════════════════════════════════════════════════════
 local Modulos = ReplicatedStorage:WaitForChild("Modulos")
-local ModEquip = require(Modulos:WaitForChild("Modulo_Equipamento"))
+local ModEquip = require(Modulos:WaitForChild("Jogador"):WaitForChild("Modulo_Equipamento"))
 
 -- ═══════════════════════════════════════════════════════════════════
 -- REMOTE EVENTS

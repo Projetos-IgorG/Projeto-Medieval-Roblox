@@ -38,7 +38,7 @@ local Modulo_Hitbox = require(Combate:WaitForChild("Modulo_Hitbox"))
 local Modulo_Impulso = require(Combate:WaitForChild("Modulo_Impulso"))
 local Modulo_Knockback = require(Combate:WaitForChild("Modulo_Knockback"))
 local _Modulo_Combo = require(Combate:WaitForChild("Modulo_Combo")) -- Mantido se precisar no futuro
-local MaquinaDeEstados = require(Modulos:WaitForChild("MaquinaDeEstados"))
+local MaquinaDeEstados = require(Modulos:WaitForChild("Core"):WaitForChild("MaquinaDeEstados"))
 
 local ControladorCombate = {}
 

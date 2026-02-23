@@ -97,6 +97,21 @@ CriarRemoto(Remotos, "DroparTool", "Event") -- Sistema de drop customizado
 CriarRemoto(Remotos, "AplicarKnockback", "Event") -- Sistema de knockback físico
 CriarRemoto(Remotos, "EquipamentoAcao", "Event") -- Sistema de equipamento
 
+-- Sistema de Diálogo
+local Modulos = ReplicatedStorage:FindFirstChild("Modulos")
+if Modulos then
+	local SistemaDialogo = Modulos:FindFirstChild("SistemaDialogo")
+	if SistemaDialogo then
+		local DialogoRemotes = SistemaDialogo:FindFirstChild("DialogoRemotes")
+		if not DialogoRemotes then
+			DialogoRemotes = Instance.new("Folder")
+			DialogoRemotes.Name = "DialogoRemotes"
+			DialogoRemotes.Parent = SistemaDialogo
+		end
+		CriarRemoto(DialogoRemotes, "AcaoDialogo", "Event")
+	end
+end
+
 -- BindableEvents: server-side apenas
 CriarBindable(Bindables, "SpawnNPC", "Event")
 
@@ -240,8 +255,8 @@ DebugPrint("[ConfigIniciar] Módulos de combate carregados")
 -- PARTE 5: CARREGAR E INICIAR SERVIÇOS
 -- ═══════════════════════════════════════════════════════════════════
 
-local ServicoDrop = require(Servicos:WaitForChild("ServicoDrop"))
-local ServicoArrastar = require(Servicos:WaitForChild("ServicoArrastar"))
+local ServicoDrop = require(Servicos.Inventario:WaitForChild("ServicoDrop"))
+local ServicoArrastar = require(Servicos.Interacoes:WaitForChild("ServicoArrastar"))
 local ServicoPortal = require(Servicos:WaitForChild("ServicoPortal"))
 
 -- Sistema de Equipamento

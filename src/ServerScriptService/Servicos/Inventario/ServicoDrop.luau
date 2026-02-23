@@ -20,7 +20,7 @@ local Players = game:GetService("Players")
 local PhysicsService = game:GetService("PhysicsService")
 
 -- Módulos
-local ToolBuilder = require(ReplicatedStorage.Modulos.ToolBuilder)
+local ToolBuilder = require(ReplicatedStorage.Modulos.Ferramentas.ToolBuilder)
 
 -- ============================================
 -- CONFIGURAÇÃO
