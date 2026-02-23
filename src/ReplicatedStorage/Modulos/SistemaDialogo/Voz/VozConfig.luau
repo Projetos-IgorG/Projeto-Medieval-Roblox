@@ -60,7 +60,7 @@ VozConfig.CustomVoiceConfigs = {
 	["OldFemale"] = { AudioId = "rbxassetid://0", Volume = 0.5 },
 	["StrongFemale"] = { AudioId = "rbxassetid://0", Volume = 0.5 },
 	["VillainFemale"] = { AudioId = "rbxassetid://0", Volume = 0.5 },
-	["WiseFemale"] = { AudioId = "rbxassetid://139153490291810", Volume = 0.6 },
+	["WiseFemale"] = { AudioId = "rbxassetid://139153490291810", Volume = 0.3 },
 }
 
 -- Pontos de início possíveis para o áudio (compartilhado por todas as vozes)
