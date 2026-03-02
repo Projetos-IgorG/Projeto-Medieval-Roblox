@@ -338,7 +338,7 @@ local function MostrarFalaEOpcoes(tabelaFala, dadosNPC)
 		return
 	end
 
-	local frameNome = DialogoGui:FindFirstChild("FrameDialogo")
+	local frameNome = DialogoGui:FindFirstChild("FrameNome")
 	if frameNome then
 		local labelNome = frameNome:FindFirstChild("Nome")
 		if labelNome then
