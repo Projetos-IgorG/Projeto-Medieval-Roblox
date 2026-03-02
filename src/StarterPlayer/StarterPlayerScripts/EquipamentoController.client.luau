@@ -7,7 +7,7 @@
 	- Enviar RemoteEvent EquipamentoAcao para o servidor
 	- Atualizar UI dos slots de equipamento (ArmsEquipment, BodyEquipment)
 	- Desequipar via clique nos slots da UI
-	- Expor globais _G.ObterEquipamentoBraco() e _G.ObterCategoriaRightArm()
+	- Expor funções via ClientBridge: ObterEquipamentoBraco(), ObterCategoriaRightArm()
 
 	NÃO interfere com Tools de Tipo "ArmasEquipadas" (fluxo de combate via EntradaJogador).
 ]]
@@ -28,6 +28,10 @@ end
 -- ═══════════════════════════════════════════════════════════════════
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Ponte de comunicação entre scripts client-side (substitui _G)
+local ClientBridge =
+	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Core"):WaitForChild("ClientBridge"))
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -382,11 +386,11 @@ local function ConectarEquipamentoOVs(character: Model)
 end
 
 -- ═══════════════════════════════════════════════════════════════════
--- GLOBAIS EXPOSTOS
+-- FUNÇÕES EXPOSTAS VIA CLIENTBRIDGE
 -- ═══════════════════════════════════════════════════════════════════
 
 --- Retorna o Tool equipado em um slot de braço
-_G.ObterEquipamentoBraco = function(slot: string): Tool?
+ClientBridge.ObterEquipamentoBraco = function(slot: string): Tool?
 	local ov = equipOVs[slot]
 	if ov and ov.Value then
 		return ov.Value :: Tool
@@ -395,7 +399,7 @@ _G.ObterEquipamentoBraco = function(slot: string): Tool?
 end
 
 --- Retorna a Categoria da arma equipada no RightArm
-_G.ObterCategoriaRightArm = function(): string?
+ClientBridge.ObterCategoriaRightArm = function(): string?
 	local ov = equipOVs["RightArm"]
 	if not ov or not ov.Value then
 		return nil
@@ -404,7 +408,7 @@ _G.ObterCategoriaRightArm = function(): string?
 end
 
 --- Retorna o Tool equipado em um slot do corpo
-_G.ObterEquipamentoCorpo = function(slot: string): Tool?
+ClientBridge.ObterEquipamentoCorpo = function(slot: string): Tool?
 	local ov = equipOVs[slot]
 	if ov and ov.Value then
 		return ov.Value :: Tool

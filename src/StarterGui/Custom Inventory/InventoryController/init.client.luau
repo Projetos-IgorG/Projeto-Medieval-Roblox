@@ -3,7 +3,11 @@ local StarterGui = game:GetService("StarterGui")
 local ContextActionService = game:GetService("ContextActionService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+-- Ponte de comunicação entre scripts client-side (substitui _G)
+local ClientBridge =
+	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Core"):WaitForChild("ClientBridge"))
 -- references
 local player = game:GetService("Players").LocalPlayer
 local backpack = player:WaitForChild("Backpack")
@@ -163,7 +167,6 @@ end
 -- ============================================
 -- SISTEMA DE DROP CUSTOMIZADO
 -- ============================================
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Remotos = ReplicatedStorage:WaitForChild("Remotos")
 local DroparToolEvent = Remotos:WaitForChild("DroparTool")
 
@@ -242,8 +245,8 @@ local function handlePartialDrop(_, inputState, _)
 				dropFrame = Instance.new("Frame")
 				dropFrame.Name = "DropProgress"
 				dropFrame.AnchorPoint = Vector2.new(0, 1)
-				dropFrame.Position = UDim2.new(0, 0, 1, 0)
-				dropFrame.Size = UDim2.new(1, 0, 0, 0)
+				dropFrame.Position = UDim2.fromScale(0, 1)
+				dropFrame.Size = UDim2.fromScale(1, 0)
 				dropFrame.BackgroundColor3 = Color3.new(1, 1, 1)
 				dropFrame.BackgroundTransparency = 0.8
 				dropFrame.BorderSizePixel = 0
@@ -280,8 +283,8 @@ local function handlePartialDrop(_, inputState, _)
 
 			local fraction = math.clamp(elapsed / DROP_MAX, 0, 1)
 			if dropFrame then
-				dropFrame.Size = UDim2.new(1, 0, fraction, 0)
-				dropFrame.Position = UDim2.new(0, 0, 1, 0)
+				dropFrame.Size = UDim2.fromScale(1, fraction)
+				dropFrame.Position = UDim2.fromScale(0, 1)
 			end
 
 			if fraction >= 1 then
@@ -333,7 +336,7 @@ UserInputService.InputChanged:Connect(function(input)
 		local toolPosition = inventoryHandler:getToolPosition(toolEquipped) or 0
 
 		-- Bloqueia troca por scroll se não pode alterar tool
-		if _G.PodeAlterarTool and not _G.PodeAlterarTool() then
+		if ClientBridge.PodeAlterarTool and not ClientBridge.PodeAlterarTool() then
 			return
 		end
 

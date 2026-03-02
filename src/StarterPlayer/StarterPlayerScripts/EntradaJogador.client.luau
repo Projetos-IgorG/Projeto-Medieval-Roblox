@@ -32,6 +32,10 @@ end
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Ponte de comunicação entre scripts client-side (substitui _G)
+local ClientBridge =
+	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Core"):WaitForChild("ClientBridge"))
 local _ContextActionService = game:GetService("ContextActionService") -- Reservado para uso futuro
 
 local player = Players.LocalPlayer
@@ -138,12 +142,12 @@ end
 -- ═══════════════════════════════════════════════════════════════════
 
 --- Verifica se M1 está sendo pressionado (usado pelo ControladorEstado para ataque pesado)
-function _G.EstaSegurandoM1()
+function ClientBridge.EstaSegurandoM1()
 	return estadoInput.mouse1Pressionado
 end
 
 --- Verifica se está carregando ataque pesado
-function _G.EstaCarregandoPesado()
+function ClientBridge.EstaCarregandoPesado()
 	return estadoInput.carregandoPesado
 end
 
@@ -173,7 +177,7 @@ local toolPendente = nil -- Tool aguardando para ser equipado após desequip
 local revertendoTool = false -- Flag para evitar loops ao reverter ações do Roblox
 
 --- Verifica se há animação de equip/desequip em andamento (compatibilidade)
-function _G.EstaEmAnimacaoEquip()
+function ClientBridge.EstaEmAnimacaoEquip()
 	return estadoEquip ~= "idle"
 end
 
@@ -217,9 +221,9 @@ local function ObterModoDoTool(tool: Tool): string?
 	end
 
 	-- Resolver modo ativo via Modulo_Equipamento (dual-wield, escudo, arco, etc.)
-	local toolEsq = _G.ObterEquipamentoBraco and _G.ObterEquipamentoBraco("LeftArm") or nil
+	local toolEsq = ClientBridge.ObterEquipamentoBraco and ClientBridge.ObterEquipamentoBraco("LeftArm") or nil
 	local estadoEsq = ModEquip.ResolverEstadoMaoEsquerda(toolEsq)
-	local categoriaDir = _G.ObterCategoriaRightArm and _G.ObterCategoriaRightArm() or nil
+	local categoriaDir = ClientBridge.ObterCategoriaRightArm and ClientBridge.ObterCategoriaRightArm() or nil
 
 	local modoResolvido = ModEquip.ResolverModoAtivo(modoBase, estadoEsq, categoriaDir)
 	DebugPrint("[EntradaJogador] Modo base:", modoBase, "| Estado esq:", estadoEsq, "| Resolvido:", modoResolvido)
@@ -256,7 +260,7 @@ end
 
 --- Callback chamado pelo ControladorEstado quando a animação de equipar/desequipar termina
 --- @param direcaoFinal number 1 se terminou equipando, -1 se terminou desequipando
-_G.OnEquipAnimacaoTerminou = function(direcaoFinal: number)
+ClientBridge.OnEquipAnimacaoTerminou = function(direcaoFinal: number)
 	DebugPrint(
 		"[EntradaJogador] Animação terminou. Direção:",
 		direcaoFinal,
@@ -321,13 +325,13 @@ local function ProcessarMouse1Pressionado()
 
 	-- Verifica se há combo ativo (função exposta pelo ControladorEstado)
 	-- Combo tem prioridade e é processado imediatamente
-	local comboAtivo = _G.EstaComboAtivo and _G.EstaComboAtivo()
-	local janelaAtiva = _G.EstaJanelaComboAtiva and _G.EstaJanelaComboAtiva()
+	local comboAtivo = ClientBridge.EstaComboAtivo and ClientBridge.EstaComboAtivo()
+	local janelaAtiva = ClientBridge.EstaJanelaComboAtiva and ClientBridge.EstaJanelaComboAtiva()
 
 	if comboAtivo or janelaAtiva then
 		-- Combo ativo - marca para continuar
-		if _G.MarcarContinuarCombo then
-			local marcou = _G.MarcarContinuarCombo()
+		if ClientBridge.MarcarContinuarCombo then
+			local marcou = ClientBridge.MarcarContinuarCombo()
 			if marcou then
 				-- Também notifica servidor que input foi recebido
 				EnviarAcao("AtacarLeveEmPe")
@@ -359,8 +363,8 @@ local function ProcessarMouse1Solto()
 		DebugPrint("[EntradaJogador] M1 solto - SoltarPesado (carregou por", tempoSegurando, "s)")
 
 		-- Primeiro, notifica o ControladorEstado para continuar a animação (se estava pausada)
-		if _G.ContinuarAtaquePesado then
-			_G.ContinuarAtaquePesado()
+		if ClientBridge.ContinuarAtaquePesado then
+			ClientBridge.ContinuarAtaquePesado()
 		end
 
 		-- Depois envia a ação para o servidor
@@ -415,8 +419,8 @@ local function ProcessarMouse2Pressionado()
 	estadoInput.tempoMouse2 = agora
 
 	-- Tenta cancelar ataque por defesa (se estiver na janela de cancelamento)
-	if _G.TentarCancelarAtaquePorDefesa then
-		local cancelou, tipoAtaque = _G.TentarCancelarAtaquePorDefesa()
+	if ClientBridge.TentarCancelarAtaquePorDefesa then
+		local cancelou, tipoAtaque = ClientBridge.TentarCancelarAtaquePorDefesa()
 		if cancelou then
 			DebugPrint("[EntradaJogador] Ataque cancelado por defesa:", tipoAtaque)
 			-- Notifica servidor sobre o cancelamento
@@ -437,18 +441,19 @@ local function ProcessarMouse2Pressionado()
 				if estadoInput.mouse2Pressionado then
 					DebugPrint("[EntradaJogador] M2 ainda pressionado após cancel - iniciando defesa")
 					-- Cancela o cancel pendente (não volta ao Idle, vai direto pra defesa)
-					if _G.CancelarCancelPendente then
-						_G.CancelarCancelPendente()
+					if ClientBridge.CancelarCancelPendente then
+						ClientBridge.CancelarCancelPendente()
 					end
 					estadoInput.ultimaDefesa = tick()
 					-- Envia ShiftLock junto com ação de bloqueio (servidor precisa para validar)
-					local shiftLockAtivo = _G.LerStatusLocal and _G.LerStatusLocal("ShiftLockOn") or false
+					local shiftLockAtivo = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("ShiftLockOn")
+						or false
 					EnviarAcao("Bloquear", { shiftLock = shiftLockAtivo })
 				else
 					DebugPrint("[EntradaJogador] M2 solto após cancel - apenas cancelou, sem defesa")
 					-- Resolve o cancel pendente (volta ao Idle)
-					if _G.ResolverCancelPendente then
-						_G.ResolverCancelPendente()
+					if ClientBridge.ResolverCancelPendente then
+						ClientBridge.ResolverCancelPendente()
 					end
 				end
 			end)
@@ -460,7 +465,7 @@ local function ProcessarMouse2Pressionado()
 	-- Se não cancelou nenhum ataque, inicia defesa normalmente
 	estadoInput.ultimaDefesa = agora
 	-- Envia ShiftLock junto com ação de bloqueio (servidor precisa para validar)
-	local shiftLockAtivo = _G.LerStatusLocal and _G.LerStatusLocal("ShiftLockOn") or false
+	local shiftLockAtivo = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("ShiftLockOn") or false
 	EnviarAcao("Bloquear", { shiftLock = shiftLockAtivo })
 end
 
@@ -521,7 +526,7 @@ local function ProcessarToolEquipado(tool: Tool)
 	DebugPrint("[EntradaJogador] Tool adicionado:", tool.Name, "- Estado atual:", estadoEquip)
 
 	-- Verifica se pode alterar o Tool (sem ação em andamento e sem animação de equip)
-	local podeAlterar = _G.PodeAlterarTool and _G.PodeAlterarTool()
+	local podeAlterar = ClientBridge.PodeAlterarTool and ClientBridge.PodeAlterarTool()
 	if not podeAlterar then
 		-- BLOQUEIO: Reverte silenciosamente a ação do Roblox
 		DebugPrint("[EntradaJogador] Troca bloqueada - revertendo. Tool:", tool.Name)
@@ -618,7 +623,7 @@ local function ProcessarToolDesequipado(tool: Tool)
 	DebugPrint("[EntradaJogador] Limpas conexões tool.Activated/Deactivated para:", tool.Name)
 
 	-- Verifica se pode alterar o Tool
-	local podeAlterar = _G.PodeAlterarTool and _G.PodeAlterarTool()
+	local podeAlterar = ClientBridge.PodeAlterarTool and ClientBridge.PodeAlterarTool()
 	if not podeAlterar then
 		-- BLOQUEIO: Reverte silenciosamente - re-equipa o tool que tentou tirar
 		DebugPrint("[EntradaJogador] Desequip bloqueado - revertendo. Tool:", tool.Name)
@@ -662,15 +667,15 @@ end
 --- Calcula a direção baseado no MoveDirection do humanoid em relação ao LookVector
 local function ProcessarDash()
 	-- Bloqueia dash se não pode alterar tool (animação de equip em andamento)
-	if _G.EstaEmAnimacaoEquip and _G.EstaEmAnimacaoEquip() then
+	if ClientBridge.EstaEmAnimacaoEquip and ClientBridge.EstaEmAnimacaoEquip() then
 		DebugPrint("[EntradaJogador] Dash bloqueado: Animação de equipamento em andamento")
 		return
 	end
 
 	-- Usa a função global para calcular direção (definida em ControladorEstado)
 	local direcao = "Frente"
-	if _G.CalcularDirecaoDash then
-		direcao = _G.CalcularDirecaoDash()
+	if ClientBridge.CalcularDirecaoDash then
+		direcao = ClientBridge.CalcularDirecaoDash()
 	end
 
 	EnviarAcao("Dash", direcao)
@@ -727,7 +732,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 end)
 
-UserInputService.InputEnded:Connect(function(input, gameProcessed)
+UserInputService.InputEnded:Connect(function(input, _gameProcessed)
 	-- MouseButton1 agora é detectado via tool.Deactivated (compatibilidade cross-platform)
 	-- Mantém MouseButton2 para bloqueio (sem equivalente nativo)
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then

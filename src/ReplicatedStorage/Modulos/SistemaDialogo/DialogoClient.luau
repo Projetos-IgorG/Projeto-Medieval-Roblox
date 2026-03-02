@@ -17,6 +17,10 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
+-- Ponte de comunicação entre scripts client-side (substitui _G)
+local ClientBridge =
+	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Core"):WaitForChild("ClientBridge"))
+
 local LocalPlayer = Players.LocalPlayer
 
 -- Pastas e Referências
@@ -69,8 +73,13 @@ local CAMERA_CORRECAO_VERTICAL = 0.0
 -- Duração da correção da câmera (segundos)
 local CAMERA_CORRECAO_DURACAO = 0.2
 
--- Expõe flag global para outros sistemas (ex: ControladorEstado bloquear equip)
-_G.EmDialogo = function()
+-- Configurações de botão
+local BOTAO_Y_PADRAO = 0.15
+local BOTAO_Y_GRANDE = 0.3
+local BOTAO_LIMIAR_LETRAS = 40 -- Acima disso, botão cresce em Y
+
+-- Expõe flag para outros sistemas via ClientBridge (ex: ControladorEstado bloquear equip)
+ClientBridge.EmDialogo = function()
 	return ConversaAtiva
 end
 
@@ -213,32 +222,11 @@ local function EncerrarDialogo()
 	DialogoGuiRespostas.Adornee = nil
 end
 
--- Tamanho base dos botões (X scale, Y scale)
-local BOTAO_MIN_X = 0.45
-local BOTAO_MAX_X = 0.85
-local BOTAO_MIN_Y = 0.12 -- botão de texto curto (1 linha)
-local BOTAO_MAX_Y = 0.20 -- botão de texto longo
-local BOTAO_LIMIAR_TEXTO = 35 -- acima desse nº de caracteres, começa a crescer
-local BOTAO_LIMIAR_MAX = 90 -- nº de caracteres para atingir X/Y máximo
-
 -- Hover animation settings
 local HOVER_TWEEN_INFO = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
-local function CalcularTamanhoBotao(textoCompleto)
-	local numChars = #textoCompleto
-	if numChars <= BOTAO_LIMIAR_TEXTO then
-		return UDim2.new(BOTAO_MIN_X, 0, BOTAO_MIN_Y, 0)
-	end
-
-	-- Interpolar linearmente entre min e max baseado no comprimento do texto
-	local alpha = math.clamp((numChars - BOTAO_LIMIAR_TEXTO) / (BOTAO_LIMIAR_MAX - BOTAO_LIMIAR_TEXTO), 0, 1)
-	local xSize = BOTAO_MIN_X + (BOTAO_MAX_X - BOTAO_MIN_X) * alpha
-	local ySize = BOTAO_MIN_Y + (BOTAO_MAX_Y - BOTAO_MIN_Y) * alpha
-	return UDim2.new(xSize, 0, ySize, 0)
-end
-
 local function CriarOpcaoPeloTemplate(index, texto, acaoCallback)
-	local template = RespostasTemplates:FindFirstChild("template")
+	local template = RespostasTemplates:FindFirstChild("Template")
 	if not template then
 		warn("[DialogoClient] Template não encontrado em RespostasTemplates!")
 		return
@@ -248,59 +236,39 @@ local function CriarOpcaoPeloTemplate(index, texto, acaoCallback)
 	btn.Name = "Opcao_" .. index
 	btn.Visible = true
 
-	local lbl = btn:FindFirstChild("text")
-	if lbl then
-		-- Label apenas para o texto (que vai escalar)
+	local lbl = btn:FindFirstChild("text", true)
+	if lbl and lbl:IsA("TextLabel") then
 		lbl.Text = texto
-		lbl.RichText = false
-		lbl.TextWrapped = true
-		lbl.AutomaticSize = Enum.AutomaticSize.None
-
-		local offsetIndex = 45 -- Espaço reservado para o "1. "
-
-		-- Label separada e fixa para o número (ex: "1. ")
-		local lblIndex = lbl:Clone()
-		lblIndex.Name = "IndexNum"
-		lblIndex.Text = index .. ". "
-		lblIndex.TextColor3 = Color3.fromRGB(255, 220, 127)
-		lblIndex.RichText = false
-		lblIndex.TextScaled = true
-		lblIndex.TextWrapped = true
-		lblIndex.TextSize = 50
-		lblIndex.TextXAlignment = Enum.TextXAlignment.Right
-		lblIndex.Size = UDim2.new(0, offsetIndex, lbl.Size.Y.Scale, lbl.Size.Y.Offset)
-		lblIndex.Position = lbl.Position
-		lblIndex.Parent = btn
-
-		-- Reduzir e deslocar a label do texto principal
-		lbl.Size = UDim2.new(lbl.Size.X.Scale, lbl.Size.X.Offset - offsetIndex, lbl.Size.Y.Scale, lbl.Size.Y.Offset)
-		lbl.Position = UDim2.new(
-			lbl.Position.X.Scale,
-			lbl.Position.X.Offset + offsetIndex,
-			lbl.Position.Y.Scale,
-			lbl.Position.Y.Offset
-		)
 	end
 
-	-- Ajustar tamanho do botão baseado no comprimento do texto
-	local textoFormatado = index .. " .  " .. texto
-	local tamanhoBase = CalcularTamanhoBotao(textoFormatado)
-	btn.Size = tamanhoBase
+	local lblIndex = btn:FindFirstChild("IndexNum", true)
+	if lblIndex and lblIndex:IsA("TextLabel") then
+		lblIndex.Text = index .. ". "
+	end
+
+	-- Se o texto for longo demais, aumenta o botão em Y para caber
+	if #texto > BOTAO_LIMIAR_LETRAS then
+		btn.Size = UDim2.new(btn.Size.X.Scale, btn.Size.X.Offset, BOTAO_Y_GRANDE, btn.Size.Y.Offset)
+	else
+		btn.Size = UDim2.new(btn.Size.X.Scale, btn.Size.X.Offset, BOTAO_Y_PADRAO, btn.Size.Y.Offset)
+	end
 
 	btn.Parent = FrameRespostas
 
-	-- Criar um UIScale para controlar a animação uniforme sem distorcer margens do botão/imagem
-	local uiScale = Instance.new("UIScale")
-	uiScale.Scale = 1
-	uiScale.Parent = btn
+	local uiScale = btn:FindFirstChildOfClass("UIScale")
+	if not uiScale then
+		uiScale = Instance.new("UIScale")
+		uiScale.Scale = 1
+		uiScale.Parent = btn
+	end
 
 	-- Animações Hover (scale up (Zoom 105%) usando o UIScale + transparência usando o btn pai nativo)
 	btn.MouseEnter:Connect(function()
-		TweenService:Create(btn, HOVER_TWEEN_INFO, { BackgroundTransparency = 0.8 }):Play()
+		TweenService:Create(btn, HOVER_TWEEN_INFO, { ImageTransparency = 0.7 }):Play()
 		TweenService:Create(uiScale, HOVER_TWEEN_INFO, { Scale = 1.05 }):Play()
 	end)
 	btn.MouseLeave:Connect(function()
-		TweenService:Create(btn, HOVER_TWEEN_INFO, { BackgroundTransparency = 1 }):Play()
+		TweenService:Create(btn, HOVER_TWEEN_INFO, { ImageTransparency = 0.85 }):Play()
 		TweenService:Create(uiScale, HOVER_TWEEN_INFO, { Scale = 1 }):Play()
 	end)
 
@@ -342,7 +310,13 @@ local function MostrarFalaEOpcoes(tabelaFala, dadosNPC)
 	if frameNome then
 		local labelNome = frameNome:FindFirstChild("Nome")
 		if labelNome then
-			labelNome.Text = dadosNPC.Nome or "NPC"
+			local nome = dadosNPC.Nome or "NPC"
+			local profissao = dadosNPC.Profissao
+			if profissao and profissao ~= "" then
+				labelNome.Text = nome .. ", the " .. profissao
+			else
+				labelNome.Text = nome
+			end
 		end
 	end
 
@@ -507,7 +481,7 @@ local function IniciarDialogo(npc)
 		MostrarFalaEOpcoes({
 			FalaNPC = (estadoNPC == "Dormindo" and "Zzzzz...") or "Estou um pouco ocupado agora...",
 			FimDeDialogo = true,
-		}, { TipoVoz = tipoVozNPC, Nome = nomeNPC })
+		}, { TipoVoz = tipoVozNPC, Nome = nomeNPC, Profissao = profissaoNPC })
 		return
 	end
 
@@ -535,7 +509,7 @@ local function IniciarDialogo(npc)
 
 	local falaInicial = EncontrarFalaInicial()
 	if falaInicial then
-		MostrarFalaEOpcoes(falaInicial, { TipoVoz = tipoVozNPC, Nome = nomeNPC })
+		MostrarFalaEOpcoes(falaInicial, { TipoVoz = tipoVozNPC, Nome = nomeNPC, Profissao = profissaoNPC })
 	else
 		warn("[DialogoClient] Nenhuma fala inicial válida encontrada para " .. nomeNPC .. "!")
 		EncerrarDialogo()
@@ -630,11 +604,15 @@ function SistemaDialogoClient.Init()
 						local dadosFolder = NPCAtual:FindFirstChild("Dados")
 						local nomeNPC = dadosFolder and dadosFolder:FindFirstChild("Nome") and dadosFolder.Nome.Value
 							or "NPC"
+						local profissaoNPC = dadosFolder
+								and dadosFolder:FindFirstChild("Profissao")
+								and dadosFolder.Profissao.Value
+							or ""
 						local tipoVoz = dadosFolder
 								and dadosFolder:FindFirstChild("TipoVoz")
 								and dadosFolder.TipoVoz.Value
 							or "Homem"
-						MostrarFalaEOpcoes(proximaFala, { TipoVoz = tipoVoz, Nome = nomeNPC })
+						MostrarFalaEOpcoes(proximaFala, { TipoVoz = tipoVoz, Nome = nomeNPC, Profissao = profissaoNPC })
 					else
 						EncerrarDialogo()
 					end

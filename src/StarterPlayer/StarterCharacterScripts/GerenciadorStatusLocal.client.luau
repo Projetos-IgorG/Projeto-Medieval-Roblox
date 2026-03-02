@@ -19,6 +19,11 @@
 local debug = false
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Ponte de comunicação entre scripts client-side (substitui _G)
+local ClientBridge =
+	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Core"):WaitForChild("ClientBridge"))
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -68,17 +73,17 @@ player.CharacterAdded:Connect(function(newCharacter)
 end)
 
 -- ═══════════════════════════════════════════════════════════════════
--- FUNÇÕES GLOBAIS PARA ATUALIZAR STATUSLOCAL
+-- FUNÇÕES PARA ATUALIZAR STATUSLOCAL (via ClientBridge)
 -- ═══════════════════════════════════════════════════════════════════
 
 --- Obtém a pasta StatusLocal do character atual
-function _G.ObterStatusLocal(): Folder?
+local function ObterStatusLocal(): Folder?
 	return character and character:FindFirstChild("StatusLocal")
 end
 
 --- Atualiza um valor na pasta StatusLocal
-function _G.AtualizarStatusLocal(nome: string, valor: any)
-	local folder = _G.ObterStatusLocal()
+local function AtualizarStatusLocal(nome: string, valor: any)
+	local folder = ObterStatusLocal()
 	if not folder then
 		return
 	end
@@ -90,8 +95,8 @@ function _G.AtualizarStatusLocal(nome: string, valor: any)
 end
 
 --- Lê um valor da pasta StatusLocal
-function _G.LerStatusLocal(nome: string): any
-	local folder = _G.ObterStatusLocal()
+local function LerStatusLocal(nome: string): any
+	local folder = ObterStatusLocal()
 	if not folder then
 		return nil
 	end
@@ -102,6 +107,11 @@ function _G.LerStatusLocal(nome: string): any
 	end
 	return nil
 end
+
+-- Registra funções no ClientBridge para acesso por outros scripts
+ClientBridge.ObterStatusLocal = ObterStatusLocal
+ClientBridge.AtualizarStatusLocal = AtualizarStatusLocal
+ClientBridge.LerStatusLocal = LerStatusLocal
 
 if debug then
 	print("[StatusLocal] Pasta StatusLocal criada para", player.Name)

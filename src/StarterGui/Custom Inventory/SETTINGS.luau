@@ -1,3 +1,9 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Ponte de comunicação entre scripts client-side (substitui _G)
+local ClientBridge =
+	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Core"):WaitForChild("ClientBridge"))
+
 local module = { OBJECTS = {}, SETTINGS = {}, slotAmount = 9 }
 module.OBJECTS.HotBar = {}
 module.OBJECTS.Inventory = {}
@@ -170,7 +176,7 @@ function toolObjectMetatable:showDescription() -- Shows the object.Tool.ToolTip
 		descriptionFrame.Font,
 		Vector2.new(400, 1000)
 	) + Vector2.new(10, 4)
-	descriptionFrame.Size = UDim2.new(0, textBounds.X, 0, textBounds.Y)
+	descriptionFrame.Size = UDim2.fromOffset(textBounds.X, textBounds.Y)
 	descriptionFrame.Position = UDim2.new(
 		0,
 		frame.AbsolutePosition.X + (frame.AbsoluteSize.X / 2),
@@ -295,8 +301,8 @@ function module:addTool(tool: Tool, parent: string, position: number?)
 	local dropProgress = Instance.new("Frame")
 	dropProgress.Name = "DropProgress"
 	dropProgress.AnchorPoint = Vector2.new(0, 1)
-	dropProgress.Position = UDim2.new(0, 0, 1, 0)
-	dropProgress.Size = UDim2.new(1, 0, 0, 0)
+	dropProgress.Position = UDim2.fromScale(0, 1)
+	dropProgress.Size = UDim2.fromScale(1, 0)
 	dropProgress.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	dropProgress.BackgroundTransparency = 0.8
 	dropProgress.BorderSizePixel = 0
@@ -336,8 +342,8 @@ function module:addTool(tool: Tool, parent: string, position: number?)
 			or not tool.Parent
 			or inputState == Enum.UserInputState.End
 			or self.slotsLocked
-			or (_G.PodeAlterarTool and not _G.PodeAlterarTool())
-			or (_G.EstaEmDash and _G.EstaEmDash())
+			or (ClientBridge.PodeAlterarTool and not ClientBridge.PodeAlterarTool())
+			or (ClientBridge.EstaEmDash and ClientBridge.EstaEmDash())
 		then
 			return
 		end
@@ -584,7 +590,7 @@ function module:addTool(tool: Tool, parent: string, position: number?)
 
 			local mousePos = Vector2.new(mouse.X, mouse.Y)
 			frame.Position =
-				UDim2.new(0, mousePos.X - (CellSize.X.Offset / 2), 0, mousePos.Y - (CellSize.Y.Offset / 2) + 57)
+				UDim2.fromOffset(mousePos.X - (CellSize.X.Offset / 2), mousePos.Y - (CellSize.Y.Offset / 2) + 57)
 		end
 		mouseConn = mouse.Move:Connect(updateFramePos)
 	end)

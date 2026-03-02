@@ -1,6 +1,6 @@
 {
   "properties": {
-    "TextureContent": "rbxassetid://4980776503",
+    "CanBeDropped": false,
     "ModelMeshCFrame": [
       -8.83608627319336,
       -3.201976776123047,
@@ -41,7 +41,7 @@
         ]
       }
     },
-    "CanBeDropped": false
+    "TextureContent": "rbxassetid://4980776503"
   },
   "className": "Tool"
 }

@@ -35,6 +35,9 @@ local animator = humanoid:WaitForChild("Animator")
 local Modulos = ReplicatedStorage:WaitForChild("Modulos")
 local Modulo_Configuracoes = require(Modulos:WaitForChild("Combate"):WaitForChild("Modulo_Configuracoes"))
 
+-- Ponte de comunicação entre scripts client-side (substitui _G)
+local ClientBridge = require(Modulos:WaitForChild("Core"):WaitForChild("ClientBridge"))
+
 -- ═══════════════════════════════════════════════════════════════════
 -- CONFIGURAÇÕES LOCAIS (espelhando ArmasTemplate para responsividade)
 -- ═══════════════════════════════════════════════════════════════════
@@ -494,8 +497,8 @@ local function OnMarkerAtaque(indiceGolpe: string)
 	local tipoAtaque = Modulo_Configuracoes.ObterTipoAtaquePorIndice(estadoAtual.modoAnimacao, indice)
 
 	-- Aplica impulso de ataque no cliente (feedback imediato)
-	if _G.AplicarImpulsoAtaque then
-		_G.AplicarImpulsoAtaque(tipoAtaque)
+	if ClientBridge.AplicarImpulsoAtaque then
+		ClientBridge.AplicarImpulsoAtaque(tipoAtaque)
 	end
 
 	-- Notifica servidor para criar hitbox - envia CFrame atual para sincronia fina
@@ -604,7 +607,7 @@ end
 --- Marca que o jogador quer continuar o combo
 --- Chamado por EntradaJogador quando M1 é pressionado
 --- Retorna true se está em combo ativo (janela aberta ou animação rodando)
-function _G.MarcarContinuarCombo()
+function ClientBridge.MarcarContinuarCombo()
 	-- Se está na janela, marca para continuar
 	if comboState.janelaAtiva then
 		comboState.continuarCombo = true
@@ -623,12 +626,12 @@ function _G.MarcarContinuarCombo()
 end
 
 --- Verifica se está na janela de combo (para EntradaJogador)
-function _G.EstaJanelaComboAtiva()
+function ClientBridge.EstaJanelaComboAtiva()
 	return comboState.janelaAtiva
 end
 
 --- Verifica se há um combo ativo (animação tocando)
-function _G.EstaComboAtivo()
+function ClientBridge.EstaComboAtivo()
 	return comboState.animacaoAtiva and comboState.animacaoAtiva.IsPlaying
 end
 
@@ -736,7 +739,7 @@ local function OnMarkerAttackRelease()
 
 	-- Verifica se o jogador ainda está segurando M1
 	-- Usa função global exposta pelo EntradaJogador
-	local aindaSegurando = _G.EstaSegurandoM1 and _G.EstaSegurandoM1()
+	local aindaSegurando = ClientBridge.EstaSegurandoM1 and ClientBridge.EstaSegurandoM1()
 
 	if aindaSegurando then
 		-- Pausa a animação - aguarda soltar M1
@@ -746,8 +749,8 @@ local function OnMarkerAttackRelease()
 	else
 		-- Já soltou M1, continua a animação normalmente e aplica impulso
 		-- O impulso é aplicado aqui pois a liberação do ataque ocorre após AttackRelease
-		if _G.AplicarImpulsoAtaque then
-			_G.AplicarImpulsoAtaque("AtaquePesado")
+		if ClientBridge.AplicarImpulsoAtaque then
+			ClientBridge.AplicarImpulsoAtaque("AtaquePesado")
 		end
 		DebugPrint("[ControladorEstado] M1 já foi solto - animação continua, impulso aplicado")
 	end
@@ -850,9 +853,9 @@ local function ConfigurarMarkersHeavyAttack(track: AnimationTrack)
 end
 
 --- Continua a animação de ataque pesado (chamado quando M1 é solto)
---- Chamado por EntradaJogador via _G quando SoltarPesado é enviado
+--- Chamado por EntradaJogador via ClientBridge quando SoltarPesado é enviado
 --- Apenas ajusta a velocidade da animação - NÃO reinicia
-function _G.ContinuarAtaquePesado()
+function ClientBridge.ContinuarAtaquePesado()
 	if not heavyAttackState.animacao or not heavyAttackState.animacao.IsPlaying then
 		DebugPrint("[ControladorEstado] ContinuarAtaquePesado - sem animação ativa")
 		return false
@@ -867,8 +870,8 @@ function _G.ContinuarAtaquePesado()
 		heavyAttackState.aguardandoSoltar = false
 
 		-- Aplica impulso ao soltar M1 - este é o momento correto (após AttackRelease pausado)
-		if _G.AplicarImpulsoAtaque then
-			_G.AplicarImpulsoAtaque("AtaquePesado")
+		if ClientBridge.AplicarImpulsoAtaque then
+			ClientBridge.AplicarImpulsoAtaque("AtaquePesado")
 		end
 
 		DebugPrint(
@@ -887,12 +890,12 @@ function _G.ContinuarAtaquePesado()
 end
 
 --- Verifica se está em ataque pesado ativo
-function _G.EstaAtaquePesadoAtivo()
+function ClientBridge.EstaAtaquePesadoAtivo()
 	return heavyAttackState.animacao and heavyAttackState.animacao.IsPlaying
 end
 
 --- Verifica se está aguardando soltar M1 no ataque pesado
-function _G.EstaAguardandoSoltarPesado()
+function ClientBridge.EstaAguardandoSoltarPesado()
 	return heavyAttackState.aguardandoSoltar
 end
 
@@ -904,7 +907,7 @@ end
 --- Retorna true se cancelou com sucesso, false caso contrário
 --- @return boolean sucesso
 --- @return string? tipoAtaque O tipo de ataque que foi cancelado ("AtaqueLeve" ou "CarregandoPesado")
-function _G.TentarCancelarAtaquePorDefesa()
+function ClientBridge.TentarCancelarAtaquePorDefesa()
 	local agora = tick()
 
 	-- Verifica cooldown de cancelamento
@@ -1032,7 +1035,7 @@ end
 
 --- Resolve o cancel pendente - volta para animação de movimento (Idle)
 --- Chamado pelo EntradaJogador quando o jogador solta M2 sem defender
-function _G.ResolverCancelPendente()
+function ClientBridge.ResolverCancelPendente()
 	if defenseCancelState.cancelPendente then
 		defenseCancelState.cancelPendente = false
 		DebugPrint("[ControladorEstado] Cancel pendente resolvido - voltando ao Idle")
@@ -1042,7 +1045,7 @@ end
 
 --- Cancela o cancel pendente - não volta ao Idle pois vai defender
 --- Chamado pelo EntradaJogador quando o jogador vai iniciar defesa
-function _G.CancelarCancelPendente()
+function ClientBridge.CancelarCancelPendente()
 	if defenseCancelState.cancelPendente then
 		defenseCancelState.cancelPendente = false
 		DebugPrint("[ControladorEstado] Cancel pendente cancelado - indo para defesa")
@@ -1230,8 +1233,8 @@ local function OnEquipAnimacaoTerminou()
 	end
 
 	-- Notifica EntradaJogador que a animação terminou
-	if _G.OnEquipAnimacaoTerminou then
-		_G.OnEquipAnimacaoTerminou(direcaoFinal)
+	if ClientBridge.OnEquipAnimacaoTerminou then
+		ClientBridge.OnEquipAnimacaoTerminou(direcaoFinal)
 	end
 
 	-- Atualiza animação de movimento
@@ -1241,7 +1244,7 @@ local function OnEquipAnimacaoTerminou()
 end
 
 --- Verifica se está em animação de equipar/desequipar
-function _G.EstaEmAnimacaoEquip()
+function ClientBridge.EstaEmAnimacaoEquip()
 	return equipAnimState.animacao ~= nil and equipAnimState.animacao.IsPlaying
 end
 
@@ -1249,9 +1252,9 @@ end
 --- Retorna false se:
 ---   - Há qualquer ação em andamento (ataque, defesa, dash, stun, etc.)
 ---   - A animação de equipar/desequipar ainda está tocando (mesmo após early cancel)
-function _G.PodeAlterarTool()
+function ClientBridge.PodeAlterarTool()
 	-- Bloqueia se está em diálogo
-	if _G.EmDialogo and _G.EmDialogo() then
+	if ClientBridge.EmDialogo and ClientBridge.EmDialogo() then
 		return false
 	end
 
@@ -1327,10 +1330,10 @@ local function CalcularDirecaoDashLocal(): string
 end
 
 -- Expõe a função para EntradaJogador.client.lua usar
-_G.CalcularDirecaoDash = CalcularDirecaoDashLocal
+ClientBridge.CalcularDirecaoDash = CalcularDirecaoDashLocal
 
 --- Verifica se o personagem está fazendo dash
-function _G.EstaEmDash()
+function ClientBridge.EstaEmDash()
 	return movementFlags.isDashing
 end
 
@@ -1362,17 +1365,13 @@ local function IniciarImpulsoDash(direcao: string)
 		local lookVector = hrp.CFrame.LookVector
 		local rightVector = hrp.CFrame.RightVector
 
-		local dirVector
-		if direcao == "Frente" then
-			dirVector = lookVector
-		elseif direcao == "Tras" then
+		local dirVector = lookVector
+		if direcao == "Tras" then
 			dirVector = -lookVector
 		elseif direcao == "Esquerda" then
 			dirVector = -rightVector
 		elseif direcao == "Direita" then
 			dirVector = rightVector
-		else
-			dirVector = lookVector
 		end
 
 		-- Normaliza para XZ (horizontal apenas)
@@ -1531,7 +1530,7 @@ local function AplicarImpulsoAtaque(tipoAtaque: string)
 end
 
 -- Expõe para uso interno
-_G.AplicarImpulsoAtaque = AplicarImpulsoAtaque
+ClientBridge.AplicarImpulsoAtaque = AplicarImpulsoAtaque
 
 -- ═══════════════════════════════════════════════════════════════════
 -- SISTEMA DE KNOCKBACK (RECEPTOR)
@@ -2884,7 +2883,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 end)
 
-UserInputService.InputEnded:Connect(function(input, gameProcessed)
+UserInputService.InputEnded:Connect(function(input, _gameProcessed)
 	if input.KeyCode == Enum.KeyCode.LeftShift then
 		movementFlags.isRunning = false
 		isShiftHeld = false
@@ -2960,17 +2959,14 @@ local function AtualizarDirecaoAnimacao(deltaTime: number)
 		)
 
 		if tipoLateral ~= "Nenhum" then
-			-- Verifica se precisa trocar de animação lateral (ex: Direita -> Esquerda)
-			if emAnimacaoLateral and ultimaAnimacaoMovNome ~= tipoLateral then
+			-- Verifica se precisa trocar de animação lateral (ex: Direita -> Esquerda) ou iniciar lateral
+			if not emAnimacaoLateral or ultimaAnimacaoMovNome ~= tipoLateral then
 				AtualizarAnimacaoMovimento()
 				return
-			elseif emAnimacaoLateral then
+			else
 				-- Mesma animação lateral, apenas atualiza velocidade alvo
 				velocidadeAnimacaoAlvo = velocidadeLateral * ObterMultiplicadorVelocidadeAnimacao()
 				direcaoAtual = velocidadeLateral > 0 and 1 or -1
-			elseif not emAnimacaoLateral then
-				AtualizarAnimacaoMovimento()
-				return
 			end
 		elseif emAnimacaoLateral then
 			AtualizarAnimacaoMovimento()
