@@ -220,9 +220,14 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 
 	local holdBeganConnection = promptInstance.PromptButtonHoldBegan:Connect(function()
 		if Progress then
-			Progress.Size = UDim2.new(0, 0, 0, 0)
-			currentTween = TweenService:Create(Progress, TweenInfo.new(promptInstance.HoldDuration), {
-				Size = UDim2.new(0.94, 0, 0.94, 0),
+			if currentTween then
+				currentTween:Cancel()
+			end
+			-- Calcula o progresso atual (0..1) com base no Scale X do tamanho presente
+			local currentScale = Progress.Size.X.Scale
+			local remaining = promptInstance.HoldDuration * (1 - currentScale / 0.94)
+			currentTween = TweenService:Create(Progress, TweenInfo.new(remaining), {
+				Size = UDim2.fromScale(0.94, 0.94),
 			})
 			currentTween:Play()
 		end
@@ -231,8 +236,8 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 			if currentBgTween then
 				currentBgTween:Cancel()
 			end
-			currentBgTween = TweenService:Create(ProgressHoldBg, TweenInfo.new(0.2), {
-				BackgroundTransparency = 0.8,
+			currentBgTween = TweenService:Create(ProgressHoldBg, TweenInfo.new(0.3), {
+				BackgroundTransparency = 0.75,
 			})
 			currentBgTween:Play()
 		end
@@ -243,7 +248,12 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 			currentTween:Cancel()
 		end
 		if Progress then
-			Progress.Size = UDim2.new(0, 0, 0, 0)
+			-- Transiciona suavemente de volta ao zero
+			local shrinkDuration = 0.25
+			currentTween = TweenService:Create(Progress, TweenInfo.new(shrinkDuration), {
+				Size = UDim2.fromScale(0, 0),
+			})
+			currentTween:Play()
 		end
 		-- Esconder o background de hold com animação suave
 		if ProgressHoldBg then
