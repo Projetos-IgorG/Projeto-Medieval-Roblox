@@ -24,6 +24,10 @@ local Modulos = ReplicatedStorage:WaitForChild("Modulos")
 local GerenciadorRequisitos = require(Modulos:WaitForChild("GerenciadorRequisitos"))
 local SistemaDialogoFolder = Modulos:WaitForChild("SistemaDialogo")
 local FolderDialogos = SistemaDialogoFolder:WaitForChild("Dialogos")
+local FolderDialogosUnicos = FolderDialogos:WaitForChild("Unicos")
+local FolderDialogosProfissoes = FolderDialogos:WaitForChild("Profissoes")
+local FolderDialogosGenericos = FolderDialogos:WaitForChild("Genericos")
+local _FolderDialogosCriaturas = FolderDialogos:WaitForChild("Criaturas")
 local FolderRemotes = SistemaDialogoFolder:WaitForChild("DialogoRemotes")
 
 -- Sistema de Voz
@@ -334,7 +338,7 @@ local function MostrarFalaEOpcoes(tabelaFala, dadosNPC)
 		return
 	end
 
-	local frameNome = DialogoGui:FindFirstChild("FrameNome")
+	local frameNome = DialogoGui:FindFirstChild("FrameDialogo")
 	if frameNome then
 		local labelNome = frameNome:FindFirstChild("Nome")
 		if labelNome then
@@ -470,19 +474,23 @@ local function IniciarDialogo(npc)
 	local estadoNPC = dadosFolder:FindFirstChild("Estado") and dadosFolder.Estado.Value or "Livre"
 	local tipoVozNPC = dadosFolder:FindFirstChild("TipoVoz") and dadosFolder.TipoVoz.Value or "Homem"
 
-	-- Tentar carregar a tabela com Fallback
-	local moduloTabela = FolderDialogos:FindFirstChild(nomeNPC)
+	-- Tentar carregar a tabela com Fallback:
+	-- 1. Nome próprio do NPC → pasta Unicos
+	-- 2. Profissão do NPC → pasta Profissoes
+	-- 3. Fallback genérico → pasta Genericos
+	-- 4. Fallback de criatura → pasta Criaturas (se o NPC for uma criatura)
+	local moduloTabela = FolderDialogosUnicos:FindFirstChild(nomeNPC)
 	if not moduloTabela then
-		moduloTabela = FolderDialogos:FindFirstChild(profissaoNPC)
+		moduloTabela = FolderDialogosProfissoes:FindFirstChild(profissaoNPC)
 		if not moduloTabela then
-			moduloTabela = FolderDialogos:FindFirstChild("Generico")
+			moduloTabela = FolderDialogosGenericos:FindFirstChild("Generic")
 			if not moduloTabela then
 				warn(
 					"[DialogoClient] Nenhum arquivo de diálogo encontrado para Nome: "
 						.. nomeNPC
 						.. ", Profissao: "
 						.. profissaoNPC
-						.. ". Nem mesmo o 'Generico'."
+						.. ". Nem mesmo o 'Generic' em Genericos."
 				)
 				return
 			end

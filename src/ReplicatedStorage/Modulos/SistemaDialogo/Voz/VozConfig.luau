@@ -23,12 +23,14 @@ VozConfig.CustomVoice = true
 
 VozConfig.SimpleVoiceConfigs = {
 	-- ── Male ──
-	["Male"] = { Pitch = 1.0, Velocidade = 0.04, FrequenciaSom = 2 },
-	["StrongMale"] = { Pitch = 0.9, Velocidade = 0.05, FrequenciaSom = 2 },
+	["Male"] = { Pitch = 1.0, Velocidade = 0.04, FrequenciaSom = 3 },
+	["StrongMale"] = { Pitch = 0.9, Velocidade = 0.05, FrequenciaSom = 4 },
+	["KidMale"] = { Pitch = 1.2, Velocidade = 0.04, FrequenciaSom = 2 },
 
 	-- ── Female ──
-	["Female"] = { Pitch = 1.5, Velocidade = 0.04, FrequenciaSom = 1 },
-	["StrongFemale"] = { Pitch = 1.2, Velocidade = 0.05, FrequenciaSom = 2 },
+	["Female"] = { Pitch = 1.5, Velocidade = 0.04, FrequenciaSom = 3 },
+	["StrongFemale"] = { Pitch = 1.2, Velocidade = 0.05, FrequenciaSom = 4 },
+	["KidFemale"] = { Pitch = 2, Velocidade = 0.04, FrequenciaSom = 2 },
 }
 
 -- Som de tick para SimpleVoice
@@ -49,13 +51,13 @@ VozConfig.CustomVoiceConfigs = {
 	["OldMale"] = { AudioId = "rbxassetid://0", Volume = 0.5 },
 	["StrongMale"] = { AudioId = "rbxassetid://0", Volume = 0.5 },
 	["VillainMale"] = { AudioId = "rbxassetid://0", Volume = 0.5 },
-	["WiseMale"] = { AudioId = "rbxassetid://139997731227387", Volume = 0.5 },
+	["WiseMale"] = { AudioId = "rbxassetid://139997731227387", Volume = 0.6 },
 
 	-- ── Female ──
 	["FunnyFemale"] = { AudioId = "rbxassetid://0", Volume = 0.5 },
 	["KidFemale"] = { AudioId = "rbxassetid://0", Volume = 0.5 },
 	["MerchantFemale"] = { AudioId = "rbxassetid://0", Volume = 0.5 },
-	["NeutralFemale"] = { AudioId = "rbxassetid://89086904993691", Volume = 0.6 },
+	["NeutralFemale"] = { AudioId = "rbxassetid://89086904993691", Volume = 1 },
 	["NobleFemale"] = { AudioId = "rbxassetid://0", Volume = 0.5 },
 	["OldFemale"] = { AudioId = "rbxassetid://0", Volume = 0.5 },
 	["StrongFemale"] = { AudioId = "rbxassetid://0", Volume = 0.5 },
@@ -85,6 +87,13 @@ function VozConfig.ResolverSimpleVoice(tipoVoz: string): string
 	end
 
 	-- Fallback por gênero: pega o sufixo "Male" ou "Female"
+	if string.find(tipoVoz, "Kid") then
+		if string.find(tipoVoz, "Female") then
+			return "KidFemale"
+		end
+		return "KidMale"
+	end
+
 	if string.find(tipoVoz, "Female") then
 		return "Female"
 	end

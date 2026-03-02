@@ -56,6 +56,7 @@ function VozCustom.Iniciar(head: BasePart, tipoVoz: string): Handle?
 
 	-- Sorteia pitch para esta frase inteira (muda a cada frase, não a cada loop)
 	handle._pitch = SortearElemento(VozConfig.CustomVoicePitchOptions)
+	handle._emFadeOut = false -- Evita disparar múltiplos fades no final
 
 	-- ── Métodos Internos ──
 
@@ -170,17 +171,23 @@ function VozCustom.Iniciar(head: BasePart, tipoVoz: string): Handle?
 			-- Quando o áudio está chegando perto do final,
 			-- faz fade-out e resorteia ponto de início para o próximo loop
 			local tempoRestante = sound.TimeLength - sound.TimePosition
-			if tempoRestante > 0 and tempoRestante <= handle._fadeDuration and sound.IsPlaying then
-				-- Fade-out já vai estar natural pois o volume vai diminuindo.
-				-- Quando acabar, resorteia e reinicia.
+			if
+				tempoRestante > 0
+				and tempoRestante <= handle._fadeDuration
+				and sound.IsPlaying
+				and not handle._emFadeOut
+			then
+				handle._emFadeOut = true
+				FadeOut(sound)
 			end
 
-			-- Verifica se o áudio acabou (não está mais tocando e já esteva ativo)
+			-- Verifica se o áudio acabou (não está mais tocando e já estava ativo)
 			if not sound.IsPlaying and handle._ativo then
 				-- Sorteia novo ponto de início
 				local novoPonto = SortearPontoDeInicio()
 				sound.TimePosition = novoPonto
 				sound.Volume = 0
+				handle._emFadeOut = false -- Reset para o próximo fade-out
 				sound:Play()
 				FadeIn(sound)
 			end
