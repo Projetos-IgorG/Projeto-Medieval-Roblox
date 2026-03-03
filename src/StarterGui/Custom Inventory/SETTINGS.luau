@@ -390,10 +390,6 @@ function module:addTool(tool: Tool, parent: string, position: number?)
 			frame.toolName.TextTransparency = 0
 			frame.toolNumber.TextTransparency = 0
 			frame.toolAmount.TextTransparency = 0
-
-			frame.toolAmount.UIStroke.Transparency = 0
-			--frame.toolNumber.Transparency = 0
-			frame.toolName.UIStroke.Transparency = 0
 		else
 			frame.Image = SETTINGS.DISABLED_IMAGEID
 			frame.BackgroundColor3 = SETTINGS.DISABLED_COLOR
@@ -402,10 +398,6 @@ function module:addTool(tool: Tool, parent: string, position: number?)
 			frame.toolName.TextTransparency = 0.6
 			frame.toolNumber.TextTransparency = 0.6
 			frame.toolAmount.TextTransparency = 0.6
-
-			frame.toolAmount.UIStroke.Transparency = 0.6
-			--frame.toolNumber.Transparency = 0.6
-			frame.toolName.UIStroke.Transparency = 0.6
 		end
 	end
 	updateEnabled()
