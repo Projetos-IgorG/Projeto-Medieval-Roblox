@@ -1086,7 +1086,7 @@ end
 
 --- Solicita ao servidor a clonagem do acessório "AcessorioMaoDireita" para o character do jogador
 --- Server-side para que todos os jogadores vejam o equipamento
---- NOTA: Só clona se o Tool equipado for do tipo "ArmasEquipadas" (não Punhos ou outros)
+--- NOTA: Só clona se o Tool equipado for do tipo "ArmasEquipadas" (incluindo Punhos, que clona ambos os acessórios)
 local function ClonarAcessorioParaJogador()
 	-- Evita solicitação duplicada
 	if equipAnimState.acessorioJaClonado then
@@ -1107,18 +1107,12 @@ local function ClonarAcessorioParaJogador()
 		return
 	end
 
-	-- Verificar se o Tool é do tipo ArmasEquipadas e não Punhos
+	-- Verificar se o Tool é do tipo ArmasEquipadas
 	local dadosFolder = tool:FindFirstChild("Dados")
 	if dadosFolder then
 		local tipoValue = dadosFolder:FindFirstChild("Tipo")
 		if not tipoValue or tipoValue.Value ~= "ArmasEquipadas" then
 			DebugPrint("[ControladorEstado] Tool não é ArmasEquipadas, ignorando clonagem de acessório:", tool.Name)
-			return
-		end
-		-- Punhos é ArmasEquipadas mas não tem acessórios para clonar
-		local modoValue = dadosFolder:FindFirstChild("modoAnimacao")
-		if modoValue and modoValue.Value == "Punhos" then
-			DebugPrint("[ControladorEstado] Tool é Punhos, ignorando clonagem de acessório")
 			return
 		end
 	else

@@ -46,6 +46,10 @@ local Modulos = ReplicatedStorage:WaitForChild("Modulos")
 local ToolBuilder = require(Modulos:WaitForChild("Ferramentas"):WaitForChild("ToolBuilder"))
 local ModEquip = require(Modulos:WaitForChild("Jogador"):WaitForChild("Modulo_Equipamento"))
 
+-- ═══════════════════════════════════════════════════════════════════
+-- FUNÇÕES AUXILIARES DE ACESSÓRIO
+-- ═══════════════════════════════════════════════════════════════════
+
 --- Oculta todos os componentes visuais de um Tool (para Tools armazenados em EquipamentosAtivos)
 local function OcultarComponentesTool(tool: Tool)
 	for _, desc in ipairs(tool:GetDescendants()) do
@@ -58,12 +62,66 @@ local function OcultarComponentesTool(tool: Tool)
 			desc.Anchored = true
 		elseif desc:IsA("Decal") or desc:IsA("Texture") then
 			desc.Transparency = 1
-		elseif desc:IsA("ParticleEmitter") or desc:IsA("Trail") or desc:IsA("Beam") then
-			desc.Enabled = false
-		elseif desc:IsA("Light") then
+		elseif desc:IsA("ParticleEmitter") or desc:IsA("Trail") or desc:IsA("Beam") or desc:IsA("Light") then
 			desc.Enabled = false
 		end
 	end
+end
+
+--- Prepara um Accessory clonado para uso no Character:
+--- torna BaseParts visíveis e desancoradas, remove AccessoryWelds e ProximityPrompts.
+--- Retorna true se o clone está válido (tem Handle), false caso contrário (clone já é destruído).
+local function PrepararCloneAcessorio(clone: Accessory): boolean
+	local handle = clone:FindFirstChild("Handle")
+	if not handle then
+		clone:Destroy()
+		return false
+	end
+
+	local instanciasParaDestruir: { Instance } = {}
+	for _, part in ipairs(clone:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.Transparency = 0
+			part.Anchored = false
+			part.CanCollide = false
+			part.CanTouch = false
+			part.CanQuery = false
+			part.Massless = true
+		elseif (part:IsA("JointInstance") and part.Name == "AccessoryWeld") or part:IsA("ProximityPrompt") then
+			table.insert(instanciasParaDestruir, part)
+		end
+	end
+	for _, inst in ipairs(instanciasParaDestruir) do
+		inst:Destroy()
+	end
+
+	return true
+end
+
+--- Lê o valor de modoAnimacao de um Tool (via folder Dados)
+local function LerModoDados(tool: Instance): string?
+	local dadosF = tool:FindFirstChild("Dados")
+	if not dadosF then
+		return nil
+	end
+	local modoV = dadosF:FindFirstChild("modoAnimacao")
+	if modoV then
+		return modoV.Value
+	end
+	return nil
+end
+
+--- Lê o valor de Tipo de um Tool (via folder Dados)
+local function LerTipoDados(tool: Instance): string?
+	local dadosF = tool:FindFirstChild("Dados")
+	if not dadosF then
+		return nil
+	end
+	local tipoV = dadosF:FindFirstChild("Tipo")
+	if tipoV then
+		return tipoV.Value
+	end
+	return nil
 end
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -161,44 +219,6 @@ local function ObterCategoriaRightArm(player: Player): string?
 	return ModEquip.LerCategoria(rightArmOV.Value)
 end
 
---- Busca Tool Punhos na Backpack do player
-local function _BuscarPunhos(player: Player): Tool?
-	local backpack = player:FindFirstChild("Backpack")
-	if not backpack then
-		return nil
-	end
-
-	for _, child in ipairs(backpack:GetChildren()) do
-		if child:IsA("Tool") then
-			local tipo = ModEquip.LerTipo(child)
-			if tipo == "ArmasEquipadas" then
-				local modo = ModEquip.LerModoAnimacao(child)
-				if modo == "Punhos" then
-					return child
-				end
-			end
-		end
-	end
-
-	-- Também verificar no Character (se estiver equipado nas mãos)
-	local character = player.Character
-	if character then
-		for _, child in ipairs(character:GetChildren()) do
-			if child:IsA("Tool") then
-				local tipo = ModEquip.LerTipo(child)
-				if tipo == "ArmasEquipadas" then
-					local modo = ModEquip.LerModoAnimacao(child)
-					if modo == "Punhos" then
-						return child
-					end
-				end
-			end
-		end
-	end
-
-	return nil
-end
-
 --- Busca flechas na Backpack do player
 local function BuscarFlechasBackpack(player: Player): Tool?
 	local backpack = player:FindFirstChild("Backpack")
@@ -227,13 +247,34 @@ local function BuscarFlechasBackpack(player: Player): Tool?
 	return nil
 end
 
+--- Consome um tool: se quantidade > 1, decrementa; se == 1, destrói.
+--- Retorna os dados atualizados (com Quantidade = 1).
+local function ConsumirTool(tool: Tool, dados: any): any
+	local quantidade = dados.Quantidade or 1
+	if quantidade > 1 then
+		local dadosFolder = tool:FindFirstChild("Dados")
+		if dadosFolder then
+			local qtdValue = dadosFolder:FindFirstChild("Quantidade")
+			if qtdValue then
+				qtdValue.Value = quantidade - 1
+				DebugPrint("[ServicoEquipamento] Quantidade decrementada para:", quantidade - 1)
+			end
+		end
+		dados.Quantidade = 1
+	else
+		tool:Destroy()
+		DebugPrint("[ServicoEquipamento] Tool original destruído (quantidade era 1)")
+	end
+	return dados
+end
+
 -- ═══════════════════════════════════════════════════════════════════
 -- ACESSÓRIOS DE ARMA (SERVER-SIDE)
 -- ═══════════════════════════════════════════════════════════════════
 
---- Clona acessório de arma para o Character do jogador (server-side, visível para todos)
---- RightArm → clona AcessorioMaoDireita
---- LeftArm → clona AcessorioMaoEsquerda (fallback: AcessorioMaoDireita)
+--- Clona acessório(s) de arma para o Character do jogador (server-side, visível para todos).
+--- Para armas normais: RightArm → AcessorioMaoDireita, LeftArm → AcessorioMaoEsquerda.
+--- Para Punhos: clona ambos AcessorioMaoDireita e AcessorioMaoEsquerda.
 ---@param player Player
 ---@param slot string "RightArm" ou "LeftArm"
 local function ClonarAcessoriosArmaServerSide(player: Player, slot: string)
@@ -249,96 +290,101 @@ local function ClonarAcessoriosArmaServerSide(player: Player, slot: string)
 
 	InicializarCache(player)
 	local cache = dadosEquipamento[player][slot]
-	if not cache then
-		DebugPrint("[ServicoEquipamento] Sem cache para clonar acessório no slot:", slot)
-		return
-	end
 
-	-- Verificar se o Tool equipado na mão é uma arma real (ArmasEquipadas e não Punhos)
+	-- Verificar tool na mão
 	local toolNaMao = character:FindFirstChildOfClass("Tool")
-	if toolNaMao then
-		local dadosF = toolNaMao:FindFirstChild("Dados")
-		if dadosF then
-			local tipoV = dadosF:FindFirstChild("Tipo")
-			if tipoV and tipoV.Value ~= "ArmasEquipadas" then
-				DebugPrint(
-					"[ServicoEquipamento] Tool na mão não é ArmasEquipadas, ignorando clonagem:",
-					toolNaMao.Name
-				)
-				return
-			end
-			-- Punhos é ArmasEquipadas mas não deve clonar acessórios de arma
-			local modoV = dadosF:FindFirstChild("modoAnimacao")
-			if modoV and modoV.Value == "Punhos" then
-				DebugPrint("[ServicoEquipamento] Tool na mão é Punhos, ignorando clonagem:", toolNaMao.Name)
-				return
-			end
-		end
-	end
 
-	-- Obter o tool referenciado pelo ObjectValue do slot
-	local slotOV = ObterSlotOV(player, slot)
-	if not slotOV or not slotOV.Value then
-		DebugPrint("[ServicoEquipamento] Slot sem referência para clonar acessório:", slot)
-		return
-	end
-
-	local toolEquipada = slotOV.Value
-
-	-- Determinar qual acessório clonar
-	local nomeAcessorio = if slot == "LeftArm" then "AcessorioMaoEsquerda" else "AcessorioMaoDireita"
-
-	local acessorioOriginal = toolEquipada:FindFirstChild(nomeAcessorio)
-	if not acessorioOriginal or not acessorioOriginal:IsA("Accessory") then
-		-- Fallback para LeftArm: tentar AcessorioMaoDireita
-		if slot == "LeftArm" then
-			acessorioOriginal = toolEquipada:FindFirstChild("AcessorioMaoDireita")
-		end
-		if not acessorioOriginal or not acessorioOriginal:IsA("Accessory") then
-			DebugPrint("[ServicoEquipamento] Acessório não encontrado:", nomeAcessorio, "em", toolEquipada.Name)
+	-- Se não tem cache, verificar se é Punhos (não passa por ProcessarEquiparArma)
+	if not cache then
+		local ehPunhos = toolNaMao
+			and LerTipoDados(toolNaMao) == "ArmasEquipadas"
+			and LerModoDados(toolNaMao) == "Punhos"
+		if ehPunhos then
+			dadosEquipamento[player][slot] = { acessoriosClonados = {} }
+			cache = dadosEquipamento[player][slot]
+		else
+			DebugPrint("[ServicoEquipamento] Sem cache para clonar acessório no slot:", slot)
 			return
 		end
 	end
 
-	-- Remover acessório com mesmo nome se já existir no character
-	local existente = character:FindFirstChild(acessorioOriginal.Name)
-	if existente then
-		existente:Destroy()
-	end
-
-	-- Clonar
-	local clone = acessorioOriginal:Clone()
-	local handle = clone:FindFirstChild("Handle")
-	if not handle then
-		clone:Destroy()
-		DebugPrint("[ServicoEquipamento] Acessório sem Handle:", acessorioOriginal.Name)
+	-- Verificar se o Tool na mão é ArmasEquipadas
+	if toolNaMao and LerTipoDados(toolNaMao) ~= "ArmasEquipadas" then
+		DebugPrint("[ServicoEquipamento] Tool na mão não é ArmasEquipadas, ignorando clonagem:", toolNaMao.Name)
 		return
 	end
 
-	-- Configurar clone: visível, desancorado, sem colisão
-	for _, part in ipairs(clone:GetDescendants()) do
-		if part:IsA("BasePart") then
-			part.Transparency = 0 -- Tornar visível (original estava oculto no Tool)
-			part.Anchored = false -- Desancorar (template vem ancorado)
-			part.CanCollide = false
-			part.CanTouch = false
-			part.CanQuery = false
-			part.Massless = true
-		elseif (part:IsA("Weld") or part:IsA("ManualWeld")) and part.Name == "AccessoryWeld" then
-			part:Destroy()
-		elseif part:IsA("ProximityPrompt") then
-			part:Destroy()
+	-- Obter o tool: Punhos na mão tem prioridade, senão usa ObjectValue do slot
+	local toolEquipada
+	if toolNaMao and LerModoDados(toolNaMao) == "Punhos" then
+		toolEquipada = toolNaMao
+	else
+		local slotOV = ObterSlotOV(player, slot)
+		if slotOV and slotOV.Value then
+			toolEquipada = slotOV.Value
 		end
 	end
 
-	humanoid:AddAccessory(clone)
+	if not toolEquipada then
+		DebugPrint("[ServicoEquipamento] Slot sem referência para clonar acessório:", slot)
+		return
+	end
+
+	-- Montar lista de acessórios a clonar
+	local ehPunhos = LerModoDados(toolEquipada) == "Punhos"
+	local acessoriosParaClonar: { Accessory } = {}
+
+	if ehPunhos then
+		-- Punhos: clonar ambos os acessórios
+		local acDir = toolEquipada:FindFirstChild("AcessorioMaoDireita")
+		if acDir and acDir:IsA("Accessory") then
+			table.insert(acessoriosParaClonar, acDir)
+		end
+		local acEsq = toolEquipada:FindFirstChild("AcessorioMaoEsquerda")
+		if acEsq and acEsq:IsA("Accessory") then
+			table.insert(acessoriosParaClonar, acEsq)
+		end
+	else
+		-- Normal: clonar acessório do slot correspondente
+		local nomeAcessorio = if slot == "LeftArm" then "AcessorioMaoEsquerda" else "AcessorioMaoDireita"
+		local acessorioOriginal = toolEquipada:FindFirstChild(nomeAcessorio)
+		if not acessorioOriginal or not acessorioOriginal:IsA("Accessory") then
+			-- Fallback para LeftArm: tentar AcessorioMaoDireita
+			if slot == "LeftArm" then
+				acessorioOriginal = toolEquipada:FindFirstChild("AcessorioMaoDireita")
+			end
+		end
+		if acessorioOriginal and acessorioOriginal:IsA("Accessory") then
+			table.insert(acessoriosParaClonar, acessorioOriginal)
+		end
+	end
+
+	if #acessoriosParaClonar == 0 then
+		DebugPrint("[ServicoEquipamento] Nenhum acessório encontrado para clonar em", toolEquipada.Name)
+		return
+	end
 
 	if not cache.acessoriosClonados then
 		cache.acessoriosClonados = {}
 	end
-	table.insert(cache.acessoriosClonados, clone)
 
-	DebugPrint("[ServicoEquipamento] Acessório clonado server-side:", clone.Name, "para slot:", slot)
+	for _, acessorioOriginal in ipairs(acessoriosParaClonar) do
+		-- Remover acessório com mesmo nome se já existir no character
+		local existente = character:FindFirstChild(acessorioOriginal.Name)
+		if existente then
+			existente:Destroy()
+		end
+
+		local clone = acessorioOriginal:Clone()
+		if not PrepararCloneAcessorio(clone) then
+			DebugPrint("[ServicoEquipamento] Acessório sem Handle:", acessorioOriginal.Name)
+			continue
+		end
+
+		humanoid:AddAccessory(clone)
+		table.insert(cache.acessoriosClonados, clone)
+		DebugPrint("[ServicoEquipamento] Acessório clonado server-side:", clone.Name, "para slot:", slot)
+	end
 end
 
 --- Remove acessórios de arma clonados server-side do Character
@@ -385,11 +431,8 @@ local function ValidarCondicoesBasicas(player: Player): (boolean, string?)
 		local status = character:FindFirstChild("Status")
 		if status then
 			local estadoAcao = status:FindFirstChild("estadoAcao")
-			if estadoAcao and estadoAcao:IsA("StringValue") then
-				local estado = estadoAcao.Value
-				if estado ~= "Nenhuma" then
-					return false, "Em ação: " .. estado
-				end
+			if estadoAcao and estadoAcao:IsA("StringValue") and estadoAcao.Value ~= "Nenhuma" then
+				return false, "Em ação: " .. estadoAcao.Value
 			end
 		end
 	end
@@ -410,19 +453,7 @@ local function ValidarPosseTool(player: Player, tool: Tool): boolean
 	end
 
 	local parent = tool.Parent
-
-	-- Tool na Backpack
-	local backpack = player:FindFirstChild("Backpack")
-	if parent == backpack then
-		return true
-	end
-
-	-- Tool equipado no Character
-	if parent == player.Character then
-		return true
-	end
-
-	return false
+	return parent == player:FindFirstChild("Backpack") or parent == player.Character
 end
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -487,7 +518,6 @@ function ServicoEquipamento:ProcessarEquiparArma(player: Player, tool: Tool)
 			local categoriaDir = ObterCategoriaRightArm(player)
 			if categoriaDir == "ArmasUmaMao" then
 				DebugPrint("[ServicoEquipamento] Dual-wield detectado: redirecionando para LeftArm")
-				-- Se já tem algo na esquerda → desequipar primeiro
 				if SlotOcupado(player, "LeftArm") then
 					self:ProcessarDesequiparSlot(player, "LeftArm")
 				end
@@ -503,11 +533,9 @@ function ServicoEquipamento:ProcessarEquiparArma(player: Player, tool: Tool)
 		end
 
 		-- Se categoria bloqueia mão esquerda → limpar LeftArm
-		if ModEquip.CategoriaBloqueiaMaoEsquerda(categoria) then
-			if SlotOcupado(player, "LeftArm") then
-				DebugPrint("[ServicoEquipamento] Categoria bloqueia esquerda, limpando LeftArm")
-				self:ProcessarDesequiparSlot(player, "LeftArm")
-			end
+		if ModEquip.CategoriaBloqueiaMaoEsquerda(categoria) and SlotOcupado(player, "LeftArm") then
+			DebugPrint("[ServicoEquipamento] Categoria bloqueia esquerda, limpando LeftArm")
+			self:ProcessarDesequiparSlot(player, "LeftArm")
 		end
 
 		-- Se é arco → verificar se tem flechas para auto-equipar
@@ -515,7 +543,6 @@ function ServicoEquipamento:ProcessarEquiparArma(player: Player, tool: Tool)
 			local flechas = BuscarFlechasBackpack(player)
 			if not flechas then
 				warn("[ServicoEquipamento] Arco requer flechas na Backpack! Equipando arco sem flechas.")
-				-- Permite equipar arco sem flechas, mas tiro será bloqueado
 			end
 		end
 
@@ -530,29 +557,13 @@ function ServicoEquipamento:ProcessarEquiparArma(player: Player, tool: Tool)
 			humanoid:UnequipTools()
 		end
 
-		-- Consumir tool original: se quantidade > 1, decrementar; se == 1, destruir
-		local quantidade = dados.Quantidade or 1
-		if quantidade > 1 then
-			local dadosFolder = tool:FindFirstChild("Dados")
-			if dadosFolder then
-				local qtdValue = dadosFolder:FindFirstChild("Quantidade")
-				if qtdValue then
-					qtdValue.Value = quantidade - 1
-					DebugPrint("[ServicoEquipamento] Quantidade decrementada para:", quantidade - 1)
-				end
-			end
-			-- Atualizar dados no cache com quantidade 1 (individual)
-			dados.Quantidade = 1
-		else
-			tool:Destroy()
-			DebugPrint("[ServicoEquipamento] Tool original destruído (quantidade era 1)")
-		end
+		-- Consumir tool original
+		dados = ConsumirTool(tool, dados)
 
 		-- Criar ArmaEquipada
 		local armaEquipada = ToolBuilder.CriarArmaEquipada(dados, player.Backpack)
 		if not armaEquipada then
 			warn("[ServicoEquipamento] Falha ao criar ArmaEquipada! Restaurando tool original.")
-			-- Tentar restaurar
 			ToolBuilder.CriarTool(dados, player.Backpack)
 			dadosEquipamento[player].RightArm = nil
 			return
@@ -581,10 +592,9 @@ function ServicoEquipamento:ProcessarEquiparArma(player: Player, tool: Tool)
 	-- EQUIPAR NA MÃO ESQUERDA (Escudo ou Dual-Wield)
 	-- ═══════════════════════════
 	if slotDestino == "LeftArm" or (categoria == "ArmasUmaMao" and SlotOcupado(player, "RightArm")) then
-		-- ArmasUmaMao pode ir para esquerda se já tem arma na direita (dual-wield automático)
 		local categoriaDir = ObterCategoriaRightArm(player)
 
-		if categoria :: string == "Escudos" then
+		if (categoria :: string) == "Escudos" then
 			-- Verificar conflito: Escudo + Arco
 			if categoriaDir == "Arcos" then
 				warn("[ServicoEquipamento] Conflito: Escudo + Arco. Desequipando arco primeiro.")
@@ -598,8 +608,6 @@ function ServicoEquipamento:ProcessarEquiparArma(player: Player, tool: Tool)
 		elseif categoria == "ArmasUmaMao" then
 			-- Dual-wield: validar que RightArm tem ArmasUmaMao
 			if not categoriaDir or categoriaDir ~= "ArmasUmaMao" then
-				-- Sem arma na direita ou arma incompatível → equipar na direita (slot padrão)
-				-- Redirecionar para equipar na direita
 				if not SlotOcupado(player, "RightArm") then
 					-- Sem arma na direita, vai para direita normalmente
 					dadosEquipamento[player].RightArm = {
@@ -611,20 +619,7 @@ function ServicoEquipamento:ProcessarEquiparArma(player: Player, tool: Tool)
 						humanoid:UnequipTools()
 					end
 
-					-- Consumir tool: se quantidade > 1, decrementar; se == 1, destruir
-					local quantidade = dados.Quantidade or 1
-					if quantidade > 1 then
-						local dadosF = tool:FindFirstChild("Dados")
-						if dadosF then
-							local qtdV = dadosF:FindFirstChild("Quantidade")
-							if qtdV then
-								qtdV.Value = quantidade - 1
-							end
-						end
-						dados.Quantidade = 1
-					else
-						tool:Destroy()
-					end
+					dados = ConsumirTool(tool, dados)
 
 					local armaEquipada = ToolBuilder.CriarArmaEquipada(dados, player.Backpack)
 					if not armaEquipada then
@@ -655,7 +650,6 @@ function ServicoEquipamento:ProcessarEquiparArma(player: Player, tool: Tool)
 
 		-- Equipar na esquerda
 		self:_EquiparItemNaEsquerda(player, tool, (categoria :: string) == "Escudos" and "Escudo" or "SegundaArma")
-
 		return
 	end
 end
@@ -702,7 +696,6 @@ function ServicoEquipamento:_EquiparItemNaEsquerda(player: Player, tool: Tool, t
 		dados.Quantidade = 1
 		local copiaTool
 		if tipoEsq == "SegundaArma" then
-			-- SegundaArma precisa virar ArmaEquipada (para ter modoAnimacao e acessórios)
 			copiaTool = ToolBuilder.CriarArmaEquipada(dados, equipAtivos)
 		else
 			copiaTool = ToolBuilder.CriarTool(dados, equipAtivos)
@@ -831,7 +824,6 @@ function ServicoEquipamento:ProcessarEquiparArmadura(player: Player, tool: Tool)
 	local quantidade = dados.Quantidade or 1
 	local toolParaEquipar = tool
 	if quantidade > 1 then
-		-- Decrementar quantidade no Tool original (fica na Backpack)
 		local dadosFolderTool = tool:FindFirstChild("Dados")
 		if dadosFolderTool then
 			local qtdValue = dadosFolderTool:FindFirstChild("Quantidade")
@@ -853,14 +845,12 @@ function ServicoEquipamento:ProcessarEquiparArmadura(player: Player, tool: Tool)
 			return
 		end
 	else
-		-- Quantidade == 1: mover o Tool inteiro
 		tool.CanBeDropped = false
 		tool.Parent = equipAtivos
 		toolParaEquipar = tool
 	end
 
-	-- Ocultar TODOS os componentes visuais internos do Tool
-	-- (só os clones no Character serão visíveis)
+	-- Ocultar componentes visuais internos do Tool (só os clones no Character serão visíveis)
 	OcultarComponentesTool(toolParaEquipar)
 
 	-- Clonar acessórios para o Character (visual, server-side)
@@ -870,24 +860,11 @@ function ServicoEquipamento:ProcessarEquiparArmadura(player: Player, tool: Tool)
 		for _, child in ipairs(toolParaEquipar:GetChildren()) do
 			if child:IsA("Accessory") then
 				local clone = child:Clone()
-				-- Tornar clone visível e desancorado
-				for _, part in ipairs(clone:GetDescendants()) do
-					if part:IsA("BasePart") then
-						part.Transparency = 0
-						part.Anchored = false
-						part.CanCollide = false
-						part.CanTouch = false
-						part.CanQuery = false
-						part.Massless = true
-					elseif (part:IsA("Weld") or part:IsA("ManualWeld")) and part.Name == "AccessoryWeld" then
-						part:Destroy()
-					elseif part:IsA("ProximityPrompt") then
-						part:Destroy()
-					end
+				if PrepararCloneAcessorio(clone) then
+					humanoid:AddAccessory(clone)
+					table.insert(acessoriosClonados, clone)
+					DebugPrint("[ServicoEquipamento] Acessório clonado:", clone.Name)
 				end
-				humanoid:AddAccessory(clone)
-				table.insert(acessoriosClonados, clone)
-				DebugPrint("[ServicoEquipamento] Acessório clonado:", clone.Name)
 			end
 		end
 		dadosEquipamento[player][slot].acessoriosClonados = acessoriosClonados
@@ -924,7 +901,6 @@ function ServicoEquipamento:ProcessarDesequiparSlot(player: Player, slotName: st
 	InicializarCache(player)
 
 	local cache = dadosEquipamento[player][slotName]
-	local _, _bracos = ObterEquipamento(player)
 	local humanoid = ObterHumanoid(player)
 
 	-- ═══════════════════════════
@@ -932,18 +908,13 @@ function ServicoEquipamento:ProcessarDesequiparSlot(player: Player, slotName: st
 	-- ═══════════════════════════
 	if slotName == "RightArm" then
 		local toolEquipado = slotOV.Value
-		local categoriaAnterior = nil
-
-		if cache and cache.dados then
-			categoriaAnterior = cache.dados.Categoria
-		end
+		local categoriaAnterior = cache and cache.dados and cache.dados.Categoria
 
 		-- Remover acessórios clonados server-side do Character
 		RemoverAcessoriosArmaServerSide(player, "RightArm")
 
 		-- Destruir ArmaEquipada da Backpack/Character
 		if toolEquipado and toolEquipado.Parent then
-			-- Se estiver nas mãos, desequipar primeiro
 			if humanoid and toolEquipado.Parent == player.Character then
 				humanoid:UnequipTools()
 			end
@@ -964,24 +935,15 @@ function ServicoEquipamento:ProcessarDesequiparSlot(player: Player, slotName: st
 		-- Limpar referência
 		slotOV.Value = nil
 
-		-- Regras de consistência com a esquerda
-		if categoriaAnterior == "Arcos" then
-			-- Arco → limpar flechas da esquerda
-			if SlotOcupado(player, "LeftArm") then
-				local cacheEsq = dadosEquipamento[player].LeftArm
-				if cacheEsq and cacheEsq.tipoEsquerda == "Flechas" then
-					DebugPrint("[ServicoEquipamento] Removendo flechas (era arco)")
-					self:ProcessarDesequiparSlot(player, "LeftArm")
-				end
-			end
-		end
-
-		-- Dual-wield: se tinha segunda arma na esquerda, desequipar também
+		-- Regras de consistência com a esquerda: Arco → limpar flechas, Dual-wield → limpar segunda arma
 		if SlotOcupado(player, "LeftArm") then
 			local cacheEsq = dadosEquipamento[player].LeftArm
-			if cacheEsq and cacheEsq.tipoEsquerda == "SegundaArma" then
-				DebugPrint("[ServicoEquipamento] Removendo segunda arma (desequipando direita)")
-				self:ProcessarDesequiparSlot(player, "LeftArm")
+			if cacheEsq then
+				local tipoEsq = cacheEsq.tipoEsquerda
+				if (categoriaAnterior == "Arcos" and tipoEsq == "Flechas") or tipoEsq == "SegundaArma" then
+					DebugPrint("[ServicoEquipamento] Removendo item da esquerda (consistência):", tipoEsq)
+					self:ProcessarDesequiparSlot(player, "LeftArm")
+				end
 			end
 		end
 
@@ -995,34 +957,20 @@ function ServicoEquipamento:ProcessarDesequiparSlot(player: Player, slotName: st
 	-- ═══════════════════════════
 	if slotName == "LeftArm" then
 		local toolEquipado = slotOV.Value
-		local cacheLocal = cache
 
 		-- Remover acessórios clonados server-side do Character
 		RemoverAcessoriosArmaServerSide(player, "LeftArm")
 
-		-- Destruir/mover Tool de EquipamentosAtivos
+		-- Devolver item ao Backpack e destruir do EquipamentosAtivos
 		if toolEquipado and toolEquipado.Parent then
-			-- Re-criar no Backpack a partir dos dados do cache
-			if cacheLocal and cacheLocal.dados then
-				if cacheLocal.tipoEsquerda == "Flechas" then
-					-- Flechas voltam como Material para Backpack
-					ToolBuilder.CriarTool(cacheLocal.dados, player.Backpack)
-					DebugPrint("[ServicoEquipamento] Flechas devolvidas ao Backpack")
-				else
-					-- Escudo ou SegundaArma → recriar Tool de Arma original
-					ToolBuilder.CriarTool(cacheLocal.dados, player.Backpack)
-					DebugPrint("[ServicoEquipamento] Arma/Escudo devolvido ao Backpack")
-				end
+			if cache and cache.dados then
+				ToolBuilder.CriarTool(cache.dados, player.Backpack)
+				DebugPrint("[ServicoEquipamento] Item devolvido ao Backpack:", cache.tipoEsquerda or "desconhecido")
 			end
-
-			-- Destruir o tool do EquipamentosAtivos
 			toolEquipado:Destroy()
 		end
 
-		-- Limpar referência
 		slotOV.Value = nil
-
-		-- Limpar cache
 		dadosEquipamento[player].LeftArm = nil
 		return
 	end
@@ -1046,27 +994,19 @@ function ServicoEquipamento:ProcessarDesequiparSlot(player: Player, slotName: st
 		-- Devolver armadura ao Backpack (com empilhamento)
 		if toolEquipado and toolEquipado.Parent then
 			local dadosArmadura = cache and cache.dados
-			-- Destruir o tool do EquipamentosAtivos
 			toolEquipado:Destroy()
 
-			-- Recriar via CriarTool (que faz empilhamento automático com itens iguais na Backpack)
 			if dadosArmadura then
 				local toolRecriado = ToolBuilder.CriarTool(dadosArmadura, player.Backpack)
 				if toolRecriado then
-					DebugPrint(
-						"[ServicoEquipamento] Armadura devolvida ao Backpack (com empilhamento):",
-						toolRecriado.Name
-					)
+					DebugPrint("[ServicoEquipamento] Armadura devolvida ao Backpack:", toolRecriado.Name)
 				else
 					warn("[ServicoEquipamento] Falha ao recriar armadura no Backpack!")
 				end
 			end
 		end
 
-		-- Limpar referência
 		slotOV.Value = nil
-
-		-- Limpar cache
 		dadosEquipamento[player][slotName] = nil
 		return
 	end
@@ -1102,7 +1042,6 @@ local function OnEquipamentoAcao(player: Player, acao: string, argumento: any)
 			return
 		end
 
-		-- Validar condições básicas para desequipar via UI (não é chamada interna)
 		local valido, motivo = ValidarCondicoesBasicas(player)
 		if not valido then
 			warn("[ServicoEquipamento] Desequipar rejeitado:", motivo)
@@ -1112,13 +1051,8 @@ local function OnEquipamentoAcao(player: Player, acao: string, argumento: any)
 
 		ServicoEquipamento:ProcessarDesequiparSlot(player, argumento)
 	elseif acao == "ClonarAcessorio" then
-		-- Cliente solicita clonagem de acessório de arma (ao atingir marker "Equip" na animação)
-		if type(argumento) ~= "string" then
-			warn("[ServicoEquipamento] Argumento inválido para ClonarAcessorio")
-			return
-		end
-		if argumento ~= "RightArm" and argumento ~= "LeftArm" then
-			warn("[ServicoEquipamento] Slot inválido para ClonarAcessorio:", argumento)
+		if type(argumento) ~= "string" or (argumento ~= "RightArm" and argumento ~= "LeftArm") then
+			warn("[ServicoEquipamento] Argumento inválido para ClonarAcessorio:", tostring(argumento))
 			return
 		end
 		ClonarAcessoriosArmaServerSide(player, argumento)
@@ -1132,13 +1066,8 @@ local function OnEquipamentoAcao(player: Player, acao: string, argumento: any)
 			end
 		end
 	elseif acao == "RemoverAcessorio" then
-		-- Cliente solicita remoção de acessório de arma (ao atingir marker "Desequip" na animação)
-		if type(argumento) ~= "string" then
-			warn("[ServicoEquipamento] Argumento inválido para RemoverAcessorio")
-			return
-		end
-		if argumento ~= "RightArm" and argumento ~= "LeftArm" then
-			warn("[ServicoEquipamento] Slot inválido para RemoverAcessorio:", argumento)
+		if type(argumento) ~= "string" or (argumento ~= "RightArm" and argumento ~= "LeftArm") then
+			warn("[ServicoEquipamento] Argumento inválido para RemoverAcessorio:", tostring(argumento))
 			return
 		end
 		RemoverAcessoriosArmaServerSide(player, argumento)
@@ -1182,19 +1111,20 @@ function ServicoEquipamento:Iniciar()
 	Players.PlayerRemoving:Connect(OnPlayerRemoving)
 
 	-- Resetar equipamento quando player respawna
-	Players.PlayerAdded:Connect(function(player)
-		player.CharacterAdded:Connect(function()
-			-- Resetar cache (equipamento é recriado pelo ConfigIniciar)
+	local function onCharacterAdded(player: Player)
+		return function()
 			dadosEquipamento[player] = nil
 			DebugPrint("[ServicoEquipamento] Cache resetado para respawn:", player.Name)
-		end)
+		end
+	end
+
+	Players.PlayerAdded:Connect(function(player)
+		player.CharacterAdded:Connect(onCharacterAdded(player))
 	end)
 
 	-- Para players já conectados
 	for _, player in ipairs(Players:GetPlayers()) do
-		player.CharacterAdded:Connect(function()
-			dadosEquipamento[player] = nil
-		end)
+		player.CharacterAdded:Connect(onCharacterAdded(player))
 	end
 
 	DebugPrint("[ServicoEquipamento] Inicializado com sucesso!")
