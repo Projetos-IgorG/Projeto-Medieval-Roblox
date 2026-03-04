@@ -842,14 +842,14 @@ local function OnInputBegan(input: InputObject, gameProcessed: boolean)
 	end
 end
 
-local function OnInputEnded(input: InputObject, gameProcessed: boolean)
+local function OnInputEnded(input: InputObject, _gameProcessed: boolean)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 		PararArrasto()
 	end
 end
 
 -- Handler para ContextActionService (mobile com botão dedicado opcional)
-local function HandleArrastarAction(actionName: string, inputState: Enum.UserInputState, inputObject: InputObject)
+local function HandleArrastarAction(_actionName: string, inputState: Enum.UserInputState, _inputObject: InputObject)
 	if inputState == Enum.UserInputState.Begin then
 		IniciarArrasto()
 	elseif inputState == Enum.UserInputState.End then
