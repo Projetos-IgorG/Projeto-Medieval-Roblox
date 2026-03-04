@@ -30,8 +30,8 @@ local pi2 = math.pi * 2
 
 local Settings = {
 	-- Bobbing (oscilação vertical ao andar)
-	BobbingFrequencia = 9,
-	BobbingIntensidade = 0.11,
+	BobbingFrequencia = 11,
+	BobbingIntensidade = 0.09,
 
 	-- Divisor geral (maior = efeitos mais suaves)
 	DivisorEfeitos = 12,
@@ -43,7 +43,7 @@ local Settings = {
 	--   WalkSpeed 25 (correndo)    → 1.2x (clamped pelo Max)
 	WalkSpeedBase = 14,
 	WalkSpeedMultMin = 0.9,
-	WalkSpeedMultMax = 1.2,
+	WalkSpeedMultMax = 1.05,
 	WalkSpeedSuavizacao = 4,
 
 	-- Suavização da velocidade
