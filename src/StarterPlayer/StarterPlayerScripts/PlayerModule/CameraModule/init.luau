@@ -77,11 +77,16 @@ local Poppercam = require(script:WaitForChild("Poppercam"))
 -- Load the near-field character transparency controller and the mouse lock "shift lock" controller
 local TransparencyController = require(script:WaitForChild("TransparencyController"))
 local MouseLockController = require(script:WaitForChild("MouseLockController"))
+local DynamicCamFX = require(script:WaitForChild("DynamicCamFX"))
 
 -- Carrega configurações centralizadas do jogador
 local ConfigJogador = require(
 	ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Jogador"):WaitForChild("Modulo_ConfiguracoesJogador")
 )
+
+-- ClientBridge para acessar estados client-side (dash, etc.)
+local ClientBridge =
+	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Core"):WaitForChild("ClientBridge"))
 
 -- Table of camera controllers that have been instantiated. They are instantiated as they are used.
 local instantiatedCameraControllers = {}
@@ -92,13 +97,68 @@ local instantiatedOcclusionModules = {}
 -- ============================================================================
 
 local fovState = {
-	currentFOVTween = nil :: Tween?,
-	lastSpeed = 0,
-	isMoving = false,
-	isRunning = false,
 	deadZoneEntryTime = nil :: number?,
 	isInDeadZone = false,
+	runRampProgress = 0, -- 0..1, quanto tempo correndo (para ramp gradual do FOV)
 }
+
+-- Define o FOV padrão na câmera assim que o módulo carrega
+do
+	local cam = workspace.CurrentCamera
+	if cam then
+		cam.FieldOfView = ConfigJogador.ObterConfiguracao("DefaultFOV") or 78
+	end
+end
+
+-- Atualiza o FOV suavemente a cada frame (sem tweens, lerp contínuo)
+local function updateFOV(camera: Camera, dt: number)
+	local character = Players.LocalPlayer.Character
+	if not character then
+		return
+	end
+
+	-- Lê estado de movimento do StatusLocal
+	local statusLocal = character:FindFirstChild("StatusLocal")
+	local estadoMov = "Parado"
+
+	if statusLocal then
+		local estadoVal = statusLocal:FindFirstChild("estadoMov")
+		if estadoVal and estadoVal:IsA("StringValue") then
+			estadoMov = estadoVal.Value
+		end
+	end
+
+	local isRunning = (estadoMov == "Correndo")
+	local isMoving = (estadoMov == "Andando") or isRunning
+
+	-- Ramp gradual de corrida: incrementa/decrementa progresso
+	local rampTime = ConfigJogador.ObterConfiguracao("RunFOVRampTime") or 0.8
+	if isRunning then
+		fovState.runRampProgress = math.min(fovState.runRampProgress + dt / rampTime, 1)
+	else
+		-- Volta pra 0 ao parar de correr (no mesmo ritmo)
+		fovState.runRampProgress = math.max(fovState.runRampProgress - dt / rampTime, 0)
+	end
+
+	-- Calcula FOV alvo
+	local defaultFOV = ConfigJogador.ObterConfiguracao("DefaultFOV") or 78
+	local walkFOV = ConfigJogador.ObterConfiguracao("WalkFOV") or 78
+	local runFOV = ConfigJogador.ObterConfiguracao("RunFOV") or 86
+
+	local targetFOV: number
+	if not isMoving and fovState.runRampProgress <= 0 then
+		targetFOV = defaultFOV
+	else
+		-- Interpola entre walkFOV e runFOV baseado no progresso de corrida
+		targetFOV = walkFOV + (runFOV - walkFOV) * fovState.runRampProgress
+	end
+
+	-- Lerp suave contínuo (sem tweens)
+	local transitionSpeed = ConfigJogador.ObterConfiguracao("FOVTransitionTime") or 0.3
+	-- Converte tempo de transição em velocidade de lerp
+	local lerpRate = math.clamp(dt / transitionSpeed, 0, 1)
+	camera.FieldOfView = camera.FieldOfView + (targetFOV - camera.FieldOfView) * lerpRate
+end
 
 local zoomState = {
 	currentTween = nil :: Tween?,
@@ -108,16 +168,12 @@ local zoomState = {
 -- SISTEMA DE SINCRONIZAÇÃO DO STATUS SHIFTLOCKON
 -- ============================================================================
 
--- Atualiza StatusLocal.ShiftLockOn (pasta client-side para sistema de combate)
--- NOTA: Anteriormente escrevia em Status (server-side) e disparava evento remoto.
--- Agora o ShiftLockOn é 100% client-side, e o estado é enviado junto com ações de bloqueio.
 local function updateShiftLockStatus(isLocked: boolean)
 	local character = Players.LocalPlayer.Character
 	if not character then
 		return
 	end
 
-	-- Escreve na pasta StatusLocal (client-side)
 	local statusLocal = character:FindFirstChild("StatusLocal")
 	if not statusLocal then
 		return
@@ -127,12 +183,8 @@ local function updateShiftLockStatus(isLocked: boolean)
 	if shiftLockValue and shiftLockValue:IsA("BoolValue") then
 		shiftLockValue.Value = isLocked
 	end
-
-	-- NOTA: Não envia mais para o servidor via RemoteEvent.
-	-- O estado é enviado junto com a ação de bloqueio quando necessário.
 end
 
--- Verifica se está em primeira pessoa e atualiza o status
 local function checkFirstPersonAndUpdateStatus(activeCameraController: any, activeMouseLockController: any)
 	if not activeCameraController then
 		return
@@ -143,86 +195,27 @@ local function checkFirstPersonAndUpdateStatus(activeCameraController: any, acti
 		and activeMouseLockController.GetIsMouseLocked
 		and activeMouseLockController:GetIsMouseLocked()
 
-	-- ShiftLockOn é true se: está em 1ª pessoa OU mouse lock está ativo
 	local shouldBeShiftLocked = isInFirstPerson or isMouseLocked
 	updateShiftLockStatus(shouldBeShiftLocked)
 end
 
--- Atualiza os limites de zoom baseado no estado do MouseLock (com transição suave)
 local function updateZoomLimits(player: Player, isMouseLocked: boolean)
-	-- Obtém os ranges de configuração
 	local zoomRange = if isMouseLocked
 		then ConfigJogador.ObterConfiguracao("ZoomRangeOn")
 		else ConfigJogador.ObterConfiguracao("ZoomRangeOff")
 
 	if zoomRange then
-		-- Cancela tween anterior se existir
 		if zoomState.currentTween then
 			zoomState.currentTween:Cancel()
 		end
 
-		-- Cria tween para os novos limites
-		-- Usa o mesmo tempo de transição das outras mecânicas (0.3s - 0.35s)
 		local tweenInfo = ConfigJogador.ObterTweenInfo()
-
-		-- Tween para Min e Max
 		local tween = TweenService:Create(player, tweenInfo, {
 			CameraMinZoomDistance = zoomRange.Min,
 			CameraMaxZoomDistance = zoomRange.Max,
 		})
 
 		zoomState.currentTween = tween
-		tween:Play()
-	end
-end
-
--- Atualiza o FOV baseado na velocidade do jogador
-local function updateFOV(camera: Camera)
-	local character = Players.LocalPlayer.Character
-	if not character then
-		return
-	end
-
-	-- Acessa StatusLocal para determinar estado real (sem depender de velocidade física)
-	local statusLocal = character:FindFirstChild("StatusLocal")
-	local estadoMov = "Parado"
-	local isDashing = false
-
-	if statusLocal then
-		local estadoVal = statusLocal:FindFirstChild("estadoMov")
-		if estadoVal and estadoVal:IsA("StringValue") then
-			estadoMov = estadoVal.Value
-		end
-
-		local dashVal = statusLocal:FindFirstChild("DashOn")
-		if dashVal and dashVal:IsA("BoolValue") then
-			isDashing = dashVal.Value
-		end
-	end
-
-	-- Determina estado de movimento baseado em intenção/estado, não física
-	-- Se está correndo ou em dash -> FOV de Corrida
-	-- Se está apenas andando -> FOV de Andar
-	local isRunning = (estadoMov == "Correndo") or isDashing
-	local isMoving = (estadoMov == "Andando") or isRunning
-
-	-- Só atualiza se o estado mudou
-	if isMoving ~= fovState.isMoving or isRunning ~= fovState.isRunning then
-		fovState.isMoving = isMoving
-		fovState.isRunning = isRunning
-
-		-- Cancela tween anterior se existir
-		if fovState.currentFOVTween and fovState.currentFOVTween.PlaybackState == Enum.PlaybackState.Playing then
-			fovState.currentFOVTween:Cancel()
-		end
-
-		-- Calcula FOV alvo
-		local targetFOV = ConfigJogador.ObterFOVAlvo(isMoving, isRunning)
-
-		-- Cria tween suave para o novo FOV
-		local tweenInfo = ConfigJogador.ObterTweenInfoFOV()
-		local tween = TweenService:Create(camera, tweenInfo, { FieldOfView = targetFOV })
-		fovState.currentFOVTween = tween
 		tween:Play()
 	end
 end
@@ -764,13 +757,25 @@ function CameraModule:Update(dt)
 		currentCamera.CFrame = newCameraCFrame
 		currentCamera.Focus = newCameraFocus
 
+		-- Efeitos dinâmicos de câmera (bobbing, roll, lean, drift) - só em 1ª pessoa
+		local isInFirstPerson = self.activeCameraController.IsInFirstPerson
+			and self.activeCameraController:IsInFirstPerson()
+		local character = Players.LocalPlayer.Character
+		if character then
+			local hrp = character:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				local isDashing = ClientBridge.EstaEmDash and ClientBridge.EstaEmDash() or false
+				currentCamera.CFrame = DynamicCamFX.Update(dt, currentCamera.CFrame, isInFirstPerson, isDashing, hrp)
+			end
+		end
+
 		-- Update to character local transparency as needed based on camera-to-subject distance
 		if self.activeTransparencyController then
 			self.activeTransparencyController:Update(dt)
 		end
 
 		-- Sistema de FOV dinâmico baseado na velocidade do jogador
-		updateFOV(currentCamera)
+		updateFOV(currentCamera, dt)
 
 		-- Sistema de snap para 1ª pessoa (dead zone)
 		updateDeadZoneSnap(currentCamera, self.activeCameraController, self.activeMouseLockController)

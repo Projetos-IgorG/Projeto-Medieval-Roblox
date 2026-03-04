@@ -67,11 +67,11 @@ local PodeEscolher = false
 -- ==========================================
 -- Velocidade do efeito typewriter (agora configurado em ConfigVoz)
 -- Quanto a câmera corrige horizontalmente para centralizar o NPC (0 = nenhuma, 1 = total)
-local CAMERA_CORRECAO_HORIZONTAL = 0.2
+local CAMERA_CORRECAO_HORIZONTAL = 0.05
 -- Quanto a câmera corrige verticalmente para olhar na altura do NPC (0 = nenhuma, 1 = total)
 local CAMERA_CORRECAO_VERTICAL = 0.0
 -- Duração da correção da câmera (segundos)
-local CAMERA_CORRECAO_DURACAO = 0.2
+local CAMERA_CORRECAO_DURACAO = 0.25
 
 -- Configurações de botão
 local BOTAO_Y_PADRAO = 0.15
@@ -161,18 +161,7 @@ local function RotacionarCameraParaNPC(npc)
 end
 
 local function IniciarCameraZoom(npc)
-	local camera = workspace.CurrentCamera
-	TweenService
-		:Create(camera, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { FieldOfView = 75 })
-		:Play()
 	RotacionarCameraParaNPC(npc)
-end
-
-local function ResetarCamera()
-	local camera = workspace.CurrentCamera
-	TweenService
-		:Create(camera, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { FieldOfView = 70 })
-		:Play()
 end
 
 local function AlterarRestricoesJogador(travado)
@@ -212,7 +201,6 @@ local function EncerrarDialogo()
 	end
 
 	LimparOpcoes()
-	ResetarCamera()
 	AlterarRestricoesJogador(false)
 
 	-- Esconder os BillboardGuis e limpar Adornee

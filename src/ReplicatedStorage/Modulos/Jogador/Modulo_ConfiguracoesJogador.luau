@@ -45,10 +45,11 @@ export type ConfiguracaoCamera = {
 	SnapTransitionTime: number, -- Tempo da transição suave do snap
 
 	-- FOV
-	DefaultFOV: number, -- Valor base de FOV
+	DefaultFOV: number, -- Valor base de FOV (parado e ao entrar no jogo)
 	WalkFOV: number, -- FOV ao andar
 	RunFOV: number, -- FOV ao correr
-	FOVTransitionTime: number, -- Tempo de transição do FOV
+	FOVTransitionTime: number, -- Tempo de transição do FOV (andar/parar)
+	RunFOVRampTime: number, -- Tempo pra FOV subir de walk até run ao iniciar corrida
 
 	-- Velocidade
 	RunSpeedThreshold: number, -- Velocidade acima da qual é considerado corrida
@@ -89,6 +90,7 @@ local ConfiguracaoPadrao: ConfiguracaoCamera = {
 	WalkFOV = 78,
 	RunFOV = 86,
 	FOVTransitionTime = 0.3,
+	RunFOVRampTime = 0.05, -- tempo pra alcançar FOV máximo de corrida
 
 	-- Velocidade
 	RunSpeedThreshold = 18,
