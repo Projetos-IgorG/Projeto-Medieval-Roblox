@@ -9,18 +9,17 @@ local CFNew, CFAng, asin = CFrame.new, CFrame.Angles, math.asin
 
 local targetC0 = neck.C0
 
-game:GetService("RunService").RenderStepped:Connect(function(dt)
+game:GetService("RunService").RenderStepped:Connect(function(_dt)
 	local cameraDirection = root.CFrame:toObjectSpace(camera.CFrame).lookVector
 
-	local maxSide = math.rad(55)      -- Lateral: 55° p/ cada lado
-	local maxUpDown = math.rad(30)    -- Vertical: 30° p/ cima/baixo
+	local maxSide = math.rad(55) -- Lateral: 55° p/ cada lado
+	local maxUpDown = math.rad(30) -- Vertical: 30° p/ cima/baixo
 
 	local sideAngle = math.clamp(-asin(cameraDirection.x), -maxSide, maxSide)
 	local upDownAngle = math.clamp(-asin(cameraDirection.y), -maxUpDown, maxUpDown)
 
-	local desiredC0 =
-		CFNew(0, yOffset, 0)
-		* CFrame.Angles(3 * math.pi/2, 0, math.pi)
+	local desiredC0 = CFNew(0, yOffset, 0)
+		* CFrame.Angles(3 * math.pi / 2, 0, math.pi)
 		* CFAng(0, 0, sideAngle)
 		* CFAng(upDownAngle, 0, 0)
 

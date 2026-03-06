@@ -749,7 +749,7 @@ end
 ---@param nomeModo string
 ---@param indice number
 ---@return string
-function Modulo_Configuracoes.ObterTipoAtaquePorIndice(nomeModo: string, indice: number): string
+function Modulo_Configuracoes.ObterTipoAtaquePorIndice(_nomeModo: string, indice: number): string
 	-- Lógica padrão simplificada: >= 4 é final, senão é leve
 	if indice >= 4 then
 		return "AtaqueLeveFinal"
