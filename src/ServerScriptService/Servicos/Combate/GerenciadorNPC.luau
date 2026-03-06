@@ -406,7 +406,7 @@ end
 -- ═══════════════════════════════════════════════════════════════════
 
 RunService.Heartbeat:Connect(function(dt)
-	for modelo, controller in pairs(npcsAtivos) do
+	for _modelo, controller in pairs(npcsAtivos) do
 		if controller.ativo then
 			controller:Atualizar(dt)
 		end

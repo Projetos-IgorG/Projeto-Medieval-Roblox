@@ -18,7 +18,7 @@
 -- ═══════════════════════════════════════════════════════════════════
 -- CONFIGURAÇÃO DE DEBUG
 -- ═══════════════════════════════════════════════════════════════════
-local DEBUG_ENABLED = false -- Altere para true para habilitar prints de debug
+local DEBUG_ENABLED = true -- Altere para true para habilitar prints de debug
 
 local function DebugPrint(...)
 	if DEBUG_ENABLED then
@@ -34,7 +34,7 @@ local Combate = Modulos:WaitForChild("Combate")
 
 local Modulo_Configuracoes = require(Combate:WaitForChild("Modulo_Configuracoes"))
 local Modulo_Dano = require(Combate:WaitForChild("Modulo_Dano"))
-local Modulo_Hitbox = require(Combate:WaitForChild("Modulo_Hitbox"))
+local _Modulo_Hitbox = require(Combate:WaitForChild("Modulo_Hitbox")) -- Mantido para referência (hitbox agora é client-side)
 local Modulo_Impulso = require(Combate:WaitForChild("Modulo_Impulso"))
 local Modulo_Knockback = require(Combate:WaitForChild("Modulo_Knockback"))
 local _Modulo_Combo = require(Combate:WaitForChild("Modulo_Combo")) -- Mantido se precisar no futuro
@@ -75,6 +75,47 @@ local function EhGolpeFinal(indice: number): boolean
 	return indice >= 4
 end
 
+-- Mapeamento de mão (Right/Left) para slot de equipamento
+local MAO_PARA_SLOT = {
+	Right = "RightArm",
+	Left = "LeftArm",
+}
+
+--- Obtém a Tool equipada para uma determinada mão
+--- Busca via ObjectValue na pasta Equipamento > Bracos
+---@param character Model
+---@param mao string "Right" ou "Left"
+---@return Tool?
+local function ObterToolPorMao(character: Model, mao: string): Tool?
+	local slotName = MAO_PARA_SLOT[mao]
+	if not slotName then
+		return nil
+	end
+
+	local equipamento = character:FindFirstChild("Equipamento")
+	if not equipamento then
+		return nil
+	end
+
+	local bracos = equipamento:FindFirstChild("Bracos")
+	if not bracos then
+		return nil
+	end
+
+	local slotOV = bracos:FindFirstChild(slotName) :: ObjectValue?
+	if slotOV and slotOV.Value and slotOV.Value:IsA("Tool") then
+		return slotOV.Value :: Tool
+	end
+
+	-- Fallback: para Punhos, a Tool está diretamente no character
+	local toolNaMao = character:FindFirstChildOfClass("Tool")
+	if toolNaMao then
+		return toolNaMao
+	end
+
+	return nil
+end
+
 -- ═══════════════════════════════════════════════════════════════════
 -- FUNÇÕES DO MÓDULO
 -- ═══════════════════════════════════════════════════════════════════
@@ -87,15 +128,15 @@ function ControladorCombate.ObterMaquina(entidade: Model)
 		maquinasDeEstado[entidade] = MaquinaDeEstados.Novo(entidade)
 
 		-- Configurar callbacks para sincronizar estado
-		maquinasDeEstado[entidade]:AoMudarEstadoAcao(function(novo, anterior)
+		maquinasDeEstado[entidade]:AoMudarEstadoAcao(function(_novo, _anterior)
 			ControladorCombate._SincronizarEstado(entidade)
 		end)
 
-		maquinasDeEstado[entidade]:AoMudarEstadoMov(function(novo, anterior)
+		maquinasDeEstado[entidade]:AoMudarEstadoMov(function(_novo, _anterior)
 			ControladorCombate._SincronizarEstado(entidade)
 		end)
 
-		maquinasDeEstado[entidade]:AoMudarModo(function(novo, anterior)
+		maquinasDeEstado[entidade]:AoMudarModo(function(_novo, _anterior)
 			ControladorCombate._SincronizarEstado(entidade)
 		end)
 	end
@@ -234,50 +275,18 @@ function ControladorCombate._AplicarKnockback(alvo: Model, atacante: Model, tipo
 	end
 end
 
---- Cria hitbox e detecta colisões
+--- [DEPRECATED] Cria hitbox e detecta colisões via GetPartBoundsInBox
+--- Mantido para referência. O novo sistema usa ShapecastHitbox no cliente.
+--- Hits são reportados via "HitboxAcerto".
 ---@return table Lista de entidades atingidas
-function ControladorCombate._CriarHitbox(atacante: Model, tipoAtaque: string, cframeCliente: CFrame?)
-	local maquina = maquinasDeEstado[atacante]
-	if not maquina then
-		return {}
-	end
-
-	-- Obtém Tool equipada
-	local character = atacante
-	local tool = character:FindFirstChildOfClass("Tool")
-	if not tool then
-		return {} -- Sem tool, sem ataque
-	end
-
-	-- Validação básica de distância se o cliente enviou CFrame (anti-teleport)
-	local cframeFinal: CFrame? = nil
-	if cframeCliente then
-		local hrp = character:FindFirstChild("HumanoidRootPart") :: BasePart
-		if hrp then
-			-- Se a distância for maior que 8 studs, ignora e usa a do servidor (lag alto ou hack)
-			local dist = (hrp.Position - cframeCliente.Position).Magnitude
-			if dist < 8 then
-				cframeFinal = cframeCliente
-			else
-				DebugPrint(
-					string.format("[Combate] %s: CFrame do cliente ignorado (distância %.1f)", character.Name, dist)
-				)
-			end
-		end
-	end
-
-	local resultado = Modulo_Hitbox.CriarHitboxMelee(atacante, tool, tipoAtaque, cframeFinal)
-
-	if not resultado.sucesso then
-		DebugPrint("[Combate] Falha ao criar hitbox: " .. tostring(resultado.erro))
-		return {}
-	end
-
-	return resultado.entidadesAtingidas
+function ControladorCombate._CriarHitbox(_atacante: Model, _tipoAtaque: string, _cframeCliente: CFrame?)
+	warn("[ControladorCombate] _CriarHitbox está deprecado. Use ShapecastHitbox no cliente.")
+	return {}
 end
 
 --- Processa hit em uma entidade
-function ControladorCombate._ProcessarHit(atacante: Model, alvo: Model, tipoAtaque: string)
+---@param danoOverride number? Se fornecido, usa este valor como dano base (ex: metade para dual-wield)
+function ControladorCombate._ProcessarHit(atacante: Model, alvo: Model, tipoAtaque: string, danoOverride: number?)
 	local maquinaAtacante = maquinasDeEstado[atacante]
 	local maquinaAlvo = ControladorCombate.ObterMaquina(alvo)
 
@@ -322,33 +331,39 @@ function ControladorCombate._ProcessarHit(atacante: Model, alvo: Model, tipoAtaq
 	end
 
 	-- Aplica dano
-	local characterAtacante = atacante
-	local tool = characterAtacante:FindFirstChildOfClass("Tool")
-
-	if tool then
-		-- Assinatura: tool, atacante, alvo, tipoAtaque
-		local resultado = Modulo_Dano.AplicarDano(tool, atacante, alvo, tipoAtaque)
-
-		if resultado.sucesso then
-			local danoAplicado = resultado.danoAplicado or 0
-			DebugPrint(string.format("[Combate] Dano aplicado: %.1f em %s", danoAplicado, alvo.Name))
-
-			-- Stun no alvo
-			local tempoStun
-			if tipoAtaque == "AtaquePesado" then
-				tempoStun = Modulo_Configuracoes.ObterConfiguracao("TempoStunPesado")
-			else
-				tempoStun = Modulo_Configuracoes.ObterConfiguracao("TempoStunLeve")
-			end
-
-			maquinaAlvo:EntrarStun(tempoStun or 0.3)
-			ControladorCombate._TocarAnimacao(alvo, "Stunado")
-
-			-- Knockback
-			ControladorCombate._AplicarKnockback(alvo, atacante, tipoAtaque)
-		else
-			DebugPrint("[Combate] Falha ao aplicar dano: " .. tostring(resultado.erro))
+	local resultado
+	if danoOverride then
+		-- Usa dano explícito (ex: dual-wield cada mão aplica metade)
+		resultado = Modulo_Dano.AplicarDanoComValor(atacante, alvo, tipoAtaque, danoOverride)
+	else
+		local characterAtacante = atacante
+		local tool = characterAtacante:FindFirstChildOfClass("Tool")
+		if not tool then
+			DebugPrint("[Combate] Sem tool para aplicar dano")
+			return
 		end
+		resultado = Modulo_Dano.AplicarDano(tool, atacante, alvo, tipoAtaque)
+	end
+
+	if resultado.sucesso then
+		local danoAplicado = resultado.danoAplicado or 0
+		DebugPrint(string.format("[Combate] Dano aplicado: %.1f em %s", danoAplicado, alvo.Name))
+
+		-- Stun no alvo
+		local tempoStun
+		if tipoAtaque == "AtaquePesado" then
+			tempoStun = Modulo_Configuracoes.ObterConfiguracao("TempoStunPesado")
+		else
+			tempoStun = Modulo_Configuracoes.ObterConfiguracao("TempoStunLeve")
+		end
+
+		maquinaAlvo:EntrarStun(tempoStun or 0.3)
+		ControladorCombate._TocarAnimacao(alvo, "Stunado")
+
+		-- Knockback
+		ControladorCombate._AplicarKnockback(alvo, atacante, tipoAtaque)
+	else
+		DebugPrint("[Combate] Falha ao aplicar dano: " .. tostring(resultado.erro))
 	end
 end
 
@@ -399,13 +414,13 @@ end
 -- PROCESSADORES DE COMBO POR MARCADORES
 -- ═══════════════════════════════════════════════════════════════════
 
---- Processa hitbox de combo (chamado pelo cliente via marcador "Ataque")
+--- Processa hitbox de combo (chamado pelo cliente via marcador de ataque)
+--- O servidor não cria mais hitboxes — o cliente faz raycasting e envia hits via HitboxAcerto.
+--- Este processador apenas valida estado, avança combo e aplica impulso.
 --- @param entidade Model Personagem atacante
---- @param indiceGolpe number Índice do golpe (1, 2, 3, 4)
+--- @param dados any {indice: number, tipoMarcador: string?, cframe: CFrame?}
 function ControladorCombate.ProcessarComboHitbox(entidade: Model, dados: any): (boolean, string?)
-	-- dados pode ser o índice (number) ou uma tabela {indice: number, cframe: CFrame}
 	local indiceGolpe = typeof(dados) == "table" and dados.indice or (tonumber(dados) or 0)
-	local cframeCliente = typeof(dados) == "table" and dados.cframe or nil
 
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
@@ -426,15 +441,11 @@ function ControladorCombate.ProcessarComboHitbox(entidade: Model, dados: any): (
 	-- Aplica impulso ao atacante
 	ControladorCombate._AplicarImpulsoAtacante(entidade, tipoAtaque)
 
-	-- Cria hitbox e processa hits
-	local alvos = ControladorCombate._CriarHitbox(entidade, tipoAtaque, cframeCliente)
-	for _, alvo in ipairs(alvos) do
-		ControladorCombate._ProcessarHit(entidade, alvo, tipoAtaque)
-	end
+	-- Hitbox é agora gerenciada pelo cliente (ShapecastHitbox)
+	-- Hits serão reportados via "HitboxAcerto"
 
 	-- Se foi o golpe final, agenda completar ação
 	if EhGolpeFinal(indiceGolpe) then
-		-- Aguarda animação terminar naturalmente
 		local tempoFinal = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelamentoComboFinal") or 0.6
 		task.delay(tempoFinal, function()
 			if maquina:ObterEstadoAcao() == "AtacandoLeve" then
@@ -574,15 +585,9 @@ function ControladorCombate.ProcessarCancelarAtaquePorDefesa(entidade: Model, ti
 	local estadoAcao = maquina:ObterEstadoAcao()
 
 	-- Verifica se está em um estado válido para cancelar
-	local podeCancel = false
-	if tipoAtaque == "AtaqueLeve" and estadoAcao == "AtacandoLeve" then
-		podeCancel = true
-	elseif
-		tipoAtaque == "CarregandoPesado"
-		and (estadoAcao == "CarregandoPesado" or estadoAcao == "SoltandoPesado" or estadoAcao == "AtaquePesado")
-	then
-		podeCancel = true
-	end
+	local podeCancel = (tipoAtaque == "AtaqueLeve" and estadoAcao == "AtacandoLeve")
+		or (tipoAtaque == "CarregandoPesado"
+			and (estadoAcao == "CarregandoPesado" or estadoAcao == "SoltandoPesado" or estadoAcao == "AtaquePesado"))
 
 	if podeCancel then
 		maquina:CompletarAcao()
@@ -614,12 +619,8 @@ function ControladorCombate.ProcessarAtacarLeveAgachado(entidade: Model)
 	ControladorCombate._TocarAnimacao(entidade, "AtaqueLeveAgachado")
 	ControladorCombate._AplicarImpulsoAtacante(entidade, "AtaqueLeve")
 
-	task.delay(0.1, function()
-		local alvos = ControladorCombate._CriarHitbox(entidade, "AtaqueLeve")
-		for _, alvo in ipairs(alvos) do
-			ControladorCombate._ProcessarHit(entidade, alvo, "AtaqueLeve")
-		end
-	end)
+	-- Hitbox agora é gerenciada pelo cliente (ShapecastHitbox)
+	-- Hits serão reportados via "HitboxAcerto"
 
 	return true, nil
 end
@@ -695,9 +696,9 @@ function ControladorCombate.ProcessarSoltarPesado(entidade: Model)
 end
 
 --- Processa hitbox do ataque pesado (chamado pelo cliente quando o marcador HeavyAttack é atingido)
---- Transiciona de SoltandoPesado para AtaquePesado e cria o hitbox
-function ControladorCombate.ProcessarHeavyAttackHitbox(entidade: Model, dados: any?): (boolean, string?)
-	local cframeCliente = typeof(dados) == "table" and dados.cframe or nil
+--- Transiciona de SoltandoPesado para AtaquePesado
+--- Hitbox é gerenciada pelo cliente via ShapecastHitbox; hits chegam via HitboxAcerto
+function ControladorCombate.ProcessarHeavyAttackHitbox(entidade: Model, _dados: any?): (boolean, string?)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
 	-- Verifica se está no estado correto (SoltandoPesado - M1 foi solto, mas ataque ainda não aconteceu)
@@ -726,17 +727,14 @@ function ControladorCombate.ProcessarHeavyAttackHitbox(entidade: Model, dados: a
 	end
 
 	DebugPrint(
-		string.format("[Combate] %s: HeavyAttackHitbox - estado mudou para AtaquePesado, criando hitbox", entidade.Name)
+		string.format("[Combate] %s: HeavyAttackHitbox - estado mudou para AtaquePesado", entidade.Name)
 	)
 
 	-- Sincroniza estado para notificar cliente que mudou para AtaquePesado
 	ControladorCombate._SincronizarEstado(entidade)
 
-	-- Cria hitbox e processa hits
-	local alvos = ControladorCombate._CriarHitbox(entidade, "AtaquePesado", cframeCliente)
-	for _, alvo in ipairs(alvos) do
-		ControladorCombate._ProcessarHit(entidade, alvo, "AtaquePesado")
-	end
+	-- Hitbox agora é gerenciada pelo cliente (ShapecastHitbox)
+	-- Hits serão reportados via "HitboxAcerto"
 
 	return true, nil
 end
@@ -1150,6 +1148,135 @@ function ControladorCombate.ProcessarSincronizarMovimento(entidade: Model, novoE
 end
 
 -- ═══════════════════════════════════════════════════════════════════
+-- PROCESSADOR DE HIT REPORTADO PELO CLIENTE (NOVO SISTEMA)
+-- ═══════════════════════════════════════════════════════════════════
+
+--- Processa um hit reportado pelo cliente via ShapecastHitbox
+--- Valida estado, distância e aplica dano
+--- @param entidade Model Personagem atacante
+--- @param dados table {mao: "Right"|"Left", alvo: Model, cframe: CFrame?}
+function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): (boolean, string?)
+	if typeof(dados) ~= "table" then
+		return false, "DadosInvalidos"
+	end
+
+	local mao: string? = dados.mao
+	local alvoInstance: any = dados.alvo
+	local _cframeCliente: CFrame? = dados.cframe
+
+	-- Validação básica
+	if not mao or (mao ~= "Right" and mao ~= "Left") then
+		return false, "MaoInvalida"
+	end
+
+	if not alvoInstance or typeof(alvoInstance) ~= "Instance" or not alvoInstance:IsA("Model") then
+		return false, "AlvoInvalido"
+	end
+
+	local alvo = alvoInstance :: Model
+
+	-- Não pode se acertar
+	if alvo == entidade then
+		return false, "AutoHit"
+	end
+
+	-- Verifica se alvo tem humanoid e está vivo
+	local alvoHumanoid = alvo:FindFirstChildOfClass("Humanoid")
+	if not alvoHumanoid or alvoHumanoid.Health <= 0 then
+		return false, "AlvoMorto"
+	end
+
+	local maquina = ControladorCombate.ObterMaquina(entidade)
+
+	-- Verifica se está em estado de ataque válido
+	local estadoAcao = maquina:ObterEstadoAcao()
+	local emAtaque = estadoAcao == "AtacandoLeve"
+		or estadoAcao == "AtaquePesado"
+		or estadoAcao == "SoltandoPesado"
+		or estadoAcao == "AtacandoLeveAgachado"
+
+	if not emAtaque then
+		DebugPrint(
+			string.format("[Combate] %s: HitboxAcerto ignorado - não está atacando (estado=%s)", entidade.Name, estadoAcao)
+		)
+		return false, "NaoAtacando"
+	end
+
+	-- Validação de distância (anti-exploit)
+	local hrpAtacante = entidade:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local hrpAlvo = alvo:FindFirstChild("HumanoidRootPart") :: BasePart?
+
+	if hrpAtacante and hrpAlvo then
+		local alcanceMaximo = Modulo_Configuracoes.ObterConfiguracao("Alcance") or 8
+		-- Margem generosa para compensar latência
+		local distancia = (hrpAtacante.Position - hrpAlvo.Position).Magnitude
+		if distancia > alcanceMaximo * 2 then
+			DebugPrint(
+				string.format(
+					"[Combate] %s: HitboxAcerto rejeitado - distância %.1f > máximo %.1f",
+					entidade.Name,
+					distancia,
+					alcanceMaximo * 2
+				)
+			)
+			return false, "ForaDeAlcance"
+		end
+	end
+
+	-- Determina tipo de ataque baseado no estado
+	local tipoAtaque = "AtaqueLeve"
+	if estadoAcao == "AtaquePesado" or estadoAcao == "SoltandoPesado" then
+		tipoAtaque = "AtaquePesado"
+	elseif estadoAcao == "AtacandoLeve" then
+		-- Verifica se é golpe final baseado no índice do combo
+		local indiceCombo = maquina.dados.indiceCombo or 1
+		tipoAtaque = DeterminarTipoAtaque(indiceCombo)
+	end
+
+	-- Determina dano baseado na mão e modo
+	local modo = maquina:ObterModo()
+	local configCombo = Modulo_Configuracoes.ObterConfiguracaoCombo(modo)
+	local ehDivideDano = configCombo and configCombo.divideDano == true
+
+	local tool = ObterToolPorMao(entidade, mao)
+	if not tool then
+		-- Fallback: Tool na mão direta do character
+		tool = entidade:FindFirstChildOfClass("Tool")
+	end
+
+	if not tool then
+		DebugPrint(string.format("[Combate] %s: HitboxAcerto - sem tool para mão %s", entidade.Name, mao))
+		return false, "SemTool"
+	end
+
+	local danoBase = Modulo_Dano.ObterDanoBase(tool)
+	if not danoBase then
+		return false, "SemDanoBase"
+	end
+
+	-- Se divideDano (cada mão aplica metade do dano)
+	local danoOverride: number? = nil
+	if ehDivideDano then
+		danoOverride = danoBase / 2
+	end
+
+	-- Processa o hit com as validações de parry/bloqueio/dano
+	ControladorCombate._ProcessarHit(entidade, alvo, tipoAtaque, danoOverride)
+
+	DebugPrint(
+		string.format(
+			"[Combate] %s: HitboxAcerto processado - mão=%s, alvo=%s, tipo=%s",
+			entidade.Name,
+			mao,
+			alvo.Name,
+			tipoAtaque
+		)
+	)
+
+	return true, tipoAtaque
+end
+
+-- ═══════════════════════════════════════════════════════════════════
 -- MAPA DE AÇÕES
 -- ═══════════════════════════════════════════════════════════════════
 
@@ -1197,6 +1324,11 @@ local MapaAcoes = {
 	ComboEarlyCancel = ControladorCombate.ProcessarComboEarlyCancel,
 	HeavyAttackEarlyCancel = ControladorCombate.ProcessarHeavyAttackEarlyCancel,
 	DashEarlyCancel = ControladorCombate.ProcessarDashEarlyCancel,
+
+	-- Hit reportado pelo cliente (novo sistema ShapecastHitbox)
+	HitboxAcerto = function(entidade, dados)
+		return ControladorCombate.ProcessarHitboxAcerto(entidade, dados)
+	end,
 
 	-- Cancelamento de ataque por defesa
 	CancelarAtaquePorDefesa = function(entidade, dados)

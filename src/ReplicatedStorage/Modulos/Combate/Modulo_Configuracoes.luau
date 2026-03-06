@@ -21,12 +21,9 @@
 -- ═══════════════════════════════════════════════════════════════════
 
 export type ConfigCombo = {
-	velocidadeJanela: number,
-	janelaCombo: number?, -- Injetado globalmente
-	marcadores: {
-		janelasCombo: { string },
-		ataque: string,
-	},
+	velocidadeJanela: number, -- Velocidade da animação durante janela de combo
+	janelaCombo: number?,     -- Duração da janela (injetado globalmente se nil)
+	divideDano: boolean?,     -- Se true, dano é dividido por mão (para AttackBoth)
 }
 
 export type ModoAnimacao = {
@@ -235,10 +232,7 @@ Modulo_Configuracoes.ModoAnimacoes = {
 		temCombo = true,
 		configCombo = {
 			velocidadeJanela = 0.4,
-			marcadores = {
-				janelasCombo = { "ComboEnd1", "ComboEnd2", "ComboEnd3" },
-				ataque = "Attack",
-			},
+			divideDano = true, -- AttackBoth: cada mão aplica metade
 		},
 		animacoes = {
 			-- Combate
@@ -288,10 +282,6 @@ Modulo_Configuracoes.ModoAnimacoes = {
 		temCombo = true,
 		configCombo = {
 			velocidadeJanela = 0.4,
-			marcadores = {
-				janelasCombo = { "ComboEnd1", "ComboEnd2", "ComboEnd3" },
-				ataque = "Attack",
-			},
 		},
 		animacoes = {
 			-- Combate
@@ -427,10 +417,6 @@ Modulo_Configuracoes.ModoAnimacoes = {
 		temCombo = true,
 		configCombo = {
 			velocidadeJanela = 0.4,
-			marcadores = {
-				janelasCombo = { "ComboEnd1", "ComboEnd2", "ComboEnd3" },
-				ataque = "Attack",
-			},
 		},
 		animacoes = {
 			-- Combate (TODO: Substituir por animações específicas de UmaMao)
@@ -469,10 +455,7 @@ Modulo_Configuracoes.ModoAnimacoes = {
 		temCombo = true,
 		configCombo = {
 			velocidadeJanela = 0.35,
-			marcadores = {
-				janelasCombo = { "ComboEnd1", "ComboEnd2", "ComboEnd3" },
-				ataque = "Attack",
-			},
+			divideDano = true, -- AttackBoth: cada mão aplica metade
 		},
 		animacoes = {
 			-- Combate (TODO: Substituir por animações específicas de UmaMaoDupla)
@@ -511,10 +494,6 @@ Modulo_Configuracoes.ModoAnimacoes = {
 		temCombo = true,
 		configCombo = {
 			velocidadeJanela = 0.5,
-			marcadores = {
-				janelasCombo = { "ComboEnd1", "ComboEnd2", "ComboEnd3" },
-				ataque = "Attack",
-			},
 		},
 		animacoes = {
 			-- Combate (TODO: Adicionar IDs de duas mãos)
@@ -553,10 +532,6 @@ Modulo_Configuracoes.ModoAnimacoes = {
 		temCombo = true,
 		configCombo = {
 			velocidadeJanela = 0.4,
-			marcadores = {
-				janelasCombo = { "ComboEnd1", "ComboEnd2", "ComboEnd3" },
-				ataque = "Attack",
-			},
 		},
 		animacoes = {
 			-- Combate (TODO: Adicionar IDs de punhos+escudo)

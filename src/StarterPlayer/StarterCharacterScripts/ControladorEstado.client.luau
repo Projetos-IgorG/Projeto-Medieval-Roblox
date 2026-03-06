@@ -34,6 +34,8 @@ local animator = humanoid:WaitForChild("Animator")
 
 local Modulos = ReplicatedStorage:WaitForChild("Modulos")
 local Modulo_Configuracoes = require(Modulos:WaitForChild("Combate"):WaitForChild("Modulo_Configuracoes"))
+local Modulo_Combo = require(Modulos:WaitForChild("Combate"):WaitForChild("Modulo_Combo"))
+local GerenciadorHitboxCliente = require(Modulos:WaitForChild("Combate"):WaitForChild("GerenciadorHitboxCliente"))
 
 -- Ponte de comunicação entre scripts client-side (substitui _G)
 local ClientBridge = require(Modulos:WaitForChild("Core"):WaitForChild("ClientBridge"))
@@ -109,6 +111,18 @@ local movementFlags = {
 
 -- Flag global para saber se Shift está sendo segurado (independente de estado)
 local isShiftHeld = false
+
+-- Estado local do ataque pesado
+local heavyAttackState = {
+	animacao = nil, -- AnimationTrack atual
+	aguardandoSoltar = false, -- Se está pausado esperando soltar M1
+	conexoesMarkers = {}, -- Conexões dos markers
+	conexaoTermino = nil, -- Conexão para detectar término
+	earlyCancelTimer = nil, -- Timer para cancelamento antecipado
+	earlyCancelExecutado = false, -- Se o cancelamento antecipado já foi executado
+	tempoInicio = 0, -- Momento em que o carregamento iniciou (para defense cancel)
+	conexaoMonitorReversao = nil :: RBXScriptConnection?, -- Conexão para monitorar reversão
+}
 
 -- ═══════════════════════════════════════════════════════════════════
 -- SISTEMA DE VELOCIDADE CLIENT-SIDE
@@ -308,9 +322,10 @@ end
 	O sistema de combo funciona assim:
 	1. Uma única animação "AtaqueLeve" contém todos os golpes do combo
 	2. Marcadores na animação controlam o timing:
-	   - "Attack" (params: "1", "2", "3", "4") - Momento de criar hitbox
-	   - "ComboEnd1", "ComboEnd2", "ComboEnd3" - Início da janela de input
-	3. Quando "ComboEndX" é atingido, a velocidade cai para 0.4
+	   - "AttackRight/Left/Both" - Momento de criar hitbox
+	   - "AttackEnd" - Momento de parar hitbox
+	   - "ComboEnd" / "ComboEndFinal" - Início da janela de input
+	3. Quando "ComboEnd" é atingido, a velocidade cai para N (configCombo.velocidadeJanela)
 	4. Se o jogador clicar M1 durante a janela, velocidade volta para 1
 	5. Se não clicar, a animação para e volta para Idle
 ]]
@@ -372,6 +387,9 @@ local function OnComboAnimacaoTerminou()
 
 	LimparConexoesMarkers()
 
+	-- Para todas as hitboxes ativas
+	GerenciadorHitboxCliente.PararTodas()
+
 	comboState.animacaoAtiva = nil
 	comboState.janelaAtiva = false
 	comboState.indiceAtual = 0
@@ -405,24 +423,25 @@ local function OnComboAnimacaoTerminou()
 	AtualizarAnimacaoMovimento()
 end
 
---- Processa o marcador "ComboEndX" - início da janela de input
----@param indiceGolpe string Índice do golpe ("1", "2", "3")
-local function OnMarkerJanelaCombo(indiceGolpe: string)
+--- Processa o marcador "ComboEnd" ou "ComboEndFinal" - início da janela de input
+---@param ehFinal boolean Se é a última janela do combo (ComboEndFinal)
+local function OnMarkerJanelaCombo(ehFinal: boolean)
 	if not comboState.animacaoAtiva then
 		return
 	end
 
-	local indice = tonumber(indiceGolpe) or 0
+	-- Incrementa índice de golpe e token
+	comboState.indiceAtual = comboState.indiceAtual + 1
 
 	-- Incrementa token para invalidar timers antigos
 	comboState.token = comboState.token + 1
 	local myToken = comboState.token
 
 	comboState.janelaAtiva = true
-	comboState.indiceAtual = indice
 	comboState.continuarCombo = false -- Reseta para aguardar novo input
 
-	DebugPrint(string.format("[ControladorEstado] Janela de combo ativada (golpe %d)", indice))
+	DebugPrint(string.format("[ControladorEstado] Janela de combo ativada (golpe %d, final=%s)", 
+		comboState.indiceAtual, tostring(ehFinal)))
 
 	-- Obtém configuração do combo
 	local combo = Modulo_Configuracoes.ObterConfiguracaoCombo(estadoAtual.modoAnimacao)
@@ -486,31 +505,41 @@ local function OnMarkerJanelaCombo(indiceGolpe: string)
 	end)
 end
 
---- Processa o marcador "Attack" - momento de criar hitbox
----@param indiceGolpe string Parâmetro do marker ("1", "2", "3", "4")
-local function OnMarkerAtaque(indiceGolpe: string)
-	local indice = tonumber(indiceGolpe) or 0
-
-	DebugPrint(string.format("[ControladorEstado] Marker Attack - golpe %s (índice %d)", indiceGolpe, indice))
+--- Processa um marker de ataque — ativa hitbox(es) e notifica o servidor.
+--- Chamado por OnMarkerAtaqueDireita, OnMarkerAtaqueEsquerda, OnMarkerAtaqueAmbos.
+---@param indiceGolpe number Índice do golpe (1, 2, 3, 4)
+---@param tipoMarcador string "AttackRight" | "AttackLeft" | "AttackBoth"
+local function OnMarkerAtaquePorMao(indiceGolpe: number, tipoMarcador: string)
+	DebugPrint(string.format("[ControladorEstado] Marker %s - golpe %d", tipoMarcador, indiceGolpe))
 
 	-- Determina tipo de ataque baseado no índice do combo
-	local tipoAtaque = Modulo_Configuracoes.ObterTipoAtaquePorIndice(estadoAtual.modoAnimacao, indice)
+	local tipoAtaque = Modulo_Configuracoes.ObterTipoAtaquePorIndice(estadoAtual.modoAnimacao, indiceGolpe)
 
 	-- Aplica impulso de ataque no cliente (feedback imediato)
 	if ClientBridge.AplicarImpulsoAtaque then
 		ClientBridge.AplicarImpulsoAtaque(tipoAtaque)
 	end
 
-	-- Notifica servidor para criar hitbox - envia CFrame atual para sincronia fina
+	-- Ativa hitbox(es) no cliente via GerenciadorHitboxCliente
+	if tipoMarcador == "AttackRight" then
+		GerenciadorHitboxCliente.OnMarkerAttackRight()
+	elseif tipoMarcador == "AttackLeft" then
+		GerenciadorHitboxCliente.OnMarkerAttackLeft()
+	elseif tipoMarcador == "AttackBoth" then
+		GerenciadorHitboxCliente.OnMarkerAttackBoth()
+	end
+
+	-- Notifica servidor do marker — o servidor valida estado e registra o golpe
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	local dados = {
-		indice = indice,
+		indice = indiceGolpe,
 		cframe = hrp and hrp.CFrame or nil,
+		tipoMarcador = tipoMarcador,
 	}
 	TentarAcao:FireServer("ComboHitbox", dados)
 
 	-- Se é o golpe 4 (final), configura early cancel e aguarda animação terminar
-	if indice >= 4 then
+	if indiceGolpe >= 4 then
 		comboState.janelaAtiva = false -- Não tem mais janela após o final
 		DebugPrint("[ControladorEstado] Golpe final executado")
 
@@ -541,6 +570,9 @@ local function OnMarkerAtaque(indiceGolpe: string)
 						comboState.earlyCancelExecutado = true
 						DebugPrint("[ControladorEstado] Early cancel executado - mudando estado para Normal")
 
+						-- Para hitboxes ao entrar em early cancel
+						GerenciadorHitboxCliente.PararTodas()
+
 						-- Atualiza estado local imediatamente
 						estadoAtual.estadoAcao = "Nenhuma"
 
@@ -567,30 +599,158 @@ local function OnMarkerAtaque(indiceGolpe: string)
 	end
 end
 
---- Configura listeners de marcadores para uma animação de combo
+--- Processa o marcador "AttackEnd" - para hitboxes ativas
+local function OnMarkerAtaqueFim()
+	DebugPrint("[ControladorEstado] Marker AttackEnd - parando hitboxes")
+	GerenciadorHitboxCliente.PararTodas()
+end
+
+--- Processa um marker de ataque pesado — ativa hitbox(es) para heavy attack.
+---@param tipoMarcador string "HeavyAttackRight" | "HeavyAttackLeft" | "HeavyAttackBoth"
+local function OnMarkerHeavyAtaquePorMao(tipoMarcador: string)
+	DebugPrint(string.format("[ControladorEstado] Marker %s - heavy attack", tipoMarcador))
+
+	-- Determina tipo de ataque (ataque pesado)
+	local tipoAtaque = "AtaquePesado"
+
+	-- Aplica impulso de ataque no cliente (feedback imediato)
+	if ClientBridge.AplicarImpulsoAtaque then
+		ClientBridge.AplicarImpulsoAtaque(tipoAtaque)
+	end
+
+	-- Ativa hitbox(es) no cliente via GerenciadorHitboxCliente
+	if tipoMarcador == "HeavyAttackRight" then
+		GerenciadorHitboxCliente.OnMarkerAttackRight()
+	elseif tipoMarcador == "HeavyAttackLeft" then
+		GerenciadorHitboxCliente.OnMarkerAttackLeft()
+	elseif tipoMarcador == "HeavyAttackBoth" then
+		GerenciadorHitboxCliente.OnMarkerAttackBoth()
+	end
+
+	-- Notifica servidor do marker de heavy attack
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	local dados = {
+		tipoMarcador = tipoMarcador,
+		cframe = hrp and hrp.CFrame or nil,
+	}
+	TentarAcao:FireServer("HeavyAttackHitbox", dados)
+
+	-- Configura timer de early cancel baseado no tempo restante da animação
+	if heavyAttackState.animacao and heavyAttackState.animacao.IsPlaying then
+		local track = heavyAttackState.animacao
+		local janelaEarlyCancel = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelamentoAtaquePesado") or 0.2
+		local speed = math.max(track.Speed, 0.1) -- Evita divisão por zero
+		local tempoRestante = (track.Length - track.TimePosition) / speed
+
+		-- Só agenda early cancel se houver tempo suficiente
+		if tempoRestante > janelaEarlyCancel and janelaEarlyCancel > 0 then
+			local tempoParaEarlyCancel = tempoRestante - janelaEarlyCancel
+			DebugPrint(
+				string.format(
+					"[ControladorEstado] Heavy attack early cancel agendado: %.2fs restante, early cancel em %.2fs",
+					tempoRestante,
+					tempoParaEarlyCancel
+				)
+			)
+
+			heavyAttackState.earlyCancelTimer = task.delay(tempoParaEarlyCancel, function()
+				-- Verifica se ainda está no ataque pesado e não foi cancelado
+				if
+					heavyAttackState.animacao
+					and heavyAttackState.animacao.IsPlaying
+					and not heavyAttackState.earlyCancelExecutado
+				then
+					heavyAttackState.earlyCancelExecutado = true
+					DebugPrint("[ControladorEstado] Heavy attack early cancel executado - mudando estado para Normal")
+
+					-- Para hitboxes ativas
+					GerenciadorHitboxCliente.PararTodas()
+
+					-- Atualiza estado local imediatamente
+					estadoAtual.estadoAcao = "Nenhuma"
+
+					-- Notifica servidor para mudar estado antecipadamente
+					TentarAcao:FireServer("HeavyAttackEarlyCancel")
+
+					-- Se o jogador está segurando Shift, volta a correr LOCALMENTE
+					if isShiftHeld then
+						movementFlags.isRunning = true
+						estadoAtual.estadoMov = "Correndo"
+						estadoAtual.correndo = true
+					end
+
+					-- Atualiza velocidade ao sair de combate (client-side)
+					AtualizarVelocidadeLocal()
+
+					-- Atualiza animação de movimento (a animação de ataque pesado vai terminar naturalmente em background)
+					AtualizarAnimacaoMovimento()
+				end
+			end)
+		end
+	end
+end
+
+--- Processa o marcador "HeavyAttackEnd" - para hitboxes de ataque pesado
+local function OnMarkerHeavyAtaqueFim()
+	DebugPrint("[ControladorEstado] Marker HeavyAttackEnd - parando hitboxes")
+	GerenciadorHitboxCliente.PararTodas()
+end
+
+--- Configura listeners de marcadores para uma animação de combo.
+--- Usa Modulo_Combo para detectar marcadores automaticamente (sem hardcode).
 ---@param track AnimationTrack
 local function ConfigurarMarkersCombo(track: AnimationTrack)
 	LimparConexoesMarkers() -- Limpa anteriores
+	
+	-- Reseta índice de golpes ao iniciar novo combo
+	comboState.indiceAtual = 0
 
-	local combo = Modulo_Configuracoes.ObterConfiguracaoCombo(estadoAtual.modoAnimacao)
-	if not combo or not combo.marcadores then
-		return
-	end
+	-- Configura todos os listeners via Modulo_Combo (detecção automática)
+	local limpezaListeners = Modulo_Combo.ConfigurarListenersMarcadores(track, {
+		-- Ataque leve por mão (iniciam hitbox)
+		onAtaqueDireita = function(indice)
+			OnMarkerAtaquePorMao(indice, "AttackRight")
+		end,
+		onAtaqueEsquerda = function(indice)
+			OnMarkerAtaquePorMao(indice, "AttackLeft")
+		end,
+		onAtaqueAmbos = function(indice)
+			OnMarkerAtaquePorMao(indice, "AttackBoth")
+		end,
+		
+		-- Fim de hitbox (ataque leve)
+		onAtaqueFim = OnMarkerAtaqueFim,
+		
+		-- Janela de combo
+		onJanelaCombo = OnMarkerJanelaCombo,
+		
+		-- Ataque pesado por mão (iniciam hitbox)
+		onHeavyAtaqueDireita = function()
+			OnMarkerHeavyAtaquePorMao("HeavyAttackRight")
+		end,
+		onHeavyAtaqueEsquerda = function()
+			OnMarkerHeavyAtaquePorMao("HeavyAttackLeft")
+		end,
+		onHeavyAtaqueAmbos = function()
+			OnMarkerHeavyAtaquePorMao("HeavyAttackBoth")
+		end,
+		
+		-- Fim de hitbox (ataque pesado)
+		onHeavyAtaqueFim = OnMarkerHeavyAtaqueFim,
+	})
 
-	-- Conecta aos markers de janela de input (ComboEnd1, ComboEnd2, ComboEnd3)
-	-- Cada marker é separado, não usa parâmetros
-	if combo.marcadores.janelasCombo then
-		for i, markerName in ipairs(combo.marcadores.janelasCombo) do
-			local conexaoJanela = track:GetMarkerReachedSignal(markerName):Connect(function()
-				OnMarkerJanelaCombo(tostring(i))
-			end)
-			table.insert(comboState.conexoesMarkers, conexaoJanela)
-		end
-	end
-
-	-- Conecta ao marker de ataque/hitbox (Attack com parâmetro)
-	local conexaoAtaque = track:GetMarkerReachedSignal(combo.marcadores.ataque):Connect(OnMarkerAtaque)
-	table.insert(comboState.conexoesMarkers, conexaoAtaque)
+	-- Guarda a função de limpeza para ser chamada depois
+	-- Usamos uma conexão "mock" que chama a função quando "desconectada"
+	local mockConexao = {
+		Connected = true,
+		Disconnect = function(self)
+			if self.Connected then
+				self.Connected = false
+				limpezaListeners()
+			end
+		end,
+	}
+	table.insert(comboState.conexoesMarkers, mockConexao :: any)
 
 	-- Conecta ao evento de término da animação
 	local conexaoStopped = track.Stopped:Connect(function()
@@ -654,18 +814,6 @@ end
 	- "HeavyAttack" - Momento de criar hitbox (parâmetro opcional)
 ]]
 
--- Estado local do ataque pesado
-local heavyAttackState = {
-	animacao = nil, -- AnimationTrack atual
-	aguardandoSoltar = false, -- Se está pausado esperando soltar M1
-	conexoesMarkers = {}, -- Conexões dos markers
-	conexaoTermino = nil, -- Conexão para detectar término
-	earlyCancelTimer = nil, -- Timer para cancelamento antecipado
-	earlyCancelExecutado = false, -- Se o cancelamento antecipado já foi executado
-	tempoInicio = 0, -- Momento em que o carregamento iniciou (para defense cancel)
-	conexaoMonitorReversao = nil :: RBXScriptConnection?, -- Conexão para monitorar reversão
-}
-
 --- Limpa conexões de markers do ataque pesado
 local function LimparConexoesHeavyAttack()
 	for _, conexao in ipairs(heavyAttackState.conexoesMarkers) do
@@ -696,10 +844,21 @@ end
 --- Chamado quando a animação de ataque pesado termina
 local function OnHeavyAttackTerminou()
 	DebugPrint("[ControladorEstado] Animação de ataque pesado terminou")
+	GerenciadorHitboxCliente.PararTodas()
+	
+	-- Guarda se early cancel já foi executado antes de limpar
+	local earlyCancelJaExecutado = heavyAttackState.earlyCancelExecutado
+	
 	LimparConexoesHeavyAttack()
 	heavyAttackState.animacao = nil
 	heavyAttackState.aguardandoSoltar = false
 	heavyAttackState.earlyCancelExecutado = false
+
+	-- Se early cancel já foi executado, não precisa fazer nada (estado já foi atualizado)
+	if earlyCancelJaExecutado then
+		DebugPrint("[ControladorEstado] Early cancel já executado, ignorando término normal")
+		return
+	end
 
 	-- Atualiza estado local
 	estadoAtual.estadoAcao = "Nenhuma"
@@ -759,15 +918,19 @@ end
 --- Processa o marcador "HeavyAttack" - momento de criar hitbox
 --- NOTA: O impulso NÃO é aplicado aqui, mas sim ao soltar M1 (após AttackRelease)
 local function OnMarkerHeavyAttack()
-	DebugPrint("[ControladorEstado] Marcador HeavyAttack atingido - notificando servidor para criar hitbox")
+	DebugPrint("[ControladorEstado] Marcador HeavyAttack atingido - ativando hitbox")
 
 	-- NOTA: Impulso foi movido para OnMarkerAttackRelease e ContinuarAtaquePesado
 	-- O impulso deve ocorrer quando o golpe é "liberado", não quando causa dano
 
-	-- Notifica o servidor para criar o hitbox do ataque pesado - envia CFrame para sincronia
+	-- Ativa hitboxes no cliente (mão direita por padrão para heavy attack)
+	GerenciadorHitboxCliente.OnMarkerAttackRight()
+
+	-- Notifica o servidor que o heavy attack hitbox foi ativado
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	local dados = {
 		cframe = hrp and hrp.CFrame or nil,
+		tipoMarcador = "AttackRight",
 	}
 	TentarAcao:FireServer("HeavyAttackHitbox", dados)
 
@@ -798,6 +961,9 @@ local function OnMarkerHeavyAttack()
 				then
 					heavyAttackState.earlyCancelExecutado = true
 					DebugPrint("[ControladorEstado] Heavy attack early cancel executado - mudando estado para Normal")
+
+					-- Para hitboxes ativas
+					GerenciadorHitboxCliente.PararTodas()
 
 					-- Atualiza estado local imediatamente
 					estadoAtual.estadoAcao = "Nenhuma"
@@ -832,17 +998,40 @@ local function ConfigurarMarkersHeavyAttack(track: AnimationTrack)
 	heavyAttackState.animacao = track
 	heavyAttackState.aguardandoSoltar = false
 
-	-- Marcador de pausa (AttackRelease)
-	local conexaoRelease = track:GetMarkerReachedSignal("AttackRelease"):Connect(function()
-		OnMarkerAttackRelease()
-	end)
-	table.insert(heavyAttackState.conexoesMarkers, conexaoRelease)
+	-- Configura listeners via Modulo_Combo (detecção automática de markers)
+	local limpezaListeners = Modulo_Combo.ConfigurarListenersMarcadores(track, {
+		-- Marcador de pausa (AttackRelease)
+		onAttackRelease = OnMarkerAttackRelease,
+		
+		-- Hitbox por mão (HeavyAttackRight/Left/Both)
+		onHeavyAtaqueDireita = function()
+			OnMarkerHeavyAtaquePorMao("HeavyAttackRight")
+		end,
+		onHeavyAtaqueEsquerda = function()
+			OnMarkerHeavyAtaquePorMao("HeavyAttackLeft")
+		end,
+		onHeavyAtaqueAmbos = function()
+			OnMarkerHeavyAtaquePorMao("HeavyAttackBoth")
+		end,
+		
+		-- Fim de hitbox (HeavyAttackEnd)
+		onHeavyAtaqueFim = OnMarkerHeavyAtaqueFim,
+		
+		-- Fallback: HeavyAttack genérico (compatibilidade com animações antigas)
+		onHeavyAttack = OnMarkerHeavyAttack,
+	})
 
-	-- Marcador de hitbox (HeavyAttack)
-	local conexaoHit = track:GetMarkerReachedSignal("HeavyAttack"):Connect(function()
-		OnMarkerHeavyAttack()
-	end)
-	table.insert(heavyAttackState.conexoesMarkers, conexaoHit)
+	-- Guarda a função de limpeza como mock conexão
+	local mockConexao = {
+		Connected = true,
+		Disconnect = function(self)
+			if self.Connected then
+				self.Connected = false
+				limpezaListeners()
+			end
+		end,
+	}
+	table.insert(heavyAttackState.conexoesMarkers, mockConexao :: any)
 
 	-- Conexão de término
 	heavyAttackState.conexaoTermino = track.Stopped:Connect(function()
@@ -1153,6 +1342,9 @@ end
 
 --- Solicita ao servidor a remoção do Motor6D + WeaponModel do character do jogador
 local function RemoverAcessorioDoJogador()
+	-- Destroi hitboxes cacheadas pois o WeaponModel será removido
+	GerenciadorHitboxCliente.DestruirTodas()
+
 	-- Solicitar remoção ao servidor
 	EquipamentoAcao:FireServer("RemoverAcessorio", "RightArm")
 
@@ -3042,6 +3234,10 @@ player.CharacterAdded:Connect(function(novoCharacter)
 	humanoid = character:WaitForChild("Humanoid")
 	animator = humanoid:WaitForChild("Animator")
 
+	-- Atualiza o gerenciador de hitbox com o novo personagem
+	GerenciadorHitboxCliente.DestruirTodas()
+	GerenciadorHitboxCliente.DefinirCharacter(novoCharacter)
+
 	-- Reconecta StateChanged
 	humanoid.StateChanged:Connect(OnStateChanged)
 
@@ -3127,6 +3323,18 @@ end)
 
 -- Pré-carrega todas as animações ao iniciar
 PreCarregarAnimacoes()
+
+-- Inicializa o gerenciador de hitbox client-side
+GerenciadorHitboxCliente.DefinirCharacter(character)
+GerenciadorHitboxCliente.DefinirCallbackHit(function(alvo, mao)
+	-- Envia hit detectado pelo cliente para validação no servidor
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	TentarAcao:FireServer("HitboxAcerto", {
+		mao = mao,
+		alvo = alvo,
+		cframe = hrp and hrp.CFrame or nil,
+	})
+end)
 
 -- Começa com Idle
 AtualizarBaseIdle()

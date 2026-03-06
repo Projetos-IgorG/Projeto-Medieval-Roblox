@@ -258,4 +258,67 @@ function Modulo_Dano.AplicarDano(tool: Tool, atacante: Player | Model, alvo: Mod
 	}
 end
 
+-- ═══════════════════════════════════════════════════════════════════
+-- FUNÇÃO COM DANO EXPLÍCITO (DUAL-WIELD)
+-- ═══════════════════════════════════════════════════════════════════
+
+--- Aplica dano com um valor explícito (sem ler da Tool).
+--- Útil para dual-wield onde cada mão aplica metade do dano da sua arma.
+---@param atacante Player | Model Jogador ou Character atacante
+---@param alvo Model Character ou NPC alvo
+---@param tipoAtaque string Tipo de ataque (AtaqueLeve, AtaqueLeveFinal, AtaquePesado)
+---@param danoBase number Dano base já calculado (ex: metade do dano da arma)
+---@return ResultadoDano
+function Modulo_Dano.AplicarDanoComValor(
+	atacante: Player | Model,
+	alvo: Model,
+	tipoAtaque: string,
+	danoBase: number
+): ResultadoDano
+	-- Validação de atacante
+	local atacanteValido, atacanteErro = Modulo_Dano.ValidarAtacante(atacante)
+	if not atacanteValido then
+		return {
+			sucesso = false,
+			danoAplicado = nil,
+			erro = atacanteErro,
+		}
+	end
+
+	-- Validação de alvo
+	local alvoValido, alvoErro = Modulo_Dano.ValidarAlvo(alvo)
+	if not alvoValido then
+		return {
+			sucesso = false,
+			danoAplicado = nil,
+			erro = alvoErro,
+		}
+	end
+
+	-- Calcula dano final com multiplicador de tipo
+	local danoFinal = Modulo_Dano.CalcularDano(danoBase, tipoAtaque)
+
+	-- Aplica dano com pcall para segurança
+	local sucesso, erro = pcall(function()
+		local humanoid = alvo:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid:TakeDamage(danoFinal)
+		end
+	end)
+
+	if not sucesso then
+		return {
+			sucesso = false,
+			danoAplicado = nil,
+			erro = "Erro ao aplicar dano: " .. tostring(erro),
+		}
+	end
+
+	return {
+		sucesso = true,
+		danoAplicado = danoFinal,
+		erro = nil,
+	}
+end
+
 return Modulo_Dano
