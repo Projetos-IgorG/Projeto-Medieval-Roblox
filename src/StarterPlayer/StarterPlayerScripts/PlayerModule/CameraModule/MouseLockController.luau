@@ -169,7 +169,7 @@ function MouseLockController:OnMouseLockToggled()
 	self.mouseLockToggledEvent:Fire()
 end
 
-function MouseLockController:DoMouseLockSwitch(name, state, input)
+function MouseLockController:DoMouseLockSwitch(_name, state, _input)
 	if state == Enum.UserInputState.Begin then
 		self:OnMouseLockToggled()
 		return Enum.ContextActionResult.Sink

@@ -160,7 +160,7 @@ function Invisicam.new()
 	self.savedHits = {} -- Objects currently being faded in/out
 	self.trackedLimbs = {} -- Used in limb-tracking casting modes
 
-	self.camera = game.Workspace.CurrentCamera
+	self.camera = workspace.CurrentCamera
 
 	self.enabled = false
 	return self
@@ -188,7 +188,8 @@ end
 
 function Invisicam:MoveBehavior(castPoints)
 	for i = 1, MOVE_CASTS do
-		local position: Vector3, velocity: Vector3 = self.humanoidRootPart.Position, self.humanoidRootPart.Velocity
+		local position: Vector3, velocity: Vector3 =
+			self.humanoidRootPart.Position, self.humanoidRootPart.AssemblyLinearVelocity
 		local horizontalSpeed: number = Vector3.new(velocity.X, 0, velocity.Z).Magnitude / 2
 		local offsetVector: Vector3 = (i - 1) * self.humanoidRootPart.CFrame.lookVector :: Vector3 * horizontalSpeed
 		castPoints[#castPoints + 1] = position + offsetVector
@@ -232,13 +233,13 @@ function Invisicam:CharacterOutlineBehavior(castPoints)
 	local torsoRight = self.torsoPart.CFrame.rightVector.unit
 
 	-- Torso cross of points for interior coverage
-	castPoints[#castPoints + 1] = self.torsoPart.CFrame.p
-	castPoints[#castPoints + 1] = self.torsoPart.CFrame.p + torsoUp
-	castPoints[#castPoints + 1] = self.torsoPart.CFrame.p - torsoUp
-	castPoints[#castPoints + 1] = self.torsoPart.CFrame.p + torsoRight
-	castPoints[#castPoints + 1] = self.torsoPart.CFrame.p - torsoRight
+	castPoints[#castPoints + 1] = self.torsoPart.CFrame.Position
+	castPoints[#castPoints + 1] = self.torsoPart.CFrame.Position + torsoUp
+	castPoints[#castPoints + 1] = self.torsoPart.CFrame.Position - torsoUp
+	castPoints[#castPoints + 1] = self.torsoPart.CFrame.Position + torsoRight
+	castPoints[#castPoints + 1] = self.torsoPart.CFrame.Position - torsoRight
 	if self.headPart then
-		castPoints[#castPoints + 1] = self.headPart.CFrame.p
+		castPoints[#castPoints + 1] = self.headPart.CFrame.Position
 	end
 
 	local cframe = CFrame.new(
@@ -260,7 +261,7 @@ function Invisicam:CharacterOutlineBehavior(castPoints)
 
 		if FFlagUserRaycastUpdateAPI then
 			includeParams.FilterDescendantsInstances = partsWhitelist
-			local raycastResult = game.Workspace:Raycast(centerPoint + offset, -3 * offset, includeParams)
+			local raycastResult = workspace:Raycast(centerPoint + offset, -3 * offset, includeParams)
 
 			if raycastResult then
 				-- Use hit point as the cast point, but nudge it slightly inside the character so that bumping up against
@@ -269,12 +270,16 @@ function Invisicam:CharacterOutlineBehavior(castPoints)
 				castPoints[#castPoints + 1] = position + 0.2 * (centerPoint - position).unit
 			end
 		else
-			local ray = Ray.new(centerPoint + offset, -3 * offset)
-			local hit, hitPoint = game.Workspace:FindPartOnRayWithWhitelist(ray, partsWhitelist, false)
+			local raycastParams = RaycastParams.new()
+			raycastParams.FilterType = Enum.RaycastFilterType.Include
+			raycastParams.FilterDescendantsInstances = partsWhitelist
+			raycastParams.IgnoreWater = true
+			local result = workspace:Raycast(centerPoint + offset, -3 * offset, raycastParams)
 
-			if hit then
+			if result and result.Instance then
 				-- Use hit point as the cast point, but nudge it slightly inside the character so that bumping up against
 				-- walls is less likely to cause a transparency glitch
+				local hitPoint = result.Position
 				castPoints[#castPoints + 1] = hitPoint + 0.2 * (centerPoint - hitPoint).unit
 			end
 		end
@@ -288,16 +293,16 @@ function Invisicam:SmartCircleBehavior(castPoints)
 	-- SMART_CIRCLE mode includes rays to head and 5 to the torso.
 	-- Hands, arms, legs and feet are not included since they
 	-- are not canCollide and can therefore go inside of parts
-	castPoints[#castPoints + 1] = self.torsoPart.CFrame.p
-	castPoints[#castPoints + 1] = self.torsoPart.CFrame.p + torsoUp
-	castPoints[#castPoints + 1] = self.torsoPart.CFrame.p - torsoUp
-	castPoints[#castPoints + 1] = self.torsoPart.CFrame.p + torsoRight
-	castPoints[#castPoints + 1] = self.torsoPart.CFrame.p - torsoRight
+	castPoints[#castPoints + 1] = self.torsoPart.CFrame.Position
+	castPoints[#castPoints + 1] = self.torsoPart.CFrame.Position + torsoUp
+	castPoints[#castPoints + 1] = self.torsoPart.CFrame.Position - torsoUp
+	castPoints[#castPoints + 1] = self.torsoPart.CFrame.Position + torsoRight
+	castPoints[#castPoints + 1] = self.torsoPart.CFrame.Position - torsoRight
 	if self.headPart then
-		castPoints[#castPoints + 1] = self.headPart.CFrame.p
+		castPoints[#castPoints + 1] = self.headPart.CFrame.Position
 	end
 
-	local cameraOrientation = self.camera.CFrame - self.camera.CFrame.p
+	local cameraOrientation = self.camera.CFrame - self.camera.CFrame.Position
 	local torsoPoint = Vector3.new(0, 0.5, 0)
 		+ (self.torsoPart and self.torsoPart.Position or self.humanoidRootPart.Position)
 	local radius = 2.5
@@ -316,11 +321,11 @@ function Invisicam:SmartCircleBehavior(castPoints)
 		local circlePoint = torsoPoint + cameraOrientation * offset
 
 		-- Vector from camera to point on the circle being tested
-		local vp = circlePoint - self.camera.CFrame.p
+		local vp = circlePoint - self.camera.CFrame.Position
 
 		if FFlagUserRaycastUpdateAPI then
 			excludeParams.FilterDescendantsInstances = { self.char }
-			local raycastResult = game.Workspace:Raycast(torsoPoint, circlePoint - torsoPoint, excludeParams)
+			local raycastResult = workspace:Raycast(torsoPoint, circlePoint - torsoPoint, excludeParams)
 
 			local castPoint = circlePoint
 			if raycastResult then
@@ -335,7 +340,7 @@ function Invisicam:SmartCircleBehavior(castPoints)
 				local v1 = (perp:Cross(normal)).unit
 
 				-- Vector from camera to offset hit
-				local vprime = (hprime - self.camera.CFrame.p).unit
+				local vprime = (hprime - self.camera.CFrame.Position).unit
 
 				-- This dot product checks to see if the vector along the hit surface would hit the correct
 				-- side of the invisicam cone, or if it would cross the camera look vector and hit the wrong side
@@ -343,7 +348,7 @@ function Invisicam:SmartCircleBehavior(castPoints)
 					castPoint = RayIntersection(hprime, v1, circlePoint, vp)
 
 					if castPoint.Magnitude > 0 then
-						raycastResult = game.Workspace:Raycast(hprime, castPoint - hprime, excludeParams)
+						raycastResult = workspace:Raycast(hprime, castPoint - hprime, excludeParams)
 
 						if raycastResult then
 							local hprime2 = raycastResult.Position + 0.1 * raycastResult.Normal.Unit
@@ -356,7 +361,7 @@ function Invisicam:SmartCircleBehavior(castPoints)
 					castPoint = hprime
 				end
 
-				raycastResult = game.Workspace:Raycast(torsoPoint, castPoint - torsoPoint, excludeParams)
+				raycastResult = workspace:Raycast(torsoPoint, castPoint - torsoPoint, excludeParams)
 
 				if raycastResult then
 					local castPoint2 = raycastResult.Position - 0.1 * (castPoint - torsoPoint).unit
@@ -366,11 +371,15 @@ function Invisicam:SmartCircleBehavior(castPoints)
 
 			castPoints[#castPoints + 1] = castPoint
 		else
-			local ray = Ray.new(torsoPoint, circlePoint - torsoPoint)
-			local hit, hp, hitNormal = game.Workspace:FindPartOnRayWithIgnoreList(ray, { self.char }, false, false)
+			local rayParams = RaycastParams.new()
+			rayParams.FilterType = Enum.RaycastFilterType.Exclude
+			rayParams.FilterDescendantsInstances = { self.char }
+			local result = workspace:Raycast(torsoPoint, circlePoint - torsoPoint, rayParams)
 			local castPoint = circlePoint
 
-			if hit then
+			if result and result.Instance then
+				local hp = result.Position
+				local hitNormal = result.Normal
 				local hprime = hp + 0.1 * hitNormal.unit -- Slightly offset hit point from the hit surface
 				local v0 = hprime - torsoPoint -- Vector from torso to offset hit point
 
@@ -380,7 +389,7 @@ function Invisicam:SmartCircleBehavior(castPoints)
 				local v1 = (perp:Cross(hitNormal)).unit
 
 				-- Vector from camera to offset hit
-				local vprime = (hprime - self.camera.CFrame.p).unit
+				local vprime = (hprime - self.camera.CFrame.Position).unit
 
 				-- This dot product checks to see if the vector along the hit surface would hit the correct
 				-- side of the invisicam cone, or if it would cross the camera look vector and hit the wrong side
@@ -388,12 +397,10 @@ function Invisicam:SmartCircleBehavior(castPoints)
 					castPoint = RayIntersection(hprime, v1, circlePoint, vp)
 
 					if castPoint.Magnitude > 0 then
-						local checkRay = Ray.new(hprime, castPoint - hprime)
-						local checkHit, checkHitPoint, checkHitNormal =
-							game.Workspace:FindPartOnRayWithIgnoreList(checkRay, { self.char }, false, false)
+						local checkResult = workspace:Raycast(hprime, castPoint - hprime, rayParams)
 
-						if checkHit then
-							local hprime2 = checkHitPoint + 0.1 * checkHitNormal.unit
+						if checkResult and checkResult.Instance then
+							local hprime2 = checkResult.Position + 0.1 * checkResult.Normal.unit
 							castPoint = hprime2
 						end
 					else
@@ -403,12 +410,10 @@ function Invisicam:SmartCircleBehavior(castPoints)
 					castPoint = hprime
 				end
 
-				local finalRay = Ray.new(torsoPoint, (castPoint - torsoPoint))
-				local finalHit, finalHitPoint, _ =
-					game.Workspace:FindPartOnRayWithIgnoreList(finalRay, { self.char }, false, false)
+				local finalResult = workspace:Raycast(torsoPoint, (castPoint - torsoPoint), rayParams)
 
-				if finalHit then
-					local castPoint2 = finalHitPoint - 0.1 * (castPoint - torsoPoint).unit
+				if finalResult and finalResult.Instance then
+					local castPoint2 = finalResult.Position - 0.1 * (castPoint - torsoPoint).unit
 					castPoint = castPoint2
 				end
 			end
@@ -503,13 +508,13 @@ function Invisicam:Cleanup()
 	end
 end
 
-function Invisicam:Update(dt: number, desiredCameraCFrame: CFrame, desiredCameraFocus: CFrame): (CFrame, CFrame)
+function Invisicam:Update(_dt: number, desiredCameraCFrame: CFrame, desiredCameraFocus: CFrame): (CFrame, CFrame)
 	-- Bail if there is no Character
 	if not self.enabled or not self.char then
 		return desiredCameraCFrame, desiredCameraFocus
 	end
 
-	self.camera = game.Workspace.CurrentCamera
+	self.camera = workspace.CurrentCamera
 
 	-- TODO: Move this to a GetHumanoidRootPart helper, probably combine with CheckTorsoReference
 	-- Make sure we still have a HumanoidRootPart
@@ -574,8 +579,8 @@ function Invisicam:Update(dt: number, desiredCameraCFrame: CFrame, desiredCamera
 	if USE_STACKING_TRANSPARENCY then
 		-- This first call uses head and torso rays to find out how many parts are stacked up
 		-- for the purpose of calculating required per-part transparency
-		local headPoint = self.headPart and self.headPart.CFrame.p or castPoints[1]
-		local torsoPoint = self.torsoPart and self.torsoPart.CFrame.p or castPoints[2]
+		local headPoint = self.headPart and self.headPart.CFrame.Position or castPoints[1]
+		local torsoPoint = self.torsoPart and self.torsoPart.CFrame.Position or castPoints[2]
 		hitParts = self.camera:GetPartsObscuringTarget({ headPoint, torsoPoint }, ignoreList)
 
 		-- Count how many things the sample rays passed through, including decals. This should only

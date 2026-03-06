@@ -175,7 +175,7 @@ function BaseCamera:_setUpConfigurations()
 	self:OnPlayerCameraPropertyChange()
 end
 
-function BaseCamera:OnCharacterAdded(char)
+function BaseCamera:OnCharacterAdded(_char)
 	-- the camera should only reset when the character dies and respawns
 	-- not when the camera disables and reenables
 	self.resetCameraAngle = self.resetCameraAngle or self:GetEnabled()
@@ -194,7 +194,7 @@ function BaseCamera:GetHumanoidRootPart(): BasePart
 	return self.humanoidRootPart
 end
 
-function BaseCamera:GetBodyPartToFollow(humanoid: Humanoid, isDead: boolean) -- BasePart
+function BaseCamera:GetBodyPartToFollow(humanoid: Humanoid, _isDead: boolean) -- BasePart
 	-- If the humanoid is dead, prefer the head part if one still exists as a sibling of the humanoid
 	if humanoid:GetState() == Enum.HumanoidStateType.Dead then
 		local character = humanoid.Parent
@@ -286,18 +286,18 @@ function BaseCamera:GetSubjectVelocity(): Vector3
 	end
 
 	if cameraSubject:IsA("BasePart") then
-		return cameraSubject.Velocity
+		return cameraSubject.AssemblyLinearVelocity
 	elseif cameraSubject:IsA("Humanoid") then
 		local rootPart = cameraSubject.RootPart
 
 		if rootPart then
-			return rootPart.Velocity
+			return rootPart.AssemblyLinearVelocity
 		end
 	elseif cameraSubject:IsA("Model") then
 		local primaryPart = cameraSubject.PrimaryPart
 
 		if primaryPart then
-			return primaryPart.Velocity
+			return primaryPart.AssemblyLinearVelocity
 		end
 	end
 
@@ -313,18 +313,18 @@ function BaseCamera:GetSubjectRotVelocity(): Vector3
 	end
 
 	if cameraSubject:IsA("BasePart") then
-		return cameraSubject.RotVelocity
+		return cameraSubject.AssemblyAngularVelocity
 	elseif cameraSubject:IsA("Humanoid") then
 		local rootPart = cameraSubject.RootPart
 
 		if rootPart then
-			return rootPart.RotVelocity
+			return rootPart.AssemblyAngularVelocity
 		end
 	elseif cameraSubject:IsA("Model") then
 		local primaryPart = cameraSubject.PrimaryPart
 
 		if primaryPart then
-			return primaryPart.RotVelocity
+			return primaryPart.AssemblyAngularVelocity
 		end
 	end
 
@@ -362,7 +362,7 @@ end
 
 function BaseCamera:GetSubjectPosition(): Vector3?
 	local result = self.lastSubjectPosition
-	local camera = game.Workspace.CurrentCamera
+	local camera = workspace.CurrentCamera
 	local cameraSubject = camera and camera.CameraSubject
 
 	if cameraSubject then
@@ -445,7 +445,7 @@ function BaseCamera:OnCurrentCameraChanged()
 		self.cameraSubjectChangedConn = nil
 	end
 
-	local camera = game.Workspace.CurrentCamera
+	local camera = workspace.CurrentCamera
 	if camera then
 		self.cameraSubjectChangedConn = camera:GetPropertyChangedSignal("CameraSubject"):Connect(function()
 			self:OnNewCameraSubject()
@@ -710,7 +710,7 @@ end
 -- never be used as the starting point for updating the nominal camera-to-subject distance (self.currentSubjectDistance)
 -- since that is a desired target value set only by mouse wheel (or equivalent) input, PopperCam, and clamped to min max camera distance
 function BaseCamera:GetMeasuredDistanceToFocus(): number?
-	local camera = game.Workspace.CurrentCamera
+	local camera = workspace.CurrentCamera
 	if camera then
 		return (camera.CFrame.Position - camera.Focus.Position).Magnitude
 	end
@@ -718,7 +718,7 @@ function BaseCamera:GetMeasuredDistanceToFocus(): number?
 end
 
 function BaseCamera:GetCameraLookVector(): Vector3
-	return game.Workspace.CurrentCamera and game.Workspace.CurrentCamera.CFrame.LookVector or UNIT_Z
+	return workspace.CurrentCamera and workspace.CurrentCamera.CFrame.LookVector or UNIT_Z
 end
 
 function BaseCamera:CalculateNewLookCFrameFromArg(suppliedLookVector: Vector3?, rotateInput: Vector2): CFrame
@@ -740,7 +740,7 @@ end
 
 function BaseCamera:CalculateNewLookVectorVRFromArg(rotateInput: Vector2): Vector3
 	local subjectPosition: Vector3 = self:GetSubjectPosition()
-	local vecToSubject: Vector3 = (subjectPosition - (game.Workspace.CurrentCamera :: Camera).CFrame.Position)
+	local vecToSubject: Vector3 = (subjectPosition - (workspace.CurrentCamera :: Camera).CFrame.Position)
 	local currLookVector: Vector3 = (vecToSubject * X1_Y0_Z1).unit
 	local vrRotateInput: Vector2 = Vector2.new(rotateInput.X, 0)
 	local startCFrame: CFrame = CFrame.new(ZERO_VECTOR3, currLookVector)
@@ -794,7 +794,7 @@ function BaseCamera:IsInFirstPerson()
 	return self.inFirstPerson
 end
 
-function BaseCamera:Update(dt)
+function BaseCamera:Update(_dt)
 	error("BaseCamera:Update() This is a virtual function that should never be getting called.", 2)
 end
 

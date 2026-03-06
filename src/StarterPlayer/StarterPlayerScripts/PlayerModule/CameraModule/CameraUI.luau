@@ -15,14 +15,14 @@ do
 		if not initialized then
 			initialized = true
 		end
-		
+
 		if not enabled then
 			CameraUI.setCameraModeToastOpen(false)
 		end
 	end
 
 	function CameraUI.setCameraModeToastOpen(open: boolean)
-		assert(initialized)
+		assert(initialized, "CameraUI must be initialized before use")
 
 		if open then
 			StarterGui:SetCore("SendNotification", {

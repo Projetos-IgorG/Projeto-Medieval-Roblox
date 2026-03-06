@@ -51,7 +51,6 @@ function ClassicCamera.new()
 
 	-- Estado para suavização de offsets dinâmicos
 	self.currentMovementOffset = Vector3.zero
-	self.currentMovementOffset = Vector3.zero
 	self.currentShoulderOffset = Vector3.zero
 	self.offsetLerpSpeed = 8 -- Velocidade do lerp (maior = mais rápido)
 

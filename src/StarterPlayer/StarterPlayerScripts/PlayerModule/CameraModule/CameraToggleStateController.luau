@@ -1,6 +1,4 @@
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local GameSettings = UserSettings():GetService("UserGameSettings")
+local _GameSettings = UserSettings():GetService("UserGameSettings")
 
 local Input = require(script.Parent:WaitForChild("CameraInput"))
 local CameraUI = require(script.Parent:WaitForChild("CameraUI"))
@@ -56,17 +54,14 @@ return function(isFirstPerson: boolean)
 			CameraUtils.restoreMouseBehavior()
 			CameraUtils.setRotationTypeOverride(Enum.RotationType.CameraRelative)
 		end
-
 	elseif Input.getTogglePan() then
 		CameraUtils.setMouseIconOverride(CROSS_MOUSE_ICON)
 		CameraUtils.setMouseBehaviorOverride(Enum.MouseBehavior.LockCenter)
 		CameraUtils.setRotationTypeOverride(Enum.RotationType.MovementRelative)
-
 	elseif Input.getHoldPan() then
 		CameraUtils.restoreMouseIcon()
 		CameraUtils.setMouseBehaviorOverride(Enum.MouseBehavior.LockCurrentPosition)
 		CameraUtils.setRotationTypeOverride(Enum.RotationType.MovementRelative)
-
 	else
 		CameraUtils.restoreMouseIcon()
 		CameraUtils.restoreMouseBehavior()

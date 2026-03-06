@@ -238,7 +238,7 @@ function VRBaseCamera:UpdateFadeFromBlack(timeDelta: number)
 	end
 end
 
-function VRBaseCamera:StartVREdgeBlur(player)
+function VRBaseCamera:StartVREdgeBlur(vRPlayer)
 	if UserGameSettings.VignetteEnabled == false then
 		return
 	end
@@ -258,7 +258,7 @@ function VRBaseCamera:StartVREdgeBlur(player)
 		blurPart.Transparency = 1
 		blurPart.CastShadow = false
 
-		RunService.RenderStepped:Connect(function(step)
+		RunService.RenderStepped:Connect(function(_step)
 			local userHeadCF = VRService:GetUserCFrame(Enum.UserCFrame.Head)
 
 			local vrCF = (workspace.CurrentCamera :: Camera).CFrame
@@ -272,7 +272,7 @@ function VRBaseCamera:StartVREdgeBlur(player)
 		end)
 	end
 
-	local VRScreen = player.PlayerGui:FindFirstChild("VRBlurScreen")
+	local VRScreen = vRPlayer.PlayerGui:FindFirstChild("VRBlurScreen")
 	local VRBlur = nil
 	if VRScreen then
 		VRBlur = VRScreen:FindFirstChild("VRBlur")
@@ -284,7 +284,7 @@ function VRBaseCamera:StartVREdgeBlur(player)
 		end
 
 		VRScreen.Name = "VRBlurScreen"
-		VRScreen.Parent = player.PlayerGui
+		VRScreen.Parent = vRPlayer.PlayerGui
 
 		VRScreen.Adornee = blurPart
 
@@ -294,7 +294,7 @@ function VRBaseCamera:StartVREdgeBlur(player)
 
 		VRBlur.Image = "rbxasset://textures/ui/VR/edgeBlur.png"
 		VRBlur.AnchorPoint = Vector2.new(0.5, 0.5)
-		VRBlur.Position = UDim2.new(0.5, 0, 0.5, 0)
+		VRBlur.Position = UDim2.fromScale(0.5, 0.5)
 
 		-- this computes the ratio between the GUI 3D panel and the VR viewport
 		-- adding 15% overshoot for edges on 2 screen headsets
@@ -312,8 +312,8 @@ function VRBaseCamera:StartVREdgeBlur(player)
 	self.VREdgeBlurTimer = VR_SCREEN_EGDE_BLEND_TIME
 end
 
-function VRBaseCamera:UpdateEdgeBlur(player, timeDelta)
-	local VRScreen = player.PlayerGui:FindFirstChild("VRBlurScreen")
+function VRBaseCamera:UpdateEdgeBlur(vRPlayer, timeDelta)
+	local VRScreen = vRPlayer.PlayerGui:FindFirstChild("VRBlurScreen")
 	local VRBlur = nil
 	if VRScreen then
 		VRBlur = VRScreen:FindFirstChild("VRBlur")
@@ -374,7 +374,7 @@ function VRBaseCamera:GetSubjectPosition(): Vector3?
 	local result = BaseCamera.GetSubjectPosition(self)
 
 	-- new VR system overrides
-	local camera = game.Workspace.CurrentCamera
+	local camera = workspace.CurrentCamera
 	local cameraSubject = camera and camera.CameraSubject
 	if cameraSubject then
 		if cameraSubject:IsA("Humanoid") then

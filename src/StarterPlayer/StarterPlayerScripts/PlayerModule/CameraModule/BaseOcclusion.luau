@@ -3,13 +3,14 @@
 	2018 Camera Update - AllYourBlox
 --]]
 
---[[ The Module ]]--
+--[[ The Module ]]
+--
 local BaseOcclusion: any = {}
 BaseOcclusion.__index = BaseOcclusion
 setmetatable(BaseOcclusion, {
 	__call = function(_, ...)
 		return BaseOcclusion.new(...)
-	end
+	end,
 })
 
 function BaseOcclusion.new()
@@ -18,28 +19,26 @@ function BaseOcclusion.new()
 end
 
 -- Called when character is added
-function BaseOcclusion:CharacterAdded(char: Model, player: Player)
-end
+function BaseOcclusion:CharacterAdded(_char: Model, _player: Player) end
 
 -- Called when character is about to be removed
-function BaseOcclusion:CharacterRemoving(char: Model, player: Player)
-end
+function BaseOcclusion:CharacterRemoving(_char: Model, _player: Player) end
 
-function BaseOcclusion:OnCameraSubjectChanged(newSubject)
-end
+function BaseOcclusion:OnCameraSubjectChanged(_newSubject) end
 
---[[ Derived classes are required to override and implement all of the following functions ]]--
+--[[ Derived classes are required to override and implement all of the following functions ]]
+--
 function BaseOcclusion:GetOcclusionMode(): Enum.DevCameraOcclusionMode?
 	-- Must be overridden in derived classes to return an Enum.DevCameraOcclusionMode value
 	warn("BaseOcclusion GetOcclusionMode must be overridden by derived classes")
 	return nil
 end
 
-function BaseOcclusion:Enable(enabled: boolean)
+function BaseOcclusion:Enable(_enabled: boolean)
 	warn("BaseOcclusion Enable must be overridden by derived classes")
 end
 
-function BaseOcclusion:Update(dt: number, desiredCameraCFrame: CFrame, desiredCameraFocus: CFrame)
+function BaseOcclusion:Update(_dt: number, desiredCameraCFrame: CFrame, desiredCameraFocus: CFrame)
 	warn("BaseOcclusion Update must be overridden by derived classes")
 	return desiredCameraCFrame, desiredCameraFocus
 end
