@@ -806,9 +806,7 @@ function ToolBuilder.CriarArmaEquipada(dadosArma, parent)
 			end
 		elseif desc:IsA("Decal") or desc:IsA("Texture") then
 			desc.Transparency = 1
-		elseif desc:IsA("ParticleEmitter") or desc:IsA("Trail") or desc:IsA("Beam") then
-			desc.Enabled = false
-		elseif desc:IsA("Light") then
+		elseif desc:IsA("ParticleEmitter") or desc:IsA("Trail") or desc:IsA("Beam") or desc:IsA("Light") then
 			desc.Enabled = false
 		end
 	end
