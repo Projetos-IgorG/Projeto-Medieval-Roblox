@@ -1064,15 +1064,15 @@ local equipAnimState = {
 	modoAlvo = nil, -- Modo para o qual está equipando
 	conexaoTermino = nil, -- Conexão para detectar término
 	tempoInicio = 0, -- Tempo quando a animação iniciou (para calcular progresso)
-	-- Sistema de acessório de arma
-	acessorioClonado = nil, -- Referência ao Accessory clonado no character
+	-- Sistema de arma visual (Motor6D)
+	armaClonada = nil, -- Referência ao Motor6D (WeaponJoint) criado no character
 	conexaoMarkerEquip = nil, -- Conexão do marker "Equip" na animação
 	conexaoMarkerDesequip = nil, -- Conexão do marker "Desequip" na animação
-	acessorioJaClonado = false, -- Flag para evitar clonagens duplicadas
+	acessorioJaClonado = false, -- Flag para evitar criações duplicadas
 }
 
 -- ═══════════════════════════════════════════════════════════════════
--- SISTEMA DE ACESSÓRIO DE ARMA (CLONAGEM/REMOÇÃO)
+-- SISTEMA DE ARMA VISUAL (MOTOR6D — SOLICITAÇÃO/REMOÇÃO)
 -- ═══════════════════════════════════════════════════════════════════
 
 --- Obtém o Tool atualmente equipado no character
@@ -1084,26 +1084,26 @@ local function ObterToolEquipado(): Tool?
 	return character:FindFirstChildOfClass("Tool")
 end
 
---- Solicita ao servidor a clonagem do acessório "AcessorioMaoDireita" para o character do jogador
---- Server-side para que todos os jogadores vejam o equipamento
---- NOTA: Só clona se o Tool equipado for do tipo "ArmasEquipadas" (incluindo Punhos, que clona ambos os acessórios)
+--- Solicita ao servidor a criação do Motor6D + WeaponModel para o character do jogador.
+--- Server-side para que todos os jogadores vejam o equipamento.
+--- NOTA: Só cria se o Tool equipado for do tipo "ArmasEquipadas" (incluindo Punhos).
 local function ClonarAcessorioParaJogador()
 	-- Evita solicitação duplicada
 	if equipAnimState.acessorioJaClonado then
-		-- Verifica se o acessório (server-side) ainda existe no character
-		if equipAnimState.acessorioClonado and equipAnimState.acessorioClonado.Parent == character then
-			DebugPrint("[ControladorEstado] Acessório já existe, ignorando")
+		-- Verifica se o joint (server-side) ainda existe no character
+		if equipAnimState.armaClonada and equipAnimState.armaClonada.Parent then
+			DebugPrint("[ControladorEstado] Arma já existe, ignorando")
 			return
 		end
 		-- Referência perdida, resetar
 		equipAnimState.acessorioJaClonado = false
-		equipAnimState.acessorioClonado = nil
+		equipAnimState.armaClonada = nil
 	end
 
 	-- Verificar se há tool equipado
 	local tool = ObterToolEquipado()
 	if not tool then
-		DebugPrint("[ControladorEstado] Nenhum Tool equipado para clonar acessório")
+		DebugPrint("[ControladorEstado] Nenhum Tool equipado para criar joint de arma")
 		return
 	end
 
@@ -1112,51 +1112,55 @@ local function ClonarAcessorioParaJogador()
 	if dadosFolder then
 		local tipoValue = dadosFolder:FindFirstChild("Tipo")
 		if not tipoValue or tipoValue.Value ~= "ArmasEquipadas" then
-			DebugPrint("[ControladorEstado] Tool não é ArmasEquipadas, ignorando clonagem de acessório:", tool.Name)
+			DebugPrint("[ControladorEstado] Tool não é ArmasEquipadas, ignorando:", tool.Name)
 			return
 		end
 	else
-		DebugPrint("[ControladorEstado] Tool sem Dados, ignorando clonagem de acessório:", tool.Name)
+		DebugPrint("[ControladorEstado] Tool sem Dados, ignorando:", tool.Name)
 		return
 	end
 
-	-- Solicitar clonagem ao servidor (server-side, visível para todos)
+	-- Solicitar criação ao servidor (server-side, visível para todos)
 	EquipamentoAcao:FireServer("ClonarAcessorio", "RightArm")
 
-	-- Marcar como clonado (servidor irá criar o acessório)
+	-- Marcar como criado (servidor irá criar o Motor6D + Model)
 	equipAnimState.acessorioJaClonado = true
 
-	-- Aguardar acessório aparecer no character (replicação do servidor)
+	-- Aguardar Motor6D aparecer no character (replicação do servidor)
 	task.defer(function()
 		local tentativas = 0
 		while tentativas < 20 do
 			if not character then
 				break
 			end
-			local acessorio = character:FindFirstChild("AcessorioMaoDireita")
-			if acessorio then
-				equipAnimState.acessorioClonado = acessorio
-				DebugPrint("[ControladorEstado] Acessório server-side detectado:", acessorio.Name)
-				break
+			-- Buscar o Motor6D no braço direito
+			local rightArm = character:FindFirstChild("Right Arm")
+			if rightArm then
+				local joint = rightArm:FindFirstChild("RightArm_WeaponJoint")
+				if joint then
+					equipAnimState.armaClonada = joint
+					DebugPrint("[ControladorEstado] WeaponJoint server-side detectado:", joint.Name)
+					break
+				end
 			end
 			task.wait(0.05)
 			tentativas += 1
 		end
 	end)
 
-	DebugPrint("[ControladorEstado] Solicitação de clonagem de acessório enviada ao servidor")
+	DebugPrint("[ControladorEstado] Solicitação de criação de joint de arma enviada ao servidor")
 end
 
---- Solicita ao servidor a remoção do acessório do character do jogador
+--- Solicita ao servidor a remoção do Motor6D + WeaponModel do character do jogador
 local function RemoverAcessorioDoJogador()
 	-- Solicitar remoção ao servidor
 	EquipamentoAcao:FireServer("RemoverAcessorio", "RightArm")
 
 	-- Limpar estado local
-	equipAnimState.acessorioClonado = nil
+	equipAnimState.armaClonada = nil
 	equipAnimState.acessorioJaClonado = false
 
-	DebugPrint("[ControladorEstado] Solicitação de remoção de acessório enviada ao servidor")
+	DebugPrint("[ControladorEstado] Solicitação de remoção de joint de arma enviada ao servidor")
 end
 
 --- Limpa todas as conexões de markers de equip/desequip
@@ -3066,12 +3070,12 @@ player.CharacterAdded:Connect(function(novoCharacter)
 		equipAnimState.conexaoTermino:Disconnect()
 		equipAnimState.conexaoTermino = nil
 	end
-	-- O acessório clonado será destruído junto com o character antigo
+	-- O modelo/joint de arma será destruído junto com o character antigo
 	-- Apenas resetamos as referências
 	equipAnimState.animacao = nil
 	equipAnimState.direcao = 0
 	equipAnimState.modoAlvo = nil
-	equipAnimState.acessorioClonado = nil
+	equipAnimState.armaClonada = nil
 	equipAnimState.acessorioJaClonado = false
 
 	-- Reseta flags

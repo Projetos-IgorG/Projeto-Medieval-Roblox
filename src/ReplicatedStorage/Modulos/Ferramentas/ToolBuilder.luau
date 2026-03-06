@@ -476,11 +476,12 @@ end
 function ToolBuilder.RestaurarComponentesTool(tool: Tool)
 	for _, desc in ipairs(tool:GetDescendants()) do
 		if desc:IsA("BasePart") then
-			-- Verificar se a parte está dentro de um Accessory
-			local ehAcessorio = desc:FindFirstAncestorOfClass("Accessory")
+			-- Verificar se a parte está dentro de um Accessory ou Model (WeaponModel)
+			local ehComponenteVisual = desc:FindFirstAncestorOfClass("Accessory")
+				or desc:FindFirstAncestorOfClass("Model")
 
-			if ehAcessorio then
-				-- Acessórios dentro do Tool ficam invisíveis, ancorados e sem colisão
+			if ehComponenteVisual then
+				-- Acessórios/WeaponModels dentro do Tool ficam invisíveis, ancorados e sem colisão
 				desc.Transparency = 1
 				desc.CanCollide = false
 				desc.CanTouch = false
@@ -497,11 +498,13 @@ function ToolBuilder.RestaurarComponentesTool(tool: Tool)
 				desc.Anchored = false
 			end
 		elseif desc:IsA("Decal") or desc:IsA("Texture") then
-			local ehAcessorio = desc:FindFirstAncestorOfClass("Accessory")
-			desc.Transparency = if ehAcessorio then 1 else 0
+			local ehComponenteVisual = desc:FindFirstAncestorOfClass("Accessory")
+				or desc:FindFirstAncestorOfClass("Model")
+			desc.Transparency = if ehComponenteVisual then 1 else 0
 		elseif desc:IsA("Light") or desc:IsA("ParticleEmitter") or desc:IsA("Trail") or desc:IsA("Beam") then
-			local ehAcessorio = desc:FindFirstAncestorOfClass("Accessory")
-			desc.Enabled = not ehAcessorio
+			local ehComponenteVisual = desc:FindFirstAncestorOfClass("Accessory")
+				or desc:FindFirstAncestorOfClass("Model")
+			desc.Enabled = not ehComponenteVisual
 		end
 	end
 end
@@ -785,9 +788,10 @@ function ToolBuilder.CriarArmaEquipada(dadosArma, parent)
 	-- (só os clones no Character serão visíveis)
 	for _, desc in ipairs(armaEquipada:GetDescendants()) do
 		if desc:IsA("BasePart") then
-			-- Se for parte de um Acessório, ocultar e ancorar
-			local ehAcessorio = desc:FindFirstAncestorOfClass("Accessory")
-			if ehAcessorio then
+			-- Se for parte de um Acessório ou Model (WeaponModel), ocultar e ancorar
+			local ehComponenteVisual = desc:FindFirstAncestorOfClass("Accessory")
+				or desc:FindFirstAncestorOfClass("Model")
+			if ehComponenteVisual then
 				desc.Transparency = 1
 				desc.CanCollide = false
 				desc.CanTouch = false

@@ -269,22 +269,94 @@ local function ConsumirTool(tool: Tool, dados: any): any
 end
 
 -- ═══════════════════════════════════════════════════════════════════
--- ACESSÓRIOS DE ARMA (SERVER-SIDE)
+-- ARMA VISUAL VIA MOTOR6D (SERVER-SIDE)
 -- ═══════════════════════════════════════════════════════════════════
 
---- Clona acessório(s) de arma para o Character do jogador (server-side, visível para todos).
---- Para armas normais: RightArm → AcessorioMaoDireita, LeftArm → AcessorioMaoEsquerda.
---- Para Punhos: clona ambos AcessorioMaoDireita e AcessorioMaoEsquerda.
+--- Mapeia o nome do slot para o nome da Part do braço no Character R6.
+local SLOT_PARA_BRACO: { [string]: string } = {
+	RightArm = "Right Arm",
+	LeftArm = "Left Arm",
+}
+
+--- Prepara todas as BaseParts de um Model clonado de arma:
+--- torna visíveis, desancoradas e sem colisão/toque.
+local function PrepararModelArma(model: Model)
+	for _, desc in ipairs(model:GetDescendants()) do
+		if desc:IsA("BasePart") then
+			-- "Hitbox" permanece invisível (usada apenas para detecção de colisão/dano)
+			desc.Transparency = if desc.Name == "HitboxPart" then 1 else 0
+			desc.Anchored = false
+			desc.CanCollide = false
+			desc.CanTouch = false
+			desc.CanQuery = false
+			desc.Massless = true
+		elseif desc:IsA("Decal") or desc:IsA("Texture") then
+			desc.Transparency = 0
+		elseif desc:IsA("Light") or desc:IsA("ParticleEmitter") or desc:IsA("Trail") or desc:IsA("Beam") then
+			desc.Enabled = true
+		elseif desc:IsA("ProximityPrompt") then
+			desc:Destroy()
+		end
+	end
+end
+
+--- Sufixo de nome por slot: "Right" ou "Left".
+local SLOT_SUFIXO: { [string]: string } = {
+	RightArm = "Right",
+	LeftArm = "Left",
+}
+
+--- Clona um WeaponModel, renomeia Model/Handle de acordo com o slot,
+--- cria um Motor6D ligando o Handle ao braço e retorna (clone, joint).
+--- O Motor6D usa C0 calculado a partir de um offset padrão na mão.
+---@param weaponModel Model Modelo original dentro do Tool
+---@param armPart BasePart Parte do braço ("Right Arm" ou "Left Arm")
+---@param slot string "RightArm" ou "LeftArm"
+---@param character Model Character do jogador
+---@return Model armaClone, Motor6D joint
+local function CriarJointParaBraco(
+	weaponModel: Model,
+	armPart: BasePart,
+	slot: string,
+	character: Model
+): (Model, Motor6D)
+	local sufixo = SLOT_SUFIXO[slot] or "Right"
+	local jointName = slot .. "_WeaponJoint"
+
+	local armaClone = weaponModel:Clone()
+	PrepararModelArma(armaClone)
+
+	-- Renomear Model e Handle de acordo com o slot
+	armaClone.Name = "WeaponModel" .. sufixo
+	local handleClone = armaClone:FindFirstChild("Handle") :: BasePart
+	assert(handleClone, "[ServicoEquipamento] WeaponModel sem Handle!")
+	handleClone.Name = "Handle" .. sufixo
+
+	armaClone.Parent = character
+
+	-- Posicionar handle aproximadamente na mão (offset padrão, ajustar in-game)
+	handleClone.CFrame = armPart.CFrame * CFrame.new(0, -1, 0) * CFrame.Angles(math.rad(-90), 0, 0)
+
+	-- Criar Motor6D "fotografando" o offset atual
+	local joint = Instance.new("Motor6D")
+	joint.Name = jointName
+	joint.Part0 = armPart
+	joint.Part1 = handleClone
+	joint.C0 = armPart.CFrame:Inverse() * handleClone.CFrame
+	joint.C1 = CFrame.new()
+	joint.Parent = armPart
+
+	return armaClone, joint
+end
+
+--- Cria joint(s) Motor6D para a arma equipada do jogador (server-side, visível para todos).
+--- Para armas normais: clona WeaponModel e cria um Motor6D no braço do slot.
+--- Para Punhos: clona WeaponModel duas vezes — uma para cada braço.
 ---@param player Player
 ---@param slot string "RightArm" ou "LeftArm"
-local function ClonarAcessoriosArmaServerSide(player: Player, slot: string)
+local function CriarJointArmaServerSide(player: Player, slot: string)
 	local character = player.Character
 	if not character then
-		return
-	end
-
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then
 		return
 	end
 
@@ -303,14 +375,14 @@ local function ClonarAcessoriosArmaServerSide(player: Player, slot: string)
 			dadosEquipamento[player][slot] = { acessoriosClonados = {} }
 			cache = dadosEquipamento[player][slot]
 		else
-			DebugPrint("[ServicoEquipamento] Sem cache para clonar acessório no slot:", slot)
+			DebugPrint("[ServicoEquipamento] Sem cache para criar joint no slot:", slot)
 			return
 		end
 	end
 
 	-- Verificar se o Tool na mão é ArmasEquipadas
 	if toolNaMao and LerTipoDados(toolNaMao) ~= "ArmasEquipadas" then
-		DebugPrint("[ServicoEquipamento] Tool na mão não é ArmasEquipadas, ignorando clonagem:", toolNaMao.Name)
+		DebugPrint("[ServicoEquipamento] Tool na mão não é ArmasEquipadas, ignorando:", toolNaMao.Name)
 		return
 	end
 
@@ -326,84 +398,121 @@ local function ClonarAcessoriosArmaServerSide(player: Player, slot: string)
 	end
 
 	if not toolEquipada then
-		DebugPrint("[ServicoEquipamento] Slot sem referência para clonar acessório:", slot)
+		DebugPrint("[ServicoEquipamento] Slot sem referência para criar joint:", slot)
 		return
 	end
 
-	-- Montar lista de acessórios a clonar
+	-- Buscar WeaponModel dentro do Tool
+	local weaponModel = toolEquipada:FindFirstChild("WeaponModel")
+	if not weaponModel or not weaponModel:IsA("Model") then
+		DebugPrint("[ServicoEquipamento] WeaponModel não encontrado em", toolEquipada.Name)
+		return
+	end
+
+	local handleOriginal = weaponModel:FindFirstChild("Handle")
+	if not handleOriginal or not handleOriginal:IsA("BasePart") then
+		DebugPrint("[ServicoEquipamento] Handle não encontrado dentro de WeaponModel em", toolEquipada.Name)
+		return
+	end
+
 	local ehPunhos = LerModoDados(toolEquipada) == "Punhos"
-	local acessoriosParaClonar: { Accessory } = {}
 
 	if ehPunhos then
-		-- Punhos: clonar ambos os acessórios
-		local acDir = toolEquipada:FindFirstChild("AcessorioMaoDireita")
-		if acDir and acDir:IsA("Accessory") then
-			table.insert(acessoriosParaClonar, acDir)
+		-- Punhos: clonar o mesmo WeaponModel para cada braço
+		local rightArm = character:FindFirstChild("Right Arm") :: BasePart
+		local leftArm = character:FindFirstChild("Left Arm") :: BasePart
+		if not rightArm or not leftArm then
+			DebugPrint("[ServicoEquipamento] Braços não encontrados para Punhos")
+			return
 		end
-		local acEsq = toolEquipada:FindFirstChild("AcessorioMaoEsquerda")
-		if acEsq and acEsq:IsA("Accessory") then
-			table.insert(acessoriosParaClonar, acEsq)
+
+		-- Remover joints existentes se houver
+		local existenteDir = rightArm:FindFirstChild("RightArm_WeaponJoint")
+		if existenteDir then
+			existenteDir:Destroy()
 		end
+		local existenteEsq = leftArm:FindFirstChild("LeftArm_WeaponJoint")
+		if existenteEsq then
+			existenteEsq:Destroy()
+		end
+
+		local cloneDir, jointDir = CriarJointParaBraco(weaponModel, rightArm, "RightArm", character)
+		local cloneEsq, jointEsq = CriarJointParaBraco(weaponModel, leftArm, "LeftArm", character)
+
+		-- Guardar no cache — armaModels e armaJoints como listas para Punhos
+		cache.armaModels = { cloneDir, cloneEsq }
+		cache.armaJoints = { jointDir, jointEsq }
+
+		DebugPrint("[ServicoEquipamento] Punhos: joints criados para ambos os braços")
 	else
-		-- Normal: clonar acessório do slot correspondente
-		local nomeAcessorio = if slot == "LeftArm" then "AcessorioMaoEsquerda" else "AcessorioMaoDireita"
-		local acessorioOriginal = toolEquipada:FindFirstChild(nomeAcessorio)
-		if not acessorioOriginal or not acessorioOriginal:IsA("Accessory") then
-			-- Fallback para LeftArm: tentar AcessorioMaoDireita
-			if slot == "LeftArm" then
-				acessorioOriginal = toolEquipada:FindFirstChild("AcessorioMaoDireita")
-			end
+		-- Arma normal: clonar WeaponModel para o braço do slot
+		local nomeBraco = SLOT_PARA_BRACO[slot]
+		if not nomeBraco then
+			warn("[ServicoEquipamento] Slot desconhecido para braço:", slot)
+			return
 		end
-		if acessorioOriginal and acessorioOriginal:IsA("Accessory") then
-			table.insert(acessoriosParaClonar, acessorioOriginal)
+
+		local armPart = character:FindFirstChild(nomeBraco) :: BasePart
+		if not armPart then
+			DebugPrint("[ServicoEquipamento] Braço não encontrado:", nomeBraco)
+			return
 		end
-	end
 
-	if #acessoriosParaClonar == 0 then
-		DebugPrint("[ServicoEquipamento] Nenhum acessório encontrado para clonar em", toolEquipada.Name)
-		return
-	end
+		local jointName = slot .. "_WeaponJoint"
 
-	if not cache.acessoriosClonados then
-		cache.acessoriosClonados = {}
-	end
-
-	for _, acessorioOriginal in ipairs(acessoriosParaClonar) do
-		-- Remover acessório com mesmo nome se já existir no character
-		local existente = character:FindFirstChild(acessorioOriginal.Name)
+		-- Remover joint existente se houver
+		local existente = armPart:FindFirstChild(jointName)
 		if existente then
 			existente:Destroy()
 		end
 
-		local clone = acessorioOriginal:Clone()
-		if not PrepararCloneAcessorio(clone) then
-			DebugPrint("[ServicoEquipamento] Acessório sem Handle:", acessorioOriginal.Name)
-			continue
-		end
+		local armaClone, joint = CriarJointParaBraco(weaponModel, armPart, slot, character)
 
-		humanoid:AddAccessory(clone)
-		table.insert(cache.acessoriosClonados, clone)
-		DebugPrint("[ServicoEquipamento] Acessório clonado server-side:", clone.Name, "para slot:", slot)
+		cache.armaModel = armaClone
+		cache.armaJoint = joint
+
+		DebugPrint("[ServicoEquipamento] Joint criado:", jointName, "para", toolEquipada.Name)
 	end
 end
 
---- Remove acessórios de arma clonados server-side do Character
+--- Remove joints e modelos de arma do Character do jogador.
 ---@param player Player
----@param slot string
-local function RemoverAcessoriosArmaServerSide(player: Player, slot: string)
+---@param slot string "RightArm" ou "LeftArm"
+local function RemoverJointArmaServerSide(player: Player, slot: string)
 	InicializarCache(player)
 	local cache = dadosEquipamento[player][slot]
-	if not cache or not cache.acessoriosClonados then
+	if not cache then
 		return
 	end
 
-	for _, acessorio in ipairs(cache.acessoriosClonados) do
-		if acessorio and acessorio.Parent then
-			acessorio:Destroy()
+	-- Limpar joint(s) e model(s) — suporta tanto campo único quanto listas (Punhos)
+	if cache.armaJoints then
+		for _, j in ipairs(cache.armaJoints) do
+			if j and j.Parent then
+				j:Destroy()
+			end
 		end
+		cache.armaJoints = nil
 	end
-	cache.acessoriosClonados = {}
-	DebugPrint("[ServicoEquipamento] Acessórios removidos server-side para slot:", slot)
+	if cache.armaJoint and cache.armaJoint.Parent then
+		cache.armaJoint:Destroy()
+	end
+	cache.armaJoint = nil
+
+	if cache.armaModels then
+		for _, m in ipairs(cache.armaModels) do
+			if m and m.Parent then
+				m:Destroy()
+			end
+		end
+		cache.armaModels = nil
+	end
+	if cache.armaModel and cache.armaModel.Parent then
+		cache.armaModel:Destroy()
+	end
+	cache.armaModel = nil
+
+	DebugPrint("[ServicoEquipamento] Joints/modelos de arma removidos para slot:", slot)
 end
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -740,7 +849,7 @@ function ServicoEquipamento:_EquiparItemNaEsquerda(player: Player, tool: Tool, t
 	-- Escudo: clonar imediatamente (sempre visível, independente da animação)
 	-- SegundaArma: NÃO clonar agora — será clonado junto com RightArm no marker "Equip" da animação
 	if tipoEsq == "Escudo" then
-		ClonarAcessoriosArmaServerSide(player, "LeftArm")
+		CriarJointArmaServerSide(player, "LeftArm")
 	end
 
 	DebugPrint("[ServicoEquipamento] Item equipado na esquerda:", tool.Name, "Tipo:", tipoEsq)
@@ -910,8 +1019,8 @@ function ServicoEquipamento:ProcessarDesequiparSlot(player: Player, slotName: st
 		local toolEquipado = slotOV.Value
 		local categoriaAnterior = cache and cache.dados and cache.dados.Categoria
 
-		-- Remover acessórios clonados server-side do Character
-		RemoverAcessoriosArmaServerSide(player, "RightArm")
+		-- Remover joints/modelos de arma do Character
+		RemoverJointArmaServerSide(player, "RightArm")
 
 		-- Destruir ArmaEquipada da Backpack/Character
 		if toolEquipado and toolEquipado.Parent then
@@ -958,8 +1067,8 @@ function ServicoEquipamento:ProcessarDesequiparSlot(player: Player, slotName: st
 	if slotName == "LeftArm" then
 		local toolEquipado = slotOV.Value
 
-		-- Remover acessórios clonados server-side do Character
-		RemoverAcessoriosArmaServerSide(player, "LeftArm")
+		-- Remover joints/modelos de arma do Character
+		RemoverJointArmaServerSide(player, "LeftArm")
 
 		-- Devolver item ao Backpack e destruir do EquipamentosAtivos
 		if toolEquipado and toolEquipado.Parent then
@@ -1055,14 +1164,14 @@ local function OnEquipamentoAcao(player: Player, acao: string, argumento: any)
 			warn("[ServicoEquipamento] Argumento inválido para ClonarAcessorio:", tostring(argumento))
 			return
 		end
-		ClonarAcessoriosArmaServerSide(player, argumento)
-		-- Se clonou RightArm e há SegundaArma no LeftArm → clonar LeftArm junto
+		CriarJointArmaServerSide(player, argumento)
+		-- Se criou joint RightArm e há SegundaArma no LeftArm → criar joint LeftArm junto
 		if argumento == "RightArm" then
 			InicializarCache(player)
 			local cacheEsq = dadosEquipamento[player].LeftArm
 			if cacheEsq and cacheEsq.tipoEsquerda == "SegundaArma" then
-				ClonarAcessoriosArmaServerSide(player, "LeftArm")
-				DebugPrint("[ServicoEquipamento] SegundaArma LeftArm acessório clonado junto com RightArm")
+				CriarJointArmaServerSide(player, "LeftArm")
+				DebugPrint("[ServicoEquipamento] SegundaArma LeftArm joint criado junto com RightArm")
 			end
 		end
 	elseif acao == "RemoverAcessorio" then
@@ -1070,14 +1179,14 @@ local function OnEquipamentoAcao(player: Player, acao: string, argumento: any)
 			warn("[ServicoEquipamento] Argumento inválido para RemoverAcessorio:", tostring(argumento))
 			return
 		end
-		RemoverAcessoriosArmaServerSide(player, argumento)
+		RemoverJointArmaServerSide(player, argumento)
 		-- Se removeu RightArm e há SegundaArma no LeftArm → remover LeftArm junto (Escudo NÃO)
 		if argumento == "RightArm" then
 			InicializarCache(player)
 			local cacheEsq = dadosEquipamento[player].LeftArm
 			if cacheEsq and cacheEsq.tipoEsquerda == "SegundaArma" then
-				RemoverAcessoriosArmaServerSide(player, "LeftArm")
-				DebugPrint("[ServicoEquipamento] SegundaArma LeftArm acessório removido junto com RightArm")
+				RemoverJointArmaServerSide(player, "LeftArm")
+				DebugPrint("[ServicoEquipamento] SegundaArma LeftArm joint removido junto com RightArm")
 			end
 		end
 	else
