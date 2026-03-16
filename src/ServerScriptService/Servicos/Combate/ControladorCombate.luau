@@ -18,7 +18,7 @@
 -- ═══════════════════════════════════════════════════════════════════
 -- CONFIGURAÇÃO DE DEBUG
 -- ═══════════════════════════════════════════════════════════════════
-local DEBUG_ENABLED = true -- Altere para true para habilitar prints de debug
+local DEBUG_ENABLED = false -- Altere para true para habilitar prints de debug
 
 local function DebugPrint(...)
 	if DEBUG_ENABLED then

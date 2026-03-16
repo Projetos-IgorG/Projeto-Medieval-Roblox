@@ -22,6 +22,11 @@ DialogoGenerico.Dialogos = {
 					LevaParaId = "Novidades",
 				},
 				{
+					TextoMencionado = "Posso te perguntar algo específico?",
+					LevaParaId = "PermissaoChatIA",
+					RequerCanChatAI = true,
+				},
+				{
 					TextoMencionado = "Com licença, preciso ir.",
 					LevaParaId = "Despedida",
 				},
@@ -44,6 +49,34 @@ DialogoGenerico.Dialogos = {
 			Escolhas = {
 				{
 					TextoMencionado = "Entendo. Vou dar uma volta.",
+					LevaParaId = "Despedida",
+				},
+			},
+		},
+		["PermissaoChatIA"] = {
+			FalaNPC = "Se estiver ao alcance de meu entendimento, podes perguntar.",
+			Escolhas = {
+				{
+					Tipo = "AIChatInput",
+					PlaceholderText = "Escreva tua pergunta...",
+					RetornarParaId = "AposRespostaIA",
+				},
+				{
+					TextoMencionado = "Pensando bem, deixemos isso para depois.",
+					LevaParaId = "Despedida",
+				},
+			},
+		},
+		["AposRespostaIA"] = {
+			FalaNPC = "Se ainda tiver algo a dizer, fala sem receio.",
+			Escolhas = {
+				{
+					TextoMencionado = "Tenho outra pergunta específica.",
+					LevaParaId = "PermissaoChatIA",
+					RequerCanChatAI = true,
+				},
+				{
+					TextoMencionado = "Agradeço. Agora vou seguir meu caminho.",
 					LevaParaId = "Despedida",
 				},
 			},

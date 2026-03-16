@@ -26,7 +26,6 @@
         ]
       }
     },
-    "ToolTip": "Teste",
     "ModelMeshCFrame": [
       -2.1811647415161133,
       -0.6746184825897217,
@@ -41,7 +40,8 @@
       0.0,
       0.999995231628418
     ],
-    "CanBeDropped": false
+    "CanBeDropped": false,
+    "ToolTip": "Teste"
   },
   "className": "Tool"
 }

@@ -28,7 +28,7 @@ local function buildCustomProximity(parent)
 	billboard.SelectionBehaviorRight = Enum.SelectionBehavior.Escape
 	billboard.SelectionBehaviorUp = Enum.SelectionBehavior.Escape
 	billboard.SelectionGroup = false
-	billboard.Size = UDim2.new(7, 0, 1.7999999523162842, 0)
+	billboard.Size = UDim2.fromScale(7, 1.7999999523162842)
 	billboard.SizeOffset = Vector2.new(0, 0)
 	billboard.StudsOffset = Vector3.new(0, 1.5, 0)
 	billboard.StudsOffsetWorldSpace = Vector3.new(0, 0, 0)
@@ -66,7 +66,7 @@ local function buildCustomProximity(parent)
 	container.Draggable = false
 	container.Interactable = true
 	container.LayoutOrder = 0
-	container.Position = UDim2.new(0.5, 0, 1, 0)
+	container.Position = UDim2.fromScale(0.5, 1)
 	container.Rotation = 0
 	container.Selectable = false
 	container.SelectionBehaviorDown = Enum.SelectionBehavior.Escape
@@ -75,7 +75,7 @@ local function buildCustomProximity(parent)
 	container.SelectionBehaviorUp = Enum.SelectionBehavior.Escape
 	container.SelectionGroup = false
 	container.SelectionOrder = 0
-	container.Size = UDim2.new(0.800000011920929, 0, 1, 0)
+	container.Size = UDim2.fromScale(0.800000011920929, 1)
 	container.SizeConstraint = Enum.SizeConstraint.RelativeXY
 	container.Style = Enum.FrameStyle.Custom
 	container.Visible = true
@@ -110,7 +110,7 @@ local function buildCustomProximity(parent)
 	keyText.SelectionBehaviorUp = Enum.SelectionBehavior.Escape
 	keyText.SelectionGroup = false
 	keyText.SelectionOrder = 0
-	keyText.Size = UDim2.new(0, 40, 0, 40)
+	keyText.Size = UDim2.fromOffset(40, 40)
 	keyText.SizeConstraint = Enum.SizeConstraint.RelativeXY
 	keyText.Style = Enum.FrameStyle.Custom
 	keyText.Visible = true
@@ -181,7 +181,7 @@ local function buildCustomProximity(parent)
 	progress.Draggable = false
 	progress.Interactable = true
 	progress.LayoutOrder = 0
-	progress.Position = UDim2.new(0.5, 0, 0.5, 0)
+	progress.Position = UDim2.fromScale(0.5, 0.5)
 	progress.Rotation = 0
 	progress.Selectable = false
 	progress.SelectionBehaviorDown = Enum.SelectionBehavior.Escape
@@ -239,7 +239,7 @@ local function buildCustomProximity(parent)
 	keyLabel.SelectionBehaviorUp = Enum.SelectionBehavior.Escape
 	keyLabel.SelectionGroup = false
 	keyLabel.SelectionOrder = 0
-	keyLabel.Size = UDim2.new(1, 0, 1, 0)
+	keyLabel.Size = UDim2.fromScale(1, 1)
 	keyLabel.SizeConstraint = Enum.SizeConstraint.RelativeXY
 	keyLabel.Text = "E"
 	keyLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -294,7 +294,7 @@ local function buildCustomProximity(parent)
 	progressHoldBg.Draggable = false
 	progressHoldBg.Interactable = true
 	progressHoldBg.LayoutOrder = 0
-	progressHoldBg.Position = UDim2.new(0.5, 0, 0.5, 0)
+	progressHoldBg.Position = UDim2.fromScale(0.5, 0.5)
 	progressHoldBg.Rotation = 0
 	progressHoldBg.Selectable = false
 	progressHoldBg.SelectionBehaviorDown = Enum.SelectionBehavior.Escape
@@ -303,7 +303,7 @@ local function buildCustomProximity(parent)
 	progressHoldBg.SelectionBehaviorUp = Enum.SelectionBehavior.Escape
 	progressHoldBg.SelectionGroup = false
 	progressHoldBg.SelectionOrder = 0
-	progressHoldBg.Size = UDim2.new(0.9399999976158142, 0, 0.9399999976158142, 0)
+	progressHoldBg.Size = UDim2.fromScale(0.9399999976158142, 0.9399999976158142)
 	progressHoldBg.SizeConstraint = Enum.SizeConstraint.RelativeXY
 	progressHoldBg.Style = Enum.FrameStyle.Custom
 	progressHoldBg.Visible = true
@@ -342,7 +342,7 @@ local function buildCustomProximity(parent)
 	actionText.LineHeight = 1
 	actionText.MaxVisibleGraphemes = -1
 	actionText.OpenTypeFeatures = ""
-	actionText.Position = UDim2.new(0, 60, 0, 0)
+	actionText.Position = UDim2.fromOffset(60, 0)
 	actionText.RichText = false
 	actionText.Rotation = 0
 	actionText.Selectable = false
@@ -352,7 +352,7 @@ local function buildCustomProximity(parent)
 	actionText.SelectionBehaviorUp = Enum.SelectionBehavior.Escape
 	actionText.SelectionGroup = false
 	actionText.SelectionOrder = 0
-	actionText.Size = UDim2.new(1, 0, 0.30000001192092896, 0)
+	actionText.Size = UDim2.fromScale(1, 0.30000001192092896)
 	actionText.SizeConstraint = Enum.SizeConstraint.RelativeXY
 	actionText.Text = "Talk"
 	actionText.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -421,7 +421,7 @@ local function buildCustomProximity(parent)
 	objectText.SelectionBehaviorUp = Enum.SelectionBehavior.Escape
 	objectText.SelectionGroup = false
 	objectText.SelectionOrder = 0
-	objectText.Size = UDim2.new(1, 0, 0.6000000238418579, 0)
+	objectText.Size = UDim2.fromScale(1, 0.6000000238418579)
 	objectText.SizeConstraint = Enum.SizeConstraint.RelativeXY
 	objectText.Text = "Lord Jalkior"
 	objectText.TextColor3 = Color3.fromRGB(218, 218, 218)
@@ -483,7 +483,7 @@ local function buildCustomProximity(parent)
 	clickDetector.MaxVisibleGraphemes = -1
 	clickDetector.Modal = false
 	clickDetector.OpenTypeFeatures = ""
-	clickDetector.Position = UDim2.new(0.10000000149011612, 0, 0.800000011920929, 0)
+	clickDetector.Position = UDim2.fromScale(0.10000000149011612, 0.800000011920929)
 	clickDetector.RichText = false
 	clickDetector.Rotation = 0
 	clickDetector.Selectable = true
@@ -494,7 +494,7 @@ local function buildCustomProximity(parent)
 	clickDetector.SelectionBehaviorUp = Enum.SelectionBehavior.Escape
 	clickDetector.SelectionGroup = false
 	clickDetector.SelectionOrder = 0
-	clickDetector.Size = UDim2.new(0, 43, 0, 43)
+	clickDetector.Size = UDim2.fromOffset(43, 43)
 	clickDetector.SizeConstraint = Enum.SizeConstraint.RelativeXY
 	clickDetector.Style = Enum.ButtonStyle.Custom
 	clickDetector.Text = ""

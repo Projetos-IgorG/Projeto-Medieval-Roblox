@@ -45,6 +45,20 @@ if not RemoteAcao then
 	RemoteAcao.Parent = FolderRemotes
 end
 
+local RemoteSolicitarChatIA = FolderRemotes:FindFirstChild("SolicitarChatIA")
+if not RemoteSolicitarChatIA then
+	RemoteSolicitarChatIA = Instance.new("RemoteEvent")
+	RemoteSolicitarChatIA.Name = "SolicitarChatIA"
+	RemoteSolicitarChatIA.Parent = FolderRemotes
+end
+
+local RemoteRespostaChatIA = FolderRemotes:FindFirstChild("RespostaChatIA")
+if not RemoteRespostaChatIA then
+	RemoteRespostaChatIA = Instance.new("RemoteEvent")
+	RemoteRespostaChatIA.Name = "RespostaChatIA"
+	RemoteRespostaChatIA.Parent = FolderRemotes
+end
+
 -- UI (ScreenGui com os dois BillboardGuis)
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local ScreenGuiDialogos = PlayerGui:WaitForChild("Dialogos")
@@ -57,10 +71,13 @@ local RespostasTemplates = DialogoGuiRespostas:WaitForChild("RespostasTemplates"
 local ConversaAtiva = false
 local NPCAtual = nil
 local TabelaDialogoAtual = nil
+local DadosNPCAtual = nil
 local HandleVozAtual = nil -- Handle do GerenciadorVoz ativo
 
 local OpcoesAtuais = {}
 local PodeEscolher = false
+local EntradaChatIAEmFoco = false
+local RequisicaoChatIAPendente = nil
 
 -- ==========================================
 -- Configurações
@@ -77,6 +94,7 @@ local CAMERA_CORRECAO_DURACAO = 0.25
 local BOTAO_Y_PADRAO = 0.15
 local BOTAO_Y_GRANDE = 0.3
 local BOTAO_LIMIAR_LETRAS = 40 -- Acima disso, botão cresce em Y
+local LIMITE_CARACTERES_CHAT_IA = 180
 
 -- Expõe flag para outros sistemas via ClientBridge (ex: ControladorEstado bloquear equip)
 ClientBridge.EmDialogo = function()
@@ -186,6 +204,30 @@ local function LimparOpcoes()
 	end
 	OpcoesAtuais = {}
 	PodeEscolher = false
+	EntradaChatIAEmFoco = false
+end
+
+local function ObterDadosNPC(npc)
+	local dadosFolder = npc and npc:FindFirstChild("Dados")
+	if not dadosFolder then
+		return nil
+	end
+
+	local nomeNPC = dadosFolder:FindFirstChild("Nome") and dadosFolder.Nome.Value or "NPC"
+	local profissaoNPC = dadosFolder:FindFirstChild("Profissao") and dadosFolder.Profissao.Value or "Generico"
+	local estadoNPC = dadosFolder:FindFirstChild("Estado") and dadosFolder.Estado.Value or "Livre"
+	local tipoVozNPC = dadosFolder:FindFirstChild("TipoVoz") and dadosFolder.TipoVoz.Value or "Homem"
+	local canChatAI = dadosFolder:FindFirstChild("CanChatAI") and dadosFolder.CanChatAI.Value == true or false
+	local contextoNPC = dadosFolder:FindFirstChild("Contexto") and dadosFolder.Contexto.Value or ""
+
+	return {
+		Nome = nomeNPC,
+		Profissao = profissaoNPC,
+		Estado = estadoNPC,
+		TipoVoz = tipoVozNPC,
+		CanChatAI = canChatAI,
+		Contexto = contextoNPC,
+	}
 end
 
 -- Fim do diálogo
@@ -193,6 +235,8 @@ local function EncerrarDialogo()
 	ConversaAtiva = false
 	NPCAtual = nil
 	TabelaDialogoAtual = nil
+	DadosNPCAtual = nil
+	RequisicaoChatIAPendente = nil
 
 	-- Parar qualquer voz ativa
 	if HandleVozAtual then
@@ -212,6 +256,34 @@ end
 
 -- Hover animation settings
 local HOVER_TWEEN_INFO = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local MostrarFalaEOpcoes
+
+local function ConfigurarHoverOpcao(btn)
+	local uiScale = btn:FindFirstChildOfClass("UIScale")
+	if not uiScale then
+		uiScale = Instance.new("UIScale")
+		uiScale.Scale = 1
+		uiScale.Parent = btn
+	end
+
+	if btn:IsA("GuiButton") then
+		btn.MouseEnter:Connect(function()
+			TweenService:Create(btn, HOVER_TWEEN_INFO, { ImageTransparency = 0.7 }):Play()
+			TweenService:Create(uiScale, HOVER_TWEEN_INFO, { Scale = 1.05 }):Play()
+		end)
+		btn.MouseLeave:Connect(function()
+			TweenService:Create(btn, HOVER_TWEEN_INFO, { ImageTransparency = 0.85 }):Play()
+			TweenService:Create(uiScale, HOVER_TWEEN_INFO, { Scale = 1 }):Play()
+		end)
+	end
+end
+
+local function PreencherIndiceOpcao(instancia, index)
+	local lblIndex = instancia:FindFirstChild("IndexNum", true)
+	if lblIndex and lblIndex:IsA("TextLabel") then
+		lblIndex.Text = index .. ". "
+	end
+end
 
 local function CriarOpcaoPeloTemplate(index, texto, acaoCallback)
 	local template = RespostasTemplates:FindFirstChild("Template")
@@ -229,10 +301,7 @@ local function CriarOpcaoPeloTemplate(index, texto, acaoCallback)
 		lbl.Text = texto
 	end
 
-	local lblIndex = btn:FindFirstChild("IndexNum", true)
-	if lblIndex and lblIndex:IsA("TextLabel") then
-		lblIndex.Text = index .. ". "
-	end
+	PreencherIndiceOpcao(btn, index)
 
 	-- Se o texto for longo demais, aumenta o botão em Y para caber
 	if #texto > BOTAO_LIMIAR_LETRAS then
@@ -242,23 +311,7 @@ local function CriarOpcaoPeloTemplate(index, texto, acaoCallback)
 	end
 
 	btn.Parent = FrameRespostas
-
-	local uiScale = btn:FindFirstChildOfClass("UIScale")
-	if not uiScale then
-		uiScale = Instance.new("UIScale")
-		uiScale.Scale = 1
-		uiScale.Parent = btn
-	end
-
-	-- Animações Hover (scale up (Zoom 105%) usando o UIScale + transparência usando o btn pai nativo)
-	btn.MouseEnter:Connect(function()
-		TweenService:Create(btn, HOVER_TWEEN_INFO, { ImageTransparency = 0.7 }):Play()
-		TweenService:Create(uiScale, HOVER_TWEEN_INFO, { Scale = 1.05 }):Play()
-	end)
-	btn.MouseLeave:Connect(function()
-		TweenService:Create(btn, HOVER_TWEEN_INFO, { ImageTransparency = 0.85 }):Play()
-		TweenService:Create(uiScale, HOVER_TWEEN_INFO, { Scale = 1 }):Play()
-	end)
+	ConfigurarHoverOpcao(btn)
 
 	btn.MouseButton1Click:Connect(function()
 		if PodeEscolher then
@@ -269,13 +322,130 @@ local function CriarOpcaoPeloTemplate(index, texto, acaoCallback)
 	return btn
 end
 
+local function MostrarFalaPorId(idFala, dadosNPC)
+	local proximaFala = TabelaDialogoAtual.Ramificacoes and TabelaDialogoAtual.Ramificacoes[idFala]
+	if proximaFala then
+		MostrarFalaEOpcoes(proximaFala, dadosNPC)
+	else
+		warn("Falta a referência para: " .. tostring(idFala))
+		EncerrarDialogo()
+	end
+end
+
+local function EnviarPerguntaChatIA(textBox, escolha, dadosNPC)
+	if not ConversaAtiva or not NPCAtual or not PodeEscolher then
+		return
+	end
+
+	local pergunta = textBox.Text or ""
+	pergunta = pergunta:gsub("%c", " ")
+	pergunta = pergunta:match("^%s*(.-)%s*$") or ""
+
+	if pergunta == "" then
+		textBox.PlaceholderText = "Escreva tua pergunta primeiro."
+		return
+	end
+
+	if #pergunta > LIMITE_CARACTERES_CHAT_IA then
+		textBox.Text = string.sub(pergunta, 1, LIMITE_CARACTERES_CHAT_IA)
+		textBox.CursorPosition = #textBox.Text + 1
+		textBox.PlaceholderText = "Pergunta longa demais. Máximo de 180 caracteres."
+		return
+	end
+
+	PodeEscolher = false
+	EntradaChatIAEmFoco = false
+	RequisicaoChatIAPendente = {
+		NPC = NPCAtual,
+		DadosNPC = dadosNPC,
+		RetornarParaId = escolha.RetornarParaId,
+	}
+
+	textBox.TextEditable = false
+	textBox.PlaceholderText = "Aguardando a resposta do NPC..."
+
+	RemoteSolicitarChatIA:FireServer({
+		NPC = NPCAtual,
+		Mensagem = pergunta,
+	})
+end
+
+local function CriarEntradaChatIAPeloTemplate(index, escolha, dadosNPC)
+	local template = RespostasTemplates:FindFirstChild("TemplateAIChat")
+	if not template then
+		warn("[DialogoClient] TemplateAIChat não encontrado em RespostasTemplates!")
+		return
+	end
+
+	local entrada = template:Clone()
+	entrada.Name = "OpcaoAIChat_" .. index
+	entrada.Visible = true
+	PreencherIndiceOpcao(entrada, index)
+	entrada.Parent = FrameRespostas
+
+	local textBox = entrada:FindFirstChildWhichIsA("TextBox", true)
+	if not textBox then
+		warn("[DialogoClient] TemplateAIChat sem TextBox!")
+		entrada:Destroy()
+		return
+	end
+
+	textBox.ClearTextOnFocus = false
+	textBox.TextEditable = true
+	textBox.PlaceholderText = escolha.PlaceholderText or "Escreva tua pergunta..."
+	textBox.Text = ""
+
+	local botaoEnviar = nil
+	for _, desc in ipairs(entrada:GetDescendants()) do
+		if desc ~= entrada and (desc:IsA("ImageButton") or desc:IsA("TextButton")) then
+			botaoEnviar = desc
+			break
+		end
+	end
+
+	textBox.Focused:Connect(function()
+		EntradaChatIAEmFoco = true
+	end)
+
+	textBox.FocusLost:Connect(function(enterPressed)
+		EntradaChatIAEmFoco = false
+		if enterPressed then
+			EnviarPerguntaChatIA(textBox, escolha, dadosNPC)
+		end
+	end)
+
+	if botaoEnviar then
+		botaoEnviar.MouseButton1Click:Connect(function()
+			EnviarPerguntaChatIA(textBox, escolha, dadosNPC)
+		end)
+	end
+
+	return entrada
+end
+
+local function ExecutarEscolha(escolha, dadosNPC)
+	PodeEscolher = false
+
+	if escolha.AcaoServidor then
+		RemoteAcao:FireServer(escolha.AcaoServidor)
+	end
+
+	if escolha.LevaParaId then
+		MostrarFalaPorId(escolha.LevaParaId, dadosNPC)
+		return
+	end
+
+	EncerrarDialogo()
+end
+
 -- ==========================================
 -- Máquina de Conversa
 -- ==========================================
-local function MostrarFalaEOpcoes(tabelaFala, dadosNPC)
+function MostrarFalaEOpcoes(tabelaFala, dadosNPC)
 	if not ConversaAtiva then
 		return
 	end
+	DadosNPCAtual = dadosNPC
 	LimparOpcoes()
 	PodeEscolher = false
 
@@ -355,6 +525,15 @@ local function MostrarFalaEOpcoes(tabelaFala, dadosNPC)
 		return
 	end
 
+	if tabelaFala.RetornarParaId then
+		task.wait(tabelaFala.TempoAntesDeRetornar or 0.35)
+		if not ConversaAtiva then
+			return
+		end
+		MostrarFalaPorId(tabelaFala.RetornarParaId, dadosNPC)
+		return
+	end
+
 	if tabelaFala.FimDeDialogo then
 		task.wait(2)
 		EncerrarDialogo()
@@ -370,7 +549,10 @@ local function MostrarFalaEOpcoes(tabelaFala, dadosNPC)
 	local opcoesValidas = {}
 	if tabelaFala.Escolhas then
 		for _, escolha in ipairs(tabelaFala.Escolhas) do
-			if not escolha.Requisitos or GerenciadorRequisitos.ChecarRequisitos(LocalPlayer, escolha.Requisitos) then
+			local requisitosOk = not escolha.Requisitos
+				or GerenciadorRequisitos.ChecarRequisitos(LocalPlayer, escolha.Requisitos)
+			local podeUsarChatIA = not escolha.RequerCanChatAI or dadosNPC.CanChatAI
+			if requisitosOk and podeUsarChatIA then
 				table.insert(opcoesValidas, escolha)
 			end
 		end
@@ -378,23 +560,13 @@ local function MostrarFalaEOpcoes(tabelaFala, dadosNPC)
 
 	-- Renderiza Botões
 	for i, escolha in ipairs(opcoesValidas) do
-		CriarOpcaoPeloTemplate(i, escolha.TextoMencionado, function()
-			PodeEscolher = false
-
-			if escolha.AcaoServidor then
-				RemoteAcao:FireServer(escolha.AcaoServidor)
-			end
-
-			local idSeguinte = escolha.LevaParaId
-			local proximaFala = TabelaDialogoAtual.Ramificacoes and TabelaDialogoAtual.Ramificacoes[idSeguinte]
-
-			if proximaFala then
-				MostrarFalaEOpcoes(proximaFala, dadosNPC)
-			else
-				warn("Falta a referência para: " .. tostring(idSeguinte))
-				EncerrarDialogo()
-			end
-		end)
+		if escolha.Tipo == "AIChatInput" then
+			CriarEntradaChatIAPeloTemplate(i, escolha, dadosNPC)
+		else
+			CriarOpcaoPeloTemplate(i, escolha.TextoMencionado, function()
+				ExecutarEscolha(escolha, dadosNPC)
+			end)
+		end
 		OpcoesAtuais[i] = escolha
 	end
 
@@ -431,27 +603,27 @@ local function IniciarDialogo(npc)
 		return
 	end
 
-	local nomeNPC = dadosFolder:FindFirstChild("Nome") and dadosFolder.Nome.Value or "NPC"
-	local profissaoNPC = dadosFolder:FindFirstChild("Profissao") and dadosFolder.Profissao.Value or "Generico"
-	local estadoNPC = dadosFolder:FindFirstChild("Estado") and dadosFolder.Estado.Value or "Livre"
-	local tipoVozNPC = dadosFolder:FindFirstChild("TipoVoz") and dadosFolder.TipoVoz.Value or "Homem"
+	local dadosNPC = ObterDadosNPC(npc)
+	if not dadosNPC then
+		return
+	end
 
 	-- Tentar carregar a tabela com Fallback:
 	-- 1. Nome próprio do NPC → pasta Unicos
 	-- 2. Profissão do NPC → pasta Profissoes
 	-- 3. Fallback genérico → pasta Genericos
 	-- 4. Fallback de criatura → pasta Criaturas (se o NPC for uma criatura)
-	local moduloTabela = FolderDialogosUnicos:FindFirstChild(nomeNPC)
+	local moduloTabela = FolderDialogosUnicos:FindFirstChild(dadosNPC.Nome)
 	if not moduloTabela then
-		moduloTabela = FolderDialogosProfissoes:FindFirstChild(profissaoNPC)
+		moduloTabela = FolderDialogosProfissoes:FindFirstChild(dadosNPC.Profissao)
 		if not moduloTabela then
 			moduloTabela = FolderDialogosGenericos:FindFirstChild("Generic")
 			if not moduloTabela then
 				warn(
 					"[DialogoClient] Nenhum arquivo de diálogo encontrado para Nome: "
-						.. nomeNPC
+						.. dadosNPC.Nome
 						.. ", Profissao: "
-						.. profissaoNPC
+						.. dadosNPC.Profissao
 						.. ". Nem mesmo o 'Generic' em Genericos."
 				)
 				return
@@ -463,18 +635,19 @@ local function IniciarDialogo(npc)
 	TabelaDialogoAtual = moduloExigido.Dialogos or moduloExigido
 
 	-- Se estado for ocupado, soltar reposta genérica e sair
-	if estadoNPC == "Dormindo" or estadoNPC == "EmCombate" or estadoNPC == "Ocupado" then
+	if dadosNPC.Estado == "Dormindo" or dadosNPC.Estado == "EmCombate" or dadosNPC.Estado == "Ocupado" then
 		ConversaAtiva = true
 		NPCAtual = npc
 		MostrarFalaEOpcoes({
-			FalaNPC = (estadoNPC == "Dormindo" and "Zzzzz...") or "Estou um pouco ocupado agora...",
+			FalaNPC = (dadosNPC.Estado == "Dormindo" and "Zzzzz...") or "Estou um pouco ocupado agora...",
 			FimDeDialogo = true,
-		}, { TipoVoz = tipoVozNPC, Nome = nomeNPC, Profissao = profissaoNPC })
+		}, dadosNPC)
 		return
 	end
 
 	ConversaAtiva = true
 	NPCAtual = npc
+	DadosNPCAtual = dadosNPC
 	AlterarRestricoesJogador(true)
 	IniciarCameraZoom(npc)
 
@@ -497,9 +670,9 @@ local function IniciarDialogo(npc)
 
 	local falaInicial = EncontrarFalaInicial()
 	if falaInicial then
-		MostrarFalaEOpcoes(falaInicial, { TipoVoz = tipoVozNPC, Nome = nomeNPC, Profissao = profissaoNPC })
+		MostrarFalaEOpcoes(falaInicial, dadosNPC)
 	else
-		warn("[DialogoClient] Nenhuma fala inicial válida encontrada para " .. nomeNPC .. "!")
+		warn("[DialogoClient] Nenhuma fala inicial válida encontrada para " .. dadosNPC.Nome .. "!")
 		EncerrarDialogo()
 	end
 end
@@ -571,42 +744,44 @@ function SistemaDialogoClient.Init()
 
 	-- Listeners de Input para números 1-9
 	UserInputService.InputBegan:Connect(function(input, _gp)
-		if not ConversaAtiva or not PodeEscolher then
+		if not ConversaAtiva or not PodeEscolher or EntradaChatIAEmFoco then
 			return
 		end
 		if input.UserInputType == Enum.UserInputType.Keyboard then
 			local num = input.KeyCode.Value - Enum.KeyCode.Zero.Value
 			if num >= 1 and num <= 9 then
 				local opcao = OpcoesAtuais[num]
-				if opcao then
-					PodeEscolher = false
-
-					if opcao.AcaoServidor then
-						RemoteAcao:FireServer(opcao.AcaoServidor)
-					end
-
-					local idSeguinte = opcao.LevaParaId
-					local proximaFala = TabelaDialogoAtual.Ramificacoes and TabelaDialogoAtual.Ramificacoes[idSeguinte]
-
-					if proximaFala then
-						local dadosFolder = NPCAtual:FindFirstChild("Dados")
-						local nomeNPC = dadosFolder and dadosFolder:FindFirstChild("Nome") and dadosFolder.Nome.Value
-							or "NPC"
-						local profissaoNPC = dadosFolder
-								and dadosFolder:FindFirstChild("Profissao")
-								and dadosFolder.Profissao.Value
-							or ""
-						local tipoVoz = dadosFolder
-								and dadosFolder:FindFirstChild("TipoVoz")
-								and dadosFolder.TipoVoz.Value
-							or "Homem"
-						MostrarFalaEOpcoes(proximaFala, { TipoVoz = tipoVoz, Nome = nomeNPC, Profissao = profissaoNPC })
-					else
-						EncerrarDialogo()
-					end
+				if opcao and opcao.Tipo ~= "AIChatInput" then
+					ExecutarEscolha(opcao, DadosNPCAtual or ObterDadosNPC(NPCAtual))
 				end
 			end
 		end
+	end)
+
+	RemoteRespostaChatIA.OnClientEvent:Connect(function(payload)
+		if typeof(payload) ~= "table" or not ConversaAtiva then
+			return
+		end
+
+		if not RequisicaoChatIAPendente then
+			return
+		end
+
+		if payload.NPC ~= RequisicaoChatIAPendente.NPC or payload.NPC ~= NPCAtual then
+			return
+		end
+
+		local dadosNPC = RequisicaoChatIAPendente.DadosNPC or DadosNPCAtual or ObterDadosNPC(NPCAtual)
+		local retornarParaId = RequisicaoChatIAPendente.RetornarParaId
+		local mensagem = payload.Mensagem or "..."
+
+		RequisicaoChatIAPendente = nil
+		PodeEscolher = false
+
+		MostrarFalaEOpcoes({
+			FalaNPC = mensagem,
+			RetornarParaId = retornarParaId,
+		}, dadosNPC)
 	end)
 end
 

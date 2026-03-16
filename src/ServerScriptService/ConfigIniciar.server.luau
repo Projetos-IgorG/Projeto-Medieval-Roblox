@@ -109,6 +109,8 @@ if Modulos then
 			DialogoRemotes.Parent = SistemaDialogo
 		end
 		CriarRemoto(DialogoRemotes, "AcaoDialogo", "Event")
+		CriarRemoto(DialogoRemotes, "SolicitarChatIA", "Event")
+		CriarRemoto(DialogoRemotes, "RespostaChatIA", "Event")
 	end
 end
 
@@ -258,6 +260,7 @@ DebugPrint("[ConfigIniciar] Módulos de combate carregados")
 local ServicoDrop = require(Servicos.Inventario:WaitForChild("ServicoDrop"))
 local ServicoArrastar = require(Servicos.Interacoes:WaitForChild("ServicoArrastar"))
 local ServicoPortal = require(Servicos:WaitForChild("ServicoPortal"))
+local ServicoIAChat = require(Servicos:WaitForChild("ServicoIAChat"))
 
 -- Sistema de Equipamento
 local InventarioFolder = Servicos:FindFirstChild("Inventario")
@@ -272,6 +275,7 @@ end
 ServicoDrop:Iniciar()
 ServicoArrastar:Iniciar()
 ServicoPortal:Iniciar()
+ServicoIAChat:Iniciar()
 
 if ServicoEquipamento then
 	ServicoEquipamento:Iniciar()
@@ -331,6 +335,33 @@ local function CriarNPCBasico(dados)
 		humanoid.MaxHealth = vida
 		humanoid.Health = vida
 	end
+
+	local dadosFolder = npc:FindFirstChild("Dados")
+	if not dadosFolder then
+		dadosFolder = Instance.new("Folder")
+		dadosFolder.Name = "Dados"
+		dadosFolder.Parent = npc
+	end
+
+	local function GarantirValor(classe, nomeValor, valorPadrao)
+		local valorExistente = dadosFolder:FindFirstChild(nomeValor)
+		if not valorExistente then
+			valorExistente = Instance.new(classe)
+			valorExistente.Name = nomeValor
+			valorExistente.Parent = dadosFolder
+		end
+
+		if valorExistente:IsA(classe) then
+			valorExistente.Value = valorPadrao
+		end
+	end
+
+	GarantirValor("StringValue", "Nome", nome)
+	GarantirValor("StringValue", "Profissao", dados.profissao or "Generico")
+	GarantirValor("StringValue", "Estado", dados.estado or "Livre")
+	GarantirValor("StringValue", "TipoVoz", dados.tipoVoz or "Homem")
+	GarantirValor("BoolValue", "CanChatAI", dados.canChatAI == true)
+	GarantirValor("StringValue", "Contexto", dados.contexto or "")
 
 	npc:SetAttribute("ModoCombate", modoCombate)
 	npc.Parent = pastaNPCs
