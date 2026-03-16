@@ -8,8 +8,6 @@
 local UserInputService = game:GetService("UserInputService")
 local ContextActionService = game:GetService("ContextActionService")
 
-local CommonUtils = script.Parent.Parent:WaitForChild("CommonUtils")
-
 --[[ Constants ]]--
 local ZERO_VECTOR3 = Vector3.new(0,0,0)
 local NONE = Enum.UserInputType.None
@@ -90,12 +88,12 @@ function Gamepad:BindContextActions()
 		return false
 	end
 
-	local handleJumpAction = function(actionName, inputState, inputObject)
+	local handleJumpAction = function(_actionName, inputState, _inputObject)
 		self.isJumping = (inputState == Enum.UserInputState.Begin)
 		return Enum.ContextActionResult.Sink
 	end
 
-	local handleThumbstickInput = function(actionName, inputState, inputObject)
+	local handleThumbstickInput = function(_actionName, inputState, inputObject)
 
 		if inputState == Enum.UserInputState.Cancel then
 			self.moveVector = ZERO_VECTOR3
@@ -185,7 +183,7 @@ function Gamepad:OnCurrentGamepadDisconnected()
 end
 
 function Gamepad:ConnectGamepadConnectionListeners()
-	self.gamepadConnectedConn = UserInputService.GamepadConnected:Connect(function(gamepadEnum)
+	self.gamepadConnectedConn = UserInputService.GamepadConnected:Connect(function(_gamepadEnum)
 		self:OnNewGamepadConnected()
 	end)
 

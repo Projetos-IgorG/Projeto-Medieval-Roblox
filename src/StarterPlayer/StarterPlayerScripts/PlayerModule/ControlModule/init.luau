@@ -30,9 +30,6 @@ local Workspace = game:GetService("Workspace")
 local UserGameSettings = UserSettings():GetService("UserGameSettings")
 local VRService = game:GetService("VRService")
 
--- Roblox User Input Control Modules - each returns a new() constructor function used to create controllers as needed
-local CommonUtils = script.Parent:WaitForChild("CommonUtils")
-
 local Keyboard = require(script:WaitForChild("Keyboard"))
 local Gamepad = require(script:WaitForChild("Gamepad"))
 local DynamicThumbstick = require(script:WaitForChild("DynamicThumbstick"))
@@ -106,8 +103,12 @@ function ControlModule.new()
 
 	self.vehicleController = VehicleController.new(CONTROL_ACTION_PRIORITY)
 
-	Players.LocalPlayer.CharacterAdded:Connect(function(char) self:OnCharacterAdded(char) end)
-	Players.LocalPlayer.CharacterRemoving:Connect(function(char) self:OnCharacterRemoving(char) end)
+	Players.LocalPlayer.CharacterAdded:Connect(function(char)
+		self:OnCharacterAdded(char)
+	end)
+	Players.LocalPlayer.CharacterRemoving:Connect(function(char)
+		self:OnCharacterRemoving(char)
+	end)
 	if Players.LocalPlayer.Character then
 		self:OnCharacterAdded(Players.LocalPlayer.Character)
 	end
@@ -473,9 +474,9 @@ function ControlModule:OnRenderStepped(dt)
 		end
 
 		-- Are we driving a vehicle ?
-		local vehicleConsumedInput = false
+		local _vehicleConsumedInput = false
 		if self.vehicleController then
-			moveVector, vehicleConsumedInput = self.vehicleController:Update(moveVector, cameraRelative, self.activeControlModule==Gamepad)
+			moveVector, _vehicleConsumedInput = self.vehicleController:Update(moveVector, cameraRelative, self.activeControlModule==Gamepad)
 		end
 
 		-- If not, move the player
@@ -557,7 +558,7 @@ function ControlModule:OnCharacterAdded(char)
 	self:UpdateMovementMode()
 end
 
-function ControlModule:OnCharacterRemoving(char)
+function ControlModule:OnCharacterRemoving(_char)
 	self.humanoid = nil
 
 	self:UpdateMovementMode()
@@ -642,7 +643,9 @@ function ControlModule:CreateTouchGuiContainer()
 		return
 	end
 
-	if self.touchGui then self.touchGui:Destroy() end
+	if self.touchGui then
+		self.touchGui:Destroy()
+	end
 
 	-- Container for all touch device guis
 	self.touchGui = Instance.new("ScreenGui")
@@ -656,7 +659,7 @@ function ControlModule:CreateTouchGuiContainer()
 
 	self.touchControlFrame = Instance.new("Frame")
 	self.touchControlFrame.Name = "TouchControlFrame"
-	self.touchControlFrame.Size = UDim2.new(1, 0, 1, 0)
+	self.touchControlFrame.Size = UDim2.fromScale(1, 1)
 	self.touchControlFrame.BackgroundTransparency = 1
 	self.touchControlFrame.Parent = self.touchGui
 

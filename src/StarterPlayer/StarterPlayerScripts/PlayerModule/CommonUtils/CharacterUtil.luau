@@ -64,9 +64,9 @@ function CharacterUtil.onLocalPlayer(func)
 	CharacterUtil._connectionUtil:trackConnection(
 		CONNECTIONS.LOCAL_PLAYER,
 		Players:GetPropertyChangedSignal("LocalPlayer"):Connect(function()
-			local localPlayer = CharacterUtil.getLocalPlayer()
-			assert(localPlayer)
-			CharacterUtil._getOrCreateBoundEvent(CONNECTIONS.LOCAL_PLAYER):Fire(localPlayer) -- reuse connnection key for boundEvents
+            local updatedLocalPlayer = CharacterUtil.getLocalPlayer()
+            assert(updatedLocalPlayer, "LocalPlayer should exist when LocalPlayer property changes")
+            CharacterUtil._getOrCreateBoundEvent(CONNECTIONS.LOCAL_PLAYER):Fire(updatedLocalPlayer) -- reuse connnection key for boundEvents
 		end)
 	)
 
@@ -96,7 +96,7 @@ function CharacterUtil.onCharacter(func)
 				CONNECTIONS.CHARACTER_ADDED,
                 -- alert character connections on CharacterAdded
 				localPlayer.CharacterAdded:Connect(function(newCharacter)
-					assert(newCharacter)
+                    assert(newCharacter, "CharacterAdded must provide a character")
 					CharacterUtil._getOrCreateBoundEvent(CONNECTIONS.CHARACTER_ADDED):Fire(newCharacter) -- reuse connnection key for boundEvents
 				end)
 			)

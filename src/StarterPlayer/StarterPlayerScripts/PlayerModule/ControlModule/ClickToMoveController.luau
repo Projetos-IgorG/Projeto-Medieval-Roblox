@@ -7,11 +7,15 @@
 
 --[[ Flags ]]
 local FFlagUserExcludeNonCollidableForPathfindingSuccess, FFlagUserExcludeNonCollidableForPathfindingResult =
-    pcall(function() return UserSettings():IsUserFeatureEnabled("UserExcludeNonCollidableForPathfinding") end)
+	pcall(function()
+		return UserSettings():IsUserFeatureEnabled("UserExcludeNonCollidableForPathfinding")
+	end)
 local FFlagUserExcludeNonCollidableForPathfinding = FFlagUserExcludeNonCollidableForPathfindingSuccess and FFlagUserExcludeNonCollidableForPathfindingResult
 
 local FFlagUserClickToMoveSupportAgentCanClimbSuccess, FFlagUserClickToMoveSupportAgentCanClimbResult =
-    pcall(function() return UserSettings():IsUserFeatureEnabled("UserClickToMoveSupportAgentCanClimb2") end)
+	pcall(function()
+		return UserSettings():IsUserFeatureEnabled("UserClickToMoveSupportAgentCanClimb2")
+	end)
 local FFlagUserClickToMoveSupportAgentCanClimb = FFlagUserClickToMoveSupportAgentCanClimbSuccess and FFlagUserClickToMoveSupportAgentCanClimbResult
 
 --[[ Roblox Services ]]--
@@ -71,6 +75,7 @@ if not FFlagUserRaycastUpdateAPI then
 					return FindCharacterAncestor(part.Parent)
 				end
 			end
+			return nil, nil
 		end
 		Utility.FindCharacterAncestor = FindCharacterAncestor
 
@@ -111,6 +116,7 @@ local function findPlayerHumanoid(player: Player)
 			return humanoid
 		end
 	end
+	return nil
 end
 
 --------------------------CHARACTER CONTROL-------------------------------
@@ -387,7 +393,9 @@ local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 				else
 					this.pathResult:ComputeAsync(this.OriginPoint, this.TargetPoint)
 					this.pointList = this.pathResult:GetWaypoints()
-					this.BlockedConn = this.pathResult.Blocked:Connect(function(blockedIdx) this:OnPathBlocked(blockedIdx) end)
+					this.BlockedConn = this.pathResult.Blocked:Connect(function(blockedIdx)
+						this:OnPathBlocked(blockedIdx)
+					end)
 					this.PathComputed = this.pathResult.Status == Enum.PathStatus.Success
 				end
 			end
@@ -551,7 +559,7 @@ local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 						-- Give time to the humanoid's state to change
 						-- Otherwise, the jump flag in Humanoid
 						-- will be reset by the state change
-						wait(0.1)
+						task.wait(0.1)
 					end
 				end
 
@@ -623,9 +631,15 @@ local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 			this.CurrentHumanoidVelocity = this.Humanoid.RootPart.Velocity
 
 			-- Connect to events
-			this.SeatedConn = this.Humanoid.Seated:Connect(function(isSeated, seat) this:OnPathInterrupted() end)
-			this.DiedConn = this.Humanoid.Died:Connect(function() this:OnPathInterrupted() end)
-			this.TeleportedConn = this.Humanoid.RootPart:GetPropertyChangedSignal("CFrame"):Connect(function() this:OnPathInterrupted() end)
+			this.SeatedConn = this.Humanoid.Seated:Connect(function(_isSeated, _seat)
+				this:OnPathInterrupted()
+			end)
+			this.DiedConn = this.Humanoid.Died:Connect(function()
+				this:OnPathInterrupted()
+			end)
+			this.TeleportedConn = this.Humanoid.RootPart:GetPropertyChangedSignal("CFrame"):Connect(function()
+				this:OnPathInterrupted()
+			end)
 
 			-- Actually start
 			this.CurrentPoint = 1 -- The first waypoint is always the start location. Skip it.
@@ -674,6 +688,7 @@ local function GetEquippedTool(character: Model?)
 			end
 		end
 	end
+	return nil
 end
 
 local ExistingPather = nil
@@ -919,7 +934,7 @@ function ClickToMove:OnTouchChanged(input, processed)
 	end
 end
 
-function ClickToMove:OnTouchEnded(input, processed)
+function ClickToMove:OnTouchEnded(input, _processed)
 	if self.fingerTouches[input] ~= nil and self.fingerTouches[input] == false then
 		self.numUnsunkTouches = self.numUnsunkTouches - 1
 	end

@@ -6,7 +6,6 @@
 	// Description: Implements jump controls for touch devices. Use with Thumbstick and Thumbpad
 --]]
 
-local Players = game:GetService("Players")
 local GuiService = game:GetService("GuiService")
 
 local CommonUtils = script.Parent.Parent:WaitForChild("CommonUtils")
@@ -200,7 +199,7 @@ function TouchJump:Create()
 		local isSmallScreen = minAxis <= 500
 		local jumpButtonSize = isSmallScreen and 70 or 120
 
-		self.jumpButton.Size = UDim2.new(0, jumpButtonSize, 0, jumpButtonSize)
+		self.jumpButton.Size = UDim2.fromOffset(jumpButtonSize, jumpButtonSize)
 		self.jumpButton.Position = isSmallScreen and UDim2.new(1, -(jumpButtonSize*1.5-10), 1, -jumpButtonSize - 20) or
 			UDim2.new(1, -(jumpButtonSize*1.5-10), 1, -jumpButtonSize * 1.75)
 	end

@@ -11,7 +11,7 @@ local WaypointsAlwaysOnTop = false
 local WAYPOINT_INCLUDE_FACTOR = 2
 local LAST_DOT_DISTANCE = 3
 
-local WAYPOINT_BILLBOARD_SIZE = UDim2.new(0, 1.68 * 25, 0, 2 * 25)
+local WAYPOINT_BILLBOARD_SIZE = UDim2.fromOffset(1.68 * 25, 2 * 25)
 
 local ENDWAYPOINT_SIZE_OFFSET_MIN = Vector2.new(0, 0.5)
 local ENDWAYPOINT_SIZE_OFFSET_MAX = Vector2.new(0, 1)
@@ -93,7 +93,7 @@ local function CreateWaypointTemplates()
 	local EndWaypointImageLabel = Instance.new("ImageLabel")
 	EndWaypointImageLabel.Image = EndWaypointIcon
 	EndWaypointImageLabel.BackgroundTransparency = 1
-	EndWaypointImageLabel.Size = UDim2.new(1, 0, 1, 0)
+	EndWaypointImageLabel.Size = UDim2.fromScale(1, 1)
 	EndWaypointImageLabel.Parent = EndWaypointBillboard
 
 
@@ -122,7 +122,7 @@ local function CreateWaypointTemplates()
 	local FailureWaypointFrame = Instance.new("Frame")
 	FailureWaypointFrame.BackgroundTransparency = 1
 	FailureWaypointFrame.Size = UDim2.new(0, 0, 0, 0)
-	FailureWaypointFrame.Position = UDim2.new(0.5, 0, 1, 0)
+	FailureWaypointFrame.Position = UDim2.fromScale(0.5, 1)
 	FailureWaypointFrame.Parent = FailureWaypointBillboard
 	local FailureWaypointImageLabel = Instance.new("ImageLabel")
 	FailureWaypointImageLabel.Image = EndWaypointIcon
@@ -290,7 +290,7 @@ function FailureWaypoint:NewDisplayModel(position)
 end
 
 function FailureWaypoint:RunFailureTween()
-	wait(FAILURE_TWEEN_LENGTH) -- Delay one tween length betfore starting tweening
+	task.wait(FAILURE_TWEEN_LENGTH) -- Delay one tween length betfore starting tweening
 	-- Tween out from center
 	local tweenInfo = TweenInfo.new(FAILURE_TWEEN_LENGTH/2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
 	local tweenLeft = TweenService:Create(self.DisplayModel.FailureWaypointBillboard, tweenInfo,
@@ -335,7 +335,7 @@ function FailureWaypoint:RunFailureTween()
 
 	tweenCenter.Completed:wait()
 
-	wait(FAILURE_TWEEN_LENGTH) -- Delay one tween length betfore removing
+	task.wait(FAILURE_TWEEN_LENGTH) -- Delay one tween length betfore removing
 end
 
 function FailureWaypoint.new(position)
@@ -368,6 +368,7 @@ local function findPlayerHumanoid()
 	if character then
 		return character:FindFirstChildOfClass("Humanoid")
 	end
+	return nil
 end
 
 local function createTrailDots(wayPoints: {PathWaypoint}, originalEndWaypoint: Vector3)

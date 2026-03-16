@@ -35,7 +35,9 @@ function ConnectionUtil:trackConnection(key, connection)
 		self._connections[key]() -- Disconnect existing connection
 	end
 	-- store the disconnect function
-	self._connections[key] = function() connection:Disconnect() end
+	self._connections[key] = function()
+		connection:Disconnect()
+	end
 end
 
 function ConnectionUtil:trackBoundFunction(key, disconnectionFunc)

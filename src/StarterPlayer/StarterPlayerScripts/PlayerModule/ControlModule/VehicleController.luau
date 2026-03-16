@@ -95,7 +95,7 @@ function VehicleController:Enable(enable: boolean, vehicleSeat: VehicleSeat)
 	end
 end
 
-function VehicleController:OnThrottleAccel(actionName, inputState, inputObject)
+function VehicleController:OnThrottleAccel(_actionName, inputState, _inputObject)
 	if inputState == Enum.UserInputState.End or inputState == Enum.UserInputState.Cancel then
 		self.acceleration = 0
 	else
@@ -104,7 +104,7 @@ function VehicleController:OnThrottleAccel(actionName, inputState, inputObject)
 	self.throttle = self.acceleration + self.decceleration
 end
 
-function VehicleController:OnThrottleDeccel(actionName, inputState, inputObject)
+function VehicleController:OnThrottleDeccel(_actionName, inputState, _inputObject)
 	if inputState == Enum.UserInputState.End or inputState == Enum.UserInputState.Cancel then
 		self.decceleration = 0
 	else
@@ -113,7 +113,7 @@ function VehicleController:OnThrottleDeccel(actionName, inputState, inputObject)
 	self.throttle = self.acceleration + self.decceleration
 end
 
-function VehicleController:OnSteerRight(actionName, inputState, inputObject)
+function VehicleController:OnSteerRight(_actionName, inputState, _inputObject)
 	if inputState == Enum.UserInputState.End or inputState == Enum.UserInputState.Cancel then
 		self.turningRight = 0
 	else
@@ -122,7 +122,7 @@ function VehicleController:OnSteerRight(actionName, inputState, inputObject)
 	self.steer = self.turningRight + self.turningLeft
 end
 
-function VehicleController:OnSteerLeft(actionName, inputState, inputObject)
+function VehicleController:OnSteerLeft(_actionName, inputState, _inputObject)
 	if inputState == Enum.UserInputState.End or inputState == Enum.UserInputState.Cancel then
 		self.turningLeft = 0
 	else

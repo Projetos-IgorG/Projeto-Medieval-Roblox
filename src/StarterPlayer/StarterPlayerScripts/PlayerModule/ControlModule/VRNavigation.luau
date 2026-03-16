@@ -40,7 +40,7 @@ local FFlagUserRaycastUpdateAPI = FlagUtil.getUserFlag("UserRaycastUpdateAPI")
 
 --[[ Utility Functions ]]--
 local function IsFinite(num: number)
-	return num == num and num ~= 1/0 and num ~= -1/0
+	return num == num and num ~= math.huge and num ~= -math.huge
 end
 
 local function IsFiniteVector3(vec3)
@@ -148,43 +148,43 @@ end
 
 
 function VRNavigation:StartFollowingPath(newPath)
-	currentPath = newPath
-	currentPoints = currentPath:GetPointCoordinates()
-	currentPointIdx = 1
-	moving = true
+	self.currentPath = newPath
+	self.currentPoints = self.currentPath:GetPointCoordinates()
+	self.currentPointIdx = 1
+	self.moving = true
 
-	timeReachedLastPoint = tick()
+	self.timeReachedLastPoint = tick()
 
 	local humanoid = self:GetLocalHumanoid()
-	if humanoid and humanoid.Torso and #currentPoints >= 1 then
-		local dist = (currentPoints[1] - humanoid.Torso.Position).magnitude
-		expectedTimeToNextPoint = dist / humanoid.WalkSpeed
+	if humanoid and humanoid.Torso and #self.currentPoints >= 1 then
+		local dist = (self.currentPoints[1] - humanoid.Torso.Position).magnitude
+		self.expectedTimeToNextPoint = dist / humanoid.WalkSpeed
 	end
 
 	movementUpdateEvent:Fire("targetPoint", self.currentDestination)
 end
 
 function VRNavigation:GoToPoint(point)
-	currentPath = true
-	currentPoints = { point }
-	currentPointIdx = 1
-	moving = true
+	self.currentPath = true
+	self.currentPoints = { point }
+	self.currentPointIdx = 1
+	self.moving = true
 
 	local humanoid = self:GetLocalHumanoid()
 	local distance = (humanoid.Torso.Position - point).magnitude
 	local estimatedTimeRemaining = distance / humanoid.WalkSpeed
 
-	timeReachedLastPoint = tick()
-	expectedTimeToNextPoint = estimatedTimeRemaining
+	self.timeReachedLastPoint = tick()
+	self.expectedTimeToNextPoint = estimatedTimeRemaining
 
 	movementUpdateEvent:Fire("targetPoint", point)
 end
 
 function VRNavigation:StopFollowingPath()
-	currentPath = nil
-	currentPoints = nil
-	currentPointIdx = 0
-	moving = false
+	self.currentPath = nil
+	self.currentPoints = nil
+	self.currentPointIdx = 0
+	self.moving = false
 	self.moveVector = ZERO_VECTOR3
 end
 
@@ -215,7 +215,7 @@ function VRNavigation:TryComputePath(startPos: Vector3, destination: Vector3)
 	return newPath
 end
 
-function VRNavigation:OnNavigationRequest(destinationCFrame: CFrame, inputUserCFrame: CFrame)
+function VRNavigation:OnNavigationRequest(destinationCFrame: CFrame, _inputUserCFrame: CFrame)
 	local destinationPosition = destinationCFrame.Position
 	local lastDestination = self.currentDestination
 
@@ -253,15 +253,15 @@ function VRNavigation:OnNavigationRequest(destinationCFrame: CFrame, inputUserCF
 			end
 		end
 	else
-		if moving then
-			self.currentPoints[#currentPoints] = self.currentDestination
+		if self.moving then
+			self.currentPoints[#self.currentPoints] = self.currentDestination
 		else
 			self:GoToPoint(self.currentDestination)
 		end
 	end
 end
 
-function VRNavigation:OnJumpAction(actionName, inputState, inputObj)
+function VRNavigation:OnJumpAction(_actionName, inputState, _inputObj)
 	if inputState == Enum.UserInputState.Begin then
 		self.isJumping = true
 	end
@@ -282,7 +282,7 @@ function VRNavigation:BindJumpAction(active)
 	end
 end
 
-function VRNavigation:ControlCharacterGamepad(actionName, inputState, inputObject)
+function VRNavigation:ControlCharacterGamepad(_actionName, inputState, inputObject)
 	if inputObject.KeyCode ~= Enum.KeyCode.Thumbstick1 then return end
 
 	if inputState == Enum.UserInputState.Cancel then
@@ -334,15 +334,15 @@ function VRNavigation:OnHeartbeat(dt)
 
 	if self.moving and self.currentPoints then
 		local currentPosition = humanoid.Torso.Position
-		local goalPosition = currentPoints[1]
+		local goalPosition = self.currentPoints[1]
 		local vectorToGoal = (goalPosition - currentPosition) * XZ_VECTOR3
 		local moveDist = vectorToGoal.magnitude
 		local moveDir = vectorToGoal / moveDist
 
 		if moveDist < POINT_REACHED_THRESHOLD then
 			local estimatedTimeRemaining = 0
-			local prevPoint = currentPoints[1]
-			for i, point in pairs(currentPoints) do
+			local prevPoint = self.currentPoints[1]
+			for i, point in pairs(self.currentPoints) do
 				if i ~= 1 then
 					local dist = (point - prevPoint).magnitude
 					prevPoint = point
@@ -350,10 +350,10 @@ function VRNavigation:OnHeartbeat(dt)
 				end
 			end
 
-			table.remove(currentPoints, 1)
-			currentPointIdx = currentPointIdx + 1
+			table.remove(self.currentPoints, 1)
+			self.currentPointIdx = self.currentPointIdx + 1
 
-			if #currentPoints == 0 then
+			if #self.currentPoints == 0 then
 				self:StopFollowingPath()
 				if PathDisplay then
 					PathDisplay.clearRenderedPath()
@@ -361,14 +361,14 @@ function VRNavigation:OnHeartbeat(dt)
 				return
 			else
 				if PathDisplay then
-					PathDisplay.setCurrentPoints(currentPoints)
+					PathDisplay.setCurrentPoints(self.currentPoints)
 					PathDisplay.renderPath()
 				end
 
-				local newGoal = currentPoints[1]
+				local newGoal = self.currentPoints[1]
 				local distanceToGoal = (newGoal - currentPosition).magnitude
-				expectedTimeToNextPoint = distanceToGoal / humanoid.WalkSpeed
-				timeReachedLastPoint = tick()
+				self.expectedTimeToNextPoint = distanceToGoal / humanoid.WalkSpeed
+				self.timeReachedLastPoint = tick()
 			end
 		else
 			if FFlagUserRaycastUpdateAPI then
@@ -384,27 +384,26 @@ function VRNavigation:OnHeartbeat(dt)
 					end
 				end
 			else
-				local ignoreTable = {
+				raycastParams.FilterDescendantsInstances = {
 					(game.Players.LocalPlayer :: Player).Character,
-					workspace.CurrentCamera
+					workspace.CurrentCamera,
 				}
-				local obstructRay = Ray.new(currentPosition - Vector3.new(0, 1, 0), moveDir * 3)
-				local obstructPart, obstructPoint, obstructNormal = workspace:FindPartOnRayWithIgnoreList(obstructRay, ignoreTable)
+				local obstructResult = workspace:Raycast(currentPosition - Vector3.new(0, 1, 0), moveDir * 3, raycastParams)
 
-				if obstructPart then
-					local heightOffset = Vector3.new(0, 100, 0)
-					local jumpCheckRay = Ray.new(obstructPoint + moveDir * 0.5 + heightOffset, -heightOffset)
-					local jumpCheckPart, jumpCheckPoint, jumpCheckNormal = workspace:FindPartOnRayWithIgnoreList(jumpCheckRay, ignoreTable)
+				if obstructResult then
+					local jumpCheckResult = workspace:Raycast(obstructResult.Position + moveDir * 0.5 + HEIGHT_OFFSET, -HEIGHT_OFFSET, raycastParams)
 
-					local heightDifference = jumpCheckPoint.Y - currentPosition.Y
-					if heightDifference < 6 and heightDifference > -2 then
-						humanoid.Jump = true
+					if jumpCheckResult then
+						local heightDifference = jumpCheckResult.Position.Y - currentPosition.Y
+						if heightDifference < 6 and heightDifference > -2 then
+							humanoid.Jump = true
+						end
 					end
 				end
 			end
 
-			local timeSinceLastPoint = tick() - timeReachedLastPoint
-			if timeSinceLastPoint > expectedTimeToNextPoint + OFFTRACK_TIME_THRESHOLD then
+			local timeSinceLastPoint = tick() - self.timeReachedLastPoint
+			if timeSinceLastPoint > self.expectedTimeToNextPoint + OFFTRACK_TIME_THRESHOLD then
 				self:StopFollowingPath()
 				if PathDisplay then
 					PathDisplay.clearRenderedPath()
@@ -439,14 +438,20 @@ function VRNavigation:Enable(enable)
 	self.isJumping = false
 
 	if enable then
-		self.navigationRequestedConn = VRService.NavigationRequested:Connect(function(destinationCFrame, inputUserCFrame) self:OnNavigationRequest(destinationCFrame, inputUserCFrame) end)
-		self.heartbeatConn = RunService.Heartbeat:Connect(function(dt) self:OnHeartbeat(dt) end)
+		self.navigationRequestedConn = VRService.NavigationRequested:Connect(function(destinationCFrame, inputUserCFrame)
+			self:OnNavigationRequest(destinationCFrame, inputUserCFrame)
+		end)
+		self.heartbeatConn = RunService.Heartbeat:Connect(function(dt)
+			self:OnHeartbeat(dt)
+		end)
 
 		ContextActionService:BindAction("MoveThumbstick", (function(actionName, inputState, inputObject) return self:ControlCharacterGamepad(actionName, inputState, inputObject) end),
 			false, self.CONTROL_ACTION_PRIORITY, Enum.KeyCode.Thumbstick1)
 		ContextActionService:BindActivate(Enum.UserInputType.Gamepad1, Enum.KeyCode.ButtonR2)
 
-		self.userCFrameEnabledConn = VRService.UserCFrameEnabled:Connect(function() self:OnUserCFrameEnabled() end)
+		self.userCFrameEnabledConn = VRService.UserCFrameEnabled:Connect(function()
+			self:OnUserCFrameEnabled()
+		end)
 		self:OnUserCFrameEnabled()
 
 		VRService:SetTouchpadMode(Enum.VRTouchpad.Left, Enum.VRTouchpadMode.VirtualThumbstick)

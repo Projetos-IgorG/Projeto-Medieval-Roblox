@@ -4,11 +4,8 @@
 	TouchThumbstick
 
 --]]
-local Players = game:GetService("Players")
 local GuiService = game:GetService("GuiService")
 local UserInputService = game:GetService("UserInputService")
-
-local UserGameSettings = UserSettings():GetService("UserGameSettings")
 
 --[[ Constants ]]--
 local ZERO_VECTOR3 = Vector3.new(0,0,0)
@@ -52,10 +49,14 @@ function TouchThumbstick:Enable(enable: boolean?, uiParentFrame)
 		self:OnInputEnded()
 	end
 	self.enabled = enable
+	return true
 end
 function TouchThumbstick:OnInputEnded()
 	self.thumbstickFrame.Position = self.screenPos
-	self.stickImage.Position = UDim2.new(0, self.thumbstickFrame.Size.X.Offset/2 - self.thumbstickSize/4, 0, self.thumbstickFrame.Size.Y.Offset/2 - self.thumbstickSize/4)
+	self.stickImage.Position = UDim2.fromOffset(
+		self.thumbstickFrame.Size.X.Offset/2 - self.thumbstickSize/4,
+		self.thumbstickFrame.Size.Y.Offset/2 - self.thumbstickSize/4
+	)
 
 	self.moveVector = ZERO_VECTOR3
 	self.isJumping = false
@@ -108,11 +109,14 @@ function TouchThumbstick:Create(parentFrame)
 		self.thumbstickSize = isSmallScreen and 70 or 120
 		self.screenPos = isSmallScreen and UDim2.new(0, (self.thumbstickSize/2) - 10, 1, -self.thumbstickSize - 20) or
 			UDim2.new(0, self.thumbstickSize/2, 1, -self.thumbstickSize * 1.75)
-		self.thumbstickFrame.Size = UDim2.new(0, self.thumbstickSize, 0, self.thumbstickSize)
+		self.thumbstickFrame.Size = UDim2.fromOffset(self.thumbstickSize, self.thumbstickSize)
 		self.thumbstickFrame.Position = self.screenPos
-		outerImage.Size = UDim2.new(0, self.thumbstickSize, 0, self.thumbstickSize)
-		self.stickImage.Size = UDim2.new(0, self.thumbstickSize/2, 0, self.thumbstickSize/2)
-		self.stickImage.Position = UDim2.new(0, self.thumbstickSize/2 - self.thumbstickSize/4, 0, self.thumbstickSize/2 - self.thumbstickSize/4)
+		outerImage.Size = UDim2.fromOffset(self.thumbstickSize, self.thumbstickSize)
+		self.stickImage.Size = UDim2.fromOffset(self.thumbstickSize/2, self.thumbstickSize/2)
+		self.stickImage.Position = UDim2.fromOffset(
+			self.thumbstickSize/2 - self.thumbstickSize/4,
+			self.thumbstickSize/2 - self.thumbstickSize/4
+		)
 	end
 
 	ResizeThumbstick()
@@ -155,7 +159,10 @@ function TouchThumbstick:Create(parentFrame)
 			length = math.min(length, maxLength)
 			relativePosition = relativePosition.unit * length
 		end
-		self.stickImage.Position = UDim2.new(0, relativePosition.X + self.stickImage.AbsoluteSize.X/2, 0, relativePosition.Y + self.stickImage.AbsoluteSize.Y/2)
+		self.stickImage.Position = UDim2.fromOffset(
+			relativePosition.X + self.stickImage.AbsoluteSize.X/2,
+			relativePosition.Y + self.stickImage.AbsoluteSize.Y/2
+		)
 	end
 
 	-- input connections
@@ -168,13 +175,16 @@ function TouchThumbstick:Create(parentFrame)
 		end
 
 		self.moveTouchObject = inputObject
-		self.thumbstickFrame.Position = UDim2.new(0, inputObject.Position.X - self.thumbstickFrame.Size.X.Offset/2, 0, inputObject.Position.Y - self.thumbstickFrame.Size.Y.Offset/2)
+		self.thumbstickFrame.Position = UDim2.fromOffset(
+			inputObject.Position.X - self.thumbstickFrame.Size.X.Offset/2,
+			inputObject.Position.Y - self.thumbstickFrame.Size.Y.Offset/2
+		)
 		centerPosition = Vector2.new(self.thumbstickFrame.AbsolutePosition.X + self.thumbstickFrame.AbsoluteSize.X/2,
 			self.thumbstickFrame.AbsolutePosition.Y + self.thumbstickFrame.AbsoluteSize.Y/2)
-		local direction = Vector2.new(inputObject.Position.X - centerPosition.X, inputObject.Position.Y - centerPosition.Y)
+		local _direction = Vector2.new(inputObject.Position.X - centerPosition.X, inputObject.Position.Y - centerPosition.Y)
 	end)
 
-	self.onTouchMovedConn = UserInputService.TouchMoved:Connect(function(inputObject: InputObject, isProcessed: boolean)
+	self.onTouchMovedConn = UserInputService.TouchMoved:Connect(function(inputObject: InputObject, _isProcessed: boolean)
 		if inputObject == self.moveTouchObject then
 			centerPosition = Vector2.new(self.thumbstickFrame.AbsolutePosition.X + self.thumbstickFrame.AbsoluteSize.X/2,
 				self.thumbstickFrame.AbsolutePosition.Y + self.thumbstickFrame.AbsoluteSize.Y/2)
@@ -184,7 +194,7 @@ function TouchThumbstick:Create(parentFrame)
 		end
 	end)
 
-	self.onTouchEndedConn = UserInputService.TouchEnded:Connect(function(inputObject, isProcessed)
+	self.onTouchEndedConn = UserInputService.TouchEnded:Connect(function(inputObject, _isProcessed)
 		if inputObject == self.moveTouchObject then
 			self:OnInputEnded()
 		end

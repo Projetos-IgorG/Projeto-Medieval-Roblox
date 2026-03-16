@@ -259,8 +259,8 @@ function DynamicThumbstick:LayoutMiddleImages(startPos: Vector3, endPos: Vector3
 			local exposedFraction = math.clamp(1 - ((currentDist - distAvailable) / spacing), 0, 1)
 
 			image.Visible = true
-			image.Position = UDim2.new(0, pos.X, 0, pos.Y)
-			image.Size = UDim2.new(0, self.middleSize * exposedFraction, 0, self.middleSize * exposedFraction)
+			image.Position = UDim2.fromOffset(pos.X, pos.Y)
+			image.Size = UDim2.fromOffset(self.middleSize * exposedFraction, self.middleSize * exposedFraction)
 		else
 			image.Visible = false
 		end
@@ -271,7 +271,7 @@ function DynamicThumbstick:MoveStick(pos)
 	local vector2StartPosition = Vector2.new(self.moveTouchStartPosition.X, self.moveTouchStartPosition.Y)
 	local startPos = vector2StartPosition - self.thumbstickFrame.AbsolutePosition
 	local endPos = Vector2.new(pos.X, pos.Y) - self.thumbstickFrame.AbsolutePosition
-	self.endImage.Position = UDim2.new(0, endPos.X, 0, endPos.Y)
+	self.endImage.Position = UDim2.fromOffset(endPos.X, endPos.Y)
 	self:LayoutMiddleImages(startPos, endPos)
 end
 
@@ -292,7 +292,7 @@ function DynamicThumbstick:BindContextActions()
 			TweenService:Create(
 				self.endImage,
 				tweenInfo,
-				{Size = UDim2.new(0, self.thumbstickSize, 0, self.thumbstickSize), ImageColor3 = Color3.new(0,0,0)}
+				{Size = UDim2.fromOffset(self.thumbstickSize, self.thumbstickSize), ImageColor3 = Color3.new(0,0,0)}
 			):Play()
 		end
 
@@ -318,7 +318,7 @@ function DynamicThumbstick:BindContextActions()
 					inputObject.Position.Y - self.thumbstickFrame.AbsolutePosition.Y
 				)
 				self.startImage.Visible = true
-				self.startImage.Position = UDim2.new(0, startPosVec2.X, 0, startPosVec2.Y)
+				self.startImage.Position = UDim2.fromOffset(startPosVec2.X, startPosVec2.Y)
 				self.endImage.Visible = true
 				self.endImage.Position = self.startImage.Position
 
@@ -351,7 +351,7 @@ function DynamicThumbstick:BindContextActions()
 		return Enum.ContextActionResult.Pass
 	end
 
-	local function handleInput(actionName, inputState, inputObject)
+	local function handleInput(_actionName, inputState, inputObject)
 		if inputState == Enum.UserInputState.Begin then
 			return inputBegan(inputObject)
 		elseif inputState == Enum.UserInputState.Change then
@@ -369,6 +369,7 @@ function DynamicThumbstick:BindContextActions()
 		elseif inputState == Enum.UserInputState.Cancel then
 			self:OnInputEnded()
 		end
+		return Enum.ContextActionResult.Pass
 	end
 
 	ContextActionService:BindActionAtPriority(
@@ -492,10 +493,10 @@ function DynamicThumbstick:Create(parentFrame: GuiBase2d)
 		end
 
 		self.startImage.Position = UDim2.new(0, self.thumbstickRingSize * 3.3 + safeInset, 1, -self.thumbstickRingSize * 2.8 - safeInset)
-		self.startImage.Size = UDim2.new(0, self.thumbstickRingSize  * 3.7, 0, self.thumbstickRingSize  * 3.7)
+		self.startImage.Size = UDim2.fromOffset(self.thumbstickRingSize * 3.7, self.thumbstickRingSize * 3.7)
 
 		self.endImage.Position = self.startImage.Position
-		self.endImage.Size = UDim2.new(0, self.thumbstickSize * 0.8, 0, self.thumbstickSize * 0.8)
+		self.endImage.Size = UDim2.fromOffset(self.thumbstickSize * 0.8, self.thumbstickSize * 0.8)
 	end
 
 	ResizeThumbstick()

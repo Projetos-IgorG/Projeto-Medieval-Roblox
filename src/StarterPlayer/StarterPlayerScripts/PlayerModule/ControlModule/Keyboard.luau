@@ -9,8 +9,6 @@
 local UserInputService = game:GetService("UserInputService")
 local ContextActionService = game:GetService("ContextActionService")
 
-local CommonUtils = script.Parent.Parent:WaitForChild("CommonUtils")
-
 --[[ Constants ]]--
 local ZERO_VECTOR3 = Vector3.new()
 
@@ -79,31 +77,31 @@ function Keyboard:BindContextActions()
 	-- which fixes them from getting stuck on.
 	-- We return ContextActionResult.Pass here for legacy reasons.
 	-- Many games rely on gameProcessedEvent being false on UserInputService.InputBegan for these control actions.
-	local handleMoveForward = function(actionName, inputState, inputObject)
+	local handleMoveForward = function(_actionName, inputState, _inputObject)
 		self.forwardValue = (inputState == Enum.UserInputState.Begin) and -1 or 0
 		self:UpdateMovement(inputState)
 		return Enum.ContextActionResult.Pass
 	end
 
-	local handleMoveBackward = function(actionName, inputState, inputObject)
+	local handleMoveBackward = function(_actionName, inputState, _inputObject)
 		self.backwardValue = (inputState == Enum.UserInputState.Begin) and 1 or 0
 		self:UpdateMovement(inputState)
 		return Enum.ContextActionResult.Pass
 	end
 
-	local handleMoveLeft = function(actionName, inputState, inputObject)
+	local handleMoveLeft = function(_actionName, inputState, _inputObject)
 		self.leftValue = (inputState == Enum.UserInputState.Begin) and -1 or 0
 		self:UpdateMovement(inputState)
 		return Enum.ContextActionResult.Pass
 	end
 
-	local handleMoveRight = function(actionName, inputState, inputObject)
+	local handleMoveRight = function(_actionName, inputState, _inputObject)
 		self.rightValue = (inputState == Enum.UserInputState.Begin) and 1 or 0
 		self:UpdateMovement(inputState)
 		return Enum.ContextActionResult.Pass
 	end
 
-	local handleJumpAction = function(actionName, inputState, inputObject)
+	local handleJumpAction = function(_actionName, inputState, _inputObject)
 		self.jumpRequested = self.jumpEnabled and (inputState == Enum.UserInputState.Begin)
 		self:UpdateJump()
 		return Enum.ContextActionResult.Pass
@@ -122,11 +120,21 @@ function Keyboard:BindContextActions()
 	ContextActionService:BindActionAtPriority("jumpAction", handleJumpAction, false,
 		self.CONTROL_ACTION_PRIORITY, Enum.PlayerActions.CharacterJump)
 	
-	self._connectionUtil:trackBoundFunction("moveForwardAction", function() ContextActionService:UnbindAction("moveForwardAction") end)
-	self._connectionUtil:trackBoundFunction("moveBackwardAction", function() ContextActionService:UnbindAction("moveBackwardAction") end)
-	self._connectionUtil:trackBoundFunction("moveLeftAction", function() ContextActionService:UnbindAction("moveLeftAction") end)
-	self._connectionUtil:trackBoundFunction("moveRightAction", function() ContextActionService:UnbindAction("moveRightAction") end)
-	self._connectionUtil:trackBoundFunction("jumpAction", function() ContextActionService:UnbindAction("jumpAction") end)
+	self._connectionUtil:trackBoundFunction("moveForwardAction", function()
+		ContextActionService:UnbindAction("moveForwardAction")
+	end)
+	self._connectionUtil:trackBoundFunction("moveBackwardAction", function()
+		ContextActionService:UnbindAction("moveBackwardAction")
+	end)
+	self._connectionUtil:trackBoundFunction("moveLeftAction", function()
+		ContextActionService:UnbindAction("moveLeftAction")
+	end)
+	self._connectionUtil:trackBoundFunction("moveRightAction", function()
+		ContextActionService:UnbindAction("moveRightAction")
+	end)
+	self._connectionUtil:trackBoundFunction("jumpAction", function()
+		ContextActionService:UnbindAction("jumpAction")
+	end)
 end
 
 function Keyboard:ConnectFocusEventListeners()
@@ -140,7 +148,7 @@ function Keyboard:ConnectFocusEventListeners()
 		self:UpdateJump()
 	end
 
-	local function onTextFocusGained(textboxFocused)
+	local function onTextFocusGained(_textboxFocused)
 		self.jumpRequested = false
 		self:UpdateJump()
 	end
