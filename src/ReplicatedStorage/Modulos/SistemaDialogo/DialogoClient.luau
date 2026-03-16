@@ -31,7 +31,6 @@ local FolderDialogos = SistemaDialogoFolder:WaitForChild("Dialogos")
 local FolderDialogosUnicos = FolderDialogos:WaitForChild("Unicos")
 local FolderDialogosProfissoes = FolderDialogos:WaitForChild("Profissoes")
 local FolderDialogosGenericos = FolderDialogos:WaitForChild("Genericos")
-local _FolderDialogosCriaturas = FolderDialogos:WaitForChild("Criaturas")
 local FolderRemotes = SistemaDialogoFolder:WaitForChild("DialogoRemotes")
 
 -- Sistema de Voz
