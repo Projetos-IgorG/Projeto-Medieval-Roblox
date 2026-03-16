@@ -152,7 +152,6 @@ local estado = {
 local FisicaHelpers = require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Cliente"):WaitForChild("Fisica"):WaitForChild("FisicaHelpers"))
 
 local ObterPartePrincipal = FisicaHelpers.ObterPartePrincipal
-local EhArrastavel = FisicaHelpers.EhArrastavel
 local ObterPeso = FisicaHelpers.ObterPeso
 local EncontrarObjetoArrastavel = FisicaHelpers.EncontrarObjetoArrastavel
 
