@@ -154,11 +154,7 @@ local function setSoundLooped(sound: Playable, isLooped: boolean)
 end
 
 local function shallowCopy(t)
-	local out = {}
-	for k, v in pairs(t) do
-		out[k] = v
-	end
-	return out
+	return table.clone(t)
 end
 
 local function initializeSoundSystem(instances: { [string]: Instance })
@@ -175,15 +171,6 @@ local function initializeSoundSystem(instances: { [string]: Instance })
 
 	if FFlagUserNewCharacterSoundsApi and SoundService.CharacterSoundsUseNewApi == Enum.RolloutState.Enabled then
 		-- initialize Audio Emitter
-		local localPlayer = nil
-		local character = nil
-		local humanoidRootPart = nil
-		if FFlagUserFixCharSoundsEmitters then
-			humanoidRootPart = humanoid.RootPart
-		else
-			localPlayer = Players.LocalPlayer
-			character = localPlayer.Character
-		end
 		local curve = {}
 		local i: number = 5
 		local step: number = 1.25 -- determines how fine-grained the curve gets sampled
@@ -192,12 +179,11 @@ local function initializeSoundSystem(instances: { [string]: Instance })
 			i *= step
 		end
 		curve[150] = 0
-		if FFlagUserFixCharSoundsEmitters then
-			audioEmitter = Instance.new("AudioEmitter", humanoidRootPart)
-		else
-			audioEmitter = Instance.new("AudioEmitter", character)
-		end
+		
+		local emitterParent = if FFlagUserFixCharSoundsEmitters then humanoid.RootPart else Players.LocalPlayer.Character
+		audioEmitter = Instance.new("AudioEmitter")
 		audioEmitter.Name = "RbxCharacterSoundsEmitter"
+		audioEmitter.Parent = emitterParent
 		audioEmitter:SetDistanceAttenuation(curve)
 		-- initialize sounds
 		for name: string, props: { [string]: any } in pairs(AUDIOPLAYER_DATA) do
@@ -238,7 +224,6 @@ local function initializeSoundSystem(instances: { [string]: Instance })
 	local playingLoopedSounds: { [Playable]: boolean? } = {}
 
 	local function stopPlayingLoopedSounds(except: Playable?)
-		except = except or nil --default value
 		for sound in pairs(shallowCopy(playingLoopedSounds)) do
 			if sound ~= except then
 				stopSound(sound)
@@ -330,7 +315,7 @@ local function initializeSoundSystem(instances: { [string]: Instance })
 
 	-- updaters for looped sounds
 	local loopedSoundUpdaters: { [Playable]: (number, Playable, Vector3) -> () } = {
-		[sounds.Climbing] = function(dt: number, sound: Playable, vel: Vector3)
+		[sounds.Climbing] = function(_dt: number, sound: Playable, vel: Vector3)
 			local velocity = if FFlagUserSoundsUseRelativeVelocity then getRelativeVelocity(cm, vel) else vel
 			playSoundIf(sound, velocity.Magnitude > 0.1)
 		end,
@@ -343,7 +328,7 @@ local function initializeSoundSystem(instances: { [string]: Instance })
 			end
 		end,
 
-		[sounds.Running] = function(dt: number, sound: Playable, vel: Vector3)
+		[sounds.Running] = function(_dt: number, sound: Playable, vel: Vector3)
 			playSoundIf(sound, vel.Magnitude > 0.5 and humanoid.MoveDirection.Magnitude > 0.5)
 		end,
 	}
@@ -368,10 +353,10 @@ local function initializeSoundSystem(instances: { [string]: Instance })
 	transitionTo(activeState)
 
 	local stateChangedConn = humanoid.StateChanged:Connect(function(_, state)
-		state = stateRemap[state] or state
+		local mappedState = stateRemap[state] or state
 
-		if state ~= activeState then
-			transitionTo(state)
+		if mappedState ~= activeState then
+			transitionTo(mappedState)
 		end
 	end)
 
@@ -393,7 +378,7 @@ local function initializeSoundSystem(instances: { [string]: Instance })
 		-- Unparent all sounds and empty sounds table
 		-- This is needed in order to support the case where initializeSoundSystem might be called more than once for the same player,
 		-- which might happen in case player character is unparented and parented back on server and reset-children mechanism is active.
-		for name: string, sound: Playable in pairs(sounds) do
+		for _name: string, sound: Playable in pairs(sounds) do
 			sound:Destroy()
 		end
 		table.clear(sounds)

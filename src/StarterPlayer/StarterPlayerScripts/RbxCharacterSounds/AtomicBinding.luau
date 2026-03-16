@@ -111,7 +111,7 @@ function AtomicBinding:bindRoot(root)
 	local rootInstToManifest = self._rootInstToManifest
 	local manifestSizeTarget = self._manifestSizeTarget
 	
-	assert(rootInstToManifest[root] == nil)
+	assert(rootInstToManifest[root] == nil, "Root manifest already exists")
 
 	local resolvedManifest = {}
 	rootInstToManifest[root] = resolvedManifest
@@ -158,7 +158,7 @@ function AtomicBinding:bindRoot(root)
 	-- Recursively descend into the tree, resolving each node.
 	-- Nodes start out as empty and instance-less; the resolving process discovers instances to map to nodes.
 	local function processNode(node)
-		local instance = assert(node.instance)
+		local instance = assert(node.instance, "Node instance is nil")
 
 		local children = node.children
 		local alias = node.alias
@@ -204,7 +204,7 @@ function AtomicBinding:bindRoot(root)
 				self:_stopBoundFn(root) -- Happens before the tree is unbound so the manifest is still valid in the destructor.
 				unbindNodeDescend(childNode, resolvedManifest) -- Unbind the tree
 
-				assert(childNode.instance == nil) -- If this triggers, unbindNodeDescend failed
+				assert(childNode.instance == nil, "Child node instance must be nil") -- If this triggers, unbindNodeDescend failed
 
 				-- Search for a replacement
 				local replacementChild = instance:FindFirstChild(childName)
@@ -241,7 +241,7 @@ function AtomicBinding:unbindRoot(root)
 
 	local rootNode = rootInstToRootNode[root]
 	if rootNode then
-		local resolvedManifest = assert(rootInstToManifest[root])
+		local resolvedManifest = assert(rootInstToManifest[root], "Root manifest not found")
 		unbindNodeDescend(rootNode, resolvedManifest)
 		rootInstToRootNode[root] = nil
 	end
@@ -253,7 +253,7 @@ function AtomicBinding:destroy()
 	debug.profilebegin("AtomicBinding:destroy")
 
 	for _, dtor in pairs(self._dtorMap) do
-		dtor:destroy()
+		dtor()
 	end
 	table.clear(self._dtorMap)
 
@@ -264,7 +264,7 @@ function AtomicBinding:destroy()
 
 	local rootInstToManifest = self._rootInstToManifest
 	for rootInst, rootNode in pairs(self._rootInstToRootNode) do
-		local resolvedManifest = assert(rootInstToManifest[rootInst])
+		local resolvedManifest = assert(rootInstToManifest[rootInst], "Root manifest not found")
 		unbindNodeDescend(rootNode, resolvedManifest)
 	end
 	table.clear(self._rootInstToManifest)
