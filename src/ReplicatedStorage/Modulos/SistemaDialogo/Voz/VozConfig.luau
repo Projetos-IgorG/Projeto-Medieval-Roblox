@@ -12,8 +12,8 @@ local VozConfig = {}
 -- ==========================================
 -- Flags Globais
 -- ==========================================
-VozConfig.SimpleVoice = false
-VozConfig.CustomVoice = true
+VozConfig.SimpleVoice = true
+VozConfig.CustomVoice = false
 
 -- ==========================================
 -- SimpleVoice — Configurações por tipo

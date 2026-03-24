@@ -1,5 +1,6 @@
 {
   "properties": {
+    "CanBeDropped": false,
     "TextureContent": "rbxassetid://4980776503",
     "WorldPivotData": {
       "OptionalCFrame": {
@@ -40,8 +41,7 @@
       -0.21722668409347534,
       -0.9750417470932007,
       0.03432783484458923
-    ],
-    "CanBeDropped": false
+    ]
   },
   "className": "Tool"
 }
