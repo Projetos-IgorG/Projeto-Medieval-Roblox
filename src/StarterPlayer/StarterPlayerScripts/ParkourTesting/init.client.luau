@@ -8,7 +8,7 @@
 	- Agarrado + Frente + Jump: SubirSalto
 	- Agarrado + Jump: Escalar (se couber) ou Soltar
 	- Agarrado + Trás (S) + Jump: PuloTras
-	- Agarrado + Trás (S) segurar: Descer (soltar após DescerHoldTime)
+	- Agarrado + Trás (S) segurar: confirma intenção, tenta Descer; se falhar, Soltar
 	- Cooldown para evitar verificações repetidas
 ]]
 
@@ -20,23 +20,45 @@ local Analisador = require(script:WaitForChild("Analisador"))
 local Movimento = require(script:WaitForChild("Movimento"))
 local Configs = require(script:WaitForChild("Configs"))
 local Debug = require(script:WaitForChild("Debug"))
+local CooldownManager = require(script:WaitForChild("CooldownManager"))
 
 -- ══════════════════════════════════════
 -- Estado de conexões (cleanup no respawn)
 -- ══════════════════════════════════════
 
 local connections: { RBXScriptConnection } = {}
-local JUMP_COOLDOWN = 0.15 -- segundos entre cada verificação de parkour
-local MOVE_COOLDOWN = 0.35 -- cooldown entre ações de Subir (W contínuo)
+local JUMP_COOLDOWN = 0.1 -- segundos entre cada verificação de parkour
 local lastJumpTime = 0
-local lastMoveTime = 0
+local runtimeConfig = Configs.mergeConfig(nil)
+local cooldownBlockedLogAt = {} :: { [string]: number }
 
 -- Estado de SubirSalto pendente (quando W detecta que precisa de W+Pulo)
-local subirSaltoPendente = nil
+local subirSaltoPendente = nil -- { Result, ExpiresAt, SourceEdgePosition }
 
--- Estado de Descer (segurar S): controla o hold time para não conflitar com PuloTras
+-- Estado de intenção para descer (hold em S antes de tentar descer)
 local descerHoldStart = 0 -- timestamp de quando começou a segurar S
 local descerHolding = false -- está segurando S?
+
+local function canUseActionCooldown(actionKey, direction, now)
+	if CooldownManager.CanPerformAction(actionKey, direction, now) then
+		return true
+	end
+
+	if Configs.DebugVerbose then
+		local directionLabel = direction or "-"
+		local logKey = actionKey .. "/" .. directionLabel
+		local interval = runtimeConfig.CooldownBlockedLogInterval or 0.25
+		local lastLogAt = cooldownBlockedLogAt[logKey] or 0
+
+		if now - lastLogAt >= interval then
+			local remaining = CooldownManager.GetRemaining(actionKey, now)
+			print(string.format("[Parkour] Cooldown bloqueado: %s | restante %.2fs", logKey, remaining))
+			cooldownBlockedLogAt[logKey] = now
+		end
+	end
+
+	return false
+end
 
 local function limparConexoes()
 	for _, conn in ipairs(connections) do
@@ -50,6 +72,41 @@ local function resetDescerState()
 	descerHolding = false
 end
 
+local function clearSubirSaltoPendente()
+	subirSaltoPendente = nil
+end
+
+local function setSubirSaltoPendente(subirResult)
+	subirSaltoPendente = {
+		Result = subirResult,
+		ExpiresAt = os.clock() + (runtimeConfig.SubirSaltoConfirmWindow or 0.35),
+		SourceEdgePosition = subirResult and subirResult.SourceEdgePosition,
+	}
+end
+
+local function getSubirSaltoPendenteValido()
+	if not subirSaltoPendente then
+		return nil
+	end
+
+	if os.clock() > (subirSaltoPendente.ExpiresAt or 0) then
+		subirSaltoPendente = nil
+		return nil
+	end
+
+	local grabData = Movimento.GetGrabData()
+	local sourceEdge = subirSaltoPendente.SourceEdgePosition
+	if grabData and sourceEdge and grabData.EdgePosition then
+		local maxDrift = runtimeConfig.SubirSaltoConfirmEdgeTolerance or 2.5
+		if (grabData.EdgePosition - sourceEdge).Magnitude > maxDrift then
+			subirSaltoPendente = nil
+			return nil
+		end
+	end
+
+	return subirSaltoPendente.Result
+end
+
 -- ══════════════════════════════════════
 -- Detectar intenção direcional (frente/trás)
 -- Usa MoveDirection do Humanoid (funciona em todas as plataformas)
@@ -61,17 +118,27 @@ local function getIntencaoDirecional(humanoid, hrp): string?
 		return nil -- sem input direcional
 	end
 
+	local lateralThreshold = runtimeConfig.LateralInputDotThreshold or 0.35
+
 	local lookVector = hrp.CFrame.LookVector
+	local rightVector = hrp.CFrame.RightVector
 	-- Projetar na horizontal (ignorar Y)
 	local lookFlat = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
+	local rightFlat = Vector3.new(rightVector.X, 0, rightVector.Z).Unit
 	local moveFlat = Vector3.new(moveDir.X, 0, moveDir.Z).Unit
 
-	local dot = lookFlat:Dot(moveFlat)
+	local dotForward = lookFlat:Dot(moveFlat)
+	local dotRight = rightFlat:Dot(moveFlat)
 
-	if dot > 0.3 then
+	-- Prioridade para frente/trás quando input estiver diagonal (W+A/W+D)
+	if dotForward > 0.3 then
 		return "Frente"
-	elseif dot < -0.3 then
+	elseif dotForward < -0.3 then
 		return "Tras"
+	elseif dotRight >= lateralThreshold then
+		return "Direita"
+	elseif dotRight <= -lateralThreshold then
+		return "Esquerda"
 	end
 
 	return nil -- lateral ou ambíguo
@@ -84,21 +151,43 @@ end
 local function onJumpAgarrado(humanoid, hrp)
 	local direcao = getIntencaoDirecional(humanoid, hrp)
 
+	if direcao == "Direita" or direcao == "Esquerda" then
+		local now = os.clock()
+		if not canUseActionCooldown("LateralSalto", direcao, now) then
+			return
+		end
+
+		local ok = Movimento.PuloLateral(direcao)
+		if ok then
+			CooldownManager.RegisterSuccess("LateralSalto", direcao, now)
+			clearSubirSaltoPendente()
+			resetDescerState()
+			return
+		end
+	end
+
 	-- PuloTras: Trás + Pular (prioridade máxima quando S está sendo segurado)
 	if direcao == "Tras" then
 		local ok = Movimento.PuloTras()
 		if ok then
-			subirSaltoPendente = nil
+			clearSubirSaltoPendente()
 			resetDescerState()
 			return
 		end
 	end
 
 	-- SubirSalto: Frente + Pular (com pendente)
-	if direcao == "Frente" and subirSaltoPendente then
-		local ok = Movimento.ExecutarSubirSalto(subirSaltoPendente)
+	local subirSaltoValido = getSubirSaltoPendenteValido()
+	if direcao == "Frente" and subirSaltoValido then
+		local now = os.clock()
+		if not canUseActionCooldown("SubirSalto", nil, now) then
+			return
+		end
+
+		local ok = Movimento.ExecutarSubirSalto(subirSaltoValido)
 		if ok then
-			subirSaltoPendente = nil
+			CooldownManager.RegisterSuccess("SubirSalto", nil, now)
+			clearSubirSaltoPendente()
 			return
 		end
 	end
@@ -106,7 +195,7 @@ local function onJumpAgarrado(humanoid, hrp)
 	-- Escalar: Pular (com ou sem direção frente) — tenta subir em cima da plataforma
 	local escalou = Movimento.TentarEscalar()
 	if escalou then
-		subirSaltoPendente = nil
+		clearSubirSaltoPendente()
 		resetDescerState()
 		return
 	end
@@ -117,7 +206,7 @@ local function onJumpAgarrado(humanoid, hrp)
 	end
 
 	-- Fallback: soltar (só quando não tem direção ou direção lateral)
-	subirSaltoPendente = nil
+	clearSubirSaltoPendente()
 	resetDescerState()
 	Movimento.Soltar()
 end
@@ -189,12 +278,12 @@ end
 
 -- ══════════════════════════════════════
 -- Polling: Verificar MoveDirection enquanto agarrado
--- W = Subir | S (segurar) = Descer (com hold time para PuloTras)
+-- W = Subir | S (segurar) = confirma intenção e tenta Descer
 -- ══════════════════════════════════════
 
 local function onHeartbeat(character, humanoid)
 	if not Movimento.EstaAgarrado() then
-		subirSaltoPendente = nil
+		clearSubirSaltoPendente()
 		resetDescerState()
 		return
 	end
@@ -215,8 +304,7 @@ local function onHeartbeat(character, humanoid)
 		-- Resetar estado de descer quando muda pra frente
 		resetDescerState()
 
-		-- Cooldown entre ações de subir
-		if now - lastMoveTime < MOVE_COOLDOWN then
+		if not canUseActionCooldown("Subir", nil, now) then
 			return
 		end
 
@@ -227,34 +315,69 @@ local function onHeartbeat(character, humanoid)
 		Debug.DrawClimbDebug(escalarResult, subirResult)
 
 		if ok then
-			lastMoveTime = now
-
 			if tipo == "Escalar" or tipo == "Subir" then
-				subirSaltoPendente = nil
+				if tipo == "Subir" then
+					CooldownManager.RegisterSuccess("Subir", nil, now)
+				end
+				clearSubirSaltoPendente()
 			elseif tipo == "SubirSalto" then
-				subirSaltoPendente = subirResult
+				setSubirSaltoPendente(subirResult)
+				CooldownManager.BlockAction("Subir", nil, now, runtimeConfig.SubirSaltoCheckCooldown or 0.25)
 				print("[Parkour] SubirSalto disponível — aperte Pular para confirmar")
 			end
+		else
+			local fallbackMin = (runtimeConfig.MinimumCooldowns and runtimeConfig.MinimumCooldowns.Subir) or 0.5
+			local failCooldown = runtimeConfig.SubirFailCooldown or fallbackMin
+			CooldownManager.BlockAction("Subir", nil, now, failCooldown)
+		end
+	elseif direcao == "Direita" or direcao == "Esquerda" then
+		resetDescerState()
+		clearSubirSaltoPendente()
+
+		if not canUseActionCooldown("Lateral", direcao, now) then
+			return
+		end
+
+		local ok, estadoLateral, lateralResult = Movimento.TentarMoverLateral(direcao)
+
+		Analisador.ClearDebug()
+		Debug.DrawLateralDebug(lateralResult)
+
+		if ok then
+			CooldownManager.RegisterSuccess("Lateral", direcao, now)
+			if estadoLateral then
+				print("[Parkour]", estadoLateral)
+			end
+		elseif lateralResult and (lateralResult.Reason == "NoLateralSurface" or lateralResult.Reason == "NoLateralSurfaceCached") then
+			local fallbackMin = (runtimeConfig.MinimumCooldowns and runtimeConfig.MinimumCooldowns.Lateral) or 0.5
+			local failCooldown = runtimeConfig.LateralNoSurfaceCooldown or fallbackMin
+			CooldownManager.BlockAction("Lateral", direcao, now, failCooldown)
 		end
 	elseif direcao == "Tras" then
-		-- Descer: precisa SEGURAR S por DescerHoldTime antes de soltar
-		-- Isso permite que S+Jump (PuloTras) funcione sem conflito
 		if not descerHolding then
-			-- Começou a segurar S
 			descerHolding = true
 			descerHoldStart = now
-		else
-			-- Já está segurando S — verificar se passou o hold time
-			local finalConfig = Configs.mergeConfig(nil)
-			local holdTime = finalConfig.DescerHoldTime
+			clearSubirSaltoPendente()
+			return
+		end
 
-			if now - descerHoldStart >= holdTime then
-				-- Segurou S por tempo suficiente → soltar
-				subirSaltoPendente = nil
-				resetDescerState()
-				Movimento.Soltar()
-			end
-			-- Se não passou o holdTime, NÃO FAZ NADA (dá janela pra PuloTras)
+		local holdTime = runtimeConfig.DescerHoldTime or 0.2
+		if now - descerHoldStart < holdTime then
+			return
+		end
+
+		local ok, tipo, descerResult = Movimento.TentarDescer()
+
+		Analisador.ClearDebug()
+		Debug.DrawDescerDebug(descerResult)
+
+		if ok and tipo == "Descer" then
+			clearSubirSaltoPendente()
+			resetDescerState()
+		else
+			clearSubirSaltoPendente()
+			resetDescerState()
+			Movimento.Soltar()
 		end
 	else
 		-- Sem direção → resetar estado de descer
@@ -271,9 +394,13 @@ local function setupCharacter(character: Model)
 	limparConexoes()
 	Movimento.Soltar()
 	lastJumpTime = 0
-	lastMoveTime = 0
-	subirSaltoPendente = nil
+	clearSubirSaltoPendente()
 	resetDescerState()
+
+	table.clear(cooldownBlockedLogAt)
+	runtimeConfig = Configs.mergeConfig(nil)
+	CooldownManager.Configure(runtimeConfig)
+	CooldownManager.Reset()
 
 	local humanoid = character:WaitForChild("Humanoid") :: Humanoid
 
@@ -296,6 +423,8 @@ local function setupCharacter(character: Model)
 		limparConexoes()
 		Movimento.Soltar()
 		resetDescerState()
+		table.clear(cooldownBlockedLogAt)
+		CooldownManager.Reset()
 	end)
 	table.insert(connections, diedConn)
 end

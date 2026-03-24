@@ -92,13 +92,41 @@ Configs.DefaultConfig = {
 
 	-- ═══ Subir: detecção de superfície acima ═══
 	SubirRayUpDistance = 12, -- distância máxima do ray vertical (para cima)
-	SubirRayForwardCount = 20, -- quantidade de rays horizontais por coluna
-	SubirRayForwardSpacing = 0.5, -- espaçamento vertical entre rays horizontais
+	SubirRayForwardCount = 15, -- quantidade de rays horizontais por coluna
+	SubirRayForwardSpacing = 1.0, -- espaçamento vertical entre rays horizontais
 	SubirRayForwardDistance = 6, -- distância dos rays horizontais (para frente/parede)
 	SubirProbeNormalOffset = 2.0, -- studs de distância da parede para iniciar os rays (maior = detecta estruturas salientes)
 	SubirMaxAltura = 6.0, -- dist. máx. vertical para "Subir" (só W)
 	SubirSaltoMaxAltura = 10.5, -- dist. máx. vertical para "SubirSalto" (W+Pulo)
 	SubirTransitionTime = 0.3, -- tempo (s) de transição ao subir
+	SubirSaltoCheckCooldown = 0.25, -- cooldown curto da verificação de SubirSalto (evita spam de log em Heartbeat)
+	SubirSaltoConfirmWindow = 0.35, -- tempo máximo para confirmar SubirSalto após ficar pendente
+	SubirSaltoConfirmEdgeTolerance = 2.5, -- deslocamento máximo permitido da borda original ao confirmar
+	MaxWallNormalY = 0.8, -- permite parede inclinada (montanha), ainda bloqueando superfícies quase horizontais
+
+	-- ═══ Descer: detecção de superfície abaixo ═══
+	DescerRayDownDistance = 12, -- distância máxima do ray vertical (para baixo)
+	DescerRayForwardCount = 15, -- quantidade de rays horizontais por coluna
+	DescerRayForwardSpacing = 1.0, -- espaçamento vertical entre rays horizontais
+	DescerRayForwardDistance = 6, -- distância dos rays horizontais (para frente/parede)
+	DescerProbeNormalOffset = 2.0, -- studs de distância da parede para iniciar os rays
+	DescerMaxAltura = 6.0, -- dist. máx. vertical para "Descer" (só S)
+	DescerTransitionTime = 0.3, -- tempo (s) de transição ao descer
+
+	-- ═══ Lateral: deslocamento agarrado direita/esquerda ═══
+	LateralRayDistance = 10.5, -- distância máxima de varredura lateral
+	LateralRayCount = 9, -- quantidade de amostras laterais
+	LateralRaySpacing = 2.0, -- espaçamento entre amostras laterais
+	LateralForwardRayDistance = 8.0, -- distância do ray secundário para dentro da parede
+	LateralProbeNormalOffset = 2.0, -- distância da parede para iniciar probe lateral
+	LateralMaxVerticalDelta = 1.75, -- diferença vertical máxima permitida para snap lateral
+	LateralNormalMinDot = 0.5, -- semelhança mínima entre normal atual e candidata (evita virar quina abrupta)
+	LateralMaxTravelDistance = 4.5, -- limite de deslocamento total do alvo lateral por passo
+	LateralTopEdgeTolerance = 1.5, -- quão perto o topo real da superfície deve estar da linha atual de agarrar
+	LateralTransitionTime = 0.2, -- tempo (s) da transição lateral
+	LateralInputDotThreshold = 0.35, -- threshold de intenção para A/D
+	LateralJumpImpulse = 32, -- magnitude do salto lateral
+	LateralJumpUpComponent = 0.45, -- componente vertical do salto lateral
 
 	-- ═══ Escalar: subir em cima da plataforma atual ═══
 	-- Clearance de escalar: agora usa os MESMOS valores do Vault (VaultClearanceSize, VaultClearanceUpOffset, VaultClearanceForwardOffset)
@@ -112,7 +140,32 @@ Configs.DefaultConfig = {
 	PuloTrasUpComponent = 0.4, -- componente vertical do impulso (0-1)
 
 	-- ═══ Descer: cooldown antes de soltar (evita conflito com PuloTras) ═══
-	DescerHoldTime = 0.3, -- segundos que precisa segurar S antes de soltar
+	DescerHoldTime = 0.15, -- segundos que precisa segurar S antes de soltar
+
+	-- ═══ Cooldown dinâmico por ação ═══
+	CooldownDinamicoEnabled = true,
+	ActionCooldowns = {
+		Lateral = 1.0,
+		LateralSalto = 2.0,
+		Subir = 1.0,
+		SubirSalto = 2.0,
+		Descer = 0.5,
+	},
+	MinimumCooldowns = {
+		Lateral = 0.5,
+		LateralSalto = 2.0,
+		Subir = 0.5,
+		SubirSalto = 2.0,
+		Descer = 0.25,
+	},
+	CooldownStreakReduction = 0.05, -- redução por repetição válida
+	CooldownRepeatWindow = 1.5, -- janela para manter streak com toque rápido
+	CooldownStreakMaxUses = 10, -- limite de contagem para bater no mínimo
+	CooldownBlockedLogInterval = 0.25, -- intervalo mínimo entre logs de bloqueio por ação/direção
+	SubirFailCooldown = 0.35, -- cooldown aplicado quando Subir/Escalar falha (evita spam de verificações)
+	DescerFailCooldown = 0.2, -- cooldown curto de falha na tentativa de descer
+	LateralNoSurfaceCooldown = 0.5, -- cooldown aplicado quando lateral falha por falta de superfície
+	LateralNoSurfaceBackoff = 0.15, -- espera curta antes de refazer CheckLateral sem superfície válida
 }
 
 -- ══════════════════════════════════════

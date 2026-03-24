@@ -94,6 +94,11 @@ local function addEdgeInfo(data, edgeMode)
 	return data
 end
 
+local function isWallLikeNormal(normal, config)
+	local maxWallNormalY = config.MaxWallNormalY or 0.35
+	return math.abs(normal.Unit.Y) <= maxWallNormalY
+end
+
 -- ══════════════════════════════════════
 -- Debug (repassa para o módulo Debug)
 -- ══════════════════════════════════════
@@ -446,6 +451,23 @@ local function castExtraRay(hrp, look, yOffset, distance, rayParams)
 	}
 end
 
+local function getLateralDirection(currentNormal, direcao)
+	local wallForward = -currentNormal.Unit
+	local right = wallForward:Cross(Vector3.yAxis)
+
+	if right.Magnitude < 0.05 then
+		right = Vector3.xAxis
+	else
+		right = right.Unit
+	end
+
+	if direcao == "Esquerda" then
+		return -right
+	end
+
+	return right
+end
+
 -- ══════════════════════════════════════
 -- Classificar altura da borda
 -- ══════════════════════════════════════
@@ -639,6 +661,14 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 		return nil
 	end
 
+	if not isWallLikeNormal(currentNormal, finalConfig) then
+		Debug.Verbose("  RESULTADO: InvalidCurrentNormalForSubir | Normal:", currentNormal)
+		return {
+			CanSubir = false,
+			Reason = "InvalidCurrentNormalForSubir",
+		}
+	end
+
 	local rayParams = Utilidades.createRaycastParams({character})
 
 	-- Direção para a parede (oposta à normal da superfície)
@@ -721,6 +751,7 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 				if built then
 					local topEdge = built.TopEdgePosition
 					local vertDist = topEdge.Y - currentEdgePos.Y
+					local isWallCandidate = isWallLikeNormal(probeResult.Normal, finalConfig)
 
 					Debug.Verbose("  Ray", i, ": Y=", string.format("%.1f", probeY),
 						"→ HIT", part.Name,
@@ -729,7 +760,7 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 						"| Size:", part.Size)
 
 					-- Só aceitar bordas acima da posição atual
-					if vertDist > 0.5 then
+					if vertDist > 0.5 and isWallCandidate then
 						if not seenParts[part] then
 							seenParts[part] = true
 							-- Distância horizontal do ponto de início do ray ao ponto hit
@@ -742,8 +773,10 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 								HorizDist = horizDist,
 							})
 						end
-					else
+					elseif vertDist <= 0.5 then
 						Debug.Verbose("    → rejeitado (vertDist <= 0.5)")
+					else
+						Debug.Verbose("    → rejeitado (normal não é parede)")
 					end
 				end
 			end
@@ -863,6 +896,7 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 	return {
 		CanSubir = true,
 		Tipo = bestTipo,
+		SourceEdgePosition = currentEdgePos,
 		EdgePosition = bestCandidate.EdgePosition,
 		Normal = bestCandidate.Normal,
 		Part = bestCandidate.Part,
@@ -875,12 +909,464 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 end
 
 -- ══════════════════════════════════════
+-- Descer: Detectar superfície agarrável abaixo
+-- Lança ray vertical para baixo → rays horizontais → encontra borda
+-- ══════════════════════════════════════
+
+function Analisador.CheckDescer(character, currentEdgePos, currentNormal, config)
+	local finalConfig = Configs.mergeConfig(config)
+	local hrp = Utilidades.getCharacterParts(character)
+	if not hrp then
+		return nil
+	end
+
+	if not isWallLikeNormal(currentNormal, finalConfig) then
+		Debug.Verbose("  RESULTADO: InvalidCurrentNormalForDescer | Normal:", currentNormal)
+		return {
+			CanDescer = false,
+			Reason = "InvalidCurrentNormalForDescer",
+		}
+	end
+
+	local rayParams = Utilidades.createRaycastParams({character})
+
+	-- Direção para a parede (oposta à normal da superfície)
+	local wallDir = -currentNormal.Unit
+
+	-- Ponto de partida: afastado da parede
+	local probeOffset = finalConfig.DescerProbeNormalOffset or 2.0
+	local basePos = currentEdgePos + currentNormal.Unit * probeOffset
+
+	Debug.Verbose("═══ CheckDescer ═══")
+	Debug.Verbose("  EdgePos:", currentEdgePos, "| Normal:", currentNormal)
+	Debug.Verbose("  ProbeOffset:", probeOffset, "| BasePos:", basePos)
+	Debug.Verbose("  WallDir:", wallDir, "| ForwardDist:", finalConfig.DescerRayForwardDistance)
+
+	-- Ray vertical para baixo para limitar a busca
+	local downRayOrigin = basePos
+	local downRayDir = -Vector3.yAxis * finalConfig.DescerRayDownDistance
+	local downResult = Workspace:Raycast(downRayOrigin, downRayDir, rayParams)
+	local minDownY = downResult and downResult.Position.Y or (basePos.Y - finalConfig.DescerRayDownDistance)
+
+	Debug.Verbose("  DownRay: hit=", downResult ~= nil, "| minDownY=", string.format("%.1f", minDownY))
+
+	local descerDebug = {
+		DownRay = {
+			Origin = downRayOrigin,
+			HitPosition = downResult and downResult.Position or (downRayOrigin + downRayDir),
+			Hit = downResult ~= nil,
+		},
+		ForwardRays = {},
+	}
+
+	local candidates = {}
+	local seenParts = {}
+
+	for i = 1, finalConfig.DescerRayForwardCount do
+		local yOffset = i * finalConfig.DescerRayForwardSpacing
+		local probeY = currentEdgePos.Y - yOffset
+
+		if probeY <= minDownY then
+			Debug.Verbose("  Ray", i, ": Y=", string.format("%.1f", probeY), "→ abaixo do limite, parando")
+			break
+		end
+
+		local probeOrigin = Vector3.new(basePos.X, probeY, basePos.Z)
+		local probeDir = wallDir * finalConfig.DescerRayForwardDistance
+		local probeResult = Workspace:Raycast(probeOrigin, probeDir, rayParams)
+
+		table.insert(descerDebug.ForwardRays, {
+			Origin = probeOrigin,
+			HitPosition = probeResult and probeResult.Position or (probeOrigin + probeDir),
+			Hit = probeResult ~= nil,
+		})
+
+		if probeResult and probeResult.Instance and probeResult.Instance:IsA("BasePart") then
+			local part = probeResult.Instance
+
+			local isIgnorable = Utilidades.isIgnorablePart(part, finalConfig.MinPartHeight)
+			local isNotGrabbable = Utilidades.hasTagDeep(part, Configs.Tags.NAO_AGARRAVEL)
+
+			if isIgnorable then
+				Debug.Verbose("  Ray", i, ": Y=", string.format("%.1f", probeY), "→ HIT", part.Name, "IGNORADA (muito pequena)")
+			elseif isNotGrabbable then
+				Debug.Verbose("  Ray", i, ": Y=", string.format("%.1f", probeY), "→ HIT", part.Name, "NAO_AGARRAVEL (tag)")
+			else
+				local castData = {
+					Character = character,
+					Part = part,
+					Result = probeResult,
+					Origin = probeOrigin,
+					HitPosition = probeResult.Position,
+					Normal = probeResult.Normal,
+				}
+
+				local built = buildResultFromCast(castData)
+				if built then
+					local topEdge = built.TopEdgePosition
+					local vertDist = currentEdgePos.Y - topEdge.Y
+					local isWallCandidate = isWallLikeNormal(probeResult.Normal, finalConfig)
+
+					Debug.Verbose("  Ray", i, ": Y=", string.format("%.1f", probeY),
+						"→ HIT", part.Name,
+						"| TopEdge:", string.format("%.1f", topEdge.Y),
+						"| VertDist:", string.format("%.1f", vertDist),
+						"| Size:", part.Size)
+
+					-- Só aceitar bordas abaixo da posição atual
+					if vertDist > 0.5 and isWallCandidate then
+						if not seenParts[part] then
+							seenParts[part] = true
+							local horizDist = (probeResult.Position - probeOrigin).Magnitude
+							table.insert(candidates, {
+								Part = part,
+								EdgePosition = topEdge,
+								Normal = probeResult.Normal,
+								VertDist = vertDist,
+								HorizDist = horizDist,
+							})
+						end
+					elseif vertDist <= 0.5 then
+						Debug.Verbose("    → rejeitado (vertDist <= 0.5)")
+					else
+						Debug.Verbose("    → rejeitado (normal não é parede)")
+					end
+				end
+			end
+		else
+			Debug.Verbose("  Ray", i, ": Y=", string.format("%.1f", probeY), "→ MISS")
+		end
+	end
+
+	if #candidates == 0 then
+		Debug.Verbose("  RESULTADO: NoSurfaceBelow")
+		return {
+			CanDescer = false,
+			Reason = "NoSurfaceBelow",
+			Debug = descerDebug,
+		}
+	end
+
+	table.sort(candidates, function(a, b)
+		if math.abs(a.HorizDist - b.HorizDist) > 0.1 then
+			return a.HorizDist < b.HorizDist
+		end
+		return a.VertDist < b.VertDist
+	end)
+
+	local bestCandidate = nil
+	local firstValidDistCandidate = nil
+
+	for _, cand in ipairs(candidates) do
+		if cand.VertDist > finalConfig.DescerMaxAltura then
+			Debug.Verbose("  Candidato rejeitado (TooFarBelow):", cand.Part.Name, "| VertDist:", string.format("%.1f", cand.VertDist))
+			continue
+		end
+
+		if not firstValidDistCandidate then
+			firstValidDistCandidate = cand
+		end
+
+		Debug.Verbose("  Testando candidato:", cand.Part.Name, "| HorizDist:", string.format("%.2f", cand.HorizDist), "| VertDist:", string.format("%.1f", cand.VertDist))
+
+		local newData = {
+			Character = character,
+			Part = cand.Part,
+			EdgePosition = cand.EdgePosition,
+			Normal = cand.Normal,
+		}
+
+		local hasTopClearance = Analisador.HasTopClearance(newData, finalConfig)
+		local hasFrontClearance = Analisador.HasFrontClearance(newData, finalConfig)
+
+		if hasTopClearance and hasFrontClearance then
+			bestCandidate = cand
+			Debug.Verbose("    → MELHOR candidato VÁLIDO!")
+			break
+		else
+			Debug.Verbose("    → Sem espaço! Top:", hasTopClearance, "| Front:", hasFrontClearance)
+		end
+	end
+
+	if not bestCandidate then
+		if not firstValidDistCandidate then
+			local firstCand = candidates[1]
+			Debug.Verbose("  RESULTADO: TooFarBelow | VertDist:", string.format("%.1f", firstCand.VertDist))
+			return {
+				CanDescer = false,
+				Reason = "TooFarBelow",
+				VerticalDistance = firstCand.VertDist,
+				EdgePosition = firstCand.EdgePosition,
+				Debug = descerDebug,
+			}
+		end
+
+		Debug.Verbose("  RESULTADO: NoClearanceBelow")
+		return {
+			CanDescer = false,
+			Reason = "NoClearanceBelow",
+			EdgePosition = firstValidDistCandidate.EdgePosition,
+			Normal = firstValidDistCandidate.Normal,
+			VerticalDistance = firstValidDistCandidate.VertDist,
+			Debug = descerDebug,
+		}
+	end
+
+	Debug.Verbose("  RESULTADO: CanDescer=true | Tipo: Descer")
+	return {
+		CanDescer = true,
+		Tipo = "Descer",
+		SourceEdgePosition = currentEdgePos,
+		EdgePosition = bestCandidate.EdgePosition,
+		Normal = bestCandidate.Normal,
+		Part = bestCandidate.Part,
+		VerticalDistance = bestCandidate.VertDist,
+		Debug = descerDebug,
+	}
+end
+
+-- ══════════════════════════════════════
+-- Lateral: Detectar superfície agarrável à direita/esquerda
+-- Funciona para deslizar na mesma parede ou transicionar para superfície adjacente
+-- ══════════════════════════════════════
+
+function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direcao, config)
+	local finalConfig = Configs.mergeConfig(config)
+	if direcao ~= "Direita" and direcao ~= "Esquerda" then
+		return {
+			CanMoveLateral = false,
+			Reason = "InvalidDirection",
+		}
+	end
+
+	local hrp = Utilidades.getCharacterParts(character)
+	if not hrp then
+		return {
+			CanMoveLateral = false,
+			Reason = "NoCharacterParts",
+		}
+	end
+
+	local rayParams = Utilidades.createRaycastParams({character})
+	local sideDir = getLateralDirection(currentNormal, direcao)
+	local wallDir = -currentNormal.Unit
+	local currentWallNormal = Vector3.new(currentNormal.X, 0, currentNormal.Z)
+	if currentWallNormal.Magnitude < 0.05 then
+		currentWallNormal = currentNormal.Unit
+	else
+		currentWallNormal = currentWallNormal.Unit
+	end
+	local basePos = currentEdgePos + currentNormal.Unit * (finalConfig.LateralProbeNormalOffset or 2.0)
+
+	local lateralDebug = {
+		Direction = direcao,
+		BasePosition = basePos,
+		SideDirection = sideDir,
+		WallDirection = wallDir,
+		SideRays = {},
+		ForwardRays = {},
+	}
+
+	Debug.Verbose("═══ CheckLateral ═══")
+	Debug.Verbose("  Direction:", direcao, "| EdgePos:", currentEdgePos, "| Normal:", currentNormal)
+	Debug.Verbose("  BasePos:", basePos)
+	Debug.Verbose("  LateralDist:", finalConfig.LateralRayDistance, "| Count:", finalConfig.LateralRayCount)
+	Debug.Verbose("  ForwardDist:", finalConfig.LateralForwardRayDistance or finalConfig.SubirRayForwardDistance)
+
+	if not isWallLikeNormal(currentNormal, finalConfig) then
+		Debug.Verbose("  RESULTADO: InvalidCurrentNormalForLateral | Normal:", currentNormal)
+		return {
+			CanMoveLateral = false,
+			Reason = "InvalidCurrentNormalForLateral",
+			Direction = direcao,
+			Debug = lateralDebug,
+		}
+	end
+
+	local candidates = {}
+	local forwardDistance = finalConfig.LateralForwardRayDistance or finalConfig.SubirRayForwardDistance
+	local lateralMaxTravelDistance = finalConfig.LateralMaxTravelDistance or 4.5
+	local lateralTopEdgeTolerance = finalConfig.LateralTopEdgeTolerance or 1.5
+
+	local maxLateralDistance = math.max(finalConfig.LateralRayDistance or 0, 0.1)
+	local lateralStep = math.max(finalConfig.LateralRaySpacing or 0.35, 0.05)
+	local maxByDistance = math.max(1, math.floor(maxLateralDistance / lateralStep))
+	local sampleCount = math.max(1, math.min(finalConfig.LateralRayCount or 1, maxByDistance))
+
+	Debug.Verbose("  LateralStep:", string.format("%.2f", lateralStep), "| Samples:", sampleCount)
+
+	for i = 1, sampleCount do
+		local lateralOffset = lateralStep * i
+		local sideProbeOrigin = basePos + sideDir * (lateralOffset - lateralStep)
+		local sideSamplePos = basePos + sideDir * lateralOffset
+
+		table.insert(lateralDebug.SideRays, {
+			Origin = sideProbeOrigin,
+			HitPosition = sideSamplePos,
+			Hit = true,
+		})
+
+		local forwardProbeOrigin = sideSamplePos
+		local forwardProbeDir = wallDir * forwardDistance
+		local forwardProbeResult = Workspace:Raycast(forwardProbeOrigin, forwardProbeDir, rayParams)
+
+		table.insert(lateralDebug.ForwardRays, {
+			Origin = forwardProbeOrigin,
+			HitPosition = forwardProbeResult and forwardProbeResult.Position or (forwardProbeOrigin + forwardProbeDir),
+			Hit = forwardProbeResult ~= nil,
+		})
+
+		if forwardProbeResult and forwardProbeResult.Instance then
+			Debug.Verbose("  Sample", i, "Offset=", string.format("%.2f", lateralOffset),
+				"→ HIT", forwardProbeResult.Instance.Name,
+				"| Normal:", forwardProbeResult.Normal)
+		else
+			Debug.Verbose("  Sample", i, "Offset=", string.format("%.2f", lateralOffset), "→ MISS")
+		end
+
+		if forwardProbeResult and forwardProbeResult.Instance and forwardProbeResult.Instance:IsA("BasePart") then
+			local part = forwardProbeResult.Instance
+			if not Utilidades.isIgnorablePart(part, finalConfig.MinPartHeight)
+				and not Utilidades.hasTagDeep(part, Configs.Tags.NAO_AGARRAVEL)
+				and isWallLikeNormal(forwardProbeResult.Normal, finalConfig)
+			then
+				local castData = {
+					Character = character,
+					Part = part,
+					Result = forwardProbeResult,
+					Origin = forwardProbeOrigin,
+					HitPosition = forwardProbeResult.Position,
+					Normal = forwardProbeResult.Normal,
+				}
+
+				local built = buildResultFromCast(castData)
+				if not built then
+					Debug.Verbose("    → rejeitado | sem edge info")
+					continue
+				end
+
+				local topEdgeDeltaY = math.abs(built.TopEdgePosition.Y - currentEdgePos.Y)
+				if topEdgeDeltaY > lateralTopEdgeTolerance then
+					Debug.Verbose("    → rejeitado | TopEdgeDeltaY:", string.format("%.2f", topEdgeDeltaY), "(max", lateralTopEdgeTolerance, ")")
+					continue
+				end
+
+				local hitWallNormal = Vector3.new(forwardProbeResult.Normal.X, 0, forwardProbeResult.Normal.Z)
+				if hitWallNormal.Magnitude < 0.05 then
+					hitWallNormal = currentWallNormal
+				else
+					hitWallNormal = hitWallNormal.Unit
+				end
+
+				local hitPos = forwardProbeResult.Position
+				local edgePos = Vector3.new(hitPos.X, currentEdgePos.Y, hitPos.Z)
+				local travelDistance = (edgePos - currentEdgePos).Magnitude
+				local vertDelta = edgePos.Y - currentEdgePos.Y
+				local normalDot = hitWallNormal:Dot(currentWallNormal)
+
+				if travelDistance > lateralMaxTravelDistance then
+					Debug.Verbose("    → rejeitado | TravelDist:", string.format("%.2f", travelDistance), "(max", lateralMaxTravelDistance, ")")
+					continue
+				end
+
+				if math.abs(vertDelta) <= finalConfig.LateralMaxVerticalDelta
+					and normalDot >= finalConfig.LateralNormalMinDot
+				then
+					local newData = {
+						Character = character,
+						Part = part,
+						EdgePosition = edgePos,
+						Normal = hitWallNormal,
+					}
+
+					local hasTopClearance = Analisador.HasTopClearance(newData, finalConfig)
+					local hasFrontClearance = Analisador.HasFrontClearance(newData, finalConfig)
+
+					if hasTopClearance and hasFrontClearance then
+						local sideDistance = lateralOffset
+						table.insert(candidates, {
+							Part = part,
+							EdgePosition = edgePos,
+							Normal = hitWallNormal,
+							SideDistance = sideDistance,
+							TravelDistance = travelDistance,
+							VertDelta = vertDelta,
+						})
+						Debug.Verbose("    → candidato válido | Part:", part.Name,
+							"| VertDelta:", string.format("%.2f", vertDelta),
+							"| SideDist:", string.format("%.2f", sideDistance),
+							"| Travel:", string.format("%.2f", travelDistance))
+					else
+						Debug.Verbose("    → sem clearance | Top:", hasTopClearance, "| Front:", hasFrontClearance)
+					end
+				else
+					Debug.Verbose("    → rejeitado | VertDelta:", string.format("%.2f", vertDelta), "| NormalDot:", string.format("%.2f", normalDot))
+				end
+			else
+				Debug.Verbose("    → rejeitado | ignorable/tag/normal não parede")
+			end
+		end
+	end
+
+	if #candidates == 0 then
+		Debug.Verbose("  RESULTADO: NoLateralSurface")
+		return {
+			CanMoveLateral = false,
+			Reason = "NoLateralSurface",
+			Direction = direcao,
+			Debug = lateralDebug,
+		}
+	end
+
+	table.sort(candidates, function(a, b)
+		if math.abs(a.SideDistance - b.SideDistance) > 0.05 then
+			return a.SideDistance < b.SideDistance
+		end
+		return math.abs(a.VertDelta) < math.abs(b.VertDelta)
+	end)
+
+	local best = candidates[1]
+	local idleMode, legHit = Analisador.ResolveIdleMode({
+		Character = character,
+		Part = best.Part,
+		EdgePosition = best.EdgePosition,
+		Normal = best.Normal,
+	}, finalConfig)
+
+	local estadoLateral = direcao .. (idleMode == "IdleSuporte" and "Suporte" or "Suspenso")
+	Debug.Verbose("  RESULTADO: CanMoveLateral=true | Estado:", estadoLateral, "| Dist:", string.format("%.2f", best.SideDistance))
+
+	return {
+		CanMoveLateral = true,
+		Reason = "Ok",
+		Direction = direcao,
+		Estado = estadoLateral,
+		IdleMode = idleMode,
+		EdgePosition = best.EdgePosition,
+		Normal = best.Normal,
+		Part = best.Part,
+		VerticalDelta = best.VertDelta,
+		HorizontalDistance = best.SideDistance,
+		LegHit = legHit,
+		Debug = lateralDebug,
+	}
+end
+
+-- ══════════════════════════════════════
 -- Escalar: Verificar se cabe em cima da borda atual
 -- ══════════════════════════════════════
 
 function Analisador.CheckEscalar(character, currentEdgePos, currentNormal, currentPart, config)
 	local finalConfig = Configs.mergeConfig(config)
 	local rayParams = Utilidades.createRaycastParams({character})
+
+	if not isWallLikeNormal(currentNormal, finalConfig) then
+		Debug.Verbose("  RESULTADO: InvalidCurrentNormalForEscalar | Normal:", currentNormal)
+		return {
+			CanEscalar = false,
+			Reason = "InvalidCurrentNormalForEscalar",
+		}
+	end
 
 	Debug.Verbose("═══ CheckEscalar ═══")
 	Debug.Verbose("  EdgePos:", currentEdgePos, "| Normal:", currentNormal)

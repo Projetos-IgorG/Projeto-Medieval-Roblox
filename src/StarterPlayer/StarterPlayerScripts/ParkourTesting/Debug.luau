@@ -283,4 +283,70 @@ function Debug.DrawClimbDebug(escalarResult, subirResult)
 	end
 end
 
+function Debug.DrawLateralDebug(lateralResult)
+	if not Configs.DebugEnabled then
+		return
+	end
+
+	if not lateralResult or not lateralResult.Debug then
+		return
+	end
+
+	local lateralDebug = lateralResult.Debug
+	if lateralDebug.SideRays then
+		for _, rayInfo in ipairs(lateralDebug.SideRays) do
+			Debug.DrawRay(
+				rayInfo.Origin,
+				rayInfo.HitPosition,
+				rayInfo.Hit and Color3.fromRGB(0, 255, 180) or Color3.fromRGB(0, 90, 70)
+			)
+		end
+	end
+
+	if lateralDebug.ForwardRays then
+		for _, rayInfo in ipairs(lateralDebug.ForwardRays) do
+			Debug.DrawRay(
+				rayInfo.Origin,
+				rayInfo.HitPosition,
+				rayInfo.Hit and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(40, 100, 40)
+			)
+		end
+	end
+
+	if lateralResult.EdgePosition then
+		Debug.DrawPoint(lateralResult.EdgePosition, Color3.fromRGB(255, 140, 0), Vector3.new(0.35, 0.35, 0.35))
+	end
+end
+
+function Debug.DrawDescerDebug(descerResult)
+	if not Configs.DebugEnabled then
+		return
+	end
+
+	if not descerResult or not descerResult.Debug then
+		return
+	end
+
+	local descerDebug = descerResult.Debug
+
+	if descerDebug.DownRay then
+		local d = descerDebug.DownRay
+		Debug.DrawRay(d.Origin, d.HitPosition, d.Hit and Color3.fromRGB(0, 200, 255) or Color3.fromRGB(0, 90, 120))
+	end
+
+	if descerDebug.ForwardRays then
+		for _, rayInfo in ipairs(descerDebug.ForwardRays) do
+			Debug.DrawRay(
+				rayInfo.Origin,
+				rayInfo.HitPosition,
+				rayInfo.Hit and Color3.fromRGB(120, 255, 120) or Color3.fromRGB(50, 100, 50)
+			)
+		end
+	end
+
+	if descerResult.EdgePosition then
+		Debug.DrawPoint(descerResult.EdgePosition, Color3.fromRGB(255, 120, 0), Vector3.new(0.35, 0.35, 0.35))
+	end
+end
+
 return Debug

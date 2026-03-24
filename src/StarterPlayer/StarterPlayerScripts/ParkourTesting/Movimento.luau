@@ -28,6 +28,42 @@ local estado = {
 	GrabData = nil, -- { EdgePosition, Normal, Part, Config }
 }
 
+local lateralNoSurfaceCache = {
+	Direction = nil,
+	EdgePosition = nil,
+	Normal = nil,
+	ExpiresAt = 0,
+}
+
+local function clearLateralNoSurfaceCache()
+	lateralNoSurfaceCache.Direction = nil
+	lateralNoSurfaceCache.EdgePosition = nil
+	lateralNoSurfaceCache.Normal = nil
+	lateralNoSurfaceCache.ExpiresAt = 0
+end
+
+local function isSameGrabForLateralCache(direction, edgePosition, normal)
+	if lateralNoSurfaceCache.ExpiresAt <= 0 then
+		return false
+	end
+
+	if lateralNoSurfaceCache.Direction ~= direction then
+		return false
+	end
+
+	if not lateralNoSurfaceCache.EdgePosition or not lateralNoSurfaceCache.Normal then
+		return false
+	end
+
+	if not edgePosition or not normal then
+		return false
+	end
+
+	local sameEdge = (lateralNoSurfaceCache.EdgePosition - edgePosition).Magnitude <= 0.15
+	local sameNormal = lateralNoSurfaceCache.Normal:Dot(normal.Unit) >= 0.98
+	return sameEdge and sameNormal
+end
+
 -- ══════════════════════════════════════
 -- Cleanup (Anti Memory Leak)
 -- ══════════════════════════════════════
@@ -89,9 +125,23 @@ local function resetHumanoidState(character)
 	end
 end
 
+local function isCharacterAlive(character)
+	if not character or not character.Parent then
+		return false
+	end
+
+	local humanoid = character:FindFirstChild("Humanoid")
+	if not humanoid then
+		return false
+	end
+
+	return humanoid.Health > 0
+end
+
 local function fullCleanup()
 	destroyConstraints()
 	restaurarColisao()
+	clearLateralNoSurfaceCache()
 
 	if estado.CurrentCharacter then
 		resetHumanoidState(estado.CurrentCharacter)
@@ -199,6 +249,23 @@ local function calcularPosicaoGrab(edgePosition, normal, config)
 	return posicao, orientacao
 end
 
+local function getLateralDirection(normal, direcao)
+	local wallForward = -normal.Unit
+	local right = wallForward:Cross(Vector3.yAxis)
+
+	if right.Magnitude < 0.05 then
+		right = Vector3.xAxis
+	else
+		right = right.Unit
+	end
+
+	if direcao == "Esquerda" then
+		return -right
+	end
+
+	return right
+end
+
 -- ══════════════════════════════════════
 -- Executar: Agarrar
 -- ══════════════════════════════════════
@@ -243,12 +310,14 @@ local function executarAgarrar(result, config)
 		EdgePosition = result.EdgePosition,
 		Normal = result.Normal,
 		Part = result.Part or (result.Result and result.Result.Instance),
+		IdleMode = result.IdleMode,
+		LateralState = nil,
 		Config = finalConfig,
 	}
 
 	-- Marcar como agarrado após tempo de transição
 	task.delay(finalConfig.GrabTransitionTime, function()
-		if alignPos.Parent and alignOri.Parent then
+		if alignPos.Parent and alignOri.Parent and isCharacterAlive(character) then
 			estado.Agarrado = true
 			estado.EmAcao = false
 		end
@@ -306,6 +375,13 @@ local function executarVault(result, _config, impulso, transitionTime)
 
 	-- Fase 2: Após chegar na posição (acima da borda), aplicar impulso via LinearVelocity
 	task.delay(transitionTime, function()
+		if not isCharacterAlive(character) then
+			removeConstraint(alignPos)
+			removeConstraint(alignOri)
+			estado.EmAcao = false
+			return
+		end
+
 		-- Destruir as constraints de posicionamento
 		removeConstraint(alignPos)
 		removeConstraint(alignOri)
@@ -367,12 +443,120 @@ local function executarSubir(novaEdgePos, novaNormal, config)
 		EdgePosition = novaEdgePos,
 		Normal = novaNormal,
 		Part = estado.GrabData and estado.GrabData.Part,
+		IdleMode = estado.GrabData and estado.GrabData.IdleMode,
+		LateralState = nil,
 		Config = finalConfig,
 	}
 
 	-- Marcar como agarrado após transição
 	task.delay(finalConfig.SubirTransitionTime, function()
-		if alignPos.Parent and alignOri.Parent then
+		if alignPos.Parent and alignOri.Parent and isCharacterAlive(character) then
+			estado.Agarrado = true
+			estado.EmAcao = false
+		end
+	end)
+
+	return true
+end
+
+local function executarDescer(novaEdgePos, novaNormal, novaPart, config)
+	local finalConfig = Configs.mergeConfig(config)
+	local character = estado.CurrentCharacter
+	if not character then
+		return false
+	end
+
+	local hrp = Utilidades.getCharacterParts(character)
+	if not hrp then
+		return false
+	end
+
+	estado.EmAcao = true
+	estado.Agarrado = false
+
+	destroyConstraints()
+
+	local posAlvo, cfAlvo = calcularPosicaoGrab(novaEdgePos, novaNormal, finalConfig)
+
+	local responsiveness = 1 / finalConfig.DescerTransitionTime * 10
+	local alignPos = criarAlignPosition(hrp, posAlvo, responsiveness)
+	local alignOri = criarAlignOrientation(hrp, cfAlvo, responsiveness)
+
+	hrp.AssemblyLinearVelocity = Vector3.zero
+	hrp.AssemblyAngularVelocity = Vector3.zero
+
+	estado.GrabData = {
+		EdgePosition = novaEdgePos,
+		Normal = novaNormal,
+		Part = novaPart or (estado.GrabData and estado.GrabData.Part),
+		IdleMode = estado.GrabData and estado.GrabData.IdleMode,
+		LateralState = nil,
+		Config = finalConfig,
+	}
+
+	task.delay(finalConfig.DescerTransitionTime, function()
+		if alignPos.Parent and alignOri.Parent and isCharacterAlive(character) then
+			estado.Agarrado = true
+			estado.EmAcao = false
+		end
+	end)
+
+	return true
+end
+
+local function executarLateral(lateralResult, config)
+	local finalConfig = Configs.mergeConfig(config)
+	local character = estado.CurrentCharacter
+	if not character then
+		return false
+	end
+
+	local hrp = Utilidades.getCharacterParts(character)
+	if not hrp then
+		return false
+	end
+
+	local currentEdgePos = estado.GrabData and estado.GrabData.EdgePosition
+	if currentEdgePos and lateralResult.EdgePosition then
+		local maxTravel = finalConfig.LateralMaxTravelDistance or 4.5
+		local travel = (lateralResult.EdgePosition - currentEdgePos).Magnitude
+		if travel > maxTravel then
+			print("[Parkour] Lateral bloqueado por segurança | Travel:", string.format("%.2f", travel), "| Max:", maxTravel)
+			return false
+		end
+	end
+
+	estado.EmAcao = true
+	estado.Agarrado = false
+
+	destroyConstraints()
+
+	local posAlvo = calcularPosicaoGrab(
+		lateralResult.EdgePosition,
+		lateralResult.Normal,
+		finalConfig
+	)
+	local rotAtual = hrp.CFrame - hrp.CFrame.Position
+	local cfAlvo = CFrame.new(posAlvo) * rotAtual
+
+	local responsiveness = 1 / finalConfig.LateralTransitionTime * 10
+	local alignPos = criarAlignPosition(hrp, posAlvo, responsiveness)
+	local alignOri = criarAlignOrientation(hrp, cfAlvo, responsiveness)
+
+	hrp.AssemblyLinearVelocity = Vector3.zero
+	hrp.AssemblyAngularVelocity = Vector3.zero
+
+	estado.GrabData = {
+		EdgePosition = lateralResult.EdgePosition,
+		Normal = lateralResult.Normal,
+		Part = lateralResult.Part,
+		IdleMode = lateralResult.IdleMode,
+		LateralState = lateralResult.Estado,
+		Config = finalConfig,
+	}
+
+	task.delay(finalConfig.LateralTransitionTime, function()
+		if alignPos.Parent and alignOri.Parent and isCharacterAlive(character) then
 			estado.Agarrado = true
 			estado.EmAcao = false
 		end
@@ -434,13 +618,20 @@ local function executarEscalar(escalarResult, config)
 
 	-- Fase 2: Após subir, mover pra FRENTE
 	task.delay(halfTime, function()
-		if alignPos.Parent then
+		if alignPos.Parent and isCharacterAlive(character) then
 			alignPos.Position = posFinal
 		end
 	end)
 
 	-- Após transição completa, restaurar tudo
 	task.delay(finalConfig.EscalarTransitionTime, function()
+		if not isCharacterAlive(character) then
+			removeConstraint(alignPos)
+			removeConstraint(alignOri)
+			estado.EmAcao = false
+			return
+		end
+
 		removeConstraint(alignPos)
 		removeConstraint(alignOri)
 
@@ -489,6 +680,32 @@ local function executarPuloTras(config)
 	hrp.AssemblyLinearVelocity = impulseVel
 
 	-- Sustentação via LinearVelocity (como Dash)
+	criarLinearVelocity(hrp, impulseVel, 0.2)
+
+	return true
+end
+
+local function executarPuloLateral(direcao, config)
+	local finalConfig = Configs.mergeConfig(config)
+	local character = estado.CurrentCharacter
+	if not character then
+		return false
+	end
+
+	local hrp = Utilidades.getCharacterParts(character)
+	if not hrp then
+		return false
+	end
+
+	local normal = estado.GrabData and estado.GrabData.Normal or -hrp.CFrame.LookVector
+	local lateralDir = getLateralDirection(normal, direcao)
+
+	fullCleanup()
+
+	local impulseDir = (lateralDir + Vector3.yAxis * finalConfig.LateralJumpUpComponent).Unit
+	local impulseVel = impulseDir * finalConfig.LateralJumpImpulse
+
+	hrp.AssemblyLinearVelocity = impulseVel
 	criarLinearVelocity(hrp, impulseVel, 0.2)
 
 	return true
@@ -607,6 +824,101 @@ function Movimento.TentarSubir()
 	return false, nil, subirResult, escalarResult
 end
 
+-- Tentar Descer: detecta superfície abaixo e move para ela
+-- Retorna: ok, tipo, descerResult
+function Movimento.TentarDescer()
+	if not estado.Agarrado or estado.EmAcao then
+		return false, nil
+	end
+
+	local grabData = estado.GrabData
+	if not grabData then
+		return false, nil
+	end
+
+	local character = estado.CurrentCharacter
+	if not character then
+		return false, nil
+	end
+
+	local descerResult = Analisador.CheckDescer(
+		character,
+		grabData.EdgePosition,
+		grabData.Normal,
+		grabData.Config
+	)
+
+	if not descerResult or not descerResult.CanDescer then
+		return false, nil, descerResult
+	end
+
+	local ok = executarDescer(descerResult.EdgePosition, descerResult.Normal, descerResult.Part, grabData.Config)
+	if ok then
+		print("[Parkour] Descer para superfície abaixo | Dist:", string.format("%.1f", descerResult.VerticalDistance))
+	end
+
+	return ok, "Descer", descerResult
+end
+
+function Movimento.TentarMoverLateral(direcao)
+	if not estado.Agarrado or estado.EmAcao then
+		return false, nil
+	end
+
+	local grabData = estado.GrabData
+	if not grabData then
+		return false, nil
+	end
+
+	local character = estado.CurrentCharacter
+	if not character then
+		return false, nil
+	end
+
+	local now = os.clock()
+	if now < lateralNoSurfaceCache.ExpiresAt
+		and isSameGrabForLateralCache(direcao, grabData.EdgePosition, grabData.Normal)
+	then
+		return false, nil, {
+			CanMoveLateral = false,
+			Reason = "NoLateralSurfaceCached",
+			Direction = direcao,
+		}
+	end
+
+	local lateralResult = Analisador.CheckLateral(
+		character,
+		grabData.EdgePosition,
+		grabData.Normal,
+		direcao,
+		grabData.Config
+	)
+
+	if not lateralResult or not lateralResult.CanMoveLateral then
+		if lateralResult and lateralResult.Reason == "NoLateralSurface" then
+			local finalConfig = Configs.mergeConfig(grabData.Config)
+			local backoff = finalConfig.LateralNoSurfaceBackoff or 0.15
+			lateralNoSurfaceCache.Direction = direcao
+			lateralNoSurfaceCache.EdgePosition = grabData.EdgePosition
+			lateralNoSurfaceCache.Normal = grabData.Normal and grabData.Normal.Unit or nil
+			lateralNoSurfaceCache.ExpiresAt = now + backoff
+		else
+			clearLateralNoSurfaceCache()
+		end
+
+		return false, nil, lateralResult
+	end
+
+	clearLateralNoSurfaceCache()
+
+	local ok = executarLateral(lateralResult, grabData.Config)
+	if ok then
+		print("[Parkour]", lateralResult.Estado, "| Dist:", string.format("%.2f", lateralResult.HorizontalDistance))
+	end
+
+	return ok, lateralResult.Estado, lateralResult
+end
+
 -- Executar SubirSalto (quando W+Pular confirmado)
 function Movimento.ExecutarSubirSalto(subirResult)
 	if not estado.Agarrado or estado.EmAcao then
@@ -679,6 +991,28 @@ function Movimento.PuloTras()
 	if ok then
 		print("[Parkour] PuloTras")
 	end
+	return ok
+end
+
+function Movimento.PuloLateral(direcao)
+	if not estado.Agarrado or estado.EmAcao then
+		return false
+	end
+
+	if direcao ~= "Direita" and direcao ~= "Esquerda" then
+		return false
+	end
+
+	local grabData = estado.GrabData
+	if not grabData then
+		return false
+	end
+
+	local ok = executarPuloLateral(direcao, grabData.Config)
+	if ok then
+		print("[Parkour]", direcao .. "Salto")
+	end
+
 	return ok
 end
 
