@@ -1,12 +1,16 @@
 --[[
 	Movimento.luau
 	Módulo de movimento do sistema de Parkour.
-	Responsável por executar Agarrar, VaultBaixo e VaultMédio
-	usando constraints do Roblox, com cleanup automático.
+	Responsável por executar Agarrar, VaultBaixo, VaultMédio,
+	Subir, SubirSalto, Escalar e PuloTras.
+
+	Vault e Escalar usam LinearVelocity para impulso suave (sem tremor em 1ª pessoa).
+	Constraints são limpas automaticamente (anti memory leak).
 ]]
 
 local Configs = require(script.Parent:WaitForChild("Configs"))
 local Utilidades = require(script.Parent:WaitForChild("Utilidades"))
+local Analisador = require(script.Parent:WaitForChild("Analisador"))
 
 local Movimento = {}
 
@@ -17,11 +21,11 @@ local Movimento = {}
 local estado = {
 	EmAcao = false,
 	Agarrado = false,
-	ActiveConstraints = {},
-	DiedConnection = nil,
-	CurrentCharacter = nil,
-	StepConnection = nil,
-	SavedCollisions = {}, -- backup de CanCollide das partes do character
+	ActiveConstraints = {} :: { Instance },
+	DiedConnection = nil :: RBXScriptConnection?,
+	CurrentCharacter = nil :: Model?,
+	SavedCollisions = {} :: { [BasePart]: boolean },
+	GrabData = nil, -- { EdgePosition, Normal, Part, Config }
 }
 
 -- ══════════════════════════════════════
@@ -37,10 +41,13 @@ local function destroyConstraints()
 	table.clear(estado.ActiveConstraints)
 end
 
-local function disconnectStep()
-	if estado.StepConnection then
-		estado.StepConnection:Disconnect()
-		estado.StepConnection = nil
+local function removeConstraint(constraint)
+	if constraint and constraint.Parent then
+		constraint:Destroy()
+	end
+	local idx = table.find(estado.ActiveConstraints, constraint)
+	if idx then
+		table.remove(estado.ActiveConstraints, idx)
 	end
 end
 
@@ -50,7 +57,6 @@ end
 
 local function desabilitarColisao(character)
 	table.clear(estado.SavedCollisions)
-
 	for _, part in ipairs(character:GetDescendants()) do
 		if part:IsA("BasePart") and part.CanCollide then
 			estado.SavedCollisions[part] = true
@@ -76,7 +82,6 @@ local function resetHumanoidState(character)
 	if not character then
 		return
 	end
-
 	local humanoid = character:FindFirstChild("Humanoid")
 	if humanoid then
 		humanoid.AutoRotate = true
@@ -85,7 +90,6 @@ local function resetHumanoidState(character)
 end
 
 local function fullCleanup()
-	disconnectStep()
 	destroyConstraints()
 	restaurarColisao()
 
@@ -101,6 +105,7 @@ local function fullCleanup()
 	estado.EmAcao = false
 	estado.Agarrado = false
 	estado.CurrentCharacter = nil
+	estado.GrabData = nil
 end
 
 -- ══════════════════════════════════════
@@ -136,6 +141,8 @@ local function criarAlignOrientation(hrp, targetCFrame, responsiveness)
 	return align
 end
 
+--- Cria um LinearVelocity com auto-destruição.
+--- Conceito igual ao Dash: aplica velocidade constante na direção, sem definir trajetória.
 local function criarLinearVelocity(hrp, velocity, duracao)
 	local lv = Instance.new("LinearVelocity")
 	lv.Attachment0 = hrp:FindFirstChild("RootAttachment")
@@ -150,13 +157,7 @@ local function criarLinearVelocity(hrp, velocity, duracao)
 
 	-- Auto-destruir após duração
 	task.delay(duracao, function()
-		if lv and lv.Parent then
-			lv:Destroy()
-		end
-		local idx = table.find(estado.ActiveConstraints, lv)
-		if idx then
-			table.remove(estado.ActiveConstraints, idx)
-		end
+		removeConstraint(lv)
 	end)
 
 	return lv
@@ -237,6 +238,14 @@ local function executarAgarrar(result, config)
 	hrp.AssemblyLinearVelocity = Vector3.zero
 	hrp.AssemblyAngularVelocity = Vector3.zero
 
+	-- Salvar dados do grab para ações futuras (Subir, Escalar, PuloTras)
+	estado.GrabData = {
+		EdgePosition = result.EdgePosition,
+		Normal = result.Normal,
+		Part = result.Part or (result.Result and result.Result.Instance),
+		Config = finalConfig,
+	}
+
 	-- Marcar como agarrado após tempo de transição
 	task.delay(finalConfig.GrabTransitionTime, function()
 		if alignPos.Parent and alignOri.Parent then
@@ -250,8 +259,9 @@ end
 
 -- ══════════════════════════════════════
 -- Executar: Vault (Baixo e Médio)
--- Fase 1: AlignPosition leva o player até a posição final (sem colisão)
--- Fase 2: Após chegar, aplica impulso na direção do LookVector e restaura colisão
+-- Fase 1: AlignPosition move o player APENAS para cima (sem colisão)
+-- Fase 2: Aplica impulso via LinearVelocity (conceito do Dash)
+--         Não define trajetória, apenas aplica velocidade constante
 -- ══════════════════════════════════════
 
 local function executarVault(result, _config, impulso, transitionTime)
@@ -262,6 +272,8 @@ local function executarVault(result, _config, impulso, transitionTime)
 	if not hrp or not humanoid then
 		return false
 	end
+
+	local finalConfig = Configs.mergeConfig(_config)
 
 	estado.EmAcao = true
 	estado.CurrentCharacter = character
@@ -275,11 +287,11 @@ local function executarVault(result, _config, impulso, transitionTime)
 	humanoid.AutoRotate = false
 	humanoid.PlatformStand = true
 
-	-- Posição final: acima da borda (ponto de destino do vault)
+	-- Posição final: APENAS acima da borda (sem offset horizontal)
 	local posFinal = result.PosFinal or result.EdgePosition
 	local look = result.LookVector or hrp.CFrame.LookVector
 
-	-- Fase 1: AlignPosition leva o player até a posição final suavemente
+	-- Fase 1: AlignPosition leva o player para cima suavemente
 	local responsiveness = 1 / transitionTime * 12
 	local alignPos = criarAlignPosition(hrp, posFinal, responsiveness)
 	local alignOri = criarAlignOrientation(
@@ -292,30 +304,192 @@ local function executarVault(result, _config, impulso, transitionTime)
 	hrp.AssemblyLinearVelocity = Vector3.zero
 	hrp.AssemblyAngularVelocity = Vector3.zero
 
-	-- Fase 2: Após chegar na posição, aplicar impulso para frente e restaurar tudo
+	-- Fase 2: Após chegar na posição (acima da borda), aplicar impulso via LinearVelocity
 	task.delay(transitionTime, function()
 		-- Destruir as constraints de posicionamento
-		if alignPos and alignPos.Parent then
-			alignPos:Destroy()
-		end
-		if alignOri and alignOri.Parent then
-			alignOri:Destroy()
-		end
+		removeConstraint(alignPos)
+		removeConstraint(alignOri)
 
-		-- Restaurar humanoid e colisão
+		-- Restaurar colisão e humanoid
 		humanoid.AutoRotate = true
 		humanoid.PlatformStand = false
 		restaurarColisao()
 
-		-- Aplicar impulso na direção que o player está olhando + um pouco pra cima
-		local impulseDir = (look + Vector3.yAxis * 0.3).Unit
-		hrp.AssemblyLinearVelocity = impulseDir * impulso
+		-- Impulso via LinearVelocity (frente + cima)
+		local lookFlat = Vector3.new(look.X, 0, look.Z).Unit
+		local impulseVel = lookFlat * impulso + Vector3.new(0, impulso * 0.4, 0)
 
-		-- Sustentação breve via LinearVelocity
-		criarLinearVelocity(hrp, impulseDir * impulso, 0.15)
+		criarLinearVelocity(hrp, impulseVel, finalConfig.VaultImpulseDuration)
 
 		estado.EmAcao = false
 	end)
+
+	return true
+end
+
+-- ══════════════════════════════════════
+-- Executar: Subir (move para nova superfície acima)
+-- Destrói constraints antigos e cria novos
+-- ══════════════════════════════════════
+
+local function executarSubir(novaEdgePos, novaNormal, config)
+	local finalConfig = Configs.mergeConfig(config)
+	local character = estado.CurrentCharacter
+	if not character then
+		return false
+	end
+
+	local hrp = Utilidades.getCharacterParts(character)
+	if not hrp then
+		return false
+	end
+
+	estado.EmAcao = true
+	estado.Agarrado = false
+
+	-- Destruir constraints anteriores
+	destroyConstraints()
+
+	-- Calcular nova posição de grab
+	local posAlvo, cfAlvo = calcularPosicaoGrab(novaEdgePos, novaNormal, finalConfig)
+
+	-- Criar novos constraints para a nova posição
+	local responsiveness = 1 / finalConfig.SubirTransitionTime * 10
+	local alignPos = criarAlignPosition(hrp, posAlvo, responsiveness)
+	local alignOri = criarAlignOrientation(hrp, cfAlvo, responsiveness)
+
+	-- Zerar velocidade
+	hrp.AssemblyLinearVelocity = Vector3.zero
+	hrp.AssemblyAngularVelocity = Vector3.zero
+
+	-- Atualizar dados do grab
+	estado.GrabData = {
+		EdgePosition = novaEdgePos,
+		Normal = novaNormal,
+		Part = estado.GrabData and estado.GrabData.Part,
+		Config = finalConfig,
+	}
+
+	-- Marcar como agarrado após transição
+	task.delay(finalConfig.SubirTransitionTime, function()
+		if alignPos.Parent and alignOri.Parent then
+			estado.Agarrado = true
+			estado.EmAcao = false
+		end
+	end)
+
+	return true
+end
+
+-- ══════════════════════════════════════
+-- Executar: Escalar (subir em cima da plataforma)
+-- Move o player diretamente para PosFinal (acima + pra frente da borda)
+-- Sem impulso — apenas AlignPosition para posição final
+-- ══════════════════════════════════════
+
+local function executarEscalar(escalarResult, config)
+	local finalConfig = Configs.mergeConfig(config)
+	local character = estado.CurrentCharacter
+	if not character then
+		return false
+	end
+
+	local hrp = Utilidades.getCharacterParts(character)
+	local humanoid = character:FindFirstChild("Humanoid")
+	if not hrp or not humanoid then
+		return false
+	end
+
+	estado.EmAcao = true
+	estado.Agarrado = false
+
+	-- Destruir constraints anteriores (do grab)
+	destroyConstraints()
+
+	-- Desabilitar colisão para subir sem travar
+	desabilitarColisao(character)
+
+	-- Calcular posições das duas fases
+	local normal = escalarResult.Normal or (estado.GrabData and estado.GrabData.Normal) or hrp.CFrame.LookVector
+	local look = -normal.Unit -- direção para dentro da plataforma (frente)
+
+	-- Fase 1: subir para cima da borda (sem offset pra frente)
+	local posUp = escalarResult.EdgePosition + Vector3.yAxis * finalConfig.EscalarUpOffset
+
+	-- Fase 2: mover pra frente na posição final
+	local posFinal = escalarResult.PosFinal
+
+	local halfTime = finalConfig.EscalarTransitionTime * 0.5
+	local responsiveness = 1 / halfTime * 12
+
+	-- Orientação: olhar para frente durante toda a escalada
+	local targetOri = CFrame.lookAt(posFinal, posFinal + look, Vector3.yAxis)
+
+	-- Fase 1: AlignPosition leva o player para CIMA
+	local alignPos = criarAlignPosition(hrp, posUp, responsiveness)
+	local alignOri = criarAlignOrientation(hrp, targetOri, responsiveness)
+
+	hrp.AssemblyLinearVelocity = Vector3.zero
+	hrp.AssemblyAngularVelocity = Vector3.zero
+
+	-- Fase 2: Após subir, mover pra FRENTE
+	task.delay(halfTime, function()
+		if alignPos.Parent then
+			alignPos.Position = posFinal
+		end
+	end)
+
+	-- Após transição completa, restaurar tudo
+	task.delay(finalConfig.EscalarTransitionTime, function()
+		removeConstraint(alignPos)
+		removeConstraint(alignOri)
+
+		humanoid.AutoRotate = true
+		humanoid.PlatformStand = false
+		restaurarColisao()
+
+		hrp.AssemblyLinearVelocity = Vector3.zero
+
+		estado.EmAcao = false
+		estado.GrabData = nil
+		estado.CurrentCharacter = nil
+	end)
+
+	return true
+end
+
+-- ══════════════════════════════════════
+-- Executar: PuloTras (salto para trás)
+-- Solta + impulso na direção da normal (afastando da parede)
+-- ══════════════════════════════════════
+
+local function executarPuloTras(config)
+	local finalConfig = Configs.mergeConfig(config)
+	local character = estado.CurrentCharacter
+	if not character then
+		return false
+	end
+
+	local hrp = Utilidades.getCharacterParts(character)
+	local humanoid = character:FindFirstChild("Humanoid")
+	if not hrp or not humanoid then
+		return false
+	end
+
+	-- Pegar a normal antes de limpar
+	local normal = estado.GrabData and estado.GrabData.Normal or hrp.CFrame.LookVector
+
+	-- Limpar tudo (soltar)
+	fullCleanup()
+
+	-- Direção do impulso: normal (para longe da parede) + componente pra cima
+	local impulseDir = (normal.Unit + Vector3.yAxis * finalConfig.PuloTrasUpComponent).Unit
+	local impulseVel = impulseDir * finalConfig.PuloTrasImpulse
+
+	hrp.AssemblyLinearVelocity = impulseVel
+
+	-- Sustentação via LinearVelocity (como Dash)
+	criarLinearVelocity(hrp, impulseVel, 0.2)
 
 	return true
 end
@@ -361,8 +535,151 @@ function Movimento.Soltar()
 	if not estado.Agarrado and not estado.EmAcao then
 		return
 	end
-
 	fullCleanup()
+end
+
+-- Tentar Subir: detecta superfície acima e move para ela
+-- Retorna: ok, tipo, subirResult, escalarDebug, subirDebug
+function Movimento.TentarSubir()
+	if not estado.Agarrado or estado.EmAcao then
+		return false, nil
+	end
+
+	local grabData = estado.GrabData
+	if not grabData then
+		return false, nil
+	end
+
+	local character = estado.CurrentCharacter
+	if not character then
+		return false, nil
+	end
+
+	-- Primeiro: verificar se pode escalar (subir em cima da plataforma atual)
+	-- Usa CheckEscalar que verifica se o player CABE EM CIMA da plataforma + tem chão
+	local escalarResult = Analisador.CheckEscalar(
+		character,
+		grabData.EdgePosition,
+		grabData.Normal,
+		grabData.Part,
+		grabData.Config
+	)
+
+	if escalarResult and escalarResult.CanEscalar then
+		-- Se cabe em cima, escalar ao invés de subir
+		local ok = executarEscalar(escalarResult, grabData.Config)
+		if ok then
+			print("[Parkour] Escalar para cima da plataforma")
+		end
+		return ok, "Escalar", nil, escalarResult
+	end
+
+	-- Segundo: verificar se tem superfície acima para subir (agarrar mais alto)
+	local subirResult = Analisador.CheckSubir(
+		character,
+		grabData.EdgePosition,
+		grabData.Normal,
+		grabData.Config
+	)
+
+	if not subirResult or not subirResult.CanSubir then
+		-- Retornar debug data mesmo quando falha (para visualização)
+		return false, nil, subirResult, escalarResult
+	end
+
+	if subirResult.Tipo == "Subir" then
+		local ok = executarSubir(subirResult.EdgePosition, subirResult.Normal, grabData.Config)
+		if ok then
+			print("[Parkour] Subir para nova superfície | Dist:", string.format("%.1f", subirResult.VerticalDistance))
+		end
+		return ok, "Subir", subirResult, escalarResult
+	elseif subirResult.Tipo == "SubirSalto" then
+		return true, "SubirSalto", subirResult, escalarResult
+	elseif subirResult.Tipo == "Escalar" then
+		-- Fallback disparado pelo CheckSubir
+		local ok = executarEscalar(subirResult, grabData.Config)
+		if ok then
+			print("[Parkour] Escalar direto para nova superfície acima | Dist:", string.format("%.1f", subirResult.VerticalDistance))
+		end
+		return ok, "Escalar", subirResult, escalarResult
+	end
+
+	return false, nil, subirResult, escalarResult
+end
+
+-- Executar SubirSalto (quando W+Pular confirmado)
+function Movimento.ExecutarSubirSalto(subirResult)
+	if not estado.Agarrado or estado.EmAcao then
+		return false
+	end
+
+	if not subirResult or not subirResult.CanSubir then
+		return false
+	end
+
+	local grabData = estado.GrabData
+	if not grabData then
+		return false
+	end
+
+	local ok = executarSubir(subirResult.EdgePosition, subirResult.Normal, grabData.Config)
+	if ok then
+		print("[Parkour] SubirSalto para superfície | Dist:", string.format("%.1f", subirResult.VerticalDistance))
+	end
+	return ok
+end
+
+-- Tentar Escalar: subir em cima da plataforma atual
+function Movimento.TentarEscalar()
+	if not estado.Agarrado or estado.EmAcao then
+		return false
+	end
+
+	local grabData = estado.GrabData
+	if not grabData then
+		return false
+	end
+
+	local character = estado.CurrentCharacter
+	if not character then
+		return false
+	end
+
+	local escalarResult = Analisador.CheckEscalar(
+		character,
+		grabData.EdgePosition,
+		grabData.Normal,
+		grabData.Part,
+		grabData.Config
+	)
+
+	if not escalarResult or not escalarResult.CanEscalar then
+		return false
+	end
+
+	local ok = executarEscalar(escalarResult, grabData.Config)
+	if ok then
+		print("[Parkour] Escalar para cima da plataforma")
+	end
+	return ok
+end
+
+-- PuloTras: salto para trás estando agarrado
+function Movimento.PuloTras()
+	if not estado.Agarrado or estado.EmAcao then
+		return false
+	end
+
+	local grabData = estado.GrabData
+	if not grabData then
+		return false
+	end
+
+	local ok = executarPuloTras(grabData.Config)
+	if ok then
+		print("[Parkour] PuloTras")
+	end
+	return ok
 end
 
 function Movimento.EstaAgarrado()
@@ -371,6 +688,10 @@ end
 
 function Movimento.EstaEmAcao()
 	return estado.EmAcao
+end
+
+function Movimento.GetGrabData()
+	return estado.GrabData
 end
 
 return Movimento

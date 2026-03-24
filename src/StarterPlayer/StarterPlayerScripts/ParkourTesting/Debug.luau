@@ -41,6 +41,13 @@ function Debug.Log(...)
 	print("[ParkourDebug]", ...)
 end
 
+function Debug.Verbose(...)
+	if not Configs.DebugVerbose then
+		return
+	end
+	print("[ParkourVerbose]", ...)
+end
+
 -- ══════════════════════════════════════
 -- Desenhar Visual: Raio
 -- ══════════════════════════════════════
@@ -186,21 +193,14 @@ function Debug.DrawDebug(data)
 	-- Ray extra: torso
 	if data.TorsoRayDebug then
 		local t = data.TorsoRayDebug
-		Debug.DrawRay(
-			t.Origin, t.HitPosition,
-			t.Hit and Color3.fromRGB(255, 200, 0) or Color3.fromRGB(120, 100, 0)
-		)
+		Debug.DrawRay(t.Origin, t.HitPosition, t.Hit and Color3.fromRGB(255, 200, 0) or Color3.fromRGB(120, 100, 0))
 	end
 
 	-- Ray extra: perna
 	if data.LegRayDebug then
 		local l = data.LegRayDebug
-		Debug.DrawRay(
-			l.Origin, l.HitPosition,
-			l.Hit and Color3.fromRGB(0, 150, 255) or Color3.fromRGB(0, 60, 120)
-		)
+		Debug.DrawRay(l.Origin, l.HitPosition, l.Hit and Color3.fromRGB(0, 150, 255) or Color3.fromRGB(0, 60, 120))
 	end
-
 
 	-- Linha de debug da distância da Head até a borda
 	if data.DistanceLine then
@@ -224,6 +224,62 @@ function Debug.DrawDebug(data)
 	-- Clearance de vault (destino)
 	if data.VaultClearanceCFrame and data.VaultClearanceSize then
 		Debug.DrawBox(data.VaultClearanceCFrame, data.VaultClearanceSize, Color3.fromRGB(0, 255, 100))
+	end
+end
+
+-- ══════════════════════════════════════
+-- Debug Completo de Subir/Escalar
+-- Mostra TODOS os rays e caixas de verificação
+-- ══════════════════════════════════════
+
+function Debug.DrawClimbDebug(escalarResult, subirResult)
+	if not Configs.DebugEnabled then
+		return
+	end
+
+	-- ═══ Escalar: clearance box + floor ray ═══
+	if escalarResult then
+		-- Caixa de clearance do escalar (magenta)
+		if escalarResult.ClearanceCFrame and escalarResult.ClearanceSize then
+			local cor = escalarResult.CanEscalar and Color3.fromRGB(255, 0, 0) -- magenta = pode escalar
+				or Color3.fromRGB(120, 0, 0) -- escuro = não pode
+			Debug.DrawBox(escalarResult.ClearanceCFrame, escalarResult.ClearanceSize, cor)
+		end
+
+		-- Floor ray (amarelo = tem chão, vermelho = sem chão)
+		if escalarResult.FloorRayDebug then
+			local f = escalarResult.FloorRayDebug
+			Debug.DrawRay(f.Origin, f.HitPosition, f.Hit and Color3.fromRGB(255, 255, 0) or Color3.fromRGB(255, 0, 0))
+			-- Ponto onde o floor ray começa (posição final do escalar)
+			Debug.DrawPoint(f.Origin, Color3.fromRGB(255, 255, 0), Vector3.new(0.35, 0.35, 0.35))
+		end
+	end
+
+	-- ═══ Subir: up ray + forward rays ═══
+	if subirResult and subirResult.Debug then
+		local subirDebug = subirResult.Debug
+
+		-- Ray vertical para cima (ciano)
+		if subirDebug.UpRay then
+			local u = subirDebug.UpRay
+			Debug.DrawRay(u.Origin, u.HitPosition, u.Hit and Color3.fromRGB(0, 255, 255) or Color3.fromRGB(0, 120, 120))
+		end
+
+		-- Rays horizontais (verde brilhante = hit, escuro = miss)
+		if subirDebug.ForwardRays then
+			for _, rayInfo in ipairs(subirDebug.ForwardRays) do
+				Debug.DrawRay(
+					rayInfo.Origin,
+					rayInfo.HitPosition,
+					rayInfo.Hit and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(50, 100, 50)
+				)
+			end
+		end
+
+		-- Ponto da borda encontrada (se existir)
+		if subirResult.EdgePosition then
+			Debug.DrawPoint(subirResult.EdgePosition, Color3.fromRGB(255, 100, 0), Vector3.new(0.35, 0.35, 0.35))
+		end
 	end
 end
 
