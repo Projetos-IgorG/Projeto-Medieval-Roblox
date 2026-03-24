@@ -149,12 +149,22 @@ function DynamicCamFX.Update(
 		return camCF
 	end
 
-	wasActive = true
-
 	local hum = getHumanoid(hrp)
 	if not hum then
 		return camCF
 	end
+
+	-- Só aplicar efeitos de bobbing quando no chão
+	local isOnGround = hum.FloorMaterial ~= Enum.Material.Air
+	if not isOnGround then
+		-- No ar: resetar estados suavemente para evitar corte brusco
+		currentVel = lerpDt(currentVel, 0, Settings.VelocidadeSuavizacao, dt)
+		currentLean = lerpDt(currentLean, 0, Settings.LeanSuavizacao, dt)
+		drift = lerpDt(drift, 0, Settings.DriftSuavizacao, dt)
+		return camCF
+	end
+
+	wasActive = true
 
 	-- Dash fade (transição suave)
 	dashFade = lerpDt(dashFade, isDashing and 0 or 1, Settings.DashFadeSuavizacao, dt)
