@@ -197,7 +197,15 @@ function Debug.DrawDebug(data)
 	end
 
 	-- Ray extra: perna
-	if data.LegRayDebug then
+	if data.LegProbeRaysDebug then
+		for _, legRay in ipairs(data.LegProbeRaysDebug) do
+			Debug.DrawRay(
+				legRay.Origin,
+				legRay.HitPosition,
+				legRay.Hit and Color3.fromRGB(0, 180, 255) or Color3.fromRGB(0, 70, 120)
+			)
+		end
+	elseif data.LegRayDebug then
 		local l = data.LegRayDebug
 		Debug.DrawRay(l.Origin, l.HitPosition, l.Hit and Color3.fromRGB(0, 150, 255) or Color3.fromRGB(0, 60, 120))
 	end

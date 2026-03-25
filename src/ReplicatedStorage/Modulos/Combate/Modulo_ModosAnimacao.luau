@@ -389,6 +389,76 @@ local ModoAnimacoes = {
 			Stunado = "rbxassetid://0000000000",
 		},
 	},
+
+	-- ───────────────────────────────────────────────────────────────
+	-- PARKOUR (Independente do modoAnimacao)
+	-- ───────────────────────────────────────────────────────────────
+	Parkour = {
+		tipo = "Parkour",
+		aplicaImpulso = false,
+		aplicaKnockback = false,
+		temCombo = false,
+		animacoes = {
+			IdleSuporte = "rbxassetid://101405606853852",
+			IdleSuspenso = "rbxassetid://97506647521728",
+
+			SubirDireitaSuporte = "rbxassetid://104976161284084",
+			SubirEsquerdaSuporte = "rbxassetid://139049880951103",
+
+			SubirDireitaSuspenso = "rbxassetid://95244325439627",
+			SubirEsquerdaSuspenso = "rbxassetid://120023331153028",
+
+			SubirSaltoSuporte = "rbxassetid://94588265013910",
+			SubirSaltoSuspenso = "rbxassetid://128601601033320",
+			
+			Descer = "rbxassetid://104309277302018",
+
+			PuloTras = "rbxassetid://122280944254589",
+
+			DireitaSuporte = "rbxassetid://85351814023097",
+			EsquerdaSuporte = "rbxassetid://119300191293903",
+
+			DireitaSuspenso = "rbxassetid://125243003105031",
+			EsquerdaSuspenso = "rbxassetid://115099251307406",
+
+			DireitaSaltoSuporte = "rbxassetid://128153530690566",
+			EsquerdaSaltoSuporte = "rbxassetid://84480325767002",
+
+			DireitaSaltoSuspenso = "rbxassetid://80372639586330", -- TODO
+			EsquerdaSaltoSuspenso = "rbxassetid://95842068830831", -- TODO
+
+			EscalarSuporte = "rbxassetid://127751906771957",
+			EscalarSuspenso = "rbxassetid://126513416555386",
+			
+			VaultMedio = "rbxassetid://139979993022198",
+			VaultBaixo = "rbxassetid://105489781294318",
+		},
+		-- Mapa de eventos de animação (somente animações listadas com marker)
+		eventos = {
+			SubirDireitaSuporte = "SubirParkour",
+			SubirEsquerdaSuporte = "SubirParkour",
+			SubirDireitaSuspenso = "SubirParkour",
+			SubirEsquerdaSuspenso = "SubirParkour",
+				SubirSaltoSuporte = "SubirSaltoParkour",
+				SubirSaltoSuspenso = "SubirSaltoParkour",
+			DireitaSuporte = "DireitaParkour",
+			EsquerdaSuporte = "EsquerdaParkour",
+			DireitaSuspenso = "DireitaParkour",
+			EsquerdaSuspenso = "EsquerdaParkour",
+			DireitaSaltoSuporte = "DireitaParkourSalto",
+			EsquerdaSaltoSuporte = "EsquerdaParkourSalto",
+			DireitaSaltoSuspenso = "DireitaParkourSalto",
+			EsquerdaSaltoSuspenso = "EsquerdaParkourSalto",
+		},
+		-- Placeholders de blend/transition para ajuste fino dos assets
+		configAnimacao = {
+			FadeInAcao = 0.08,
+			FadeOutAcao = 0.12,
+			FadeInIdle = 0.08,
+			FadeOutIdle = 0.18,
+			VelocidadePadrao = 1.0,
+		},
+	},
 }
 
 return ModoAnimacoes

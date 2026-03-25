@@ -86,9 +86,9 @@ local ConfiguracaoPadrao: ConfiguracaoCamera = {
 	SnapTransitionTime = 0.25,
 
 	-- FOV
-	DefaultFOV = 90, --78,
-	WalkFOV = 90, --78,
-	RunFOV = 100, --86,
+	DefaultFOV = 100, -- 78,
+	WalkFOV = 100, -- 78,
+	RunFOV = 120, -- 86,
 	FOVTransitionTime = 0.3,
 	RunFOVRampTime = 0.05, -- tempo pra alcançar FOV máximo de corrida
 

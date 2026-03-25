@@ -94,6 +94,21 @@ ClientBridge.CalcularDirecaoDash = nil :: (() -> string)?
 ClientBridge.EstaEmDash = nil :: (() -> boolean)?
 
 -- ═══════════════════════════════════════════════════════════════════
+-- PARKOUR
+-- ═══════════════════════════════════════════════════════════════════
+--- Verifica se está em lock de parkour
+--- Definido por: ControladorEstado
+ClientBridge.EstaEmParkour = nil :: (() -> boolean)?
+
+--- Entra no lock de parkour (bloqueia ações de combate/dash/equip)
+--- Definido por: ControladorEstado
+ClientBridge.EntrarParkour = nil :: (() -> ())?
+
+--- Sai do lock de parkour e retoma atualização normal de animação
+--- Definido por: ControladorEstado
+ClientBridge.SairParkour = nil :: (() -> ())?
+
+-- ═══════════════════════════════════════════════════════════════════
 -- IMPULSO DE ATAQUE
 -- ═══════════════════════════════════════════════════════════════════
 --- Aplica impulso físico na direção do ataque

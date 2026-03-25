@@ -34,9 +34,9 @@ Configs.DefaultConfig = {
 	EdgeMode = "Top", -- "Top" ou "Bottom"
 
 	-- Clearance no topo (espaço acima da borda — para AGARRAR)
-	TopClearanceSize = Vector3.new(2.2, 0.4, 1.8),
+	TopClearanceSize = Vector3.new(2.2, 0.4, 0.5),
 	TopClearanceUpOffset = 0.21,
-	TopClearanceNormalOffset = 0.45,
+	TopClearanceNormalOffset = 0.1,
 
 	-- Clearance frontal (espaço na frente da borda — para AGARRAR)
 	FrontClearanceSize = Vector3.new(2.2, 3.0, 1.6),
@@ -47,6 +47,15 @@ Configs.DefaultConfig = {
 	LegProbeDownOffset = 2.8,
 	LegProbeStartNormalOffset = 0.75,
 	LegProbeDistance = 1.8,
+	-- Ajuste principal de suporte/suspenso:
+	-- Rays horizontais empilhados na vertical (de baixo para cima).
+	-- Configure aqui: ponto inicial no eixo Y, espacamento e distancia.
+	LegProbeRayCount = 5,
+	LegProbeStartYOffset = -2,
+	LegProbeVerticalSpacing = 0.5,
+	LegProbeRayDistance = 1.2,
+	-- Legacy: se definido, sobrepoe o calculo por StartYOffset/Spacing.
+	LegProbeVerticalOffsets = nil,
 
 	-- ═══ Offsets do corpo (relativos ao HRP.Y) ═══
 	TopoTorsoOffset = 1.2, -- HRP.Y + offset = linha do topo do torso
@@ -80,15 +89,22 @@ Configs.DefaultConfig = {
 	-- ═══ Movimento: Agarrar ═══
 	GrabSurfaceOffset = 2.0, -- distância do HRP à superfície (studs) ao agarrar
 	GrabVerticalOffset = -2.0, -- quão abaixo da borda o HRP fica (studs)
+	-- Offsets específicos por estado de idle agarrado
+	GrabSurfaceOffsetSuporte = 1.3,
+	GrabVerticalOffsetSuporte = -2.4,
+	GrabSurfaceOffsetSuspenso = 0.8,
+	GrabVerticalOffsetSuspenso = -2.7,
 	GrabTransitionTime = 0.25, -- tempo (s) pra player chegar na posição agarrada
+	GrabIdleStartDelay = 0.02, -- atraso para iniciar idle após agarrar (menor = entra mais rápido)
+	GrabIdleRecheckInterval = 0.15, -- intervalo (s) para reavaliar idle e sincronizar offset enquanto agarrado
 
 	-- ═══ Movimento: Vault Baixo ═══
 	VaultBaixoImpulse = 50, -- magnitude da velocidade (studs/s) no VaultBaixo
 	VaultBaixoTransitionTime = 0.15, -- duração (s) do movimento pra cima
 
 	-- ═══ Movimento: Vault Médio ═══
-	VaultMedioImpulse = 35, -- magnitude da velocidade (studs/s) no VaultMédio
-	VaultMedioTransitionTime = 0.25, -- duração (s) do movimento pra cima
+	VaultMedioImpulse = 40, -- magnitude da velocidade (studs/s) no VaultMédio
+	VaultMedioTransitionTime = 0.2, -- duração (s) do movimento pra cima
 
 	-- ═══ Subir: detecção de superfície acima ═══
 	SubirRayUpDistance = 12, -- distância máxima do ray vertical (para cima)
@@ -99,8 +115,10 @@ Configs.DefaultConfig = {
 	SubirMaxAltura = 6.0, -- dist. máx. vertical para "Subir" (só W)
 	SubirSaltoMaxAltura = 10.5, -- dist. máx. vertical para "SubirSalto" (W+Pulo)
 	SubirTransitionTime = 0.3, -- tempo (s) de transição ao subir
+	SubirSaltoMinActionTime = 0.55, -- tempo mínimo (s) para a ação SubirSalto tocar antes de voltar ao Idle
+	SubirSaltoIdleFadeOut = 0.12, -- fade-out (s) para encerrar SubirSalto e entrar no Idle ao fim da transição
 	SubirSaltoCheckCooldown = 0.25, -- cooldown curto da verificação de SubirSalto (evita spam de log em Heartbeat)
-	SubirSaltoConfirmWindow = 0.35, -- tempo máximo para confirmar SubirSalto após ficar pendente
+	SubirSaltoConfirmWindow = 0.9, -- tempo máximo para confirmar SubirSalto após ficar pendente
 	SubirSaltoConfirmEdgeTolerance = 2.5, -- deslocamento máximo permitido da borda original ao confirmar
 	MaxWallNormalY = 0.8, -- permite parede inclinada (montanha), ainda bloqueando superfícies quase horizontais
 
@@ -116,7 +134,7 @@ Configs.DefaultConfig = {
 	-- ═══ Lateral: deslocamento agarrado direita/esquerda ═══
 	LateralRayDistance = 10.5, -- distância máxima de varredura lateral
 	LateralRayCount = 9, -- quantidade de amostras laterais
-	LateralRaySpacing = 2.0, -- espaçamento entre amostras laterais
+	LateralRaySpacing = 2.5, -- espaçamento entre amostras laterais
 	LateralForwardRayDistance = 8.0, -- distância do ray secundário para dentro da parede
 	LateralProbeNormalOffset = 2.0, -- distância da parede para iniciar probe lateral
 	LateralMaxVerticalDelta = 1.75, -- diferença vertical máxima permitida para snap lateral
@@ -125,14 +143,26 @@ Configs.DefaultConfig = {
 	LateralTopEdgeTolerance = 1.5, -- quão perto o topo real da superfície deve estar da linha atual de agarrar
 	LateralTransitionTime = 0.2, -- tempo (s) da transição lateral
 	LateralInputDotThreshold = 0.35, -- threshold de intenção para A/D
+	DirectionUseCameraBasis = true, -- interpreta MoveDirection usando base da camera no parkour agarrado
+	DirectionInputDeadzone = 0.2, -- deadzone horizontal minima para considerar intencao direcional
+	DirectionForwardDotThreshold = 0.6, -- dot minimo de frente/tras para classificar eixo frontal
+	DirectionLateralDotThreshold = 0.6, -- dot minimo de direita/esquerda para classificar eixo lateral
+	DirectionDominanceMargin = 0.12, -- vantagem minima entre eixos para aceitar classificacao e evitar ambiguidades
 	LateralJumpImpulse = 32, -- magnitude do salto lateral
-	LateralJumpUpComponent = 0.45, -- componente vertical do salto lateral
+	LateralJumpUpComponent = 0.6, -- componente vertical do salto lateral
+	LateralSaltoCancelSpeedAbs = 1.3, -- velocidade absoluta para recuar a animacao de LateralSalto ao soltar input
+	LateralSaltoAutoGrabWindow = 0.65, -- janela (s) para tentar auto-agarrar apos confirmar LateralSalto
+	LateralSaltoAutoGrabStartDelay = 0.12, -- atraso inicial (s) antes de tentar auto-agarrar no LateralSalto
+	LateralSaltoAutoGrabInterval = 0.05, -- intervalo (s) entre tentativas de auto-agarrar apos LateralSalto
+	LateralSaltoAutoGrabMinLateralProgress = 1.8, -- progresso lateral mínimo (studs) para aceitar auto-grab após LateralSalto
+	LateralSaltoAutoGrabMinTravel = 2.0, -- deslocamento total mínimo (studs) para aceitar auto-grab após LateralSalto
 
 	-- ═══ Escalar: subir em cima da plataforma atual ═══
 	-- Clearance de escalar: agora usa os MESMOS valores do Vault (VaultClearanceSize, VaultClearanceUpOffset, VaultClearanceForwardOffset)
 	EscalarForwardOffset = 1.2, -- studs pra frente da borda ao escalar (posição final)
 	EscalarUpOffset = 2.5, -- studs acima da borda (posição final)
 	EscalarTransitionTime = 0.35, -- duração (s) da escalada
+	EscalarVerticalFirstRatio = 0.5, -- proporção do tempo de Escalar usada para fase vertical
 	EscalarFloorRayDistance = 5, -- distância do ray pra baixo para verificar chão
 
 	-- ═══ PuloTras: salto para trás estando agarrado ═══

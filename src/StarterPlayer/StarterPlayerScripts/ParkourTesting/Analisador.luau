@@ -295,21 +295,49 @@ function Analisador.ResolveIdleMode(data, config)
 	local finalConfig = Configs.mergeConfig(config)
 
 	if Utilidades.hasTagDeep(data.Part, Configs.Tags.FORCAR_SUSPENSO) then
-		return "IdleSuspenso", nil
+		return "IdleSuspenso", nil, {}
 	end
 
-	local origin = data.EdgePosition
+	local baseOrigin = data.EdgePosition
 		- Vector3.yAxis * finalConfig.LegProbeDownOffset
 		+ data.Normal.Unit * finalConfig.LegProbeStartNormalOffset
 
-	local direction = -data.Normal.Unit * finalConfig.LegProbeDistance
-	local result = Workspace:Raycast(origin, direction, Utilidades.createRaycastParams({data.Character}))
-
-	if result and result.Instance and result.Instance:IsA("BasePart") then
-		return "IdleSuporte", result
+	local rayDistance = finalConfig.LegProbeRayDistance or finalConfig.LegProbeDistance
+	local verticalOffsets = {}
+	if finalConfig.LegProbeVerticalOffsets and #finalConfig.LegProbeVerticalOffsets > 0 then
+		for _, offset in ipairs(finalConfig.LegProbeVerticalOffsets) do
+			table.insert(verticalOffsets, offset)
+		end
+	else
+		local rayCount = math.max(1, math.floor(finalConfig.LegProbeRayCount or 3))
+		local startYOffset = finalConfig.LegProbeStartYOffset or 0.0
+		local spacing = finalConfig.LegProbeVerticalSpacing or 0.35
+		for i = 0, rayCount - 1 do
+			table.insert(verticalOffsets, startYOffset + (i * spacing))
+		end
 	end
 
-	return "IdleSuspenso", nil
+	local rayParams = Utilidades.createRaycastParams({data.Character})
+	local debugRays = {}
+
+	for _, verticalOffset in ipairs(verticalOffsets) do
+		local origin = baseOrigin + Vector3.yAxis * verticalOffset
+		local direction = -data.Normal.Unit * rayDistance
+		local result = Workspace:Raycast(origin, direction, rayParams)
+
+		table.insert(debugRays, {
+			Origin = origin,
+			HitPosition = result and result.Position or (origin + direction),
+			Hit = result ~= nil,
+			Result = result,
+		})
+
+		if result and result.Instance and result.Instance:IsA("BasePart") then
+			return "IdleSuporte", result, debugRays
+		end
+	end
+
+	return "IdleSuspenso", nil, debugRays
 end
 
 -- ══════════════════════════════════════
@@ -363,12 +391,13 @@ function Analisador.CheckGrabbable(character, config)
 		return data
 	end
 
-	local idleMode, legHit = Analisador.ResolveIdleMode(data, finalConfig)
+	local idleMode, legHit, legProbeRaysDebug = Analisador.ResolveIdleMode(data, finalConfig)
 
 	data.CanGrab = true
 	data.Reason = "Ok"
 	data.IdleMode = idleMode
 	data.LegHit = legHit
+	data.LegProbeRaysDebug = legProbeRaysDebug
 	data.TopClearanceCFrame = topCf
 	data.TopClearanceSize = topSize
 	data.FrontClearanceCFrame = frontCf
@@ -584,11 +613,12 @@ function Analisador.CheckParkour(character, config)
 		end
 
 		-- Idle mode
-		local idleMode, legHit = Analisador.ResolveIdleMode(data, finalConfig)
+		local idleMode, legHit, legProbeRaysDebug = Analisador.ResolveIdleMode(data, finalConfig)
 		data.Aprovado = true
 		data.Reason = "Ok"
 		data.IdleMode = idleMode
 		data.LegHit = legHit
+		data.LegProbeRaysDebug = legProbeRaysDebug
 
 		return data
 	end
@@ -1184,8 +1214,10 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 	end
 
 	local candidates = {}
+	local jumpCandidates = {}
 	local forwardDistance = finalConfig.LateralForwardRayDistance or finalConfig.SubirRayForwardDistance
 	local lateralMaxTravelDistance = finalConfig.LateralMaxTravelDistance or 4.5
+	local lateralSaltoMaxTravelDistance = finalConfig.LateralSaltoMaxTravelDistance or 11.0
 	local lateralTopEdgeTolerance = finalConfig.LateralTopEdgeTolerance or 1.5
 
 	local maxLateralDistance = math.max(finalConfig.LateralRayDistance or 0, 0.1)
@@ -1263,9 +1295,11 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 				local travelDistance = (edgePos - currentEdgePos).Magnitude
 				local vertDelta = edgePos.Y - currentEdgePos.Y
 				local normalDot = hitWallNormal:Dot(currentWallNormal)
+				local isLateralTravel = travelDistance <= lateralMaxTravelDistance
+				local isLateralSaltoTravel = travelDistance <= lateralSaltoMaxTravelDistance
 
-				if travelDistance > lateralMaxTravelDistance then
-					Debug.Verbose("    → rejeitado | TravelDist:", string.format("%.2f", travelDistance), "(max", lateralMaxTravelDistance, ")")
+				if not isLateralSaltoTravel then
+					Debug.Verbose("    → rejeitado | TravelDist:", string.format("%.2f", travelDistance), "(max salto", lateralSaltoMaxTravelDistance, ")")
 					continue
 				end
 
@@ -1284,18 +1318,29 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 
 					if hasTopClearance and hasFrontClearance then
 						local sideDistance = lateralOffset
-						table.insert(candidates, {
+						local candidate = {
 							Part = part,
 							EdgePosition = edgePos,
 							Normal = hitWallNormal,
 							SideDistance = sideDistance,
 							TravelDistance = travelDistance,
 							VertDelta = vertDelta,
-						})
-						Debug.Verbose("    → candidato válido | Part:", part.Name,
-							"| VertDelta:", string.format("%.2f", vertDelta),
-							"| SideDist:", string.format("%.2f", sideDistance),
-							"| Travel:", string.format("%.2f", travelDistance))
+						}
+
+						if isLateralTravel then
+							table.insert(candidates, candidate)
+							Debug.Verbose("    → candidato lateral válido | Part:", part.Name,
+								"| VertDelta:", string.format("%.2f", vertDelta),
+								"| SideDist:", string.format("%.2f", sideDistance),
+								"| Travel:", string.format("%.2f", travelDistance))
+						else
+							table.insert(jumpCandidates, candidate)
+							Debug.Verbose("    → candidato LateralSalto válido | Part:", part.Name,
+								"| VertDelta:", string.format("%.2f", vertDelta),
+								"| SideDist:", string.format("%.2f", sideDistance),
+								"| Travel:", string.format("%.2f", travelDistance),
+								"(max lateral", lateralMaxTravelDistance, ")")
+						end
 					else
 						Debug.Verbose("    → sem clearance | Top:", hasTopClearance, "| Front:", hasFrontClearance)
 					end
@@ -1309,9 +1354,48 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 	end
 
 	if #candidates == 0 then
+		if #jumpCandidates > 0 then
+			table.sort(jumpCandidates, function(a, b)
+				if math.abs(a.SideDistance - b.SideDistance) > 0.05 then
+					return a.SideDistance < b.SideDistance
+				end
+				return a.TravelDistance < b.TravelDistance
+			end)
+
+			local jumpBest = jumpCandidates[1]
+			local idleMode, legHit, legProbeRaysDebug = Analisador.ResolveIdleMode({
+				Character = character,
+				Part = jumpBest.Part,
+				EdgePosition = jumpBest.EdgePosition,
+				Normal = jumpBest.Normal,
+			}, finalConfig)
+
+			Debug.Verbose("  RESULTADO: NoLateralSurface + CanLateralSalto=true | Dist:", string.format("%.2f", jumpBest.SideDistance), "| Travel:", string.format("%.2f", jumpBest.TravelDistance))
+			return {
+				CanMoveLateral = false,
+				CanLateralSalto = true,
+				Reason = "NoLateralSurface",
+				Direction = direcao,
+				LateralSaltoTarget = {
+					Direction = direcao,
+					IdleMode = idleMode,
+					EdgePosition = jumpBest.EdgePosition,
+					Normal = jumpBest.Normal,
+					Part = jumpBest.Part,
+					VerticalDelta = jumpBest.VertDelta,
+					HorizontalDistance = jumpBest.SideDistance,
+					TravelDistance = jumpBest.TravelDistance,
+					LegHit = legHit,
+					LegProbeRaysDebug = legProbeRaysDebug,
+				},
+				Debug = lateralDebug,
+			}
+		end
+
 		Debug.Verbose("  RESULTADO: NoLateralSurface")
 		return {
 			CanMoveLateral = false,
+			CanLateralSalto = false,
 			Reason = "NoLateralSurface",
 			Direction = direcao,
 			Debug = lateralDebug,
@@ -1326,7 +1410,7 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 	end)
 
 	local best = candidates[1]
-	local idleMode, legHit = Analisador.ResolveIdleMode({
+	local idleMode, legHit, legProbeRaysDebug = Analisador.ResolveIdleMode({
 		Character = character,
 		Part = best.Part,
 		EdgePosition = best.EdgePosition,
@@ -1348,6 +1432,7 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 		VerticalDelta = best.VertDelta,
 		HorizontalDistance = best.SideDistance,
 		LegHit = legHit,
+		LegProbeRaysDebug = legProbeRaysDebug,
 		Debug = lateralDebug,
 	}
 end

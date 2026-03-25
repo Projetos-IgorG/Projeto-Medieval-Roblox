@@ -108,6 +108,10 @@ local movementFlags = {
 	isSwimming = false, -- Estado de nado
 	isDashing = false, -- Estado de dash
 }
+local parkourState = {
+	ativo = false,
+	estadoAcaoAnterior = "Nenhuma",
+}
 
 -- Flag global para saber se Shift está sendo segurado (independente de estado)
 local isShiftHeld = false
@@ -2191,6 +2195,10 @@ end
 ---@param velocidade number Velocidade inicial da animação
 ---@param nomeAnimacao string? Nome da animação (opcional, usado para detectar combo)
 local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: number, nomeAnimacao: string?)
+	if parkourState.ativo then
+		return
+	end
+
 	local track = ObterAnimacao(animId)
 	if not track then
 		return
@@ -2419,6 +2427,10 @@ end
 
 --- Atualiza animação de movimento baseado no estado
 AtualizarAnimacaoMovimento = function()
+	if parkourState.ativo then
+		return
+	end
+
 	-- Sincroniza estado com pasta StatusLocal (para DebugUI e outros scripts)
 	SincronizarStatusLocal()
 
@@ -2641,6 +2653,11 @@ local function ProcessarSincronizacao(entidade: Model, dados)
 	estadoAtual.agachado = dados.agachado
 	estadoAtual.correndo = dados.correndo
 
+	if parkourState.ativo then
+		estadoAtual.estadoAcao = "Parkour"
+		return
+	end
+
 	-- Atualiza Base Idle se necessário (mudança de modo ou agachado)
 	AtualizarBaseIdle()
 
@@ -2740,6 +2757,43 @@ local function ProcessarSincronizacao(entidade: Model, dados)
 	end
 end
 
+function ClientBridge.EstaEmParkour()
+	return parkourState.ativo
+end
+
+function ClientBridge.EntrarParkour()
+	if parkourState.ativo then
+		return
+	end
+
+	parkourState.ativo = true
+	parkourState.estadoAcaoAnterior = estadoAtual.estadoAcao
+
+	PararAnimacaoAcao()
+	PararAnimacaoMov(true)
+
+	estadoAtual.estadoAcao = "Parkour"
+	estadoAtual.correndo = false
+	movementFlags.isRunning = false
+	AtualizarVelocidadeLocal()
+end
+
+function ClientBridge.SairParkour()
+	if not parkourState.ativo then
+		return
+	end
+
+	parkourState.ativo = false
+
+	if estadoAtual.estadoAcao == "Parkour" then
+		estadoAtual.estadoAcao = "Nenhuma"
+	end
+
+	AtualizarVelocidadeLocal()
+	AtualizarBaseIdle()
+	AtualizarAnimacaoMovimento()
+end
+
 --- Processa comando de tocar animação
 --- Recebe comando do servidor para tocar uma animação específica
 local function ProcessarTocarAnimacao(
@@ -2763,6 +2817,10 @@ end
 
 --- Atualiza estado de movimento baseado em inputs e estado do Humanoid
 local function AtualizarEstadoMovimento()
+	if parkourState.ativo then
+		return
+	end
+
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	if not hrp then
 		return
@@ -3281,6 +3339,12 @@ player.CharacterAdded:Connect(function(novoCharacter)
 		isFalling = false,
 		isClimbing = false,
 		isSwimming = false,
+		isDashing = false,
+	}
+
+	parkourState = {
+		ativo = false,
+		estadoAcaoAnterior = "Nenhuma",
 	}
 
 	-- Limpa estado da animação de pulo
