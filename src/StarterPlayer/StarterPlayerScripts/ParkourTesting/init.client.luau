@@ -43,6 +43,10 @@ local cooldownBlockedLogAt = {} :: { [string]: number }
 local lastIdleRecheckAt = 0
 local currentHrp: BasePart? = nil
 
+local function dbgPrint(...)
+	Debug.Verbose(...)
+end
+
 -- Estado de SubirSalto pendente (quando W detecta que precisa de W+Pulo)
 local subirSaltoPendente = nil -- { Result, ExpiresAt, SourceEdgePosition }
 local lateralSaltoPendente = nil -- { Direcao, Target, CurveFallbackTarget, CreatedAt, SwitchToCurveAt }
@@ -65,7 +69,7 @@ local function canUseActionCooldown(actionKey, direction, now)
 
 		if now - lastLogAt >= interval then
 			local remaining = CooldownManager.GetRemaining(actionKey, now)
-			print(string.format("[Parkour] Cooldown bloqueado: %s | restante %.2fs", logKey, remaining))
+			Debug.Verbose(string.format("[Parkour] Cooldown bloqueado: %s | restante %.2fs", logKey, remaining))
 			cooldownBlockedLogAt[logKey] = now
 		end
 	end
@@ -474,7 +478,7 @@ local function onJumpNormal(character, humanoid)
 	local sucesso = Movimento.Executar(result)
 
 	if sucesso then
-		print("[Parkour] Executando:", result.Acao, result.IdleMode and ("| Idle: " .. result.IdleMode) or "")
+		dbgPrint("[Parkour] Executando:", result.Acao, result.IdleMode and ("| Idle: " .. result.IdleMode) or "")
 	end
 end
 
@@ -560,7 +564,7 @@ local function onHeartbeat(character, humanoid)
 				local iniciouPreview = setSubirSaltoPendente(subirResult)
 				if iniciouPreview then
 					CooldownManager.BlockAction("Subir", nil, now, runtimeConfig.SubirSaltoCheckCooldown or 0.25)
-					print("[Parkour] SubirSalto disponível — aperte Pular para confirmar")
+					dbgPrint("[Parkour] SubirSalto disponível — aperte Pular para confirmar")
 				end
 			end
 		else
@@ -598,7 +602,7 @@ local function onHeartbeat(character, humanoid)
 				clearLateralSaltoPendente(true)
 			end
 			if estadoLateral then
-				print("[Parkour]", estadoLateral)
+				dbgPrint("[Parkour]", estadoLateral)
 			end
 		elseif lateralResult and (
 			lateralResult.Reason == "NoLateralSurface"
@@ -610,7 +614,7 @@ local function onHeartbeat(character, humanoid)
 			if target then
 				local iniciouPreview = setLateralSaltoPendente(direcao, target, curveFallbackTarget)
 				if iniciouPreview then
-					print("[Parkour] LateralSalto disponível — aperte Pular para confirmar")
+					dbgPrint("[Parkour] LateralSalto disponível — aperte Pular para confirmar")
 				end
 			elseif lateralSaltoPendente then
 				clearLateralSaltoPendente(true)

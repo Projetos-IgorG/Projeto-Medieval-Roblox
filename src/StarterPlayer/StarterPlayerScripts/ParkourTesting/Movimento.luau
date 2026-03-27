@@ -11,6 +11,7 @@
 local Configs = require(script.Parent:WaitForChild("Configs"))
 local Utilidades = require(script.Parent:WaitForChild("Utilidades"))
 local Analisador = require(script.Parent:WaitForChild("Analisador"))
+local Debug = require(script.Parent:WaitForChild("Debug"))
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Modulos = ReplicatedStorage:WaitForChild("Modulos")
@@ -18,6 +19,10 @@ local ClientBridge = require(Modulos:WaitForChild("Core"):WaitForChild("ClientBr
 local AnimacaoParkour = require(Modulos:WaitForChild("Cliente"):WaitForChild("Visual"):WaitForChild("AnimacaoParkour"))
 
 local Movimento = {}
+
+local function dbgPrint(...)
+	Debug.Verbose(...)
+end
 
 -- ══════════════════════════════════════
 -- Estado Interno
@@ -989,7 +994,7 @@ local function executarLateral(lateralResult, config)
 		local maxHorizontal = finalConfig.LateralSaltoMaxHorizontal or 11.0
 		local maxVertical = finalConfig.LateralSaltoMaxVertical or 2.8
 		if horizontal > maxHorizontal or vertical > maxVertical then
-			print("[Parkour] Lateral bloqueado por segurança | Horiz:", string.format("%.2f", horizontal), "| Vert:", string.format("%.2f", vertical))
+			dbgPrint("[Parkour] Lateral bloqueado por segurança | Horiz:", string.format("%.2f", horizontal), "| Vert:", string.format("%.2f", vertical))
 			return false
 		end
 	end
@@ -1466,7 +1471,7 @@ function Movimento.TentarSubir()
 		-- Se cabe em cima, escalar ao invés de subir
 		local ok = executarEscalar(escalarResult, grabData.Config)
 		if ok then
-			print("[Parkour] Escalar para cima da plataforma")
+				dbgPrint("[Parkour] Escalar para cima da plataforma")
 		end
 		return ok, "Escalar", nil, escalarResult
 	end
@@ -1495,7 +1500,7 @@ function Movimento.TentarSubir()
 			subirResult.IdleMode
 		)
 		if ok then
-			print("[Parkour] Subir para nova superfície | Dist:", string.format("%.1f", subirResult.VerticalDistance))
+				dbgPrint("[Parkour] Subir para nova superfície | Dist:", string.format("%.1f", subirResult.VerticalDistance))
 		end
 		return ok, "Subir", subirResult, escalarResult
 	elseif subirResult.Tipo == "SubirSalto" then
@@ -1504,7 +1509,7 @@ function Movimento.TentarSubir()
 		-- Fallback disparado pelo CheckSubir
 		local ok = executarEscalar(subirResult, grabData.Config)
 		if ok then
-			print("[Parkour] Escalar direto para nova superfície acima | Dist:", string.format("%.1f", subirResult.VerticalDistance))
+				dbgPrint("[Parkour] Escalar direto para nova superfície acima | Dist:", string.format("%.1f", subirResult.VerticalDistance))
 		end
 		return ok, "Escalar", subirResult, escalarResult
 	end
@@ -1548,7 +1553,7 @@ function Movimento.TentarDescer()
 		descerResult.IdleMode
 	)
 	if ok then
-		print("[Parkour] Descer para superfície abaixo | Dist:", string.format("%.1f", descerResult.VerticalDistance))
+		dbgPrint("[Parkour] Descer para superfície abaixo | Dist:", string.format("%.1f", descerResult.VerticalDistance))
 	end
 
 	return ok, "Descer", descerResult
@@ -1608,7 +1613,7 @@ function Movimento.TentarMoverLateral(direcao)
 
 	local ok = executarLateral(lateralResult, grabData.Config)
 	if ok then
-		print("[Parkour]", lateralResult.Estado, "| Dist:", string.format("%.2f", lateralResult.HorizontalDistance))
+		dbgPrint("[Parkour]", lateralResult.Estado, "| Dist:", string.format("%.2f", lateralResult.HorizontalDistance))
 	end
 
 	return ok, lateralResult.Estado, lateralResult
@@ -1657,7 +1662,7 @@ function Movimento.ExecutarLateralForcado(lateralTarget)
 
 	local ok = executarLateral(lateralResult, grabData.Config)
 	if ok then
-		print("[Parkour] Curva interna automática após espera do LateralSalto")
+		dbgPrint("[Parkour] Curva interna automática após espera do LateralSalto")
 	end
 
 	return ok
@@ -1690,7 +1695,7 @@ function Movimento.ExecutarSubirSalto(subirResult)
 		subirResult.IdleMode
 	)
 	if ok then
-		print("[Parkour] SubirSalto para superfície | Dist:", string.format("%.1f", subirResult.VerticalDistance))
+		dbgPrint("[Parkour] SubirSalto para superfície | Dist:", string.format("%.1f", subirResult.VerticalDistance))
 	end
 	return ok
 end
@@ -1742,7 +1747,7 @@ function Movimento.ConfirmarPreviewSubirSalto(subirResult)
 		subirResult.IdleMode
 	)
 	if ok then
-		print("[Parkour] SubirSalto confirmado")
+		dbgPrint("[Parkour] SubirSalto confirmado")
 	end
 	return ok
 end
@@ -1862,7 +1867,7 @@ function Movimento.ConfirmarPreviewLateralSalto(direcao, alvoLateralSalto)
 		return false
 	end
 
-	print("[Parkour] LateralSalto confirmado:", direcao)
+	dbgPrint("[Parkour] LateralSalto confirmado:", direcao)
 	return true
 end
 
@@ -1965,7 +1970,7 @@ function Movimento.TentarEscalar()
 
 	local ok = executarEscalar(escalarResult, grabData.Config)
 	if ok then
-		print("[Parkour] Escalar para cima da plataforma")
+		dbgPrint("[Parkour] Escalar para cima da plataforma")
 	end
 	return ok
 end
@@ -1987,7 +1992,7 @@ function Movimento.PuloTras()
 
 	local ok = executarPuloTras(grabData.Config)
 	if ok then
-		print("[Parkour] PuloTras")
+		dbgPrint("[Parkour] PuloTras")
 	end
 	return ok
 end
@@ -2008,7 +2013,7 @@ function Movimento.PuloLateral(direcao)
 
 	local ok = executarPuloLateral(direcao, grabData.Config)
 	if ok then
-		print("[Parkour]", direcao .. "Salto")
+		dbgPrint("[Parkour]", direcao .. "Salto")
 	end
 
 	return ok

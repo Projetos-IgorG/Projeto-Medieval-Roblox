@@ -5,8 +5,8 @@ local MERGED_SENTINEL = "__ParkourMergedConfig"
 -- Flags de Debug
 -- ══════════════════════════════════════
 
-Configs.DebugEnabled = true -- visuais (linhas, caixas, pontos)
-Configs.DebugVerbose = true -- prints detalhados no console
+Configs.DebugEnabled = false -- visuais (linhas, caixas, pontos)
+Configs.DebugVerbose = false -- prints detalhados no console
 Configs.DebugLifetime = 1.5
 Configs.DebugFolderName = "ParkourDebugFolder"
 
