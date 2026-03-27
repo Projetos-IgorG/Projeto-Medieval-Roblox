@@ -116,6 +116,119 @@ local function hasBothClearances(character, part, edgePosition, normal, finalCon
 	return hasTopClearance, hasFrontClearance
 end
 
+local function checkEscalarAtEdge(character, currentEdgePos, currentNormal, currentPart, finalConfig, rayParams, debugContext)
+	if not isWallLikeNormal(currentNormal, finalConfig) then
+		Debug.Verbose("  RESULTADO: InvalidCurrentNormalForEscalar | Normal:", currentNormal)
+		return {
+			CanEscalar = false,
+			Reason = "InvalidCurrentNormalForEscalar",
+		}
+	end
+
+	if debugContext then
+		Debug.Verbose("═══ CheckEscalar [" .. debugContext .. "] ═══")
+	else
+		Debug.Verbose("═══ CheckEscalar ═══")
+	end
+	Debug.Verbose("  EdgePos:", currentEdgePos, "| Normal:", currentNormal)
+	Debug.Verbose("  Part:", currentPart and currentPart.Name or "nil")
+
+	local currentRayParams = rayParams or Utilidades.createRaycastParamsForCharacter(character)
+	local look = -currentNormal.Unit
+	local margin = 0.05
+	local center = currentEdgePos
+		+ Vector3.yAxis * (finalConfig.VaultClearanceUpOffset + margin)
+		+ look * finalConfig.VaultClearanceForwardOffset
+
+	local cf = CFrame.lookAt(center, center + look, Vector3.yAxis)
+	local clearanceSize = finalConfig.VaultClearanceSize
+	local minH = finalConfig.MinPartHeight
+
+	Debug.Verbose("  ClearanceCenter:", center, "| Size:", clearanceSize)
+
+	local ignoreList = {character}
+	if currentPart then
+		table.insert(ignoreList, currentPart)
+	end
+
+	local clear, blocker = Utilidades.firstBlockingPartInBox(
+		cf,
+		clearanceSize,
+		ignoreList,
+		function(part) return Utilidades.isIgnorablePart(part, minH) end
+	)
+
+	Debug.Verbose("  ClearanceResult: clear=", clear, "| blocker=", blocker and blocker.Name or "nil")
+
+	local posFinal = currentEdgePos
+		+ Vector3.yAxis * finalConfig.EscalarUpOffset
+		+ look * finalConfig.EscalarForwardOffset
+
+	local floorRayDir = -Vector3.yAxis * finalConfig.EscalarFloorRayDistance
+	local floorProbeUpOffset = finalConfig.EscalarFloorProbeUpOffset or 1.1
+	local floorProbeOffsets = finalConfig.EscalarFloorProbeOffsets or { 0.0, 0.3, 0.7 }
+	local floorResult = nil
+	local floorRayDebug = {
+		Probes = {},
+	}
+
+	for _, forwardOffset in ipairs(floorProbeOffsets) do
+		local floorRayOrigin = currentEdgePos
+			+ Vector3.yAxis * floorProbeUpOffset
+			+ look * forwardOffset
+		local probeResult = Workspace:Raycast(floorRayOrigin, floorRayDir, currentRayParams)
+
+		table.insert(floorRayDebug.Probes, {
+			Origin = floorRayOrigin,
+			HitPosition = probeResult and probeResult.Position or (floorRayOrigin + floorRayDir),
+			Hit = probeResult ~= nil,
+		})
+
+		if probeResult then
+			floorResult = probeResult
+			break
+		end
+	end
+
+	local firstProbe = floorRayDebug.Probes[1]
+	Debug.Verbose("  FloorCheck: hit=", floorResult ~= nil, "| origin=", firstProbe and firstProbe.Origin or "nil")
+
+	if not clear then
+		Debug.Verbose("  RESULTADO: NoClearanceOnTop | Blocker:", blocker and blocker.Name or "nil")
+		return {
+			CanEscalar = false,
+			Reason = "NoClearanceOnTop",
+			Blocker = blocker,
+			ClearanceCFrame = cf,
+			ClearanceSize = clearanceSize,
+			FloorRayDebug = floorRayDebug,
+		}
+	end
+
+	if not floorResult then
+		Debug.Verbose("  RESULTADO: NoFloorOnTop")
+		return {
+			CanEscalar = false,
+			Reason = "NoFloorOnTop",
+			ClearanceCFrame = cf,
+			ClearanceSize = clearanceSize,
+			FloorRayDebug = floorRayDebug,
+		}
+	end
+
+	Debug.Verbose("  RESULTADO: CanEscalar=true | PosFinal:", posFinal)
+	return {
+		CanEscalar = true,
+		PosFinal = posFinal,
+		EdgePosition = currentEdgePos,
+		Normal = currentNormal,
+		Part = currentPart,
+		ClearanceCFrame = cf,
+		ClearanceSize = clearanceSize,
+		FloorRayDebug = floorRayDebug,
+	}
+end
+
 -- ══════════════════════════════════════
 -- Debug (repassa para o módulo Debug)
 -- ══════════════════════════════════════
@@ -786,6 +899,7 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 		QueryBoxCFrame = areaCFrame,
 		QueryBoxSize = areaSize,
 		CandidatePoints = {},
+		EscalarChecks = {},
 	}
 
 	Debug.Verbose("═══ CheckSubir (Area) ═══")
@@ -796,6 +910,8 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 	local candidates = table.create(#parts)
 	local minVerticalDelta = finalConfig.SubirMinVerticalDelta or 0.5
 	local samplePointBase = currentEdgePos + currentNormal.Unit * probeOffset
+	local rayParams = Utilidades.createRaycastParamsForCharacter(character)
+	local maxEscalarVerticalDistance = finalConfig.EscalarMaxVerticalDistance or finalConfig.SubirMaxAltura or 6.0
 
 	for _, part in ipairs(parts) do
 		local castData = buildCastDataFromPartPoint(character, part, samplePointBase, currentNormal)
@@ -862,6 +978,7 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 	local bestCandidate = nil
 	local bestTipo = nil
 	local firstValidDistCandidate = nil
+	local bestEscalarFallback = nil
 
 	for _, cand in ipairs(candidates) do
 		local tipo
@@ -876,6 +993,32 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 
 		if not firstValidDistCandidate then
 			firstValidDistCandidate = { cand = cand, tipo = tipo }
+		end
+
+		if not bestEscalarFallback and cand.VertDist <= maxEscalarVerticalDistance then
+			local escalarCandidate = checkEscalarAtEdge(
+				character,
+				cand.EdgePosition,
+				cand.Normal,
+				cand.Part,
+				finalConfig,
+				rayParams,
+				"SubirCandidate"
+			)
+
+			if escalarCandidate and escalarCandidate.ClearanceCFrame and escalarCandidate.ClearanceSize then
+				table.insert(subirDebug.EscalarChecks, {
+					ClearanceCFrame = escalarCandidate.ClearanceCFrame,
+					ClearanceSize = escalarCandidate.ClearanceSize,
+					CanEscalar = escalarCandidate.CanEscalar,
+				})
+			end
+
+			if escalarCandidate and escalarCandidate.CanEscalar then
+				escalarCandidate.SourceEdgePosition = currentEdgePos
+				escalarCandidate.VerticalDistance = cand.VertDist
+				bestEscalarFallback = escalarCandidate
+			end
 		end
 
 		Debug.Verbose("  Testando candidato:", cand.Part.Name, "| HorizDist:", string.format("%.2f", cand.HorizDist), "| VertDist:", string.format("%.1f", cand.VertDist))
@@ -899,6 +1042,24 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 	end
 
 	if not bestCandidate then
+		if bestEscalarFallback then
+			Debug.Verbose("  RESULTADO: CanSubir=true | Tipo: Escalar (candidate)")
+			return {
+				CanSubir = true,
+				Tipo = "Escalar",
+				SourceEdgePosition = currentEdgePos,
+				EdgePosition = bestEscalarFallback.EdgePosition,
+				Normal = bestEscalarFallback.Normal,
+				Part = bestEscalarFallback.Part,
+				VerticalDistance = bestEscalarFallback.VerticalDistance,
+				PosFinal = bestEscalarFallback.PosFinal,
+				ClearanceCFrame = bestEscalarFallback.ClearanceCFrame,
+				ClearanceSize = bestEscalarFallback.ClearanceSize,
+				FloorRayDebug = bestEscalarFallback.FloorRayDebug,
+				Debug = subirDebug,
+			}
+		end
+
 		-- Se nem passou do filtro de TooFarAbove
 		if not firstValidDistCandidate then
 			local firstCand = candidates[1]
@@ -945,9 +1106,6 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 		LegHit = legHit,
 		LegProbeRaysDebug = legProbeRaysDebug,
 		VerticalDistance = bestCandidate.VertDist,
-		PosFinal = bestCandidate.PosFinal, -- Necessário para o fallback do Escalar
-		ClearanceCFrame = bestCandidate.ClearanceCFrame,
-		ClearanceSize = bestCandidate.ClearanceSize,
 		Debug = subirDebug,
 	}
 end
@@ -1219,9 +1377,18 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 	local candidates = {}
 	local jumpCandidates = {}
 	local lateralTopEdgeTolerance = finalConfig.LateralTopEdgeTolerance or 2.0
+	local lateralSaltoMaxVertical = finalConfig.LateralSaltoMaxVertical or 2.8
+	local lateralSaltoTopEdgeTolerance = math.max(
+		finalConfig.LateralSaltoTopEdgeTolerance or lateralSaltoMaxVertical,
+		lateralTopEdgeTolerance
+	)
 	local desiredSideOffset = math.max(finalConfig.LateralTargetSideOffset or 2.2, 0.4)
 	local sampleSideOffset = math.min(areaSize.X * 0.5, desiredSideOffset)
 	local minLateralSideDistance = finalConfig.LateralMinSideDistance or 0.05
+	local lateralSaltoMinSideDistance = math.max(
+		finalConfig.LateralSaltoMinSideDistance or math.max(minLateralSideDistance, 1.0),
+		minLateralSideDistance
+	)
 	local lateralReverseTolerance = math.max(finalConfig.LateralReverseTolerance or 0.05, 0.0)
 	local lateralCandidateBoxMargin = math.max(finalConfig.LateralCandidateBoxMargin or 0.5, 0.0)
 	local pathClearanceNormalOffset = finalConfig.LateralPathClearanceNormalOffset or 1.2
@@ -1285,6 +1452,24 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 		table.insert(lateralDebug.CandidatePoints, pointData)
 	end
 
+	local function isSameAssemblyPart(candidatePart, referencePart)
+		if not candidatePart or not referencePart then
+			return false
+		end
+
+		if candidatePart == referencePart then
+			return true
+		end
+
+		local candidateRoot = candidatePart.AssemblyRootPart
+		local referenceRoot = referencePart.AssemblyRootPart
+		if candidateRoot and referenceRoot and candidateRoot == referenceRoot then
+			return true
+		end
+
+		return false
+	end
+
 	local function hasLateralPathClearance(targetPart)
 		if not pathClearanceEnabled then
 			return true, nil
@@ -1308,7 +1493,17 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 			probeCf,
 			probeSize,
 			ignoreList,
-			function(part) return Utilidades.isIgnorablePart(part, finalConfig.MinPartHeight) end
+			function(part)
+				if Utilidades.isIgnorablePart(part, finalConfig.MinPartHeight) then
+					return true
+				end
+
+				if targetPart and isSameAssemblyPart(part, targetPart) then
+					return true
+				end
+
+				return false
+			end
 		)
 
 		table.insert(lateralDebug.PathClearanceBoxes, {
@@ -1344,18 +1539,19 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 		end
 
 		local rayResult = Workspace:Raycast(rayOrigin, rayDir, rayParams)
+		local hitIsTargetSurface = targetPart ~= nil and rayResult ~= nil and isSameAssemblyPart(rayResult.Instance, targetPart)
 		table.insert(lateralDebug.PathClearanceRays, {
 			Origin = rayOrigin,
 			HitPosition = rayResult and rayResult.Position or rayTarget,
 			Hit = rayResult ~= nil,
-			Clear = rayResult == nil or (targetPart ~= nil and rayResult.Instance == targetPart),
+			Clear = rayResult == nil or hitIsTargetSurface,
 		})
 
 		if not rayResult then
 			return true, nil
 		end
 
-		if targetPart and rayResult.Instance == targetPart then
+		if hitIsTargetSurface then
 			return true, nil
 		end
 
@@ -1365,10 +1561,10 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 	local function evaluateBuiltCandidate(part, built, isCornerProbe)
 		local topEdge = built.TopEdgePosition
 		local topEdgeDeltaY = math.abs(topEdge.Y - currentEdgePos.Y)
-		if topEdgeDeltaY > lateralTopEdgeTolerance then
+		if topEdgeDeltaY > lateralSaltoTopEdgeTolerance then
 			recordRejected(part, topEdge, "TopEdgeDeltaTooHigh", {
 				TopEdgeDeltaY = topEdgeDeltaY,
-				TopEdgeTolerance = lateralTopEdgeTolerance,
+				TopEdgeTolerance = lateralSaltoTopEdgeTolerance,
 			})
 			return
 		end
@@ -1497,8 +1693,17 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 
 		local isLateral = lateralDistance <= (finalConfig.LateralMaxHorizontal or 4.5)
 			and math.abs(verticalDelta) <= (finalConfig.LateralMaxVertical or 1.75)
+		if (not isLateral) and lateralDistance < lateralSaltoMinSideDistance then
+			recordRejected(part, topEdge, "SideDistanceTooSmallForLateralSalto", {
+				SideDistance = lateralDistance,
+				RequiredSideDistance = lateralSaltoMinSideDistance,
+				CornerType = cornerType,
+			})
+			return
+		end
+
 		local isLateralSalto = lateralDistance <= (finalConfig.LateralSaltoMaxHorizontal or 11.0)
-			and math.abs(verticalDelta) <= (finalConfig.LateralSaltoMaxVertical or 2.8)
+			and math.abs(verticalDelta) <= lateralSaltoMaxVertical
 
 		if not isLateralSalto then
 			recordRejected(part, topEdge, "OutsideLateralSaltoLimits", {
@@ -1569,6 +1774,59 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 		end
 	end
 
+	local function sortJumpCandidatesByPriority(list)
+		table.sort(list, function(a, b)
+			local aIsWeakCorner = a.CornerType == "Interna" and a.SideDistanceClamped
+			local bIsWeakCorner = b.CornerType == "Interna" and b.SideDistanceClamped
+			if aIsWeakCorner ~= bIsWeakCorner then
+				return not aIsWeakCorner
+			end
+
+			if math.abs(a.SideDistance - b.SideDistance) > 0.05 then
+				return a.SideDistance < b.SideDistance
+			end
+			if math.abs(a.HorizontalDistance - b.HorizontalDistance) > 0.05 then
+				return a.HorizontalDistance < b.HorizontalDistance
+			end
+
+			local aVert = math.abs(a.VertDelta)
+			local bVert = math.abs(b.VertDelta)
+			if math.abs(aVert - bVert) > 0.05 then
+				return aVert < bVert
+			end
+
+			local aIsOtherPart = currentPart and a.Part ~= currentPart or false
+			local bIsOtherPart = currentPart and b.Part ~= currentPart or false
+			if aIsOtherPart ~= bIsOtherPart then
+				return not aIsOtherPart
+			end
+
+			return false
+		end)
+	end
+
+	local function buildLateralSaltoTarget(jumpBest)
+		local idleMode, legHit, legProbeRaysDebug = Analisador.ResolveIdleMode({
+			Character = character,
+			Part = jumpBest.Part,
+			EdgePosition = jumpBest.EdgePosition,
+			Normal = jumpBest.Normal,
+		}, finalConfig)
+
+		return {
+			Direction = direcao,
+			IdleMode = idleMode,
+			EdgePosition = jumpBest.EdgePosition,
+			Normal = jumpBest.Normal,
+			Part = jumpBest.Part,
+			VerticalDelta = jumpBest.VertDelta,
+			HorizontalDistance = jumpBest.SideDistance,
+			TravelDistance = jumpBest.HorizontalDistance,
+			LegHit = legHit,
+			LegProbeRaysDebug = legProbeRaysDebug,
+		}
+	end
+
 	local parts = collectValidPartsInBox(areaCFrame, areaSize, {character}, finalConfig.MinPartHeight)
 	local oppositeSideDir = -sideDir
 	for _, part in ipairs(parts) do
@@ -1626,42 +1884,13 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 
 	if #candidates == 0 then
 		if #jumpCandidates > 0 then
-			table.sort(jumpCandidates, function(a, b)
-				local aIsOtherPart = currentPart and a.Part ~= currentPart or false
-				local bIsOtherPart = currentPart and b.Part ~= currentPart or false
-				if aIsOtherPart ~= bIsOtherPart then
-					return not aIsOtherPart
-				end
-				if aIsOtherPart and bIsOtherPart then
-					if a.Part == b.Part then
-						if math.abs(a.SideDistance - b.SideDistance) > 0.05 then
-							return a.SideDistance > b.SideDistance
-						end
-					else
-						if math.abs(a.SideDistance - b.SideDistance) > 0.05 then
-							return a.SideDistance < b.SideDistance
-						end
-					end
-				end
-				if math.abs(a.SideDistance - b.SideDistance) > 0.05 then
-					return a.SideDistance < b.SideDistance
-				end
-				if math.abs(a.HorizontalDistance - b.HorizontalDistance) > 0.05 then
-					return a.HorizontalDistance < b.HorizontalDistance
-				end
-				return math.abs(a.VertDelta) < math.abs(b.VertDelta)
-			end)
+			sortJumpCandidatesByPriority(jumpCandidates)
 
 			Debug.Verbose("  Ranking LateralSalto (top 3):")
 			logTopCandidates("Jump", jumpCandidates, 3)
 
 			local jumpBest = jumpCandidates[1]
-			local idleMode, legHit, legProbeRaysDebug = Analisador.ResolveIdleMode({
-				Character = character,
-				Part = jumpBest.Part,
-				EdgePosition = jumpBest.EdgePosition,
-				Normal = jumpBest.Normal,
-			}, finalConfig)
+			local jumpTarget = buildLateralSaltoTarget(jumpBest)
 
 			lateralDebug.Selected = {
 				Type = "LateralSalto",
@@ -1686,18 +1915,7 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 				CanLateralSalto = true,
 				Reason = "NoLateralSurface",
 				Direction = direcao,
-				LateralSaltoTarget = {
-					Direction = direcao,
-					IdleMode = idleMode,
-					EdgePosition = jumpBest.EdgePosition,
-					Normal = jumpBest.Normal,
-					Part = jumpBest.Part,
-					VerticalDelta = jumpBest.VertDelta,
-					HorizontalDistance = jumpBest.SideDistance,
-					TravelDistance = jumpBest.HorizontalDistance,
-					LegHit = legHit,
-					LegProbeRaysDebug = legProbeRaysDebug,
-				},
+				LateralSaltoTarget = jumpTarget,
 				Debug = lateralDebug,
 			}
 		end
@@ -1752,6 +1970,69 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 	logTopCandidates("Move", candidates, 3)
 
 	local best = candidates[1]
+	local preferSaltoOverInternalCorner = finalConfig.LateralSaltoPreferOverInternalCorner ~= false
+	if preferSaltoOverInternalCorner and best and best.CornerType == "Interna" and #jumpCandidates > 0 then
+		sortJumpCandidatesByPriority(jumpCandidates)
+		Debug.Verbose("  Ranking LateralSalto (top 3):")
+		logTopCandidates("Jump", jumpCandidates, 3)
+
+		local jumpBest = jumpCandidates[1]
+		local jumpTarget = buildLateralSaltoTarget(jumpBest)
+
+		local curvaIdleMode = jumpTarget.IdleMode
+		local curvaLegHit = jumpTarget.LegHit
+		local curvaLegProbeRaysDebug = jumpTarget.LegProbeRaysDebug
+		if best.Part ~= jumpBest.Part or best.EdgePosition ~= jumpBest.EdgePosition then
+			curvaIdleMode, curvaLegHit, curvaLegProbeRaysDebug = Analisador.ResolveIdleMode({
+				Character = character,
+				Part = best.Part,
+				EdgePosition = best.EdgePosition,
+				Normal = best.Normal,
+			}, finalConfig)
+		end
+		local curvaEstado = direcao .. (curvaIdleMode == "IdleSuporte" and "Suporte" or "Suspenso")
+
+		lateralDebug.Selected = {
+			Type = "LateralSaltoPreferido",
+			Part = jumpBest.PartName,
+			SideDistance = jumpBest.SideDistance,
+			SideDistanceRaw = jumpBest.SideDistanceRaw,
+			SideDistanceClamped = jumpBest.SideDistanceClamped,
+			CornerType = jumpBest.CornerType,
+		}
+
+		Debug.Verbose(
+			"  RESULTADO: PreferLateralSaltoOverInternalCorner",
+			"| CurvaPart:", best.PartName,
+			"| SaltoPart:", jumpBest.PartName,
+			"| CurvaDist:", fmt2(best.SideDistance),
+			"| SaltoDist:", fmt2(jumpBest.SideDistance)
+		)
+
+		return {
+			CanMoveLateral = false,
+			CanLateralSalto = true,
+			Reason = "PreferLateralSaltoOverInternalCorner",
+			Direction = direcao,
+			LateralSaltoTarget = jumpTarget,
+			CurvaInternaFallbackTarget = {
+				Direction = direcao,
+				Estado = curvaEstado,
+				IdleMode = curvaIdleMode,
+				EdgePosition = best.EdgePosition,
+				Normal = best.Normal,
+				Part = best.Part,
+				VerticalDelta = best.VertDelta,
+				HorizontalDistance = best.SideDistance,
+				IsCorner = best.IsCorner,
+				CornerType = best.CornerType,
+				LegHit = curvaLegHit,
+				LegProbeRaysDebug = curvaLegProbeRaysDebug,
+			},
+			Debug = lateralDebug,
+		}
+	end
+
 	local idleMode, legHit, legProbeRaysDebug = Analisador.ResolveIdleMode({
 		Character = character,
 		Part = best.Part,
@@ -1805,117 +2086,7 @@ end
 function Analisador.CheckEscalar(character, currentEdgePos, currentNormal, currentPart, config)
 	local finalConfig = Configs.mergeConfig(config)
 	local rayParams = Utilidades.createRaycastParamsForCharacter(character)
-
-	if not isWallLikeNormal(currentNormal, finalConfig) then
-		Debug.Verbose("  RESULTADO: InvalidCurrentNormalForEscalar | Normal:", currentNormal)
-		return {
-			CanEscalar = false,
-			Reason = "InvalidCurrentNormalForEscalar",
-		}
-	end
-
-	Debug.Verbose("═══ CheckEscalar ═══")
-	Debug.Verbose("  EdgePos:", currentEdgePos, "| Normal:", currentNormal)
-	Debug.Verbose("  Part:", currentPart and currentPart.Name or "nil")
-
-	-- Verificar se o player cabe EM CIMA da plataforma (em pé)
-	-- Usa os MESMOS valores de tamanho e offset do Vault (referência a partir da borda)
-	local look = -currentNormal.Unit -- direção para frente (para dentro da plataforma)
-	local margin = 0.05
-	local center = currentEdgePos
-		+ Vector3.yAxis * (finalConfig.VaultClearanceUpOffset + margin)
-		+ look * finalConfig.VaultClearanceForwardOffset
-
-	local cf = CFrame.lookAt(center, center + look, Vector3.yAxis)
-	local clearanceSize = finalConfig.VaultClearanceSize
-	local minH = finalConfig.MinPartHeight
-
-	Debug.Verbose("  ClearanceCenter:", center, "| Size:", clearanceSize)
-
-	-- Ignore list: character + a part que o player está agarrado
-	local ignoreList = {character}
-	if currentPart then
-		table.insert(ignoreList, currentPart)
-	end
-
-	local clear, blocker = Utilidades.firstBlockingPartInBox(
-		cf,
-		clearanceSize,
-		ignoreList,
-		function(part) return Utilidades.isIgnorablePart(part, minH) end
-	)
-
-	Debug.Verbose("  ClearanceResult: clear=", clear, "| blocker=", blocker and blocker.Name or "nil")
-
-	-- Posição final (onde o player ficaria em pé)
-	local posFinal = currentEdgePos
-		+ Vector3.yAxis * finalConfig.EscalarUpOffset
-		+ look * finalConfig.EscalarForwardOffset
-
-	-- Floor check robusto: testa multiplos offsets para nao falhar em cantos/quinas.
-	local floorRayDir = -Vector3.yAxis * finalConfig.EscalarFloorRayDistance
-	local floorProbeUpOffset = finalConfig.EscalarFloorProbeUpOffset or 1.1
-	local floorProbeOffsets = finalConfig.EscalarFloorProbeOffsets or { 0.0, 0.3, 0.7 }
-	local floorResult = nil
-	local floorRayDebug = {
-		Probes = {},
-	}
-
-	for _, forwardOffset in ipairs(floorProbeOffsets) do
-		local floorRayOrigin = currentEdgePos
-			+ Vector3.yAxis * floorProbeUpOffset
-			+ look * forwardOffset
-		local probeResult = Workspace:Raycast(floorRayOrigin, floorRayDir, rayParams)
-
-		table.insert(floorRayDebug.Probes, {
-			Origin = floorRayOrigin,
-			HitPosition = probeResult and probeResult.Position or (floorRayOrigin + floorRayDir),
-			Hit = probeResult ~= nil,
-		})
-
-		if probeResult then
-			floorResult = probeResult
-			break
-		end
-	end
-
-	local firstProbe = floorRayDebug.Probes[1]
-	Debug.Verbose("  FloorCheck: hit=", floorResult ~= nil, "| origin=", firstProbe and firstProbe.Origin or "nil")
-
-	if not clear then
-		Debug.Verbose("  RESULTADO: NoClearanceOnTop | Blocker:", blocker and blocker.Name or "nil")
-		return {
-			CanEscalar = false,
-			Reason = "NoClearanceOnTop",
-			Blocker = blocker,
-			ClearanceCFrame = cf,
-			ClearanceSize = clearanceSize,
-			FloorRayDebug = floorRayDebug,
-		}
-	end
-
-	-- Verificar se tem CHÃO para ficar em pé
-	if not floorResult then
-		Debug.Verbose("  RESULTADO: NoFloorOnTop")
-		return {
-			CanEscalar = false,
-			Reason = "NoFloorOnTop",
-			ClearanceCFrame = cf,
-			ClearanceSize = clearanceSize,
-			FloorRayDebug = floorRayDebug,
-		}
-	end
-
-	Debug.Verbose("  RESULTADO: CanEscalar=true | PosFinal:", posFinal)
-	return {
-		CanEscalar = true,
-		PosFinal = posFinal,
-		EdgePosition = currentEdgePos,
-		Normal = currentNormal,
-		ClearanceCFrame = cf,
-		ClearanceSize = clearanceSize,
-		FloorRayDebug = floorRayDebug,
-	}
+	return checkEscalarAtEdge(character, currentEdgePos, currentNormal, currentPart, finalConfig, rayParams, "CurrentGrab")
 end
 
 return Analisador

@@ -1614,6 +1614,55 @@ function Movimento.TentarMoverLateral(direcao)
 	return ok, lateralResult.Estado, lateralResult
 end
 
+function Movimento.ExecutarLateralForcado(lateralTarget)
+	if not estado.Agarrado or estado.EmAcao then
+		return false
+	end
+
+	if not lateralTarget or not lateralTarget.EdgePosition or not lateralTarget.Normal then
+		return false
+	end
+
+	local grabData = getValidGrabData()
+	if not grabData then
+		return false
+	end
+
+	local direcao = lateralTarget.Direction
+	if direcao ~= "Direita" and direcao ~= "Esquerda" then
+		if type(lateralTarget.Estado) == "string" and string.find(lateralTarget.Estado, "Esquerda", 1, true) then
+			direcao = "Esquerda"
+		else
+			direcao = "Direita"
+		end
+	end
+
+	local idleMode = lateralTarget.IdleMode or grabData.IdleMode or "IdleSuporte"
+	local lateralEstado = lateralTarget.Estado or (direcao .. (idleMode == "IdleSuporte" and "Suporte" or "Suspenso"))
+
+	local lateralResult = {
+		CanMoveLateral = true,
+		Reason = "Forced",
+		Direction = direcao,
+		Estado = lateralEstado,
+		IdleMode = idleMode,
+		IsCorner = lateralTarget.IsCorner,
+		CornerType = lateralTarget.CornerType,
+		EdgePosition = lateralTarget.EdgePosition,
+		Normal = lateralTarget.Normal,
+		Part = lateralTarget.Part,
+		VerticalDelta = lateralTarget.VerticalDelta,
+		HorizontalDistance = lateralTarget.HorizontalDistance,
+	}
+
+	local ok = executarLateral(lateralResult, grabData.Config)
+	if ok then
+		print("[Parkour] Curva interna automática após espera do LateralSalto")
+	end
+
+	return ok
+end
+
 -- Executar SubirSalto (quando W+Pular confirmado)
 function Movimento.ExecutarSubirSalto(subirResult)
 	if not estado.Agarrado or estado.EmAcao then

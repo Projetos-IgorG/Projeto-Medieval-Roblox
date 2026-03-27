@@ -5,8 +5,8 @@ local MERGED_SENTINEL = "__ParkourMergedConfig"
 -- Flags de Debug
 -- ══════════════════════════════════════
 
-Configs.DebugEnabled = false -- visuais (linhas, caixas, pontos)
-Configs.DebugVerbose = false -- prints detalhados no console
+Configs.DebugEnabled = true -- visuais (linhas, caixas, pontos)
+Configs.DebugVerbose = true -- prints detalhados no console
 Configs.DebugLifetime = 1.5
 Configs.DebugFolderName = "ParkourDebugFolder"
 
@@ -47,20 +47,9 @@ Configs.DefaultConfig = {
 	-- Probe de pernas (verificar suporte abaixo)
 	LegProbeDownOffset = 2.8,
 	LegProbeStartNormalOffset = 0.75,
-	LegProbeDistance = 1.8,
-	LegSupportBoxEnabled = true, -- usa caixa para decidir IdleSuporte/IdleSuspenso
-	LegSupportBoxSize = Vector3.new(1.9, 1.8, 1.4), -- volume de verificação de suporte das pernas
-	LegSupportBoxDownOffset = 3.2, -- quanto desce da borda atual para testar suporte
+	LegSupportBoxSize = Vector3.new(1.9, 0.8, 1.4), -- volume de verificação de suporte das pernas
+	LegSupportBoxDownOffset = 3.7, -- quanto desce da borda atual para testar suporte
 	LegSupportBoxNormalOffset = -0.1, -- quanto aproxima da parede no teste de suporte
-	-- Ajuste principal de suporte/suspenso:
-	-- Rays horizontais empilhados na vertical (de baixo para cima).
-	-- Configure aqui: ponto inicial no eixo Y, espacamento e distancia.
-	LegProbeRayCount = 5,
-	LegProbeStartYOffset = -2,
-	LegProbeVerticalSpacing = 0.5,
-	LegProbeRayDistance = 1.2,
-	-- Legacy: se definido, sobrepoe o calculo por StartYOffset/Spacing.
-	LegProbeVerticalOffsets = nil,
 
 	-- ═══ Offsets do corpo (relativos ao HRP.Y) ═══
 	TopoTorsoOffset = 1.2, -- HRP.Y + offset = linha do topo do torso
@@ -70,16 +59,12 @@ Configs.DefaultConfig = {
 
 	-- ═══ Vault: clearance no destino (caixa verde) ═══
 	VaultClearanceSize = Vector3.new(1.9, 5.0, 2.0),
-	VaultClearanceForwardOffset = 1.5, -- studs pra frente além da borda
+	VaultClearanceForwardOffset = 0.9, -- studs pra frente além da borda
 	VaultClearanceUpOffset = 2.5, -- studs acima da borda
 
 	-- ═══ Vault: offset de movimento (posição ANTES do impulso) ═══
 	-- O player é movido APENAS para cima antes do impulso
 	VaultMoveUpOffset = 5.0, -- o quanto sobe antes de receber o impulso
-
-	-- ═══ Vault: clearance do caminho (subida vertical) ═══
-	VaultPathClearanceSize = Vector3.new(1.9, 1.0, 1.6),
-	VaultPathCheckSteps = 3, -- quantos checks intermediários
 
 	-- ═══ Vault: impulso (fase de sustentação com LinearVelocity) ═══
 	VaultImpulseDuration = 0.25, -- duração (s) do LinearVelocity de impulso
@@ -102,7 +87,6 @@ Configs.DefaultConfig = {
 	GrabTransitionTime = 0.25, -- tempo (s) pra player chegar na posição agarrada
 	GrabIdleStartDelay = 0.02, -- atraso para iniciar idle após agarrar (menor = entra mais rápido)
 	GrabIdleRecheckInterval = 0.2, -- intervalo (s) para reavaliar idle e sincronizar offset enquanto agarrado
-	GrabCameraCollisionBypass = true, -- evita colisão da câmera desabilitando colisão local da part agarrada (sem transparência)
 
 	-- ═══ Movimento: Vault Baixo ═══
 	VaultBaixoImpulse = 50, -- magnitude da velocidade (studs/s) no VaultBaixo
@@ -136,8 +120,8 @@ Configs.DefaultConfig = {
 	DescerTransitionTime = 0.2, -- tempo (s) de transição ao descer
 
 	-- ═══ Lateral: deslocamento agarrado direita/esquerda (area query) ═══
-	LateralAreaSize = Vector3.new(12.0, 6.5, 6.0), -- volume de busca por direção (uma única caixa espelhada)
-	LateralAreaUpOffset = -1.0, -- deslocamento vertical do centro da caixa lateral
+	LateralAreaSize = Vector3.new(12.0, 7, 6.0), -- volume de busca por direção (uma única caixa espelhada)
+	LateralAreaUpOffset = -1.5, -- deslocamento vertical do centro da caixa lateral
 	LateralAreaSideBias = 0.35, -- porcentagem da largura deslocada para o lado (0=centro no player, 0.5=caixa começa na borda atual)
 	LateralTargetSideOffset = 3.2, -- alvo de deslocamento lateral para amostrar um ponto mais próximo (evita ir direto para a ponta distante)
 	LateralProbeNormalOffset = 2.0, -- distância da parede para iniciar probe lateral
@@ -146,32 +130,26 @@ Configs.DefaultConfig = {
 	LateralMaxHorizontal = 6, -- limite horizontal para classificar como Lateral
 	LateralMaxVertical = 1.75, -- limite vertical para classificar como Lateral
 	LateralSaltoMaxHorizontal = 11.0, -- limite horizontal para classificar como LateralSalto
-	LateralSaltoMaxVertical = 2.8, -- limite vertical para classificar como LateralSalto
+	LateralSaltoMaxVertical = 4.0, -- limite vertical para classificar como LateralSalto
+	LateralSaltoTopEdgeTolerance = 4.0, -- tolerância de diferença vertical do topo para o filtro inicial de candidatos de LateralSalto
 	LateralNormalMinDot = 0.5, -- semelhança mínima entre normal atual e candidata (evita virar quina abrupta)
-	LateralAllowCorner = true, -- permite fazer curva em quina para face adjacente quando houver borda livre
-	LateralPreferStraightOverCorner = true, -- quando houver múltiplos candidatos válidos, prioriza deslocamento lateral reto antes de curva
-	LateralCornerRespectsBaseDepth = true, -- curvas também respeitam LateralMaxProfundidade (desative para comportamento antigo)
 	LateralCornerMinDot = -0.15, -- dot mínimo para aceitar face adjacente em curva (mais baixo = mais permissivo)
 	LateralCornerMaxProfundidade = 4.5, -- profundidade máxima permitida para curva em quina na mesma part
-	LateralAllowExternalCorner = true, -- permite curva externa para outra parede/part com normal diferente
 	LateralExternalCornerMinDot = -0.35, -- dot mínimo para aceitar curva externa (normal mais diferente da atual)
 	LateralExternalCornerMaxProfundidade = 8.0, -- profundidade máxima permitida para curva externa
-	LateralPathClearanceEnabled = true, -- valida espaço livre no caminho lateral até a borda alvo
 	LateralPathClearanceSize = Vector3.new(1.8, 3.8, 1.4), -- caixa de validação do caminho lateral
 	LateralPathSideDistance = 3.2, -- deslocamento lateral da caixa única de validação (não usa mais sweep até o destino)
 	LateralMinSideDistance = 0.1, -- distância lateral mínima para aceitar candidato na direção
+	LateralSaltoMinSideDistance = 1.0, -- distância lateral mínima exclusiva para aceitar LateralSalto (evita salto quase no mesmo alinhamento lateral)
 	LateralReverseTolerance = 0.05, -- tolerância para não aceitar candidato no sentido oposto ao input lateral
 	LateralCandidateBoxMargin = 0.5, -- margem extra da caixa de query para aceitar edgePos (evita alvo muito fora da área)
 	LateralPathClearanceNormalOffset = 1.2, -- offset normal da caixa lateral de clearance
 	LateralPathClearanceHeightOffset = 0.0, -- offset vertical da caixa lateral de clearance
-	LateralExternalPathRayEnabled = true, -- curva externa usa ray do player até o destino em vez de caixa lateral
 	LateralExternalPathRayUpOffset = 0.2, -- ajuste em Y para origem/destino do ray de curva externa
 	LateralExternalPathRayNormalOffset = 1.2, -- offset normal aplicado no destino do ray de curva externa
-	LateralPathCheckSteps = 2, -- quantidade de checks intermediários no caminho lateral
 	LateralTransitionTime = 0.2, -- tempo (s) da transição lateral
 	LateralTransitionPhaseSplit = 0.55, -- proporção de tempo da fase 1 na transição lateral em duas fases
 	LateralInputDotThreshold = 0.35, -- threshold de intenção para A/D
-	DirectionUseCameraBasis = true, -- interpreta MoveDirection usando base da camera no parkour agarrado
 	DirectionInputDeadzone = 0.2, -- deadzone horizontal minima para considerar intencao direcional
 	DirectionForwardDotThreshold = 0.6, -- dot minimo de frente/tras para classificar eixo frontal
 	DirectionLateralDotThreshold = 0.6, -- dot minimo de direita/esquerda para classificar eixo lateral
@@ -179,14 +157,10 @@ Configs.DefaultConfig = {
 	LateralJumpImpulse = 32, -- magnitude do salto lateral
 	LateralJumpUpComponent = 0.6, -- componente vertical do salto lateral
 	LateralSaltoCancelSpeedAbs = 1.3, -- velocidade absoluta para recuar a animacao de LateralSalto ao soltar input
-	LateralSaltoAutoGrabWindow = 0.65, -- janela (s) para tentar auto-agarrar apos confirmar LateralSalto
-	LateralSaltoAutoGrabStartDelay = 0.12, -- atraso inicial (s) antes de tentar auto-agarrar no LateralSalto
-	LateralSaltoAutoGrabInterval = 0.05, -- intervalo (s) entre tentativas de auto-agarrar apos LateralSalto
-	LateralSaltoAutoGrabMinLateralProgress = 1.8, -- progresso lateral mínimo (studs) para aceitar auto-grab após LateralSalto
-	LateralSaltoAutoGrabMinTravel = 2.0, -- deslocamento total mínimo (studs) para aceitar auto-grab após LateralSalto
+	LateralSaltoPreferTimeout = 0.77, -- segurando lateral nesse estado, após esse tempo executa curva interna automaticamente
 
 	-- ═══ Escalar: subir em cima da plataforma atual ═══
-	-- Clearance de escalar: agora usa os MESMOS valores do Vault (VaultClearanceSize, VaultClearanceUpOffset, VaultClearanceForwardOffset)
+	EscalarMaxVerticalDistance = 6.0, -- distância vertical máxima para fallback de escalar em candidates do Subir
 	EscalarForwardOffset = 1.2, -- studs pra frente da borda ao escalar (posição final)
 	EscalarUpOffset = 2.5, -- studs acima da borda (posição final)
 	EscalarTransitionTime = 0.3, -- duração (s) da escalada
@@ -204,7 +178,6 @@ Configs.DefaultConfig = {
 	DescerNoOptionReleaseDelay = 0.2, -- tempo adicional segurando S sem opção válida antes de realmente soltar
 
 	-- ═══ Cooldown dinâmico por ação ═══
-	CooldownDinamicoEnabled = true,
 	ActionCooldowns = {
 		Lateral = 1.0,
 		LateralSalto = 2.0,

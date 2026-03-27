@@ -2789,6 +2789,24 @@ function ClientBridge.SairParkour()
 		estadoAtual.estadoAcao = "Nenhuma"
 	end
 
+	if isShiftHeld then
+		movementFlags.isRunning = true
+		estadoAtual.correndo = true
+
+		if
+			humanoid.MoveDirection.Magnitude > 0.1
+			and not movementFlags.isJumping
+			and not movementFlags.isFalling
+			and not movementFlags.isClimbing
+			and not movementFlags.isSwimming
+		then
+			estadoAtual.estadoMov = "Correndo"
+		end
+	else
+		movementFlags.isRunning = false
+		estadoAtual.correndo = false
+	end
+
 	AtualizarVelocidadeLocal()
 	AtualizarBaseIdle()
 	AtualizarAnimacaoMovimento()

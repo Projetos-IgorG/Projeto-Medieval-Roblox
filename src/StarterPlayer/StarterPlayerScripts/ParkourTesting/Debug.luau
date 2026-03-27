@@ -299,6 +299,18 @@ function Debug.DrawClimbDebug(escalarResult, subirResult)
 			end
 		end
 
+		if subirDebug.EscalarChecks then
+			for _, escalarCheck in ipairs(subirDebug.EscalarChecks) do
+				if escalarCheck.ClearanceCFrame and escalarCheck.ClearanceSize then
+					Debug.DrawBox(
+						escalarCheck.ClearanceCFrame,
+						escalarCheck.ClearanceSize,
+						escalarCheck.CanEscalar and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(0, 50, 120)
+					)
+				end
+			end
+		end
+
 		-- Ray vertical para cima (ciano)
 		if subirDebug.UpRay then
 			local u = subirDebug.UpRay
