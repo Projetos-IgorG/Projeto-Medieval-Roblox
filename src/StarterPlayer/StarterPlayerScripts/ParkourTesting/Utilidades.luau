@@ -1,5 +1,7 @@
 local Workspace = game:GetService("Workspace")
 local CollectionService = game:GetService("CollectionService")
+local EMPTY_ARRAY = table.freeze({})
+local ORDERED_OFFSETS_CACHE_KEY = "__ParkourOrderedVerticalOffsets"
 
 local Utilidades = {}
 
@@ -50,10 +52,19 @@ end
 -- ══════════════════════════════════════
 
 function Utilidades.getOrderedVerticalOffsets(config)
+	if config and config[ORDERED_OFFSETS_CACHE_KEY] then
+		return config[ORDERED_OFFSETS_CACHE_KEY]
+	end
+
 	local offsets = table.clone(config.VerticalOffsets or {0})
 	table.sort(offsets, function(a, b)
 		return a > b
 	end)
+
+	if config then
+		config[ORDERED_OFFSETS_CACHE_KEY] = offsets
+	end
+
 	return offsets
 end
 
@@ -99,14 +110,26 @@ end
 function Utilidades.createRaycastParams(ignoreList)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = ignoreList
+	params.FilterDescendantsInstances = ignoreList or EMPTY_ARRAY
 	return params
+end
+
+function Utilidades.createRaycastParamsForCharacter(character, extraIgnore)
+	local ignoreCount = extraIgnore and #extraIgnore or 0
+	local ignoreList = table.create(ignoreCount + 1)
+	ignoreList[1] = character
+
+	for i = 1, ignoreCount do
+		ignoreList[i + 1] = extraIgnore[i]
+	end
+
+	return Utilidades.createRaycastParams(ignoreList)
 end
 
 function Utilidades.createOverlapParams(ignoreList, maxParts)
 	local params = OverlapParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = ignoreList
+	params.FilterDescendantsInstances = ignoreList or EMPTY_ARRAY
 	params.MaxParts = maxParts or 0
 	params.RespectCanCollide = false
 	return params
@@ -146,11 +169,6 @@ end
 function Utilidades.isIgnorablePart(part, minHeight)
 	if not part:IsA("BasePart") then
 		return false
-	end
-
-	-- Material de grama sempre ignora
-	if part.Material == Enum.Material.Grass then
-		return true
 	end
 
 	-- Peças muito pequenas em altura (decoração, grama, detalhes)

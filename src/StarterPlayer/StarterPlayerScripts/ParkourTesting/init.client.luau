@@ -37,6 +37,7 @@ local lastJumpTime = 0
 local runtimeConfig = Configs.mergeConfig(nil)
 local cooldownBlockedLogAt = {} :: { [string]: number }
 local lastIdleRecheckAt = 0
+local currentHrp: BasePart? = nil
 
 -- Estado de SubirSalto pendente (quando W detecta que precisa de W+Pulo)
 local subirSaltoPendente = nil -- { Result, ExpiresAt, SourceEdgePosition }
@@ -45,6 +46,7 @@ local lateralSaltoPendente = nil -- { Direcao, Target }
 -- Estado de intenção para descer (hold em S antes de tentar descer)
 local descerHoldStart = 0 -- timestamp de quando começou a segurar S
 local descerHolding = false -- está segurando S?
+local descerSemOpcaoStart = 0 -- início da janela sem opção válida para poder soltar
 
 local function canUseActionCooldown(actionKey, direction, now)
 	if CooldownManager.CanPerformAction(actionKey, direction, now) then
@@ -77,6 +79,7 @@ end
 local function resetDescerState()
 	descerHoldStart = 0
 	descerHolding = false
+	descerSemOpcaoStart = 0
 end
 
 local function clearSubirSaltoPendente(cancelarPreview)
@@ -84,6 +87,66 @@ local function clearSubirSaltoPendente(cancelarPreview)
 		Movimento.CancelarPreviewAcao(runtimeConfig)
 	end
 	subirSaltoPendente = nil
+end
+
+local function resolveCurrentHrp(character: Model): BasePart?
+	if currentHrp and currentHrp.Parent == character then
+		return currentHrp
+	end
+
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if hrp and hrp:IsA("BasePart") then
+		currentHrp = hrp
+		return hrp
+	end
+
+	currentHrp = nil
+	return nil
+end
+
+local function getActionFailCooldown(actionKey: string, specificCooldown: number?, minimumFallback: number): number
+	if specificCooldown and specificCooldown > 0 then
+		return specificCooldown
+	end
+
+	local minimums = runtimeConfig.MinimumCooldowns
+	if type(minimums) == "table" then
+		local minFromAction = minimums[actionKey]
+		if type(minFromAction) == "number" and minFromAction > 0 then
+			return minFromAction
+		end
+	end
+
+	return minimumFallback
+end
+
+local function drawClimbDebug(escalarResult, subirResult)
+	if not Configs.DebugEnabled then
+		return
+	end
+
+	Analisador.ClearDebug()
+	Debug.DrawClimbDebug(escalarResult, subirResult)
+end
+
+local function drawLateralDebug(lateralResult)
+	if not Configs.DebugEnabled then
+		return
+	end
+
+	if Configs.DebugEnabled then
+		Analisador.ClearDebug()
+	end
+	Debug.DrawLateralDebug(lateralResult)
+end
+
+local function drawDescerDebug(descerResult)
+	if not Configs.DebugEnabled then
+		return
+	end
+
+	Analisador.ClearDebug()
+	Debug.DrawDescerDebug(descerResult)
 end
 
 local function setSubirSaltoPendente(subirResult)
@@ -173,8 +236,12 @@ end
 
 local function getIntencaoDirecional(humanoid, hrp): string?
 	local moveDir = humanoid.MoveDirection
-	local moveFlat = Vector3.new(moveDir.X, 0, moveDir.Z)
 	local deadzone = runtimeConfig.DirectionInputDeadzone or 0.2
+	if moveDir.Magnitude < deadzone then
+		return nil -- sem input direcional
+	end
+
+	local moveFlat = Vector3.new(moveDir.X, 0, moveDir.Z)
 	if moveFlat.Magnitude < deadzone then
 		return nil -- sem input direcional
 	end
@@ -349,7 +416,7 @@ local function onJumpNormal(character, humanoid)
 	local result = Analisador.CheckParkour(character, {})
 
 	if not result or not result.Aprovado then
-		if result then
+		if result and Configs.DebugEnabled then
 			Analisador.DrawDebug(result)
 		end
 		return
@@ -357,12 +424,16 @@ local function onJumpNormal(character, humanoid)
 
 	-- Filtro condicional: no chão é só Vault
 	if noChao and result.Acao == "Agarrar" then
-		Analisador.DrawDebug(result)
+		if Configs.DebugEnabled then
+			Analisador.DrawDebug(result)
+		end
 		return
 	end
 
 	-- Debug visual
-	Analisador.DrawDebug(result)
+	if Configs.DebugEnabled then
+		Analisador.DrawDebug(result)
+	end
 
 	-- Executar a ação de parkour
 	local sucesso = Movimento.Executar(result)
@@ -384,7 +455,7 @@ local function onJumpRequest(character: Model, humanoid: Humanoid)
 	end
 	lastJumpTime = now
 
-	local hrp = character:FindFirstChild("HumanoidRootPart")
+	local hrp = resolveCurrentHrp(character)
 	if not hrp then
 		return
 	end
@@ -421,7 +492,7 @@ local function onHeartbeat(character, humanoid)
 		Movimento.ReavaliarIdleAgarrado()
 	end
 
-	local hrp = character:FindFirstChild("HumanoidRootPart")
+	local hrp = resolveCurrentHrp(character)
 	if not hrp then
 		return
 	end
@@ -442,9 +513,7 @@ local function onHeartbeat(character, humanoid)
 
 		local ok, tipo, subirResult, escalarResult = Movimento.TentarSubir()
 
-		-- Debug visual: SEMPRE desenhar os rays de verificação (mesmo se falhar)
-		Analisador.ClearDebug()
-		Debug.DrawClimbDebug(escalarResult, subirResult)
+		drawClimbDebug(escalarResult, subirResult)
 
 		if ok then
 			if tipo == "Escalar" or tipo == "Subir" then
@@ -460,9 +529,7 @@ local function onHeartbeat(character, humanoid)
 				end
 			end
 		else
-			local fallbackMin = (runtimeConfig.MinimumCooldowns and runtimeConfig.MinimumCooldowns.Subir) or 0.5
-			local failCooldown = runtimeConfig.SubirFailCooldown or fallbackMin
-			CooldownManager.BlockAction("Subir", nil, now, failCooldown)
+			CooldownManager.BlockAction("Subir", nil, now, getActionFailCooldown("Subir", runtimeConfig.SubirFailCooldown, 0.5))
 		end
 	elseif direcao == "Direita" or direcao == "Esquerda" then
 		resetDescerState()
@@ -474,8 +541,7 @@ local function onHeartbeat(character, humanoid)
 
 		local ok, estadoLateral, lateralResult = Movimento.TentarMoverLateral(direcao)
 
-		Analisador.ClearDebug()
-		Debug.DrawLateralDebug(lateralResult)
+		drawLateralDebug(lateralResult)
 
 		if ok then
 			CooldownManager.RegisterSuccess("Lateral", direcao, now)
@@ -495,9 +561,12 @@ local function onHeartbeat(character, humanoid)
 			elseif lateralSaltoPendente then
 				clearLateralSaltoPendente(true)
 			end
-			local fallbackMin = (runtimeConfig.MinimumCooldowns and runtimeConfig.MinimumCooldowns.Lateral) or 0.5
-			local failCooldown = runtimeConfig.LateralNoSurfaceCooldown or fallbackMin
-			CooldownManager.BlockAction("Lateral", direcao, now, failCooldown)
+			CooldownManager.BlockAction(
+				"Lateral",
+				direcao,
+				now,
+				getActionFailCooldown("Lateral", runtimeConfig.LateralNoSurfaceCooldown, 0.5)
+			)
 		else
 			if lateralSaltoPendente then
 				clearLateralSaltoPendente(true)
@@ -506,13 +575,6 @@ local function onHeartbeat(character, humanoid)
 	elseif direcao == "Tras" then
 		if lateralSaltoPendente then
 			clearLateralSaltoPendente(true)
-		end
-		local grabData = Movimento.GetGrabData()
-		if grabData and grabData.IdleMode == "IdleSuspenso" then
-			clearSubirSaltoPendente(true)
-			resetDescerState()
-			Movimento.Soltar()
-			return
 		end
 
 		if not descerHolding then
@@ -527,18 +589,42 @@ local function onHeartbeat(character, humanoid)
 			return
 		end
 
+		if not canUseActionCooldown("Descer", nil, now) then
+			return
+		end
+
 		local ok, tipo, descerResult = Movimento.TentarDescer()
 
-		Analisador.ClearDebug()
-		Debug.DrawDescerDebug(descerResult)
+		drawDescerDebug(descerResult)
 
 		if ok and tipo == "Descer" then
+			CooldownManager.RegisterSuccess("Descer", nil, now)
 			clearSubirSaltoPendente(true)
 			resetDescerState()
 		else
+			CooldownManager.BlockAction("Descer", nil, now, getActionFailCooldown("Descer", runtimeConfig.DescerFailCooldown, 0.25))
 			clearSubirSaltoPendente(true)
-			resetDescerState()
-			Movimento.Soltar()
+
+			local reason = descerResult and descerResult.Reason or "Unknown"
+			local semOpcao = reason == "NoSurfaceBelow"
+				or reason == "NoClearanceBelow"
+				or reason == "TooFarBelow"
+				or reason == "InvalidCurrentNormalForDescer"
+
+			if semOpcao then
+				if descerSemOpcaoStart <= 0 then
+					descerSemOpcaoStart = now
+					return
+				end
+
+				local releaseDelay = runtimeConfig.DescerNoOptionReleaseDelay or 0.2
+				if now - descerSemOpcaoStart >= releaseDelay then
+					resetDescerState()
+					Movimento.Soltar()
+				end
+			else
+				descerSemOpcaoStart = 0
+			end
 		end
 	else
 		if lateralSaltoPendente then
@@ -557,6 +643,7 @@ end
 
 local function setupCharacter(character: Model)
 	limparConexoes()
+	currentHrp = nil
 	AnimacaoParkour.Destruir()
 	Movimento.Soltar()
 	lastJumpTime = 0
@@ -571,6 +658,7 @@ local function setupCharacter(character: Model)
 	CooldownManager.Reset()
 
 	local humanoid = character:WaitForChild("Humanoid") :: Humanoid
+	currentHrp = character:WaitForChild("HumanoidRootPart") :: BasePart
 	AnimacaoParkour.Inicializar(character)
 
 	-- JumpRequest: dispara em qualquer plataforma (Space, A, JumpButton)
@@ -592,6 +680,7 @@ local function setupCharacter(character: Model)
 		limparConexoes()
 		AnimacaoParkour.Destruir()
 		Movimento.Soltar()
+		currentHrp = nil
 		clearLateralSaltoPendente(false)
 		clearSubirSaltoPendente(false)
 		resetDescerState()

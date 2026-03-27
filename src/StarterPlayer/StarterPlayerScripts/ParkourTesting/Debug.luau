@@ -198,12 +198,20 @@ function Debug.DrawDebug(data)
 
 	-- Ray extra: perna
 	if data.LegProbeRaysDebug then
-		for _, legRay in ipairs(data.LegProbeRaysDebug) do
-			Debug.DrawRay(
-				legRay.Origin,
-				legRay.HitPosition,
-				legRay.Hit and Color3.fromRGB(0, 180, 255) or Color3.fromRGB(0, 70, 120)
+		if data.LegProbeRaysDebug.CFrame and data.LegProbeRaysDebug.Size then
+			Debug.DrawBox(
+				data.LegProbeRaysDebug.CFrame,
+				data.LegProbeRaysDebug.Size,
+				data.LegProbeRaysDebug.Clear and Color3.fromRGB(255, 120, 120) or Color3.fromRGB(0, 220, 255)
 			)
+		else
+			for _, legRay in ipairs(data.LegProbeRaysDebug) do
+				Debug.DrawRay(
+					legRay.Origin,
+					legRay.HitPosition,
+					legRay.Hit and Color3.fromRGB(0, 180, 255) or Color3.fromRGB(0, 70, 120)
+				)
+			end
 		end
 	elseif data.LegRayDebug then
 		local l = data.LegRayDebug
@@ -257,15 +265,39 @@ function Debug.DrawClimbDebug(escalarResult, subirResult)
 		-- Floor ray (amarelo = tem chão, vermelho = sem chão)
 		if escalarResult.FloorRayDebug then
 			local f = escalarResult.FloorRayDebug
-			Debug.DrawRay(f.Origin, f.HitPosition, f.Hit and Color3.fromRGB(255, 255, 0) or Color3.fromRGB(255, 0, 0))
-			-- Ponto onde o floor ray começa (posição final do escalar)
-			Debug.DrawPoint(f.Origin, Color3.fromRGB(255, 255, 0), Vector3.new(0.35, 0.35, 0.35))
+			if f.Probes then
+				for _, probe in ipairs(f.Probes) do
+					Debug.DrawRay(
+						probe.Origin,
+						probe.HitPosition,
+						probe.Hit and Color3.fromRGB(255, 255, 0) or Color3.fromRGB(255, 0, 0)
+					)
+					Debug.DrawPoint(probe.Origin, Color3.fromRGB(255, 255, 0), Vector3.new(0.35, 0.35, 0.35))
+				end
+			else
+				Debug.DrawRay(f.Origin, f.HitPosition, f.Hit and Color3.fromRGB(255, 255, 0) or Color3.fromRGB(255, 0, 0))
+				Debug.DrawPoint(f.Origin, Color3.fromRGB(255, 255, 0), Vector3.new(0.35, 0.35, 0.35))
+			end
 		end
 	end
 
 	-- ═══ Subir: up ray + forward rays ═══
 	if subirResult and subirResult.Debug then
 		local subirDebug = subirResult.Debug
+
+		if subirDebug.QueryBoxCFrame and subirDebug.QueryBoxSize then
+			Debug.DrawBox(subirDebug.QueryBoxCFrame, subirDebug.QueryBoxSize, Color3.fromRGB(0, 180, 255))
+		end
+
+		if subirDebug.CandidatePoints then
+			for _, point in ipairs(subirDebug.CandidatePoints) do
+				Debug.DrawPoint(
+					point.Position,
+					point.Accepted and Color3.fromRGB(80, 255, 80) or Color3.fromRGB(255, 80, 80),
+					Vector3.new(0.22, 0.22, 0.22)
+				)
+			end
+		end
 
 		-- Ray vertical para cima (ciano)
 		if subirDebug.UpRay then
@@ -288,6 +320,14 @@ function Debug.DrawClimbDebug(escalarResult, subirResult)
 		if subirResult.EdgePosition then
 			Debug.DrawPoint(subirResult.EdgePosition, Color3.fromRGB(255, 100, 0), Vector3.new(0.35, 0.35, 0.35))
 		end
+
+		if subirResult.LegProbeRaysDebug and subirResult.LegProbeRaysDebug.CFrame and subirResult.LegProbeRaysDebug.Size then
+			Debug.DrawBox(
+				subirResult.LegProbeRaysDebug.CFrame,
+				subirResult.LegProbeRaysDebug.Size,
+				subirResult.LegProbeRaysDebug.Clear and Color3.fromRGB(255, 120, 120) or Color3.fromRGB(0, 220, 255)
+			)
+		end
 	end
 end
 
@@ -301,6 +341,48 @@ function Debug.DrawLateralDebug(lateralResult)
 	end
 
 	local lateralDebug = lateralResult.Debug
+	if lateralDebug.QueryBoxCFrame and lateralDebug.QueryBoxSize then
+		Debug.DrawBox(lateralDebug.QueryBoxCFrame, lateralDebug.QueryBoxSize, Color3.fromRGB(80, 150, 255))
+	end
+
+	if lateralDebug.CandidatePoints then
+		for _, point in ipairs(lateralDebug.CandidatePoints) do
+			Debug.DrawPoint(
+				point.Position,
+				point.Accepted and Color3.fromRGB(80, 255, 80) or Color3.fromRGB(255, 80, 80),
+				Vector3.new(0.2, 0.2, 0.2)
+			)
+		end
+	end
+
+	if lateralDebug.PathClearanceBoxes then
+		for _, boxInfo in ipairs(lateralDebug.PathClearanceBoxes) do
+			Debug.DrawBox(
+				boxInfo.CFrame,
+				boxInfo.Size,
+				boxInfo.Clear and Color3.fromRGB(0, 255, 140) or Color3.fromRGB(255, 60, 60)
+			)
+		end
+	end
+
+	if lateralDebug.PathClearanceRays then
+		for _, rayInfo in ipairs(lateralDebug.PathClearanceRays) do
+			Debug.DrawRay(
+				rayInfo.Origin,
+				rayInfo.HitPosition,
+				rayInfo.Clear and Color3.fromRGB(40, 220, 255) or Color3.fromRGB(255, 90, 90)
+			)
+		end
+	end
+
+	if lateralResult.LegProbeRaysDebug and lateralResult.LegProbeRaysDebug.CFrame and lateralResult.LegProbeRaysDebug.Size then
+		Debug.DrawBox(
+			lateralResult.LegProbeRaysDebug.CFrame,
+			lateralResult.LegProbeRaysDebug.Size,
+			lateralResult.LegProbeRaysDebug.Clear and Color3.fromRGB(255, 120, 120) or Color3.fromRGB(0, 220, 255)
+		)
+	end
+
 	if lateralDebug.SideRays then
 		for _, rayInfo in ipairs(lateralDebug.SideRays) do
 			Debug.DrawRay(
@@ -316,7 +398,7 @@ function Debug.DrawLateralDebug(lateralResult)
 			Debug.DrawRay(
 				rayInfo.Origin,
 				rayInfo.HitPosition,
-				rayInfo.Hit and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(40, 100, 40)
+				rayInfo.Hit and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(255, 80, 80)
 			)
 		end
 	end
@@ -337,6 +419,20 @@ function Debug.DrawDescerDebug(descerResult)
 
 	local descerDebug = descerResult.Debug
 
+	if descerDebug.QueryBoxCFrame and descerDebug.QueryBoxSize then
+		Debug.DrawBox(descerDebug.QueryBoxCFrame, descerDebug.QueryBoxSize, Color3.fromRGB(0, 180, 255))
+	end
+
+	if descerDebug.CandidatePoints then
+		for _, point in ipairs(descerDebug.CandidatePoints) do
+			Debug.DrawPoint(
+				point.Position,
+				point.Accepted and Color3.fromRGB(80, 255, 80) or Color3.fromRGB(255, 80, 80),
+				Vector3.new(0.22, 0.22, 0.22)
+			)
+		end
+	end
+
 	if descerDebug.DownRay then
 		local d = descerDebug.DownRay
 		Debug.DrawRay(d.Origin, d.HitPosition, d.Hit and Color3.fromRGB(0, 200, 255) or Color3.fromRGB(0, 90, 120))
@@ -354,6 +450,14 @@ function Debug.DrawDescerDebug(descerResult)
 
 	if descerResult.EdgePosition then
 		Debug.DrawPoint(descerResult.EdgePosition, Color3.fromRGB(255, 120, 0), Vector3.new(0.35, 0.35, 0.35))
+	end
+
+	if descerResult.LegProbeRaysDebug and descerResult.LegProbeRaysDebug.CFrame and descerResult.LegProbeRaysDebug.Size then
+		Debug.DrawBox(
+			descerResult.LegProbeRaysDebug.CFrame,
+			descerResult.LegProbeRaysDebug.Size,
+			descerResult.LegProbeRaysDebug.Clear and Color3.fromRGB(255, 120, 120) or Color3.fromRGB(0, 220, 255)
+		)
 	end
 end
 

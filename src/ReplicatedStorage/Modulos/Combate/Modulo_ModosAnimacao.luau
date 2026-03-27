@@ -424,8 +424,8 @@ local ModoAnimacoes = {
 			DireitaSaltoSuporte = "rbxassetid://128153530690566",
 			EsquerdaSaltoSuporte = "rbxassetid://84480325767002",
 
-			DireitaSaltoSuspenso = "rbxassetid://80372639586330", -- TODO
-			EsquerdaSaltoSuspenso = "rbxassetid://95842068830831", -- TODO
+			DireitaSaltoSuspenso =  "rbxassetid://128153530690566", -- "rbxassetid://80372639586330", -- TODO
+			EsquerdaSaltoSuspenso =  "rbxassetid://84480325767002", -- "rbxassetid://95842068830831", -- TODO
 
 			EscalarSuporte = "rbxassetid://127751906771957",
 			EscalarSuspenso = "rbxassetid://126513416555386",
