@@ -1,3 +1,6 @@
+local Configs = require(script.Parent:WaitForChild("Configs"))
+local Debug = require(script.Parent:WaitForChild("Debug"))
+
 local CooldownManager = {}
 
 local DEFAULT_BASE_COOLDOWNS = {
@@ -185,6 +188,47 @@ function CooldownManager.GetDebugSnapshot(actionKey)
 		LastSuccessTime = record.lastSuccessTime,
 		Enabled = state.enabled,
 	}
+end
+
+--- Verifica se a ação pode ser executada e loga se estiver bloqueada.
+--- Extraído de init.client (canUseActionCooldown).
+function CooldownManager.CanUseWithLog(actionKey, direction, now, cooldownBlockedLogAt)
+	if CooldownManager.CanPerformAction(actionKey, direction, now) then
+		return true
+	end
+
+	if Configs.DebugVerbose then
+		local directionLabel = direction or "-"
+		local logKey = actionKey .. "/" .. directionLabel
+		local interval = 0.25
+		local lastLogAt = cooldownBlockedLogAt[logKey] or 0
+
+		if now - lastLogAt >= interval then
+			local remaining = CooldownManager.GetRemaining(actionKey, now)
+			Debug.Verbose(string.format("[Parkour] Cooldown bloqueado: %s | restante %.2fs", logKey, remaining))
+			cooldownBlockedLogAt[logKey] = now
+		end
+	end
+
+	return false
+end
+
+--- Resolve o cooldown de falha para uma ação.  
+--- Extraído de init.client (getActionFailCooldown).
+function CooldownManager.GetFailCooldown(actionKey, specificCooldown, minimumFallback, config)
+	if specificCooldown and specificCooldown > 0 then
+		return specificCooldown
+	end
+
+	local minimums = config and config.MinimumCooldowns
+	if type(minimums) == "table" then
+		local minFromAction = minimums[actionKey]
+		if type(minFromAction) == "number" and minFromAction > 0 then
+			return minFromAction
+		end
+	end
+
+	return minimumFallback
 end
 
 return CooldownManager

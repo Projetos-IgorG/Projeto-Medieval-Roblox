@@ -2773,6 +2773,7 @@ function ClientBridge.EntrarParkour()
 	PararAnimacaoMov(true)
 
 	estadoAtual.estadoAcao = "Parkour"
+	estadoAtual.estadoMov = "Parkour"
 	estadoAtual.correndo = false
 	movementFlags.isRunning = false
 	AtualizarVelocidadeLocal()
@@ -3029,6 +3030,11 @@ local function OnStateChanged(oldState, newState)
 				tostring(movementFlags.isFalling)
 			)
 		)
+	end
+
+	-- Durante parkour, não processar mudanças de estado de movimento
+	if parkourState.ativo then
+		return
 	end
 
 	-- Atualiza flags de estados especiais

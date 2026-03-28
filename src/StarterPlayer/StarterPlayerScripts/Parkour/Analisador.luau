@@ -78,22 +78,6 @@ local function buildResultFromCast(castData)
 	return castData
 end
 
-local function addEdgeInfo(data, edgeMode)
-	if not data then
-		return nil
-	end
-
-	if edgeMode == "Bottom" then
-		data.EdgePosition = data.BottomEdgePosition
-		data.Mode = "Bottom"
-	else
-		data.EdgePosition = data.TopEdgePosition
-		data.Mode = "Top"
-	end
-
-	return data
-end
-
 local function isWallLikeNormal(normal, config)
 	local maxWallNormalY = config.MaxWallNormalY or 0.35
 	return math.abs(normal.Unit.Y) <= maxWallNormalY
@@ -116,7 +100,7 @@ local function hasBothClearances(character, part, edgePosition, normal, finalCon
 	return hasTopClearance, hasFrontClearance
 end
 
-local function checkEscalarAtEdge(character, currentEdgePos, currentNormal, currentPart, finalConfig, rayParams, debugContext)
+local function checkEscalarAtEdge(character, currentEdgePos, currentNormal, currentPart, finalConfig, debugContext)
 	if not isWallLikeNormal(currentNormal, finalConfig) then
 		Debug.Verbose("  RESULTADO: InvalidCurrentNormalForEscalar | Normal:", currentNormal)
 		return {
@@ -133,15 +117,13 @@ local function checkEscalarAtEdge(character, currentEdgePos, currentNormal, curr
 	Debug.Verbose("  EdgePos:", currentEdgePos, "| Normal:", currentNormal)
 	Debug.Verbose("  Part:", currentPart and currentPart.Name or "nil")
 
-	local currentRayParams = rayParams or Utilidades.createRaycastParamsForCharacter(character)
 	local look = -currentNormal.Unit
-	local margin = 0.05
 	local center = currentEdgePos
-		+ Vector3.yAxis * (finalConfig.VaultClearanceUpOffset + margin)
-		+ look * finalConfig.VaultClearanceForwardOffset
+		+ Vector3.yAxis * (finalConfig.EscalarClearanceUpOffset or finalConfig.EscalarUpOffset)
+		+ look * (finalConfig.EscalarClearanceForwardOffset or finalConfig.EscalarForwardOffset)
 
 	local cf = CFrame.lookAt(center, center + look, Vector3.yAxis)
-	local clearanceSize = finalConfig.VaultClearanceSize
+	local clearanceSize = finalConfig.EscalarClearanceSize or finalConfig.VaultClearanceSize
 	local minH = finalConfig.MinPartHeight
 
 	Debug.Verbose("  ClearanceCenter:", center, "| Size:", clearanceSize)
@@ -164,35 +146,6 @@ local function checkEscalarAtEdge(character, currentEdgePos, currentNormal, curr
 		+ Vector3.yAxis * finalConfig.EscalarUpOffset
 		+ look * finalConfig.EscalarForwardOffset
 
-	local floorRayDir = -Vector3.yAxis * finalConfig.EscalarFloorRayDistance
-	local floorProbeUpOffset = finalConfig.EscalarFloorProbeUpOffset or 1.1
-	local floorProbeOffsets = finalConfig.EscalarFloorProbeOffsets or { 0.0, 0.3, 0.7 }
-	local floorResult = nil
-	local floorRayDebug = {
-		Probes = {},
-	}
-
-	for _, forwardOffset in ipairs(floorProbeOffsets) do
-		local floorRayOrigin = currentEdgePos
-			+ Vector3.yAxis * floorProbeUpOffset
-			+ look * forwardOffset
-		local probeResult = Workspace:Raycast(floorRayOrigin, floorRayDir, currentRayParams)
-
-		table.insert(floorRayDebug.Probes, {
-			Origin = floorRayOrigin,
-			HitPosition = probeResult and probeResult.Position or (floorRayOrigin + floorRayDir),
-			Hit = probeResult ~= nil,
-		})
-
-		if probeResult then
-			floorResult = probeResult
-			break
-		end
-	end
-
-	local firstProbe = floorRayDebug.Probes[1]
-	Debug.Verbose("  FloorCheck: hit=", floorResult ~= nil, "| origin=", firstProbe and firstProbe.Origin or "nil")
-
 	if not clear then
 		Debug.Verbose("  RESULTADO: NoClearanceOnTop | Blocker:", blocker and blocker.Name or "nil")
 		return {
@@ -201,18 +154,6 @@ local function checkEscalarAtEdge(character, currentEdgePos, currentNormal, curr
 			Blocker = blocker,
 			ClearanceCFrame = cf,
 			ClearanceSize = clearanceSize,
-			FloorRayDebug = floorRayDebug,
-		}
-	end
-
-	if not floorResult then
-		Debug.Verbose("  RESULTADO: NoFloorOnTop")
-		return {
-			CanEscalar = false,
-			Reason = "NoFloorOnTop",
-			ClearanceCFrame = cf,
-			ClearanceSize = clearanceSize,
-			FloorRayDebug = floorRayDebug,
 		}
 	end
 
@@ -225,7 +166,6 @@ local function checkEscalarAtEdge(character, currentEdgePos, currentNormal, curr
 		Part = currentPart,
 		ClearanceCFrame = cf,
 		ClearanceSize = clearanceSize,
-		FloorRayDebug = floorRayDebug,
 	}
 end
 
@@ -239,132 +179,6 @@ end
 
 function Analisador.DrawDebug(data)
 	Debug.DrawDebug(data)
-end
-
--- ══════════════════════════════════════
--- Raycast Público
--- ══════════════════════════════════════
-
-function Analisador.CreateRaycastParams(character, extraIgnore)
-	return Utilidades.createRaycastParamsForCharacter(character, extraIgnore)
-end
-
-function Analisador.RaycastForward(character, distance)
-	local hrp = Utilidades.getCharacterParts(character)
-	if not hrp then
-		return nil
-	end
-
-	local origin = hrp.Position
-	local direction = hrp.CFrame.LookVector * distance
-	local result = Workspace:Raycast(origin, direction, Utilidades.createRaycastParamsForCharacter(character))
-
-	if not result or not result.Instance or not result.Instance:IsA("BasePart") then
-		return nil
-	end
-
-	return {
-		Character = character,
-		Part = result.Instance,
-		Result = result,
-		Origin = origin,
-		HitPosition = result.Position,
-		Normal = result.Normal,
-	}
-end
-
--- ══════════════════════════════════════
--- Varredura Vertical (melhor hit)
--- ══════════════════════════════════════
-
-function Analisador.FindBestForwardHit(character, config)
-	local finalConfig = Configs.mergeConfig(config)
-	local hrp = Utilidades.getCharacterParts(character)
-	if not hrp then
-		return nil
-	end
-
-	local look = hrp.CFrame.LookVector
-	local baseOrigin = hrp.Position + Vector3.yAxis * finalConfig.HeadHeightOffset
-
-	local orderedOffsets = Utilidades.getOrderedVerticalOffsets(finalConfig)
-	local rayParams = Utilidades.createRaycastParamsForCharacter(character)
-	local rayDebug = {}
-
-	local bestHitData = nil
-	local bestDistance = math.huge
-
-	for _, verticalOffset in ipairs(orderedOffsets) do
-		local origin = baseOrigin + Vector3.yAxis * verticalOffset
-		local direction = look * finalConfig.RayDistance
-		local result = Workspace:Raycast(origin, direction, rayParams)
-
-		table.insert(rayDebug, {
-			Origin = origin,
-			HitPosition = result and result.Position or (origin + direction),
-			Hit = result ~= nil,
-		})
-
-		if result and result.Instance and result.Instance:IsA("BasePart") then
-			-- Ignorar peças muito pequenas (grama, decoração)
-			if not Utilidades.isIgnorablePart(result.Instance, finalConfig.MinPartHeight) then
-				local dist = (result.Position - origin).Magnitude
-
-				-- Priorizar a superfície mais próxima (menor distância horizontal)
-				-- Isso permite detectar uma borda ou ledge que está "para fora" de uma parede de fundo
-				if dist < bestDistance then
-					bestDistance = dist
-					bestHitData = {
-						Character = character,
-						Part = result.Instance,
-						Result = result,
-						Origin = origin,
-						HitPosition = result.Position,
-						Normal = result.Normal,
-						Distance = dist,
-						-- Vamos guardar o rayDebug completo no final
-					}
-				end
-			end
-		end
-	end
-
-	if bestHitData then
-		bestHitData.RayDebug = rayDebug
-		return bestHitData
-	end
-
-	return nil
-end
-
--- ══════════════════════════════════════
--- Bordas (Top / Bottom)
--- ══════════════════════════════════════
-
-function Analisador.GetTopEdge(character, distance)
-	local data = buildResultFromCast(Analisador.FindBestForwardHit(character, {
-		RayDistance = distance,
-		VerticalOffsets = {0},
-	}))
-
-	if not data then
-		return nil
-	end
-
-	return addEdgeInfo(data, "Top")
-end
-
-function Analisador.GetBottomEdge(character, distance)
-	local data = buildResultFromCast(Analisador.FindBestForwardHit(character, {
-		RayDistance = distance,
-		VerticalOffsets = {0},
-	}))
-
-	if not data then
-		return nil
-	end
-
-	return addEdgeInfo(data, "Bottom")
 end
 
 -- ══════════════════════════════════════
@@ -449,71 +263,6 @@ function Analisador.ResolveIdleMode(data, config)
 	return "IdleSuspenso", nil, supportDebug
 end
 
--- ══════════════════════════════════════
--- Verificação Completa: CheckGrabbable
--- ══════════════════════════════════════
-
-function Analisador.CheckGrabbable(character, config)
-	local finalConfig = Configs.mergeConfig(config)
-
-	local castData = Analisador.FindBestForwardHit(character, finalConfig)
-	if not castData then
-		return {
-			CanGrab = false,
-			Reason = "NoForwardHit",
-		}
-	end
-
-	if Utilidades.hasTagDeep(castData.Part, Configs.Tags.NAO_AGARRAVEL) then
-		return {
-			CanGrab = false,
-			Reason = "TaggedNaoAgarravel",
-			Part = castData.Part,
-			Result = castData.Result,
-			HitPosition = castData.HitPosition,
-			Origin = castData.Origin,
-			Normal = castData.Normal,
-			RayDebug = castData.RayDebug,
-		}
-	end
-
-	local data = buildResultFromCast(castData)
-	addEdgeInfo(data, finalConfig.EdgeMode)
-
-	local hasTopClearance, topBlocker, topCf, topSize = Analisador.HasTopClearance(data, finalConfig)
-	if not hasTopClearance then
-		data.CanGrab = false
-		data.Reason = "NoTopClearance"
-		data.TopBlocker = topBlocker
-		data.TopClearanceCFrame = topCf
-		data.TopClearanceSize = topSize
-		return data
-	end
-
-	local hasFrontClearance, frontBlocker, frontCf, frontSize = Analisador.HasFrontClearance(data, finalConfig)
-	if not hasFrontClearance then
-		data.CanGrab = false
-		data.Reason = "NoFrontClearance"
-		data.FrontBlocker = frontBlocker
-		data.FrontClearanceCFrame = frontCf
-		data.FrontClearanceSize = frontSize
-		return data
-	end
-
-	local idleMode, legHit, legProbeRaysDebug = Analisador.ResolveIdleMode(data, finalConfig)
-
-	data.CanGrab = true
-	data.Reason = "Ok"
-	data.IdleMode = idleMode
-	data.LegHit = legHit
-	data.LegProbeRaysDebug = legProbeRaysDebug
-	data.TopClearanceCFrame = topCf
-	data.TopClearanceSize = topSize
-	data.FrontClearanceCFrame = frontCf
-	data.FrontClearanceSize = frontSize
-
-	return data
-end
 
 -- ══════════════════════════════════════
 -- Vault: Clearance no Destino
@@ -556,9 +305,7 @@ function Analisador.HasVaultEdgeClearance(data, config)
 	local bordaReal = data.EdgePosition
 	local look = data.LookVector
 
-	-- Centralizado em cima da borda
-	local margin = 0.05
-	local center = bordaReal + Vector3.yAxis * (finalConfig.VaultClearanceSize.Y / 2 + margin)
+	local center = bordaReal + Vector3.yAxis * (finalConfig.VaultEdgeClearanceUpOffset or (finalConfig.VaultClearanceSize.Y / 2))
 
 	local cf = CFrame.lookAt(center, center + look, Vector3.yAxis)
 	local minH = finalConfig.MinPartHeight
@@ -573,18 +320,59 @@ function Analisador.HasVaultEdgeClearance(data, config)
 end
 
 -- ══════════════════════════════════════
--- Rays Extras (torso + perna)
+-- Probes XZ (torso + perna)
 -- ══════════════════════════════════════
 
-local function castExtraRay(hrp, look, yOffset, distance, rayParams)
-	local origin = hrp.Position + Vector3.yAxis * yOffset
-	local direction = look * distance
+local function getHorizontalUnit(vector)
+	local flat = Vector3.new(vector.X, 0, vector.Z)
+	if flat.Magnitude < 0.001 then
+		return nil
+	end
+
+	return flat.Unit
+end
+
+local function isValidForwardProbeHit(result, config)
+	if not result or not result.Instance or not result.Instance:IsA("BasePart") then
+		return false
+	end
+
+	local hitPart = result.Instance
+	if Utilidades.isIgnorablePart(hitPart, config.MinPartHeight) then
+		return false
+	end
+
+	if Utilidades.hasTagDeep(hitPart, Configs.Tags.NAO_AGARRAVEL) then
+		return false
+	end
+
+	return true
+end
+
+local function castRayToEdgeXZ(hrpPosition, edgePosition, yOffset, distance, extraDistance, rayParams, config)
+	local origin = hrpPosition + Vector3.yAxis * yOffset
+	local toEdge = Vector3.new(edgePosition.X - origin.X, 0, edgePosition.Z - origin.Z)
+
+	if toEdge.Magnitude < 0.05 then
+		return {
+			Origin = origin,
+			HitPosition = origin,
+			Hit = false,
+			Result = nil,
+		}
+	end
+
+	local maxDistance = distance or 8
+	local overshoot = extraDistance or 0
+	local castDistance = math.min(maxDistance, toEdge.Magnitude + overshoot)
+	local direction = toEdge.Unit * castDistance
 	local result = Workspace:Raycast(origin, direction, rayParams)
+	local validHit = isValidForwardProbeHit(result, config)
 
 	return {
 		Origin = origin,
 		HitPosition = result and result.Position or (origin + direction),
-		Hit = result ~= nil,
+		Hit = validHit,
 		Result = result,
 	}
 end
@@ -686,16 +474,89 @@ local function collectValidPartsInBox(cframe, size, ignoreList, minPartHeight)
 end
 
 -- ══════════════════════════════════════
--- Classificar altura da borda
+-- Busca frontal por bloco (caixa única)
 -- ══════════════════════════════════════
 
-local function classificarAltura(bordaY, hrpY, config)
+local function findForwardEdgeInBox(character, hrp, look, config)
+	local lookXZ = getHorizontalUnit(look)
+	if not lookXZ then
+		return nil, nil
+	end
+
+	local baseSize = config.ForwardObstacleBoxSize or Vector3.new(4.5, 5.5, 4.0)
+	local nearOffset = math.max(0, config.ForwardObstacleBoxNearOffset or 0.05)
+	local maxReach = math.max(nearOffset + 0.5, config.ForwardObstacleBoxDistance or 5.25)
+	local depth = math.max(0.75, maxReach - nearOffset)
+	local querySize = Vector3.new(baseSize.X, baseSize.Y, depth)
+	local queryCenter = hrp.Position
+		+ Vector3.yAxis * (config.ForwardObstacleBoxUpOffset or 0)
+		+ lookXZ * (nearOffset + depth * 0.5)
+	local queryCFrame = CFrame.lookAt(queryCenter, queryCenter + lookXZ, Vector3.yAxis)
+
+	local parts = collectValidPartsInBox(queryCFrame, querySize, {character}, config.MinPartHeight)
+	local samplePoint = hrp.Position + Vector3.yAxis * (config.ForwardObstacleSampleYOffset or 0)
+	local maxDist = config.ForwardObstacleMaxDistance or config.RayDistance
+
+	local candidatePoints = {}
+	local bestData = nil
+	local bestForwardDist = math.huge
+	local bestLateralDist = math.huge
+
+	for _, part in ipairs(parts) do
+		local castData = buildCastDataFromPartPoint(character, part, samplePoint, -lookXZ)
+		local built = buildResultFromCast(castData)
+		if not built then
+			continue
+		end
+
+		local edgePosition = built.TopEdgePosition
+		local deltaXZ = Vector3.new(edgePosition.X - hrp.Position.X, 0, edgePosition.Z - hrp.Position.Z)
+		local distXZ = deltaXZ.Magnitude
+		local accepted = false
+
+		if distXZ > 0.05 and distXZ <= maxDist then
+			local forwardDist = deltaXZ:Dot(lookXZ)
+			if forwardDist > 0.01 then
+				accepted = true
+
+				local lateral = (deltaXZ - lookXZ * forwardDist).Magnitude
+				if forwardDist < bestForwardDist - 0.05
+					or (math.abs(forwardDist - bestForwardDist) <= 0.05 and lateral < bestLateralDist)
+				then
+					bestData = built
+					bestForwardDist = forwardDist
+					bestLateralDist = lateral
+				end
+			end
+		end
+
+		table.insert(candidatePoints, {
+			Position = edgePosition,
+			Accepted = accepted,
+		})
+	end
+
+	local debugData = {
+		QueryBoxCFrame = queryCFrame,
+		QueryBoxSize = querySize,
+		CandidatePoints = candidatePoints,
+	}
+
+	return bestData, debugData
+end
+
+-- ══════════════════════════════════════
+-- Classificar ação do pulo
+-- ══════════════════════════════════════
+
+local function classificarAcaoDePulo(bordaY, hrpY, torsoProbe, legProbe, config)
 	local yTopoTorso = hrpY + config.TopoTorsoOffset
-	local yBaseTorso = hrpY + config.BaseTorsoOffset
 
 	if bordaY > yTopoTorso then
 		return "Agarrar"
-	elseif bordaY >= yBaseTorso then
+	elseif torsoProbe and torsoProbe.Hit then
+		return "Agarrar"
+	elseif legProbe and legProbe.Hit then
 		return "VaultMedio"
 	else
 		return "VaultBaixo"
@@ -718,41 +579,103 @@ function Analisador.CheckParkour(character, config)
 	end
 
 	local look = hrp.CFrame.LookVector
-	local rayParams = Utilidades.createRaycastParamsForCharacter(character)
+	local lookXZ = getHorizontalUnit(look)
+	if not lookXZ then
+		return {
+			Aprovado = false,
+			Reason = "NoHorizontalLook",
+		}
+	end
 
-	-- 1) Varredura vertical: achar superfície
-	local castData = Analisador.FindBestForwardHit(character, finalConfig)
-	if not castData then
+	local rayParams = Utilidades.createRaycastParamsForCharacter(character)
+	Debug.Verbose("═══ CheckParkour (Box+XZ) ═══")
+	Debug.Verbose("  HRP:", hrp.Position, "| Floor:", humanoid.FloorMaterial)
+
+	-- 1) Busca por bloco frontal: achar melhor borda candidata
+	local edgeData, blockDebug = findForwardEdgeInBox(character, hrp, lookXZ, finalConfig)
+	if not edgeData then
+		Debug.Verbose(
+			"  RESULTADO: NoForwardHit | candidates:",
+			blockDebug and #blockDebug.CandidatePoints or 0,
+			"| boxCenter:",
+			blockDebug and blockDebug.QueryBoxCFrame and blockDebug.QueryBoxCFrame.Position or "nil"
+		)
 		return {
 			Aprovado = false,
 			Reason = "NoForwardHit",
+			ForwardQueryBoxCFrame = blockDebug and blockDebug.QueryBoxCFrame or nil,
+			ForwardQueryBoxSize = blockDebug and blockDebug.QueryBoxSize or nil,
+			ForwardCandidatePoints = blockDebug and blockDebug.CandidatePoints or nil,
 		}
 	end
 
 	-- Tag check
-	if Utilidades.hasTagDeep(castData.Part, Configs.Tags.NAO_AGARRAVEL) then
+	if Utilidades.hasTagDeep(edgeData.Part, Configs.Tags.NAO_AGARRAVEL) then
 		return {
 			Aprovado = false,
 			Reason = "TaggedNaoAgarravel",
-			Part = castData.Part,
-			RayDebug = castData.RayDebug,
+			Part = edgeData.Part,
+			ForwardQueryBoxCFrame = blockDebug and blockDebug.QueryBoxCFrame or nil,
+			ForwardQueryBoxSize = blockDebug and blockDebug.QueryBoxSize or nil,
+			ForwardCandidatePoints = blockDebug and blockDebug.CandidatePoints or nil,
 		}
 	end
 
 	-- 2) Edge detection
-	local data = buildResultFromCast(castData)
-	addEdgeInfo(data, "Top")
-	data.LookVector = look
+	local data = edgeData
+	data.EdgePosition = data.TopEdgePosition
+	data.Mode = "Top"
+	-- Na detecção por caixa não usamos ray frontal primário.
+	-- Limpa campos legados para evitar qualquer dependência acidental de Origin/HitPosition.
+	data.Origin = nil
+	data.HitPosition = nil
+	data.LookVector = lookXZ
 	data.HrpPosition = hrp.Position
+	data.ForwardQueryBoxCFrame = blockDebug and blockDebug.QueryBoxCFrame or nil
+	data.ForwardQueryBoxSize = blockDebug and blockDebug.QueryBoxSize or nil
+	data.ForwardCandidatePoints = blockDebug and blockDebug.CandidatePoints or nil
 
-	-- 3) Rays extras (torso + perna) para debug e reforço
-	data.TorsoRayDebug = castExtraRay(hrp, look, finalConfig.TorsoRayOffset, finalConfig.RayDistance, rayParams)
-	data.LegRayDebug = castExtraRay(hrp, look, finalConfig.PernaRayOffset, finalConfig.RayDistance, rayParams)
+	-- 3) Rays XZ (torso + perna) na direção da borda encontrada
+	data.TorsoRayDebug = castRayToEdgeXZ(
+		hrp.Position,
+		data.EdgePosition,
+		finalConfig.TorsoRayOffset,
+		finalConfig.ClassificationRayDistance or finalConfig.RayDistance,
+		finalConfig.ClassificationRayExtraDistance,
+		rayParams,
+		finalConfig
+	)
+	data.LegRayDebug = castRayToEdgeXZ(
+		hrp.Position,
+		data.EdgePosition,
+		finalConfig.PernaRayOffset,
+		finalConfig.ClassificationRayDistance or finalConfig.RayDistance,
+		finalConfig.ClassificationRayExtraDistance,
+		rayParams,
+		finalConfig
+	)
 
-	-- 4) Classificar altura
+	-- 4) Classificar ação
 	local bordaReal = data.EdgePosition
-	local acao = classificarAltura(bordaReal.Y, hrp.Position.Y, finalConfig)
+	local acao = classificarAcaoDePulo(
+		bordaReal.Y,
+		hrp.Position.Y,
+		data.TorsoRayDebug,
+		data.LegRayDebug,
+		finalConfig
+	)
 	data.Acao = acao
+
+	Debug.Verbose(
+		"  Classificacao:",
+		acao,
+		"| torsoHit:",
+		data.TorsoRayDebug.Hit,
+		"| legHit:",
+		data.LegRayDebug.Hit,
+		"| edge:",
+		bordaReal
+	)
 
 	-- Calcular distancia real (3D) da borda até o HRP do player
 	local distReal = (bordaReal - hrp.Position).Magnitude
@@ -767,12 +690,14 @@ function Analisador.CheckParkour(character, config)
 		if humanoid.FloorMaterial ~= Enum.Material.Air then
 			data.Aprovado = false
 			data.Reason = "CantGrabOnGround"
+			Debug.Verbose("  RESULTADO:", data.Reason)
 			return data
 		end
 
 		if distReal > finalConfig.MaxGrabDistance then
 			data.Aprovado = false
 			data.Reason = "TooFarToGrab"
+			Debug.Verbose("  RESULTADO:", data.Reason, "| dist:", distReal)
 			return data
 		end
 
@@ -785,6 +710,7 @@ function Analisador.CheckParkour(character, config)
 			data.Aprovado = false
 			data.Reason = "NoTopClearance"
 			data.TopBlocker = topBlocker
+			Debug.Verbose("  RESULTADO:", data.Reason, "| blocker:", topBlocker and topBlocker.Name or "nil")
 			return data
 		end
 
@@ -797,6 +723,7 @@ function Analisador.CheckParkour(character, config)
 			data.Aprovado = false
 			data.Reason = "NoFrontClearance"
 			data.FrontBlocker = frontBlocker
+			Debug.Verbose("  RESULTADO:", data.Reason, "| blocker:", frontBlocker and frontBlocker.Name or "nil")
 			return data
 		end
 
@@ -807,6 +734,7 @@ function Analisador.CheckParkour(character, config)
 		data.IdleMode = idleMode
 		data.LegHit = legHit
 		data.LegProbeRaysDebug = legProbeRaysDebug
+		Debug.Verbose("  RESULTADO: Ok | Acao=Agarrar | Idle:", idleMode)
 
 		return data
 	end
@@ -818,6 +746,7 @@ function Analisador.CheckParkour(character, config)
 		if distReal > finalConfig.MaxVaultDistance then
 			data.Aprovado = false
 			data.Reason = "TooFarToVault"
+			Debug.Verbose("  RESULTADO:", data.Reason, "| dist:", distReal)
 			return data
 		end
 
@@ -832,12 +761,14 @@ function Analisador.CheckParkour(character, config)
 			-- Fallback para Agarrar em caso de VaultMedio no ar
 			if acao == "VaultMedio" and humanoid.FloorMaterial == Enum.Material.Air then
 				data.Acao = "Agarrar"
+				Debug.Verbose("  Fallback: VaultMedio -> Agarrar (NoVaultClearance)")
 				return tentarAgarrar()
 			end
 
 			data.Aprovado = false
 			data.Reason = "NoVaultClearance"
 			data.VaultBlocker = vaultBlocker
+			Debug.Verbose("  RESULTADO:", data.Reason, "| blocker:", vaultBlocker and vaultBlocker.Name or "nil")
 			return data
 		end
 
@@ -851,17 +782,20 @@ function Analisador.CheckParkour(character, config)
 			-- Fallback para Agarrar em caso de VaultMedio no ar
 			if acao == "VaultMedio" and humanoid.FloorMaterial == Enum.Material.Air then
 				data.Acao = "Agarrar"
+				Debug.Verbose("  Fallback: VaultMedio -> Agarrar (NoVaultEdgeClearance)")
 				return tentarAgarrar()
 			end
 
 			data.Aprovado = false
 			data.Reason = "NoVaultEdgeClearance"
 			data.VaultEdgeBlocker = edgeBlocker
+			Debug.Verbose("  RESULTADO:", data.Reason, "| blocker:", edgeBlocker and edgeBlocker.Name or "nil")
 			return data
 		end
 
 		data.Aprovado = true
 		data.Reason = "Ok"
+		Debug.Verbose("  RESULTADO: Ok | Acao:", data.Acao)
 	end
 
 	return data
@@ -910,7 +844,6 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 	local candidates = table.create(#parts)
 	local minVerticalDelta = finalConfig.SubirMinVerticalDelta or 0.5
 	local samplePointBase = currentEdgePos + currentNormal.Unit * probeOffset
-	local rayParams = Utilidades.createRaycastParamsForCharacter(character)
 	local maxEscalarVerticalDistance = finalConfig.EscalarMaxVerticalDistance or finalConfig.SubirMaxAltura or 6.0
 
 	for _, part in ipairs(parts) do
@@ -1002,7 +935,6 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 				cand.Normal,
 				cand.Part,
 				finalConfig,
-				rayParams,
 				"SubirCandidate"
 			)
 
@@ -2085,9 +2017,82 @@ end
 
 function Analisador.CheckEscalar(character, currentEdgePos, currentNormal, currentPart, config)
 	local finalConfig = Configs.mergeConfig(config)
-	local rayParams = Utilidades.createRaycastParamsForCharacter(character)
-	return checkEscalarAtEdge(character, currentEdgePos, currentNormal, currentPart, finalConfig, rayParams, "CurrentGrab")
+	return checkEscalarAtEdge(character, currentEdgePos, currentNormal, currentPart, finalConfig, "CurrentGrab")
+end
+
+-- ══════════════════════════════════════
+-- Verificações extraídas do init.client
+-- ══════════════════════════════════════
+
+--- Verifica se o jogador está correndo (necessário para Vault).
+--- Extraído de init.client (isRunningForVault).
+function Analisador.IsRunningForVault(humanoid, ClientBridgeRef)
+	if ClientBridgeRef and ClientBridgeRef.LerStatusLocal then
+		local estadoMov = ClientBridgeRef.LerStatusLocal("estadoMov")
+		if type(estadoMov) == "string" and estadoMov == "Correndo" then
+			return true
+		end
+
+		local correndoOn = ClientBridgeRef.LerStatusLocal("CorrendoOn")
+		if type(correndoOn) == "boolean" then
+			return correndoOn
+		end
+	end
+
+	-- Fallback simples caso StatusLocal ainda não esteja disponível no primeiro frame.
+	return humanoid.MoveDirection.Magnitude > 0.1 and humanoid.WalkSpeed > 18
+end
+
+--- Tenta fazer fallback de Agarrar quando o jogador não está correndo.
+--- Extraído de init.client (tentarFallbackAgarrarSemCorrida).
+function Analisador.TentarFallbackAgarrar(character, parkourResult, config)
+	if not parkourResult or not parkourResult.EdgePosition or not parkourResult.Normal then
+		return nil
+	end
+
+	local hrp = Utilidades.getCharacterParts(character)
+	if not hrp then
+		return nil
+	end
+
+	local finalConfig = Configs.mergeConfig(config)
+	local fallback = table.clone(parkourResult)
+	fallback.Character = character
+	fallback.Acao = "Agarrar"
+	fallback.Aprovado = false
+
+	local distReal = (fallback.EdgePosition - hrp.Position).Magnitude
+	if distReal > finalConfig.MaxGrabDistance then
+		fallback.Reason = "TooFarToGrab"
+		return fallback
+	end
+
+	local hasTopClearance, topBlocker, topCf, topSize = Analisador.HasTopClearance(fallback, finalConfig)
+	fallback.TopClearanceCFrame = topCf
+	fallback.TopClearanceSize = topSize
+	if not hasTopClearance then
+		fallback.Reason = "NoTopClearance"
+		fallback.TopBlocker = topBlocker
+		return fallback
+	end
+
+	local hasFrontClearance, frontBlocker, frontCf, frontSize = Analisador.HasFrontClearance(fallback, finalConfig)
+	fallback.FrontClearanceCFrame = frontCf
+	fallback.FrontClearanceSize = frontSize
+	if not hasFrontClearance then
+		fallback.Reason = "NoFrontClearance"
+		fallback.FrontBlocker = frontBlocker
+		return fallback
+	end
+
+	local idleMode, legHit, legProbeRaysDebug = Analisador.ResolveIdleMode(fallback, finalConfig)
+	fallback.IdleMode = idleMode
+	fallback.LegHit = legHit
+	fallback.LegProbeRaysDebug = legProbeRaysDebug
+	fallback.Reason = "OkFallbackNoRun"
+	fallback.Aprovado = true
+
+	return fallback
 end
 
 return Analisador
-

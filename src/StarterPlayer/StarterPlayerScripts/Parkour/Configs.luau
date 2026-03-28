@@ -5,8 +5,8 @@ local MERGED_SENTINEL = "__ParkourMergedConfig"
 -- Flags de Debug
 -- ══════════════════════════════════════
 
-Configs.DebugEnabled = false -- visuais (linhas, caixas, pontos)
-Configs.DebugVerbose = false -- prints detalhados no console
+Configs.DebugEnabled = true -- visuais (linhas, caixas, pontos)
+Configs.DebugVerbose = true -- prints detalhados no console
 Configs.DebugLifetime = 1.5
 Configs.DebugFolderName = "ParkourDebugFolder"
 
@@ -25,14 +25,16 @@ Configs.Tags = {
 
 Configs.DefaultConfig = {
 	RayDistance = 8,
+	ClassificationRayDistance = 8, -- alcance dos rays XZ usados para classificar vault baixo/medio
+	ClassificationRayExtraDistance = 0.75, -- margem extra para o ray passar da borda detectada
 
-	-- Base no HumanoidRootPart
-	HeadHeightOffset = 0,
-
-	-- Varredura vertical de cima para baixo
-	VerticalOffsets = { 3, 2.5, 2, 1.5, 1, 0.5, 0, -0.5, -1, -1.5, -2 },
-
-	EdgeMode = "Top", -- "Top" ou "Bottom"
+	-- Busca primária de obstáculo por bloco (caixa única à frente)
+	ForwardObstacleBoxSize = Vector3.new(4.5, 5.5, 4.0), -- X=largura, Y=altura, Z=profundidade inicial (será ajustada por alcance)
+	ForwardObstacleBoxNearOffset = 0.05, -- distância mínima à frente do HRP para começar a caixa
+	ForwardObstacleBoxDistance = 5.25, -- alcance máximo frontal da caixa a partir do HRP
+	ForwardObstacleBoxUpOffset = 0.8, -- deslocamento vertical do centro da caixa
+	ForwardObstacleSampleYOffset = 0.0, -- altura usada para amostrar a face mais próxima na part candidata
+	ForwardObstacleMaxDistance = 9.0, -- limite de distância XZ para aceitar a borda candidata
 
 	-- Clearance no topo (espaço acima da borda — para AGARRAR)
 	TopClearanceSize = Vector3.new(2.2, 0.4, 0.5),
@@ -40,8 +42,8 @@ Configs.DefaultConfig = {
 	TopClearanceNormalOffset = 0.1,
 
 	-- Clearance frontal (espaço na frente da borda — para AGARRAR)
-	FrontClearanceSize = Vector3.new(2.2, 3.0, 1.6),
-	FrontClearanceUpOffset = -1.2,
+	FrontClearanceSize = Vector3.new(2.2, 5.0, 1.6),
+	FrontClearanceUpOffset = -2.4,
 	FrontClearanceNormalOffset = 0.9,
 
 	-- Probe de pernas (verificar suporte abaixo)
@@ -52,15 +54,17 @@ Configs.DefaultConfig = {
 	LegSupportBoxNormalOffset = -0.1, -- quanto aproxima da parede no teste de suporte
 
 	-- ═══ Offsets do corpo (relativos ao HRP.Y) ═══
-	TopoTorsoOffset = 1.2, -- HRP.Y + offset = linha do topo do torso
-	BaseTorsoOffset = -0.5, -- HRP.Y + offset = linha da base do torso
-	PernaRayOffset = -1.5, -- altura do ray de perna
+	TopoTorsoOffset = 1.5, -- HRP.Y + offset = linha do topo do torso
+	PernaRayOffset = -0.5, -- altura do ray de perna
 	TorsoRayOffset = 1.0, -- altura do ray de torso
 
+	-- ═══ Vault: clearance na borda (espaço pra passar) ═══
+	VaultClearanceSize = Vector3.new(1.9, 4.0, 2.0),
+	VaultEdgeClearanceUpOffset = 2.2, -- studs acima da borda para o CENTRO da caixa de edge clearance
+
 	-- ═══ Vault: clearance no destino (caixa verde) ═══
-	VaultClearanceSize = Vector3.new(1.9, 5.0, 2.0),
 	VaultClearanceForwardOffset = 0.9, -- studs pra frente além da borda
-	VaultClearanceUpOffset = 2.5, -- studs acima da borda
+	VaultClearanceUpOffset = 2.5, -- studs acima da borda (only affects destination check)
 
 	-- ═══ Vault: offset de movimento (posição ANTES do impulso) ═══
 	-- O player é movido APENAS para cima antes do impulso
@@ -117,7 +121,7 @@ Configs.DefaultConfig = {
 	DescerProbeNormalOffset = 2.0, -- afastamento inicial da parede para posicionar a busca
 	DescerMinVerticalDelta = 0.5, -- diferença mínima em Y para considerar uma borda abaixo
 	DescerMaxAltura = 10.0, -- dist. máx. vertical para "Descer" (só S)
-	DescerTransitionTime = 0.2, -- tempo (s) de transição ao descer
+	DescerTransitionTime = 0.3, -- tempo (s) de transição ao descer
 
 	-- ═══ Lateral: deslocamento agarrado direita/esquerda (area query) ═══
 	LateralAreaSize = Vector3.new(12.0, 7, 6.0), -- volume de busca por direção (uma única caixa espelhada)
@@ -138,7 +142,7 @@ Configs.DefaultConfig = {
 	LateralExternalCornerMinDot = -0.35, -- dot mínimo para aceitar curva externa (normal mais diferente da atual)
 	LateralExternalCornerMaxProfundidade = 8.0, -- profundidade máxima permitida para curva externa
 	LateralPathClearanceSize = Vector3.new(1.8, 3.8, 1.4), -- caixa de validação do caminho lateral
-	LateralPathSideDistance = 3.2, -- deslocamento lateral da caixa única de validação (não usa mais sweep até o destino)
+	LateralPathSideDistance = 2.2, -- deslocamento lateral da caixa única de validação (não usa mais sweep até o destino)
 	LateralMinSideDistance = 0.1, -- distância lateral mínima para aceitar candidato na direção
 	LateralSaltoMinSideDistance = 1.0, -- distância lateral mínima exclusiva para aceitar LateralSalto (evita salto quase no mesmo alinhamento lateral)
 	LateralReverseTolerance = 0.05, -- tolerância para não aceitar candidato no sentido oposto ao input lateral
@@ -160,14 +164,15 @@ Configs.DefaultConfig = {
 	LateralSaltoPreferTimeout = 0.77, -- segurando lateral nesse estado, após esse tempo executa curva interna automaticamente
 
 	-- ═══ Escalar: subir em cima da plataforma atual ═══
-	EscalarMaxVerticalDistance = 6.0, -- distância vertical máxima para fallback de escalar em candidates do Subir
+	EscalarMaxVerticalDistance = 6.0,
 	EscalarForwardOffset = 1.2, -- studs pra frente da borda ao escalar (posição final)
 	EscalarUpOffset = 2.5, -- studs acima da borda (posição final)
-	EscalarTransitionTime = 0.3, -- duração (s) da escalada
-	EscalarVerticalFirstRatio = 0.5, -- proporção do tempo de Escalar usada para fase vertical
-	EscalarFloorRayDistance = 5, -- distância do ray pra baixo para verificar chão
-	EscalarFloorProbeUpOffset = 1.1, -- altura inicial dos rays de piso de escalar
-	EscalarFloorProbeOffsets = { 0.0, 0.3, 0.7 }, -- offsets para frente testados no floor check (qualquer hit aprova)
+	EscalarTransitionTime = 0.3,
+	EscalarVerticalFirstRatio = 0.5,
+	-- Caixa de clearance do Escalar: verifica se há espaço para o player subir por cima
+	EscalarClearanceSize = Vector3.new(1.9, 4.0, 2.0), -- largura x altura x profundidade
+	EscalarClearanceUpOffset = 2.5, -- centro da caixa: studs acima da borda (onde o player vai ficar)
+	EscalarClearanceForwardOffset = 1.2, -- centro da caixa: studs para dentro da plataforma
 
 	-- ═══ PuloTras: salto para trás estando agarrado ═══
 	PuloTrasImpulse = 30, -- magnitude do impulso para trás (studs/s)
@@ -180,19 +185,19 @@ Configs.DefaultConfig = {
 	-- ═══ Cooldown dinâmico por ação ═══
 	ActionCooldowns = {
 		Lateral = 1.0,
-		LateralSalto = 2.0,
+		LateralSalto = 1.0,
 		Subir = 1.0,
 		SubirSalto = 2.0,
 		Descer = 0.5,
 	},
 	MinimumCooldowns = {
-		Lateral = 0.5,
-		LateralSalto = 2.0,
+		Lateral = 0.6,
+		LateralSalto = 1.0,
 		Subir = 0.5,
 		SubirSalto = 2.0,
 		Descer = 0.25,
 	},
-	CooldownStreakReduction = 0.1, -- redução por repetição válida
+	CooldownStreakReduction = 0.05, -- redução por repetição válida
 	CooldownRepeatWindow = 1.5, -- janela para manter streak com toque rápido
 	CooldownStreakMaxUses = 10, -- limite de contagem para bater no mínimo
 	CooldownBlockedLogInterval = 0.25, -- intervalo mínimo entre logs de bloqueio por ação/direção
@@ -216,10 +221,6 @@ function Configs.mergeConfig(config)
 	if config then
 		for key, value in pairs(config) do
 			final[key] = value
-		end
-
-		if config.VerticalOffsets == nil and config.LateralOffsets ~= nil then
-			final.VerticalOffsets = config.LateralOffsets
 		end
 	end
 

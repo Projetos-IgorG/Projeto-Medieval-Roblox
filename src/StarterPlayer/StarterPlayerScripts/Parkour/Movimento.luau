@@ -100,6 +100,14 @@ local function setGrabData(edgePosition, normal, part, idleMode, lateralState, c
 	grabData.LateralState = lateralState
 	grabData.Config = config
 
+	if part and typeof(part) == "Instance" and part:IsA("BasePart") then
+		grabData.LocalEdgePosition = part.CFrame:PointToObjectSpace(edgePosition)
+		grabData.LocalNormal = part.CFrame:VectorToObjectSpace(normal)
+	else
+		grabData.LocalEdgePosition = nil
+		grabData.LocalNormal = nil
+	end
+
 	return grabData
 end
 
@@ -109,8 +117,15 @@ local function getValidGrabData()
 		return nil
 	end
 
-	if grabData.Part and not grabData.Part.Parent then
-		grabData.Part = nil
+	if grabData.Part then
+		if not grabData.Part.Parent then
+			grabData.Part = nil
+			grabData.LocalEdgePosition = nil
+			grabData.LocalNormal = nil
+		elseif grabData.LocalEdgePosition and grabData.LocalNormal and typeof(grabData.Part) == "Instance" and grabData.Part:IsA("BasePart") then
+			grabData.EdgePosition = grabData.Part.CFrame:PointToWorldSpace(grabData.LocalEdgePosition)
+			grabData.Normal = grabData.Part.CFrame:VectorToWorldSpace(grabData.LocalNormal)
+		end
 	end
 
 	return grabData
@@ -392,6 +407,32 @@ local function criarLinearVelocity(hrp, velocity, duracao)
 	return lv
 end
 
+--- Cria um Attachment na part agarrada na posição world indicada.
+--- O Attachment se move junto com a part (local space).
+local function criarGrabAttachment(part, worldPosition)
+	local attachment = Instance.new("Attachment")
+	attachment.CFrame = part.CFrame:ToObjectSpace(CFrame.new(worldPosition))
+	attachment.Parent = part
+	table.insert(estado.ActiveConstraints, attachment)
+	return attachment
+end
+
+--- AlignPosition TwoAttachment: Attachment0 (HRP) segue Attachment1 (na part).
+--- Se a part mover, o player acompanha. Não afeta rotação.
+local function criarAlignPositionAncorado(hrp, targetAttachment, responsiveness)
+	local align = Instance.new("AlignPosition")
+	align.Mode = Enum.PositionAlignmentMode.TwoAttachment
+	align.Attachment0 = hrp:FindFirstChild("RootAttachment")
+		or hrp:FindFirstChildOfClass("Attachment")
+	align.Attachment1 = targetAttachment
+	align.MaxForce = 100000
+	align.MaxVelocity = math.huge
+	align.Responsiveness = responsiveness or 200
+	align.Parent = hrp
+	table.insert(estado.ActiveConstraints, align)
+	return align
+end
+
 -- ══════════════════════════════════════
 -- Conectar cleanup no Died
 -- ══════════════════════════════════════
@@ -450,7 +491,14 @@ local function calcularPosicaoGrab(edgePosition, normal, config, idleMode)
 		+ Vector3.yAxis * verticalOffset
 		+ normal.Unit * surfaceOffset
 
-	local lookTarget = posicao - normal.Unit
+	-- Flatten da normal: projetar no plano XZ para nunca inclinar o player (só yaw)
+	local flatNormal = Vector3.new(normal.X, 0, normal.Z)
+	if flatNormal.Magnitude < 0.01 then
+		flatNormal = Vector3.new(0, 0, -1)
+	end
+	flatNormal = flatNormal.Unit
+
+	local lookTarget = posicao - flatNormal
 	local orientacao = CFrame.lookAt(posicao, lookTarget, Vector3.yAxis)
 
 	return posicao, orientacao
@@ -515,28 +563,26 @@ local function sincronizarGrabComIdle(idleMode: string?): boolean
 	applyOccludedPartVisual(grabData.Part, finalConfig)
 
 	local posAlvo, cfAlvo = calcularPosicaoGrab(grabData.EdgePosition, grabData.Normal, finalConfig, idleFinal)
-	local atualizouPos = false
-	local atualizouOri = false
 
-	for _, constraint in ipairs(estado.ActiveConstraints) do
-		if constraint:IsA("AlignPosition") then
-			constraint.Position = posAlvo
-			atualizouPos = true
-		elseif constraint:IsA("AlignOrientation") then
-			constraint.CFrame = cfAlvo
-			atualizouOri = true
-		end
-	end
+	-- Destruir constraints antigos antes de recriar
+	destroyConstraints()
 
-	if not atualizouPos then
+	-- Posicionar diretamente via CFrame e criar weld para acompanhar parte
+	hrp.CFrame = CFrame.new(posAlvo) * cfAlvo.Rotation
+	zeroAssemblyVelocity(hrp)
+
+	-- AlignOrientation mantém o player reto (com normal flattenada)
+	criarAlignOrientation(hrp, cfAlvo, 40)
+
+	-- AlignPosition TwoAttachment para acompanhar partes móveis
+	local grabPart = grabData.Part
+	if grabPart and grabPart.Parent then
+		local grabAtt = criarGrabAttachment(grabPart, posAlvo)
+		criarAlignPositionAncorado(hrp, grabAtt, 200)
+	else
 		criarAlignPosition(hrp, posAlvo, 40)
 	end
 
-	if not atualizouOri then
-		criarAlignOrientation(hrp, cfAlvo, 40)
-	end
-
-	zeroAssemblyVelocity(hrp)
 	AnimacaoParkour.TocarIdle(idleFinal)
 
 	return true
@@ -624,6 +670,16 @@ local function executarAgarrar(result, config)
 		if alignPos.Parent and alignOri.Parent and isCharacterAlive(character) then
 			estado.Agarrado = true
 			estado.EmAcao = false
+
+			-- Substituir AlignPosition OneAttachment por TwoAttachment para acompanhar partes móveis
+			local grabPart = estado.GrabData and estado.GrabData.Part
+			if grabPart and grabPart.Parent then
+				local posAlvoGrab = alignPos.Position
+				removeConstraint(alignPos)
+				local grabAtt = criarGrabAttachment(grabPart, posAlvoGrab)
+				criarAlignPositionAncorado(hrp, grabAtt, 200)
+			end
+
 			if ClientBridge.EntrarParkour then
 				ClientBridge.EntrarParkour()
 			end
@@ -1936,7 +1992,9 @@ function Movimento.ReavaliarIdleAgarrado()
 	end
 
 	local mudouIdle = idleNovo ~= grabData.IdleMode
-	sincronizarGrabComIdle(idleNovo)
+	if mudouIdle then
+		sincronizarGrabComIdle(idleNovo)
+	end
 	return mudouIdle
 end
 

@@ -177,6 +177,21 @@ function Debug.DrawDebug(data)
 		return
 	end
 
+	-- Caixa primária de detecção frontal por bloco
+	if data.ForwardQueryBoxCFrame and data.ForwardQueryBoxSize then
+		Debug.DrawBox(data.ForwardQueryBoxCFrame, data.ForwardQueryBoxSize, Color3.fromRGB(80, 200, 255))
+	end
+
+	if data.ForwardCandidatePoints then
+		for _, point in ipairs(data.ForwardCandidatePoints) do
+			Debug.DrawPoint(
+				point.Position,
+				point.Accepted and Color3.fromRGB(60, 255, 120) or Color3.fromRGB(255, 120, 120),
+				Vector3.new(0.2, 0.2, 0.2)
+			)
+		end
+	end
+
 	-- Rays da varredura vertical
 	if data.RayDebug then
 		for _, rayInfo in ipairs(data.RayDebug) do
@@ -186,7 +201,7 @@ function Debug.DrawDebug(data)
 				rayInfo.Hit and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(0, 120, 0)
 			)
 		end
-	elseif data.Origin and data.HitPosition then
+	elseif data.Origin and data.HitPosition and not data.ForwardQueryBoxCFrame then
 		Debug.DrawRay(data.Origin, data.HitPosition, Color3.fromRGB(0, 255, 0))
 	end
 

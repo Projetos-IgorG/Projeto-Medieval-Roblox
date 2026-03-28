@@ -1,8 +1,10 @@
 --[[
-	ParkourTesting - init.client.luau
+	Parkour - init.client.luau
 	Script principal do sistema de parkour.
+	Responsável APENAS por captura de input e gerenciamento de estado.
+	Toda lógica de verificação, análise e utilidades está nos módulos dedicados.
 
-	VERSÂO: 1.6v
+	VERSÃO: 2.0v
 
 	Keybinds (baseado em intenção direcional, não teclas específicas):
 	- No chão/ar + Jump: VaultBaixo / VaultMédio / Agarrar
@@ -16,7 +18,6 @@
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
 
 local player = Players.LocalPlayer
 local Analisador = require(script:WaitForChild("Analisador"))
@@ -24,57 +25,39 @@ local Movimento = require(script:WaitForChild("Movimento"))
 local Configs = require(script:WaitForChild("Configs"))
 local Debug = require(script:WaitForChild("Debug"))
 local CooldownManager = require(script:WaitForChild("CooldownManager"))
+local Utilidades = require(script:WaitForChild("Utilidades"))
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Modulos = ReplicatedStorage:WaitForChild("Modulos")
 local ClientBridge = require(Modulos:WaitForChild("Core"):WaitForChild("ClientBridge"))
-local AnimacaoParkour = require(
-	Modulos:WaitForChild("Cliente"):WaitForChild("Visual"):WaitForChild("AnimacaoParkour")
-)
+local AnimacaoParkour = require(Modulos:WaitForChild("Cliente"):WaitForChild("Visual"):WaitForChild("AnimacaoParkour"))
 
 -- ══════════════════════════════════════
--- Estado de conexões (cleanup no respawn)
+-- Estado local (conexões, cache, timers)
 -- ══════════════════════════════════════
 
 local connections: { RBXScriptConnection } = {}
-local JUMP_COOLDOWN = 0.1 -- segundos entre cada verificação de parkour
+local JUMP_COOLDOWN = 0.15
 local lastJumpTime = 0
 local runtimeConfig = Configs.mergeConfig(nil)
 local cooldownBlockedLogAt = {} :: { [string]: number }
 local lastIdleRecheckAt = 0
 local currentHrp: BasePart? = nil
 
-local function dbgPrint(...)
-	Debug.Verbose(...)
-end
-
--- Estado de SubirSalto pendente (quando W detecta que precisa de W+Pulo)
+-- Pendentes de confirmação (SubirSalto / LateralSalto)
 local subirSaltoPendente = nil -- { Result, ExpiresAt, SourceEdgePosition }
 local lateralSaltoPendente = nil -- { Direcao, Target, CurveFallbackTarget, CreatedAt, SwitchToCurveAt }
 
--- Estado de intenção para descer (hold em S antes de tentar descer)
-local descerHoldStart = 0 -- timestamp de quando começou a segurar S
-local descerHolding = false -- está segurando S?
-local descerSemOpcaoStart = 0 -- início da janela sem opção válida para poder soltar
+-- Intenção de descer (hold em S)
+local descerHoldStart = 0
+local descerHolding = false
+local descerSemOpcaoStart = 0
 
-local function canUseActionCooldown(actionKey, direction, now)
-	if CooldownManager.CanPerformAction(actionKey, direction, now) then
-		return true
-	end
+-- ══════════════════════════════════════
+-- Helpers locais (apenas state management)
+-- ══════════════════════════════════════
 
-	if Configs.DebugVerbose then
-		local directionLabel = direction or "-"
-		local logKey = actionKey .. "/" .. directionLabel
-		local interval = runtimeConfig.CooldownBlockedLogInterval or 0.25
-		local lastLogAt = cooldownBlockedLogAt[logKey] or 0
-
-		if now - lastLogAt >= interval then
-			local remaining = CooldownManager.GetRemaining(actionKey, now)
-			Debug.Verbose(string.format("[Parkour] Cooldown bloqueado: %s | restante %.2fs", logKey, remaining))
-			cooldownBlockedLogAt[logKey] = now
-		end
-	end
-
-	return false
+local function dbgPrint(...)
+	Debug.Verbose(...)
 end
 
 local function limparConexoes()
@@ -97,6 +80,13 @@ local function clearSubirSaltoPendente(cancelarPreview)
 	subirSaltoPendente = nil
 end
 
+local function clearLateralSaltoPendente(cancelarPreview)
+	if cancelarPreview and lateralSaltoPendente then
+		Movimento.CancelarPreviewAcao(runtimeConfig)
+	end
+	lateralSaltoPendente = nil
+end
+
 local function resolveCurrentHrp(character: Model): BasePart?
 	if currentHrp and currentHrp.Parent == character then
 		return currentHrp
@@ -112,67 +102,9 @@ local function resolveCurrentHrp(character: Model): BasePart?
 	return nil
 end
 
-local function getActionFailCooldown(actionKey: string, specificCooldown: number?, minimumFallback: number): number
-	if specificCooldown and specificCooldown > 0 then
-		return specificCooldown
-	end
-
-	local minimums = runtimeConfig.MinimumCooldowns
-	if type(minimums) == "table" then
-		local minFromAction = minimums[actionKey]
-		if type(minFromAction) == "number" and minFromAction > 0 then
-			return minFromAction
-		end
-	end
-
-	return minimumFallback
-end
-
-local function isRunningForVault(humanoid: Humanoid): boolean
-	if ClientBridge.LerStatusLocal then
-		local estadoMov = ClientBridge.LerStatusLocal("estadoMov")
-		if type(estadoMov) == "string" and estadoMov == "Correndo" then
-			return true
-		end
-
-		local correndoOn = ClientBridge.LerStatusLocal("CorrendoOn")
-		if type(correndoOn) == "boolean" then
-			return correndoOn
-		end
-	end
-
-	-- Fallback simples caso StatusLocal ainda não esteja disponível no primeiro frame.
-	return humanoid.MoveDirection.Magnitude > 0.1 and humanoid.WalkSpeed > 18
-end
-
-local function drawClimbDebug(escalarResult, subirResult)
-	if not Configs.DebugEnabled then
-		return
-	end
-
-	Analisador.ClearDebug()
-	Debug.DrawClimbDebug(escalarResult, subirResult)
-end
-
-local function drawLateralDebug(lateralResult)
-	if not Configs.DebugEnabled then
-		return
-	end
-
-	if Configs.DebugEnabled then
-		Analisador.ClearDebug()
-	end
-	Debug.DrawLateralDebug(lateralResult)
-end
-
-local function drawDescerDebug(descerResult)
-	if not Configs.DebugEnabled then
-		return
-	end
-
-	Analisador.ClearDebug()
-	Debug.DrawDescerDebug(descerResult)
-end
+-- ══════════════════════════════════════
+-- Pendentes: SubirSalto / LateralSalto
+-- ══════════════════════════════════════
 
 local function setSubirSaltoPendente(subirResult)
 	if subirSaltoPendente then
@@ -190,13 +122,6 @@ local function setSubirSaltoPendente(subirResult)
 	}
 
 	return true
-end
-
-local function clearLateralSaltoPendente(cancelarPreview)
-	if cancelarPreview and lateralSaltoPendente then
-		Movimento.CancelarPreviewAcao(runtimeConfig)
-	end
-	lateralSaltoPendente = nil
 end
 
 local function setLateralSaltoPendente(direcao, target, curveFallbackTarget)
@@ -239,11 +164,10 @@ local function getSubirSaltoPendenteValido()
 	local now = os.clock()
 	if now > (subirSaltoPendente.ExpiresAt or 0) then
 		if AnimacaoParkour.EstaAcaoPausadaCongelada() then
-			-- Enquanto a pre-acao estiver congelada no marker, manter janela de confirmacao aberta.
 			subirSaltoPendente.ExpiresAt = now + (runtimeConfig.SubirSaltoConfirmWindow or 0.9)
 		else
-		clearSubirSaltoPendente(true)
-		return nil
+			clearSubirSaltoPendente(true)
+			return nil
 		end
 	end
 
@@ -261,92 +185,42 @@ local function getSubirSaltoPendenteValido()
 end
 
 -- ══════════════════════════════════════
--- Detectar intenção direcional (frente/trás)
--- Usa MoveDirection com base da camera no parkour agarrado
+-- Debug draw helpers (delegates puros)
 -- ══════════════════════════════════════
 
-local function getIntencaoDirecional(humanoid, hrp): string?
-	local moveDir = humanoid.MoveDirection
-	local deadzone = runtimeConfig.DirectionInputDeadzone or 0.2
-	if moveDir.Magnitude < deadzone then
-		return nil -- sem input direcional
+local function drawClimbDebug(escalarResult, subirResult)
+	if not Configs.DebugEnabled then
+		return
 	end
+	Analisador.ClearDebug()
+	Debug.DrawClimbDebug(escalarResult, subirResult)
+end
 
-	local moveFlat = Vector3.new(moveDir.X, 0, moveDir.Z)
-	if moveFlat.Magnitude < deadzone then
-		return nil -- sem input direcional
+local function drawLateralDebug(lateralResult)
+	if not Configs.DebugEnabled then
+		return
 	end
+	Analisador.ClearDebug()
+	Debug.DrawLateralDebug(lateralResult)
+end
 
-	local useCameraBasis = runtimeConfig.DirectionUseCameraBasis ~= false
-	local basisCFrame = hrp.CFrame
-	if useCameraBasis then
-		local currentCamera = Workspace.CurrentCamera
-		if currentCamera then
-			local camLookFlat = Vector3.new(currentCamera.CFrame.LookVector.X, 0, currentCamera.CFrame.LookVector.Z)
-			if camLookFlat.Magnitude > 0.001 then
-				basisCFrame = CFrame.lookAt(Vector3.zero, camLookFlat.Unit)
-			end
-		end
+local function drawDescerDebug(descerResult)
+	if not Configs.DebugEnabled then
+		return
 	end
-
-	local lookFlat = Vector3.new(basisCFrame.LookVector.X, 0, basisCFrame.LookVector.Z)
-	if lookFlat.Magnitude <= 0.001 then
-		lookFlat = Vector3.new(hrp.CFrame.LookVector.X, 0, hrp.CFrame.LookVector.Z)
-		if lookFlat.Magnitude <= 0.001 then
-			return nil
-		end
-	end
-	lookFlat = lookFlat.Unit
-
-	local rightFlat = Vector3.new(basisCFrame.RightVector.X, 0, basisCFrame.RightVector.Z)
-	if rightFlat.Magnitude <= 0.001 then
-		rightFlat = Vector3.new(hrp.CFrame.RightVector.X, 0, hrp.CFrame.RightVector.Z)
-		if rightFlat.Magnitude <= 0.001 then
-			return nil
-		end
-	end
-	rightFlat = rightFlat.Unit
-
-	moveFlat = moveFlat.Unit
-
-	local dotForward = lookFlat:Dot(moveFlat)
-	local dotRight = rightFlat:Dot(moveFlat)
-	local absForward = math.abs(dotForward)
-	local absRight = math.abs(dotRight)
-	local dominanceMargin = runtimeConfig.DirectionDominanceMargin or 0.12
-	local forwardThreshold = runtimeConfig.DirectionForwardDotThreshold or 0.6
-	local lateralThreshold = runtimeConfig.DirectionLateralDotThreshold or runtimeConfig.LateralInputDotThreshold or 0.6
-
-	if absForward >= forwardThreshold and absForward >= (absRight + dominanceMargin) then
-		if dotForward > 0 then
-			return "Frente"
-		end
-		return "Tras"
-	end
-
-	if absRight >= lateralThreshold and absRight >= (absForward + dominanceMargin) then
-		if dotRight >= 0 then
-			return "Direita"
-		end
-		return "Esquerda"
-	elseif dotRight >= lateralThreshold then
-		return "Direita"
-	elseif dotRight <= -lateralThreshold then
-		return "Esquerda"
-	end
-
-	return nil -- ambíguo
+	Analisador.ClearDebug()
+	Debug.DrawDescerDebug(descerResult)
 end
 
 -- ══════════════════════════════════════
--- Lógica de Jump quando AGARRADO
+-- Handler: Jump quando AGARRADO
 -- ══════════════════════════════════════
 
 local function onJumpAgarrado(humanoid, hrp)
 	local now = os.clock()
 	local subirSaltoValido = getSubirSaltoPendenteValido()
 	if subirSaltoValido then
-		if not canUseActionCooldown("SubirSalto", nil, now) then
+		if not CooldownManager.CanUseWithLog("SubirSalto", nil, now, cooldownBlockedLogAt) then
 			return
 		end
 
@@ -360,10 +234,10 @@ local function onJumpAgarrado(humanoid, hrp)
 		end
 	end
 
-	local direcao = getIntencaoDirecional(humanoid, hrp)
+	local direcao = Utilidades.GetIntencaoDirecional(humanoid, hrp, runtimeConfig)
 
 	if direcao == "Direita" or direcao == "Esquerda" then
-		if not canUseActionCooldown("LateralSalto", direcao, now) then
+		if not CooldownManager.CanUseWithLog("LateralSalto", direcao, now, cooldownBlockedLogAt) then
 			return
 		end
 
@@ -388,7 +262,7 @@ local function onJumpAgarrado(humanoid, hrp)
 		end
 	end
 
-	-- PuloTras: Trás + Pular (prioridade máxima quando S está sendo segurado)
+	-- PuloTras: Trás + Pular
 	if direcao == "Tras" then
 		local grabData = Movimento.GetGrabData()
 		if grabData and grabData.IdleMode == "IdleSuspenso" then
@@ -408,7 +282,7 @@ local function onJumpAgarrado(humanoid, hrp)
 		end
 	end
 
-	-- Escalar: Pular (com ou sem direção frente) — tenta subir em cima da plataforma
+	-- Escalar: tenta subir em cima da plataforma
 	local escalou = Movimento.TentarEscalar()
 	if escalou then
 		clearSubirSaltoPendente(true)
@@ -417,12 +291,12 @@ local function onJumpAgarrado(humanoid, hrp)
 		return
 	end
 
-	-- Se pressionou frente mas não conseguiu escalar, não soltar (continuar agarrado)
+	-- Se pressionou frente mas não conseguiu escalar, continuar agarrado
 	if direcao == "Frente" then
 		return
 	end
 
-	-- Fallback: soltar (só quando não tem direção ou direção lateral)
+	-- Fallback: soltar
 	clearSubirSaltoPendente(true)
 	clearLateralSaltoPendente(true)
 	resetDescerState()
@@ -430,39 +304,79 @@ local function onJumpAgarrado(humanoid, hrp)
 end
 
 -- ══════════════════════════════════════
--- Lógica de Jump quando NÃO está agarrado
--- (comportamento original: VaultBaixo/VaultMédio/Agarrar)
+-- Handler: Jump quando NÃO está agarrado
 -- ══════════════════════════════════════
 
 local function onJumpNormal(character, humanoid)
-	-- Não executar se já está em transição
 	if Movimento.EstaEmAcao() then
+		dbgPrint("[Parkour] JumpNormal ignorado: personagem em ação")
 		return
 	end
 
 	local noChao = humanoid.FloorMaterial ~= Enum.Material.Air
+	dbgPrint("[Parkour] JumpNormal iniciado | noChao:", noChao)
 
 	Analisador.ClearDebug()
 
 	local result = Analisador.CheckParkour(character, {})
 
 	if not result or not result.Aprovado then
+		dbgPrint("[Parkour] CheckParkour reprovado | reason:", result and result.Reason or "nil")
 		if result and Configs.DebugEnabled then
 			Analisador.DrawDebug(result)
 		end
 		return
 	end
 
-	-- Filtro condicional: no chão é só Vault
+	-- Filtro: no chão é só Vault
 	if noChao and result.Acao == "Agarrar" then
+		dbgPrint("[Parkour] Ação bloqueada no chão | Acao:", result.Acao)
 		if Configs.DebugEnabled then
 			Analisador.DrawDebug(result)
 		end
 		return
 	end
 
-	-- Vault só é permitido quando o jogador estiver efetivamente correndo.
-	if (result.Acao == "VaultBaixo" or result.Acao == "VaultMedio") and not isRunningForVault(humanoid) then
+	-- Vault só quando correndo
+	if
+		(result.Acao == "VaultBaixo" or result.Acao == "VaultMedio")
+		and not Analisador.IsRunningForVault(humanoid, ClientBridge)
+	then
+		if result.Acao == "VaultMedio" then
+			if noChao then
+				dbgPrint("[Parkour] VaultMedio sem corrida no chão: não pode fallback para Agarrar")
+				if Configs.DebugEnabled then
+					Analisador.DrawDebug(result)
+				end
+				return
+			end
+
+			local fallbackGrab = Analisador.TentarFallbackAgarrar(character, result, runtimeConfig)
+			if fallbackGrab and fallbackGrab.Aprovado then
+				dbgPrint("[Parkour] VaultMedio sem corrida -> fallback para Agarrar")
+				result = fallbackGrab
+			else
+				dbgPrint(
+					"[Parkour] VaultMedio sem corrida e fallback falhou | reason:",
+					fallbackGrab and fallbackGrab.Reason or "nil"
+				)
+				if Configs.DebugEnabled then
+					Analisador.DrawDebug(fallbackGrab or result)
+				end
+				return
+			end
+		else
+			dbgPrint("[Parkour] Vault bloqueado: jogador não está correndo | Acao:", result.Acao)
+			if Configs.DebugEnabled then
+				Analisador.DrawDebug(result)
+			end
+			return
+		end
+	end
+
+	-- Guarda final: nunca Agarrar quando pulo iniciou no chão
+	if noChao and result.Acao == "Agarrar" then
+		dbgPrint("[Parkour] Agarrar bloqueado: pulo iniciado no chão")
 		if Configs.DebugEnabled then
 			Analisador.DrawDebug(result)
 		end
@@ -474,11 +388,13 @@ local function onJumpNormal(character, humanoid)
 		Analisador.DrawDebug(result)
 	end
 
-	-- Executar a ação de parkour
+	-- Executar ação
 	local sucesso = Movimento.Executar(result)
 
 	if sucesso then
 		dbgPrint("[Parkour] Executando:", result.Acao, result.IdleMode and ("| Idle: " .. result.IdleMode) or "")
+	else
+		dbgPrint("[Parkour] Movimento.Executar falhou | Acao:", result.Acao)
 	end
 end
 
@@ -487,7 +403,6 @@ end
 -- ══════════════════════════════════════
 
 local function onJumpRequest(character: Model, humanoid: Humanoid)
-	-- Cooldown
 	local now = os.clock()
 	if now - lastJumpTime < JUMP_COOLDOWN then
 		return
@@ -507,8 +422,7 @@ local function onJumpRequest(character: Model, humanoid: Humanoid)
 end
 
 -- ══════════════════════════════════════
--- Polling: Verificar MoveDirection enquanto agarrado
--- W = Subir | S (segurar) = confirma intenção e tenta Descer
+-- Heartbeat: polling enquanto agarrado
 -- ══════════════════════════════════════
 
 local function onHeartbeat(character, humanoid)
@@ -536,17 +450,15 @@ local function onHeartbeat(character, humanoid)
 		return
 	end
 
-	local direcao = getIntencaoDirecional(humanoid, hrp)
+	local direcao = Utilidades.GetIntencaoDirecional(humanoid, hrp, runtimeConfig)
 
 	if direcao == "Frente" then
 		if lateralSaltoPendente then
 			clearLateralSaltoPendente(true)
 		end
-
-		-- Resetar estado de descer quando muda pra frente
 		resetDescerState()
 
-		if not canUseActionCooldown("Subir", nil, now) then
+		if not CooldownManager.CanUseWithLog("Subir", nil, now, cooldownBlockedLogAt) then
 			return
 		end
 
@@ -568,7 +480,12 @@ local function onHeartbeat(character, humanoid)
 				end
 			end
 		else
-			CooldownManager.BlockAction("Subir", nil, now, getActionFailCooldown("Subir", runtimeConfig.SubirFailCooldown, 0.5))
+			CooldownManager.BlockAction(
+				"Subir",
+				nil,
+				now,
+				CooldownManager.GetFailCooldown("Subir", runtimeConfig.SubirFailCooldown, 0.5, runtimeConfig)
+			)
 		end
 	elseif direcao == "Direita" or direcao == "Esquerda" then
 		resetDescerState()
@@ -588,7 +505,7 @@ local function onHeartbeat(character, humanoid)
 			end
 		end
 
-		if not canUseActionCooldown("Lateral", direcao, now) then
+		if not CooldownManager.CanUseWithLog("Lateral", direcao, now, cooldownBlockedLogAt) then
 			return
 		end
 
@@ -604,11 +521,14 @@ local function onHeartbeat(character, humanoid)
 			if estadoLateral then
 				dbgPrint("[Parkour]", estadoLateral)
 			end
-		elseif lateralResult and (
-			lateralResult.Reason == "NoLateralSurface"
-			or lateralResult.Reason == "NoLateralSurfaceCached"
-			or lateralResult.Reason == "PreferLateralSaltoOverInternalCorner"
-		) then
+		elseif
+			lateralResult
+			and (
+				lateralResult.Reason == "NoLateralSurface"
+				or lateralResult.Reason == "NoLateralSurfaceCached"
+				or lateralResult.Reason == "PreferLateralSaltoOverInternalCorner"
+			)
+		then
 			local target = lateralResult and lateralResult.LateralSaltoTarget or nil
 			local curveFallbackTarget = lateralResult and lateralResult.CurvaInternaFallbackTarget or nil
 			if target then
@@ -624,7 +544,12 @@ local function onHeartbeat(character, humanoid)
 					"Lateral",
 					direcao,
 					now,
-					getActionFailCooldown("Lateral", runtimeConfig.LateralNoSurfaceCooldown, 0.5)
+					CooldownManager.GetFailCooldown(
+						"Lateral",
+						runtimeConfig.LateralNoSurfaceCooldown,
+						0.5,
+						runtimeConfig
+					)
 				)
 			end
 		else
@@ -649,7 +574,7 @@ local function onHeartbeat(character, humanoid)
 			return
 		end
 
-		if not canUseActionCooldown("Descer", nil, now) then
+		if not CooldownManager.CanUseWithLog("Descer", nil, now, cooldownBlockedLogAt) then
 			return
 		end
 
@@ -662,7 +587,12 @@ local function onHeartbeat(character, humanoid)
 			clearSubirSaltoPendente(true)
 			resetDescerState()
 		else
-			CooldownManager.BlockAction("Descer", nil, now, getActionFailCooldown("Descer", runtimeConfig.DescerFailCooldown, 0.25))
+			CooldownManager.BlockAction(
+				"Descer",
+				nil,
+				now,
+				CooldownManager.GetFailCooldown("Descer", runtimeConfig.DescerFailCooldown, 0.25, runtimeConfig)
+			)
 			clearSubirSaltoPendente(true)
 
 			local reason = descerResult and descerResult.Reason or "Unknown"
@@ -691,7 +621,7 @@ local function onHeartbeat(character, humanoid)
 			Movimento.CancelarPreviewLateralAoSoltar(runtimeConfig)
 			clearLateralSaltoPendente(false)
 		end
-		-- Sem direção → resetar estado de descer
+		-- Sem direção → resetar
 		resetDescerState()
 		clearSubirSaltoPendente(true)
 	end
@@ -719,9 +649,13 @@ local function setupCharacter(character: Model)
 
 	local humanoid = character:WaitForChild("Humanoid") :: Humanoid
 	currentHrp = character:WaitForChild("HumanoidRootPart") :: BasePart
+
+	-- Desabilita climbing padrão do Roblox (sistema de parkour substitui)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
+
 	AnimacaoParkour.Inicializar(character)
 
-	-- JumpRequest: dispara em qualquer plataforma (Space, A, JumpButton)
+	-- JumpRequest
 	local jumpConn = humanoid:GetPropertyChangedSignal("Jump"):Connect(function()
 		if humanoid.Jump then
 			onJumpRequest(character, humanoid)
@@ -729,7 +663,7 @@ local function setupCharacter(character: Model)
 	end)
 	table.insert(connections, jumpConn)
 
-	-- Heartbeat: polling de MoveDirection enquanto agarrado
+	-- Heartbeat: polling enquanto agarrado
 	local heartbeatConn = RunService.Heartbeat:Connect(function()
 		onHeartbeat(character, humanoid)
 	end)

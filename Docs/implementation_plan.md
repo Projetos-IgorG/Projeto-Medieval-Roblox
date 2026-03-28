@@ -57,13 +57,13 @@ Parkour = {
 
 ### Novo Módulo de Animação
 
-#### [NEW] [AnimacaoParkour.luau](file:///c:/Users/Igor/Projetos/Pessoal/Medieval/RobloxStudio/src/StarterPlayer/StarterPlayerScripts/ParkourTesting/AnimacaoParkour.luau)
+#### [NEW] [AnimacaoParkour.luau](file:///c:/Users/Igor/Projetos/Pessoal/Medieval/RobloxStudio/src/StarterPlayer/StarterPlayerScripts/Parkour/AnimacaoParkour.luau)
 
 Módulo autocontido responsável por:
 
 1. **Carregar/cachear** `AnimationTrack` via o `Animator` do personagem
 2. **Tocar animações** de parkour com prioridade `Action2` (acima de combate)
-3. **Escutar eventos** (`GetMarkerReachedSignal`) e invocar callbacks do [Movimento.luau](file:///c:/Users/Igor/Projetos/Pessoal/Medieval/RobloxStudio/src/StarterPlayer/StarterPlayerScripts/ParkourTesting/Movimento.luau)
+3. **Escutar eventos** (`GetMarkerReachedSignal`) e invocar callbacks do [Movimento.luau](file:///c:/Users/Igor/Projetos/Pessoal/Medieval/RobloxStudio/src/StarterPlayer/StarterPlayerScripts/Parkour/Movimento.luau)
 4. **Gerenciar idle loops** (`IdleSuporte` / `IdleSuspenso`) baseado no `IdleMode` do grab
 5. **Alternar braços** ao subir (`SubirDireita` ↔ `SubirEsquerda`)
 6. **Cleanup** de conexões e tracks ao sair do parkour
@@ -137,13 +137,13 @@ Alterações mínimas e cirúrgicas:
    - `AtualizarAnimacaoMovimento()` — skip update se em parkour (parkour controla suas próprias animações)
    - `AtualizarEstadoMovimento()` — skip se em parkour
 
-2. **Ao sair do parkour** — o `SairParkour` (implementado no ParkourTesting) chamará `AtualizarAnimacaoMovimento()` e `AtualizarBaseIdle()` via `ClientBridge` para retomar naturalmente
+2. **Ao sair do parkour** — o `SairParkour` (implementado no Parkour) chamará `AtualizarAnimacaoMovimento()` e `AtualizarBaseIdle()` via `ClientBridge` para retomar naturalmente
 
 ---
 
 ### Refatoração do Movimento
 
-#### [MODIFY] [Movimento.luau](file:///c:/Users/Igor/Projetos/Pessoal/Medieval/RobloxStudio/src/StarterPlayer/StarterPlayerScripts/ParkourTesting/Movimento.luau)
+#### [MODIFY] [Movimento.luau](file:///c:/Users/Igor/Projetos/Pessoal/Medieval/RobloxStudio/src/StarterPlayer/StarterPlayerScripts/Parkour/Movimento.luau)
 
 Refatorar cada função de execução para integrar animações:
 
@@ -168,7 +168,7 @@ Refatorar cada função de execução para integrar animações:
 
 ---
 
-#### [MODIFY] [init.client.luau](file:///c:/Users/Igor/Projetos/Pessoal/Medieval/RobloxStudio/src/StarterPlayer/StarterPlayerScripts/ParkourTesting/init.client.luau)
+#### [MODIFY] [init.client.luau](file:///c:/Users/Igor/Projetos/Pessoal/Medieval/RobloxStudio/src/StarterPlayer/StarterPlayerScripts/Parkour/init.client.luau)
 
 - Adicionar `require` do `AnimacaoParkour`
 - Em `setupCharacter()` → chamar `AnimacaoParkour.Inicializar(character)`
@@ -184,8 +184,8 @@ Refatorar cada função de execução para integrar animações:
 | `AnimacaoParkour.luau` | NEW | Módulo de animação do parkour |
 | [ClientBridge.luau](file:///c:/Users/Igor/Projetos/Pessoal/Medieval/RobloxStudio/src/ReplicatedStorage/Modulos/Core/ClientBridge.luau) | MODIFY | 3 novas declarations para parkour |
 | [ControladorEstado.client.luau](file:///c:/Users/Igor/Projetos/Pessoal/Medieval/RobloxStudio/src/StarterPlayer/StarterCharacterScripts/Estado/ControladorEstado.client.luau) | MODIFY | Guards de `EstaEmParkour` para bloquear ações |
-| [Movimento.luau](file:///c:/Users/Igor/Projetos/Pessoal/Medieval/RobloxStudio/src/StarterPlayer/StarterPlayerScripts/ParkourTesting/Movimento.luau) | MODIFY | Integrar animações em cada ação |
-| [init.client.luau](file:///c:/Users/Igor/Projetos/Pessoal/Medieval/RobloxStudio/src/StarterPlayer/StarterPlayerScripts/ParkourTesting/init.client.luau) | MODIFY | Setup/cleanup do `AnimacaoParkour` |
+| [Movimento.luau](file:///c:/Users/Igor/Projetos/Pessoal/Medieval/RobloxStudio/src/StarterPlayer/StarterPlayerScripts/Parkour/Movimento.luau) | MODIFY | Integrar animações em cada ação |
+| [init.client.luau](file:///c:/Users/Igor/Projetos/Pessoal/Medieval/RobloxStudio/src/StarterPlayer/StarterPlayerScripts/Parkour/init.client.luau) | MODIFY | Setup/cleanup do `AnimacaoParkour` |
 
 ## Verification Plan
 

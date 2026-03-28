@@ -1,7 +1,6 @@
 local Workspace = game:GetService("Workspace")
 local CollectionService = game:GetService("CollectionService")
 local EMPTY_ARRAY = table.freeze({})
-local ORDERED_OFFSETS_CACHE_KEY = "__ParkourOrderedVerticalOffsets"
 
 local Utilidades = {}
 
@@ -45,27 +44,6 @@ function Utilidades.getFaceAxes(normalLocal)
 	else
 		return faceAxis, faceSign, "X", "Y"
 	end
-end
-
--- ══════════════════════════════════════
--- Funções de Ordenação / Offsets
--- ══════════════════════════════════════
-
-function Utilidades.getOrderedVerticalOffsets(config)
-	if config and config[ORDERED_OFFSETS_CACHE_KEY] then
-		return config[ORDERED_OFFSETS_CACHE_KEY]
-	end
-
-	local offsets = table.clone(config.VerticalOffsets or {0})
-	table.sort(offsets, function(a, b)
-		return a > b
-	end)
-
-	if config then
-		config[ORDERED_OFFSETS_CACHE_KEY] = offsets
-	end
-
-	return offsets
 end
 
 -- ══════════════════════════════════════
@@ -177,6 +155,84 @@ function Utilidades.isIgnorablePart(part, minHeight)
 	end
 
 	return false
+end
+
+-- ══════════════════════════════════════
+-- Intenção Direcional (Input XZ)
+-- Extraído de init.client
+-- ══════════════════════════════════════
+
+function Utilidades.GetIntencaoDirecional(humanoid, hrp, config)
+	local moveDir = humanoid.MoveDirection
+	local deadzone = config.DirectionInputDeadzone or 0.2
+	if moveDir.Magnitude < deadzone then
+		return nil
+	end
+
+	local moveFlat = Vector3.new(moveDir.X, 0, moveDir.Z)
+	if moveFlat.Magnitude < deadzone then
+		return nil
+	end
+
+	local useCameraBasis = config.DirectionUseCameraBasis ~= false
+	local basisCFrame = hrp.CFrame
+	if useCameraBasis then
+		local currentCamera = Workspace.CurrentCamera
+		if currentCamera then
+			local camLookFlat = Vector3.new(currentCamera.CFrame.LookVector.X, 0, currentCamera.CFrame.LookVector.Z)
+			if camLookFlat.Magnitude > 0.001 then
+				basisCFrame = CFrame.lookAt(Vector3.zero, camLookFlat.Unit)
+			end
+		end
+	end
+
+	local lookFlat = Vector3.new(basisCFrame.LookVector.X, 0, basisCFrame.LookVector.Z)
+	if lookFlat.Magnitude <= 0.001 then
+		lookFlat = Vector3.new(hrp.CFrame.LookVector.X, 0, hrp.CFrame.LookVector.Z)
+		if lookFlat.Magnitude <= 0.001 then
+			return nil
+		end
+	end
+	lookFlat = lookFlat.Unit
+
+	local rightFlat = Vector3.new(basisCFrame.RightVector.X, 0, basisCFrame.RightVector.Z)
+	if rightFlat.Magnitude <= 0.001 then
+		rightFlat = Vector3.new(hrp.CFrame.RightVector.X, 0, hrp.CFrame.RightVector.Z)
+		if rightFlat.Magnitude <= 0.001 then
+			return nil
+		end
+	end
+	rightFlat = rightFlat.Unit
+
+	moveFlat = moveFlat.Unit
+
+	local dotForward = lookFlat:Dot(moveFlat)
+	local dotRight = rightFlat:Dot(moveFlat)
+	local absForward = math.abs(dotForward)
+	local absRight = math.abs(dotRight)
+	local dominanceMargin = config.DirectionDominanceMargin or 0.12
+	local forwardThreshold = config.DirectionForwardDotThreshold or 0.6
+	local lateralThreshold = config.DirectionLateralDotThreshold or config.LateralInputDotThreshold or 0.6
+
+	if absForward >= forwardThreshold and absForward >= (absRight + dominanceMargin) then
+		if dotForward > 0 then
+			return "Frente"
+		end
+		return "Tras"
+	end
+
+	if absRight >= lateralThreshold and absRight >= (absForward + dominanceMargin) then
+		if dotRight >= 0 then
+			return "Direita"
+		end
+		return "Esquerda"
+	elseif dotRight >= lateralThreshold then
+		return "Direita"
+	elseif dotRight <= -lateralThreshold then
+		return "Esquerda"
+	end
+
+	return nil -- ambíguo
 end
 
 return Utilidades
