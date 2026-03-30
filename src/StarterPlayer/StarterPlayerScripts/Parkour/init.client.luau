@@ -4,12 +4,13 @@
 	Responsável APENAS por captura de input e gerenciamento de estado.
 	Toda lógica de verificação, análise e utilidades está nos módulos dedicados.
 
-	VERSÃO: 2.0v
+	VERSÃO: 2.2v
 
 	Keybinds (baseado em intenção direcional, não teclas específicas):
 	- No chão/ar + Jump: VaultBaixo / VaultMédio / Agarrar
-	- Agarrado + Frente (W): Subir (ou Escalar se couber em cima)
+	- Agarrado + Frente (W): Subir; entre SubirSalto e Escalar, prioriza SubirSalto
 	- Agarrado + Frente + Jump: SubirSalto
+	- Agarrado + Frente (W) segurando após timeout: Escalar automático (quando disponível)
 	- Agarrado + Jump: Escalar (se couber) ou Soltar
 	- Agarrado + Trás (S) + Jump: PuloTras
 	- Agarrado + Trás (S) segurar: confirma intenção, tenta Descer; se falhar, Soltar
@@ -44,7 +45,7 @@ local lastIdleRecheckAt = 0
 local currentHrp: BasePart? = nil
 
 -- Pendentes de confirmação (SubirSalto / LateralSalto)
-local subirSaltoPendente = nil -- { Result, ExpiresAt, SourceEdgePosition }
+local subirSaltoPendente = nil -- { Result, ExpiresAt, SourceEdgePosition, EscalarFallbackResult?, SwitchToEscalarAt? }
 local lateralSaltoPendente = nil -- { Direcao, Target, CurveFallbackTarget, CreatedAt, SwitchToCurveAt }
 
 -- Intenção de descer (hold em S)
@@ -106,7 +107,7 @@ end
 -- Pendentes: SubirSalto / LateralSalto
 -- ══════════════════════════════════════
 
-local function setSubirSaltoPendente(subirResult)
+local function setSubirSaltoPendente(subirResult, escalarFallbackResult)
 	if subirSaltoPendente then
 		return false
 	end
@@ -115,10 +116,18 @@ local function setSubirSaltoPendente(subirResult)
 		return false
 	end
 
+	local now = os.clock()
+	local switchToEscalarAt = nil
+	if escalarFallbackResult and escalarFallbackResult.CanEscalar then
+		switchToEscalarAt = now + (runtimeConfig.SubirSaltoPreferTimeout or 0.77)
+	end
+
 	subirSaltoPendente = {
 		Result = subirResult,
-		ExpiresAt = os.clock() + (runtimeConfig.SubirSaltoConfirmWindow or 0.9),
+		ExpiresAt = now + (runtimeConfig.SubirSaltoConfirmWindow or 0.9),
 		SourceEdgePosition = subirResult and subirResult.SourceEdgePosition,
+		EscalarFallbackResult = escalarFallbackResult,
+		SwitchToEscalarAt = switchToEscalarAt,
 	}
 
 	return true
@@ -342,33 +351,27 @@ local function onJumpNormal(character, humanoid)
 		(result.Acao == "VaultBaixo" or result.Acao == "VaultMedio")
 		and not Analisador.IsRunningForVault(humanoid, ClientBridge)
 	then
-		if result.Acao == "VaultMedio" then
-			if noChao then
-				dbgPrint("[Parkour] VaultMedio sem corrida no chão: não pode fallback para Agarrar")
-				if Configs.DebugEnabled then
-					Analisador.DrawDebug(result)
-				end
-				return
-			end
-
-			local fallbackGrab = Analisador.TentarFallbackAgarrar(character, result, runtimeConfig)
-			if fallbackGrab and fallbackGrab.Aprovado then
-				dbgPrint("[Parkour] VaultMedio sem corrida -> fallback para Agarrar")
-				result = fallbackGrab
-			else
-				dbgPrint(
-					"[Parkour] VaultMedio sem corrida e fallback falhou | reason:",
-					fallbackGrab and fallbackGrab.Reason or "nil"
-				)
-				if Configs.DebugEnabled then
-					Analisador.DrawDebug(fallbackGrab or result)
-				end
-				return
-			end
-		else
-			dbgPrint("[Parkour] Vault bloqueado: jogador não está correndo | Acao:", result.Acao)
+		if noChao then
+			dbgPrint("[Parkour] Vault sem corrida no chão: não pode fallback para Agarrar | Acao:", result.Acao)
 			if Configs.DebugEnabled then
 				Analisador.DrawDebug(result)
+			end
+			return
+		end
+
+		local fallbackGrab = Analisador.TentarFallbackAgarrar(character, result, runtimeConfig)
+		if fallbackGrab and fallbackGrab.Aprovado then
+			dbgPrint("[Parkour] Vault sem corrida -> fallback para Agarrar | Acao original:", result.Acao)
+			result = fallbackGrab
+		else
+			dbgPrint(
+				"[Parkour] Vault sem corrida e fallback falhou | Acao original:",
+				result.Acao,
+				"| reason:",
+				fallbackGrab and fallbackGrab.Reason or "nil"
+			)
+			if Configs.DebugEnabled then
+				Analisador.DrawDebug(fallbackGrab or result)
 			end
 			return
 		end
@@ -435,6 +438,13 @@ local function onHeartbeat(character, humanoid)
 		return
 	end
 
+	if ClientBridge.EntrarParkour then
+		local emParkour = ClientBridge.EstaEmParkour and ClientBridge.EstaEmParkour() or false
+		if not emParkour then
+			ClientBridge.EntrarParkour()
+		end
+	end
+
 	if Movimento.EstaEmAcao() then
 		return
 	end
@@ -458,6 +468,21 @@ local function onHeartbeat(character, humanoid)
 		end
 		resetDescerState()
 
+		local subirSaltoValido = getSubirSaltoPendenteValido()
+		if subirSaltoValido and subirSaltoPendente then
+			local switchToEscalarAt = subirSaltoPendente.SwitchToEscalarAt
+			if switchToEscalarAt and now >= switchToEscalarAt then
+				clearSubirSaltoPendente(true)
+				local escalou = Movimento.TentarEscalar()
+				if escalou then
+					dbgPrint("[Parkour] Hold em frente: escalando automaticamente")
+					clearLateralSaltoPendente(true)
+					resetDescerState()
+					return
+				end
+			end
+		end
+
 		if not CooldownManager.CanUseWithLog("Subir", nil, now, cooldownBlockedLogAt) then
 			return
 		end
@@ -473,10 +498,17 @@ local function onHeartbeat(character, humanoid)
 				end
 				clearSubirSaltoPendente(true)
 			elseif tipo == "SubirSalto" then
-				local iniciouPreview = setSubirSaltoPendente(subirResult)
+				local escalarFallback = if escalarResult and escalarResult.CanEscalar then escalarResult else nil
+				local iniciouPreview = setSubirSaltoPendente(subirResult, escalarFallback)
 				if iniciouPreview then
 					CooldownManager.BlockAction("Subir", nil, now, runtimeConfig.SubirSaltoCheckCooldown or 0.25)
-					dbgPrint("[Parkour] SubirSalto disponível — aperte Pular para confirmar")
+					if escalarFallback then
+						dbgPrint(
+							"[Parkour] SubirSalto disponível — aperte Pular para confirmar ou segure frente para escalar"
+						)
+					else
+						dbgPrint("[Parkour] SubirSalto disponível — aperte Pular para confirmar")
+					end
 				end
 			end
 		else

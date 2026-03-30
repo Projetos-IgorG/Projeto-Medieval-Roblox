@@ -13,12 +13,15 @@ local Utilidades = require(script.Parent:WaitForChild("Utilidades"))
 local Analisador = require(script.Parent:WaitForChild("Analisador"))
 local Debug = require(script.Parent:WaitForChild("Debug"))
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
 
 local Modulos = ReplicatedStorage:WaitForChild("Modulos")
 local ClientBridge = require(Modulos:WaitForChild("Core"):WaitForChild("ClientBridge"))
 local AnimacaoParkour = require(Modulos:WaitForChild("Cliente"):WaitForChild("Visual"):WaitForChild("AnimacaoParkour"))
 
 local Movimento = {}
+local CAMERA_BYPASS_BOX_SIZE = Vector3.new(9, 9, 9)
 
 local function dbgPrint(...)
 	Debug.Verbose(...)
@@ -40,8 +43,7 @@ local estado = {
 	SavedCollisions = {} :: { [BasePart]: boolean },
 	SavedHeadCanCollide = nil :: boolean?,
 	HeadPart = nil :: BasePart?,
-	CameraBypassPart = nil :: BasePart?,
-	CameraBypassPartCanCollide = nil :: boolean?,
+	CameraBypassParts = {} :: { [BasePart]: boolean },
 	GrabData = nil, -- { EdgePosition, Normal, Part, Config }
 }
 
@@ -86,15 +88,43 @@ local function zeroAssemblyVelocity(hrp)
 	hrp.AssemblyAngularVelocity = Vector3.zero
 end
 
-local function setGrabData(edgePosition, normal, part, idleMode, lateralState, config)
+local function normalizarNormalGrab(normal, config, fallbackLook)
+	local finalConfig = Configs.mergeConfig(config)
+	local maxWallNormalY = finalConfig.MaxWallNormalY or 0.8
+
+	if normal and normal.Magnitude > 0.001 then
+		local normalUnit = normal.Unit
+		if math.abs(normalUnit.Y) <= maxWallNormalY then
+			return normalUnit
+		end
+
+		local planarNormal = Vector3.new(normalUnit.X, 0, normalUnit.Z)
+		if planarNormal.Magnitude > 0.001 then
+			return planarNormal.Unit
+		end
+	end
+
+	if fallbackLook and fallbackLook.Magnitude > 0.001 then
+		local lookXZ = Vector3.new(fallbackLook.X, 0, fallbackLook.Z)
+		if lookXZ.Magnitude > 0.001 then
+			return -lookXZ.Unit
+		end
+	end
+
+	return Vector3.new(0, 0, -1)
+end
+
+local function setGrabData(edgePosition, normal, part, idleMode, lateralState, config, fallbackLook)
 	local grabData = estado.GrabData
 	if not grabData then
 		grabData = {}
 		estado.GrabData = grabData
 	end
 
+	local normalSegura = normalizarNormalGrab(normal, config, fallbackLook)
+
 	grabData.EdgePosition = edgePosition
-	grabData.Normal = normal
+	grabData.Normal = normalSegura
 	grabData.Part = part
 	grabData.IdleMode = idleMode
 	grabData.LateralState = lateralState
@@ -102,7 +132,7 @@ local function setGrabData(edgePosition, normal, part, idleMode, lateralState, c
 
 	if part and typeof(part) == "Instance" and part:IsA("BasePart") then
 		grabData.LocalEdgePosition = part.CFrame:PointToObjectSpace(edgePosition)
-		grabData.LocalNormal = part.CFrame:VectorToObjectSpace(normal)
+		grabData.LocalNormal = part.CFrame:VectorToObjectSpace(normalSegura)
 	else
 		grabData.LocalEdgePosition = nil
 		grabData.LocalNormal = nil
@@ -124,7 +154,16 @@ local function getValidGrabData()
 			grabData.LocalNormal = nil
 		elseif grabData.LocalEdgePosition and grabData.LocalNormal and typeof(grabData.Part) == "Instance" and grabData.Part:IsA("BasePart") then
 			grabData.EdgePosition = grabData.Part.CFrame:PointToWorldSpace(grabData.LocalEdgePosition)
-			grabData.Normal = grabData.Part.CFrame:VectorToWorldSpace(grabData.LocalNormal)
+			local fallbackLook = nil
+			if estado.CurrentCharacter then
+				local hrp = Utilidades.getCharacterParts(estado.CurrentCharacter)
+				fallbackLook = hrp and hrp.CFrame.LookVector or nil
+			end
+			grabData.Normal = normalizarNormalGrab(
+				grabData.Part.CFrame:VectorToWorldSpace(grabData.LocalNormal),
+				grabData.Config,
+				fallbackLook
+			)
 		end
 	end
 
@@ -212,31 +251,62 @@ local function createTemporaryNoCollisionConstraints(character: Model, surfacePa
 end
 
 local function clearOccludedPartVisual()
-	if estado.CameraBypassPart and estado.CameraBypassPart.Parent and estado.CameraBypassPartCanCollide ~= nil then
-		estado.CameraBypassPart.CanCollide = estado.CameraBypassPartCanCollide
+	for part, originalCanCollide in pairs(estado.CameraBypassParts) do
+		if part and part.Parent then
+			part.CanCollide = originalCanCollide
+		end
 	end
 
-	estado.CameraBypassPart = nil
-	estado.CameraBypassPartCanCollide = nil
+	table.clear(estado.CameraBypassParts)
 end
 
-local function applyOccludedPartVisual(part: BasePart?, config)
-	if not part then
+local function applyOccludedPartVisual(grabPart: BasePart?, _config)
+	if not estado.CurrentCharacter then
 		clearOccludedPartVisual()
 		return
 	end
 
-	if estado.CameraBypassPart == part then
+	local character = estado.CurrentCharacter
+	if not character then
+		clearOccludedPartVisual()
 		return
 	end
 
-	clearOccludedPartVisual()
+	local hrp = Utilidades.getCharacterParts(character)
+	if not hrp then
+		clearOccludedPartVisual()
+		return
+	end
 
-	local finalConfig = Configs.mergeConfig(config)
-	if finalConfig.GrabCameraCollisionBypass ~= false then
-		estado.CameraBypassPart = part
-		estado.CameraBypassPartCanCollide = part.CanCollide
-		part.CanCollide = false
+	local overlapParams = Utilidades.createOverlapParams({ character }, 0)
+	local touchingParts = Workspace:GetPartBoundsInBox(hrp.CFrame, CAMERA_BYPASS_BOX_SIZE, overlapParams)
+	local currentTouching = {} :: { [BasePart]: boolean }
+
+	for _, hitPart in ipairs(touchingParts) do
+		if hitPart:IsA("BasePart") and not hitPart:IsDescendantOf(character) then
+			if grabPart and hitPart == grabPart then
+				continue
+			end
+			currentTouching[hitPart] = true
+			if estado.CameraBypassParts[hitPart] == nil then
+				estado.CameraBypassParts[hitPart] = hitPart.CanCollide
+			end
+			hitPart.CanCollide = false
+		end
+	end
+
+	local toRemove = {}
+	for trackedPart, originalCanCollide in pairs(estado.CameraBypassParts) do
+		if not currentTouching[trackedPart] then
+			if trackedPart and trackedPart.Parent then
+				trackedPart.CanCollide = originalCanCollide
+			end
+			table.insert(toRemove, trackedPart)
+		end
+	end
+
+	for _, trackedPart in ipairs(toRemove) do
+		estado.CameraBypassParts[trackedPart] = nil
 	end
 end
 
@@ -407,27 +477,55 @@ local function criarLinearVelocity(hrp, velocity, duracao)
 	return lv
 end
 
---- Cria um Attachment na part agarrada na posição world indicada.
+--- Cria um Attachment na part agarrada na posição/orientação world indicada.
 --- O Attachment se move junto com a part (local space).
-local function criarGrabAttachment(part, worldPosition)
+--- Se worldCF for fornecido, inclui orientação (para AlignOrientation TwoAttachment).
+local function criarGrabAttachment(part, worldPosition, worldCF)
 	local attachment = Instance.new("Attachment")
-	attachment.CFrame = part.CFrame:ToObjectSpace(CFrame.new(worldPosition))
+	if worldCF then
+		attachment.CFrame = part.CFrame:ToObjectSpace(worldCF)
+	else
+		attachment.CFrame = part.CFrame:ToObjectSpace(CFrame.new(worldPosition))
+	end
 	attachment.Parent = part
 	table.insert(estado.ActiveConstraints, attachment)
 	return attachment
 end
 
---- AlignPosition TwoAttachment: Attachment0 (HRP) segue Attachment1 (na part).
---- Se a part mover, o player acompanha. Não afeta rotação.
-local function criarAlignPositionAncorado(hrp, targetAttachment, responsiveness)
+--- AlignPosition TwoAttachment: suave ou rígido.
+--- Se rigido=true, RigidityEnabled garante posição exata (ignora MaxForce/Responsiveness).
+--- Se rigido=false, usa MaxForce/Responsiveness para transição suave.
+local function criarAlignPositionDoisPontos(hrp, targetAttachment, rigido, responsiveness)
 	local align = Instance.new("AlignPosition")
 	align.Mode = Enum.PositionAlignmentMode.TwoAttachment
 	align.Attachment0 = hrp:FindFirstChild("RootAttachment")
 		or hrp:FindFirstChildOfClass("Attachment")
 	align.Attachment1 = targetAttachment
-	align.MaxForce = 100000
-	align.MaxVelocity = math.huge
-	align.Responsiveness = responsiveness or 200
+	align.RigidityEnabled = rigido == true
+	align.ReactionForceEnabled = true
+	if not rigido then
+		align.MaxForce = 100000
+		align.MaxVelocity = math.huge
+		align.Responsiveness = responsiveness or 40
+	end
+	align.Parent = hrp
+	table.insert(estado.ActiveConstraints, align)
+	return align
+end
+
+--- AlignOrientation TwoAttachment: suave ou rígido.
+--- Se rigido=true, RigidityEnabled garante rotação exata (segue part rigidamente).
+local function criarAlignOrientationDoisPontos(hrp, targetAttachment, rigido, responsiveness)
+	local align = Instance.new("AlignOrientation")
+	align.Mode = Enum.OrientationAlignmentMode.TwoAttachment
+	align.Attachment0 = hrp:FindFirstChild("RootAttachment")
+		or hrp:FindFirstChildOfClass("Attachment")
+	align.Attachment1 = targetAttachment
+	align.RigidityEnabled = rigido == true
+	if not rigido then
+		align.MaxTorque = 100000
+		align.Responsiveness = responsiveness or 40
+	end
 	align.Parent = hrp
 	table.insert(estado.ActiveConstraints, align)
 	return align
@@ -504,6 +602,64 @@ local function calcularPosicaoGrab(edgePosition, normal, config, idleMode)
 	return posicao, orientacao
 end
 
+local function calcularPosicaoGrabSegura(character, hrp, edgePosition, normal, part, config, idleMode)
+	local finalConfig = Configs.mergeConfig(config)
+	local posicao, orientacao = calcularPosicaoGrab(edgePosition, normal, finalConfig, idleMode)
+	local ajustada = false
+	local ultimoBloqueador = nil
+
+	if part and typeof(part) == "Instance" and part:IsA("BasePart") then
+		local normalUnit = normal.Unit
+		local normalLocal = part.CFrame:VectorToObjectSpace(normalUnit)
+		local axis, sign = Utilidades.dominantAxis(normalLocal)
+		local half = part.Size / 2
+		local faceCoord = sign * Utilidades.getAxisValue(half, axis)
+		local localPos = part.CFrame:PointToObjectSpace(posicao)
+		local coord = Utilidades.getAxisValue(localPos, axis)
+		local signedGap = sign * (coord - faceCoord)
+		local minGap = math.max((hrp.Size.Z * 0.5) + (finalConfig.GrabSurfaceSafetyMargin or 0.2), 0.9)
+
+		if signedGap < minGap then
+			posicao += normalUnit * (minGap - signedGap)
+			orientacao = CFrame.new(posicao) * orientacao.Rotation
+			ajustada = true
+		end
+	end
+
+	local probeScale = math.clamp(finalConfig.GrabSafetyProbeScale or 0.9, 0.6, 1.0)
+	local probeSize = hrp.Size * probeScale
+	local pushStep = math.max(finalConfig.GrabSafetyPushStep or 0.15, 0.05)
+	local maxPushSteps = math.max(math.floor(finalConfig.GrabSafetyMaxPushSteps or 6), 1)
+	local overlapParams = Utilidades.createOverlapParams({ character }, 0)
+	local normalUnit = normal.Unit
+
+	for _ = 1, maxPushSteps do
+		local probeCf = CFrame.new(posicao) * orientacao.Rotation
+		local touching = Workspace:GetPartBoundsInBox(probeCf, probeSize, overlapParams)
+		local blocker = nil
+
+		for _, hitPart in ipairs(touching) do
+			if hitPart:IsA("BasePart") and not hitPart:IsDescendantOf(character)
+				and not Utilidades.isIgnorablePart(hitPart, finalConfig.MinPartHeight)
+			then
+				blocker = hitPart
+				break
+			end
+		end
+
+		if not blocker then
+			break
+		end
+
+		ultimoBloqueador = blocker
+		posicao += normalUnit * pushStep
+		orientacao = CFrame.new(posicao) * orientacao.Rotation
+		ajustada = true
+	end
+
+	return posicao, orientacao, ajustada, ultimoBloqueador
+end
+
 local function getLateralDirection(normal, direcao)
 	local wallForward = -normal.Unit
 	local right = wallForward:Cross(Vector3.yAxis)
@@ -562,25 +718,40 @@ local function sincronizarGrabComIdle(idleMode: string?): boolean
 	grabData.IdleMode = idleFinal
 	applyOccludedPartVisual(grabData.Part, finalConfig)
 
-	local posAlvo, cfAlvo = calcularPosicaoGrab(grabData.EdgePosition, grabData.Normal, finalConfig, idleFinal)
+	local posAlvo, cfAlvo, ajustadaPosicao, bloqueador = calcularPosicaoGrabSegura(
+		character,
+		hrp,
+		grabData.EdgePosition,
+		grabData.Normal,
+		grabData.Part,
+		finalConfig,
+		idleFinal
+	)
+
+	if ajustadaPosicao then
+		dbgPrint(
+			"[Parkour] Re-sync grab ajustado para posição segura",
+			"| blocker:",
+			bloqueador and bloqueador.Name or "nil"
+		)
+	end
 
 	-- Destruir constraints antigos antes de recriar
 	destroyConstraints()
 
-	-- Posicionar diretamente via CFrame e criar weld para acompanhar parte
+	-- Posicionar diretamente via CFrame e criar ancoragem rígida
 	hrp.CFrame = CFrame.new(posAlvo) * cfAlvo.Rotation
 	zeroAssemblyVelocity(hrp)
 
-	-- AlignOrientation mantém o player reto (com normal flattenada)
-	criarAlignOrientation(hrp, cfAlvo, 40)
-
-	-- AlignPosition TwoAttachment para acompanhar partes móveis
+	-- Ancoragem rígida TwoAttachment (RigidityEnabled) para acompanhar part móvel
 	local grabPart = grabData.Part
 	if grabPart and grabPart.Parent then
-		local grabAtt = criarGrabAttachment(grabPart, posAlvo)
-		criarAlignPositionAncorado(hrp, grabAtt, 200)
+		local grabAtt = criarGrabAttachment(grabPart, posAlvo, cfAlvo)
+		criarAlignPositionDoisPontos(hrp, grabAtt, true)
+		criarAlignOrientationDoisPontos(hrp, grabAtt, true)
 	else
 		criarAlignPosition(hrp, posAlvo, 40)
+		criarAlignOrientation(hrp, cfAlvo, 40)
 	end
 
 	AnimacaoParkour.TocarIdle(idleFinal)
@@ -624,6 +795,9 @@ local function executarAgarrar(result, config)
 	estado.EmAcao = true
 	estado.Agarrado = false
 	estado.CurrentCharacter = character
+	if ClientBridge.EntrarParkour then
+		ClientBridge.EntrarParkour()
+	end
 
 	conectarDied(character)
 
@@ -632,16 +806,35 @@ local function executarAgarrar(result, config)
 	humanoid.PlatformStand = true
 
 	-- Calcular posição alvo
-	local posAlvo, cfAlvo = calcularPosicaoGrab(
+	local grabPart = result.Part or (result.Result and result.Result.Instance)
+	local posAlvo, cfAlvo, ajustadaPosicao, bloqueador = calcularPosicaoGrabSegura(
+		character,
+		hrp,
 		result.EdgePosition,
 		result.Normal,
+		grabPart,
 		finalConfig,
 		result.IdleMode
 	)
 
-	-- Criar constraints para grudar o player
-	local alignPos = criarAlignPosition(hrp, posAlvo, 1 / finalConfig.GrabTransitionTime * 10)
-	local alignOri = criarAlignOrientation(hrp, cfAlvo, 1 / finalConfig.GrabTransitionTime * 10)
+	if ajustadaPosicao then
+		dbgPrint(
+			"[Parkour] Grab target ajustado para posição segura",
+			"| blocker:",
+			bloqueador and bloqueador.Name or "nil"
+		)
+	end
+
+	-- Criar constraints para transição suave (OneAttachment — estável, sem feedback de força)
+	local grabResponsiveness = 1 / finalConfig.GrabTransitionTime * 10
+	local alignPos = criarAlignPosition(hrp, posAlvo, grabResponsiveness)
+	local alignOri = criarAlignOrientation(hrp, cfAlvo, grabResponsiveness)
+	local grabReachDistance = math.max(finalConfig.GrabFinalReachDistance or 0.2, 0.03)
+	local grabSnapTimeout = math.max(
+		finalConfig.GrabFinalSnapTimeout or (finalConfig.GrabTransitionTime + 0.25),
+		finalConfig.GrabTransitionTime
+	)
+	local grabMinSettleTime = math.max(finalConfig.GrabMinSettleTime or math.min(finalConfig.GrabTransitionTime, 0.1), 0)
 
 	-- Zerar velocidade atual para transição suave
 	zeroAssemblyVelocity(hrp)
@@ -651,39 +844,89 @@ local function executarAgarrar(result, config)
 	setGrabData(
 		result.EdgePosition,
 		result.Normal,
-		result.Part or (result.Result and result.Result.Instance),
+		grabPart,
 		result.IdleMode,
 		nil,
-		finalConfig
+		finalConfig,
+		hrp.CFrame.LookVector
 	)
 	applyOccludedPartVisual(estado.GrabData.Part, finalConfig)
 
 	-- Marcar como agarrado após tempo de transição
 	local idleInicial = result.IdleMode or "IdleSuporte"
-	task.delay(finalConfig.GrabIdleStartDelay or 0.02, function()
-		if estado.CurrentCharacter == character and isCharacterAlive(character) then
+
+	local grabFinalizado = false
+	local grabHeartbeatConn: RBXScriptConnection? = nil
+
+	local function finalizarGrabComConfirmacao()
+		if grabFinalizado then
+			return
+		end
+		grabFinalizado = true
+
+		if grabHeartbeatConn then
+			grabHeartbeatConn:Disconnect()
+			grabHeartbeatConn = nil
+		end
+
+		if not isCharacterAlive(character) or estado.CurrentCharacter ~= character then
+			return
+		end
+
+		-- Garantia rígida: só confirma agarrado depois de snap exato no alvo de grab.
+		hrp.CFrame = CFrame.new(posAlvo) * cfAlvo.Rotation
+		zeroAssemblyVelocity(hrp)
+
+		local sincronizou = sincronizarGrabComIdle(idleInicial)
+		if not sincronizou then
+			removeConstraint(alignPos)
+			removeConstraint(alignOri)
+			local partAtual = estado.GrabData and estado.GrabData.Part
+			if partAtual and partAtual.Parent then
+				local grabAtt = criarGrabAttachment(partAtual, posAlvo, cfAlvo)
+				criarAlignPositionDoisPontos(hrp, grabAtt, true)
+				criarAlignOrientationDoisPontos(hrp, grabAtt, true)
+			else
+				criarAlignPosition(hrp, posAlvo, 80)
+				criarAlignOrientation(hrp, cfAlvo, 80)
+			end
 			AnimacaoParkour.TocarIdle(idleInicial)
 		end
-	end)
 
-	task.delay(finalConfig.GrabTransitionTime, function()
-		if alignPos.Parent and alignOri.Parent and isCharacterAlive(character) then
-			estado.Agarrado = true
-			estado.EmAcao = false
+		estado.Agarrado = true
+		estado.EmAcao = false
+	end
 
-			-- Substituir AlignPosition OneAttachment por TwoAttachment para acompanhar partes móveis
-			local grabPart = estado.GrabData and estado.GrabData.Part
-			if grabPart and grabPart.Parent then
-				local posAlvoGrab = alignPos.Position
-				removeConstraint(alignPos)
-				local grabAtt = criarGrabAttachment(grabPart, posAlvoGrab)
-				criarAlignPositionAncorado(hrp, grabAtt, 200)
+	local grabStart = os.clock()
+	grabHeartbeatConn = RunService.Heartbeat:Connect(function()
+		if grabFinalizado then
+			return
+		end
+
+		if not alignPos.Parent or not alignOri.Parent then
+			finalizarGrabComConfirmacao()
+			return
+		end
+
+		if not isCharacterAlive(character) or estado.CurrentCharacter ~= character then
+			if grabHeartbeatConn then
+				grabHeartbeatConn:Disconnect()
+				grabHeartbeatConn = nil
 			end
+			return
+		end
 
-			if ClientBridge.EntrarParkour then
-				ClientBridge.EntrarParkour()
+		local elapsed = os.clock() - grabStart
+		local dist = (hrp.Position - posAlvo).Magnitude
+		if (elapsed >= grabMinSettleTime and dist <= grabReachDistance) or elapsed >= grabSnapTimeout then
+			if elapsed >= grabSnapTimeout and dist > grabReachDistance then
+				dbgPrint(
+					"[Parkour] Grab snap por timeout",
+					"| dist:",
+					string.format("%.2f", dist)
+				)
 			end
-			AnimacaoParkour.TocarIdle(idleInicial)
+			finalizarGrabComConfirmacao()
 		end
 	end)
 
@@ -891,7 +1134,8 @@ local function executarSubir(novaEdgePos, novaNormal, novaPart, config, nomeAnim
 			novaPart or (estado.GrabData and estado.GrabData.Part),
 			idleModeNovo,
 			nil,
-			finalConfig
+			finalConfig,
+			hrp.CFrame.LookVector
 		)
 		applyOccludedPartVisual(estado.GrabData.Part, finalConfig)
 
@@ -995,7 +1239,8 @@ local function executarDescer(novaEdgePos, novaNormal, novaPart, config, idleMod
 			novaPart or (estado.GrabData and estado.GrabData.Part),
 			idleModeNovo,
 			nil,
-			finalConfig
+			finalConfig,
+			hrp.CFrame.LookVector
 		)
 		applyOccludedPartVisual(estado.GrabData.Part, finalConfig)
 
@@ -1160,7 +1405,8 @@ local function executarLateral(lateralResult, config)
 			lateralResult.Part,
 			lateralResult.IdleMode,
 			lateralResult.Estado,
-			finalConfig
+			finalConfig,
+			hrp.CFrame.LookVector
 		)
 		applyOccludedPartVisual(estado.GrabData.Part, finalConfig)
 
@@ -1231,7 +1477,13 @@ local function executarEscalar(escalarResult, config)
 
 	-- Calcular posições das duas fases
 	local normal = escalarResult.Normal or (estado.GrabData and estado.GrabData.Normal) or hrp.CFrame.LookVector
-	local look = -normal.Unit -- direção para dentro da plataforma (frente)
+
+	-- Flatten look para escalar sempre na vertical (sem inclinação)
+	local look = Vector3.new(-normal.X, 0, -normal.Z)
+	if look.Magnitude < 0.01 then
+		look = Vector3.new(0, 0, -1)
+	end
+	look = look.Unit
 
 	-- Fase 1: subir apenas no eixo Y a partir da posição atual
 	local startPos = hrp.Position
@@ -1245,8 +1497,13 @@ local function executarEscalar(escalarResult, config)
 	local tempoHorizontal = finalConfig.EscalarTransitionTime - tempoVertical
 	local responsivenessVertical = 1 / math.max(tempoVertical, 0.01) * 12
 	local responsivenessHorizontal = 1 / math.max(tempoHorizontal, 0.01) * 12
+	local snapDistance = math.max(finalConfig.EscalarFinalSnapDistance or 0.2, 0.05)
+	local snapTimeout = math.max(
+		finalConfig.EscalarFinalSnapTimeout or (finalConfig.EscalarTransitionTime + 0.2),
+		finalConfig.EscalarTransitionTime
+	)
 
-	-- Orientação: olhar para frente durante toda a escalada
+	-- Orientação: sempre vertical (100% reto), olhar para frente
 	local targetOri = CFrame.lookAt(posFinal, posFinal + look, Vector3.yAxis)
 
 	-- Fase 1: AlignPosition leva o player para CIMA
@@ -1257,6 +1514,7 @@ local function executarEscalar(escalarResult, config)
 
 	local movimentoConcluido = false
 	local animacaoConcluida = false
+	local heartbeatConn: RBXScriptConnection? = nil
 
 	local function tentarFinalizar()
 		if not (movimentoConcluido and animacaoConcluida) then
@@ -1276,6 +1534,64 @@ local function executarEscalar(escalarResult, config)
 		estado.CurrentCharacter = nil
 	end
 
+	local function finalizarMovimentoEscalar()
+		if movimentoConcluido then
+			return
+		end
+
+		if heartbeatConn then
+			heartbeatConn:Disconnect()
+			heartbeatConn = nil
+		end
+
+		removeConstraint(alignPos)
+		removeConstraint(alignOri)
+
+		hrp.CFrame = CFrame.new(posFinal) * targetOri.Rotation
+		zeroAssemblyVelocity(hrp)
+		clearTemporaryNoCollisionConstraints()
+
+		if finalConfig.EscalarDisableNearbyCollisions ~= false then
+			local nearSize = finalConfig.EscalarNearbyCollisionBoxSize or Vector3.new(4.0, 5.0, 4.0)
+			local overlapParams = Utilidades.createOverlapParams({ character }, 0)
+			local nearPartsRaw = Workspace:GetPartBoundsInBox(CFrame.new(posFinal), nearSize, overlapParams)
+			local seen = {}
+			local nearParts = {}
+
+			for _, part in ipairs(nearPartsRaw) do
+				if part:IsA("BasePart") and not part:IsDescendantOf(character) then
+					if not Utilidades.isIgnorablePart(part, finalConfig.MinPartHeight) and not seen[part] then
+						seen[part] = true
+						table.insert(nearParts, part)
+					end
+				end
+			end
+
+			if #nearParts > 0 then
+				createTemporaryNoCollisionConstraints(character, nearParts)
+				local releaseDelay = math.max(finalConfig.EscalarNearbyCollisionHoldTime or 0.12, 0)
+				if releaseDelay > 0 then
+					task.delay(releaseDelay, function()
+						clearTemporaryNoCollisionConstraints()
+					end)
+				else
+					clearTemporaryNoCollisionConstraints()
+				end
+			end
+		end
+
+		humanoid.AutoRotate = true
+		humanoid.PlatformStand = false
+		restaurarColisao()
+
+		-- Snap final pós-restore para garantir posição exata.
+		hrp.CFrame = CFrame.new(posFinal) * targetOri.Rotation
+		zeroAssemblyVelocity(hrp)
+
+		movimentoConcluido = true
+		tentarFinalizar()
+	end
+
 	-- Fase 2: Após subir, mover pra FRENTE
 	task.delay(tempoVertical, function()
 		if alignPos.Parent and isCharacterAlive(character) then
@@ -1285,9 +1601,17 @@ local function executarEscalar(escalarResult, config)
 		end
 	end)
 
-	-- Após transição completa, restaurar tudo
-	task.delay(finalConfig.EscalarTransitionTime, function()
+	local startTime = os.clock()
+	heartbeatConn = RunService.Heartbeat:Connect(function()
+		if movimentoConcluido then
+			return
+		end
+
 		if not isCharacterAlive(character) then
+			if heartbeatConn then
+				heartbeatConn:Disconnect()
+				heartbeatConn = nil
+			end
 			removeConstraint(alignPos)
 			removeConstraint(alignOri)
 			movimentoConcluido = true
@@ -1295,16 +1619,18 @@ local function executarEscalar(escalarResult, config)
 			return
 		end
 
-		removeConstraint(alignPos)
-		removeConstraint(alignOri)
-
-		humanoid.AutoRotate = true
-		humanoid.PlatformStand = false
-		restaurarColisao()
-
-		zeroAssemblyVelocity(hrp)
-		movimentoConcluido = true
-		tentarFinalizar()
+		local dist = (hrp.Position - posFinal).Magnitude
+		local elapsed = os.clock() - startTime
+		if dist <= snapDistance or elapsed >= snapTimeout then
+			if elapsed >= snapTimeout and dist > snapDistance then
+				dbgPrint(
+					"[Parkour] Escalar snap por timeout",
+					"| dist:",
+					string.format("%.2f", dist)
+				)
+			end
+			finalizarMovimentoEscalar()
+		end
 	end)
 
 	local idleAtual = estado.GrabData and estado.GrabData.IdleMode or "IdleSuporte"
@@ -1367,14 +1693,25 @@ local function executarPuloTras(config)
 	-- Sustentação via LinearVelocity (como Dash)
 	criarLinearVelocity(hrp, impulseVel, 0.2)
 
-	local okAnimacao = AnimacaoParkour.TocarAcao("PuloTras", nil, function()
+	local finalizadoPuloTras = false
+	local function finalizarPuloTras()
+		if finalizadoPuloTras then
+			return
+		end
+		finalizadoPuloTras = true
 		AnimacaoParkour.ResetarBraco()
 		fullCleanup()
+	end
+
+	-- Não esperar a animação inteira para liberar re-detecção de parkour no ar.
+	task.delay(0.2, finalizarPuloTras)
+
+	local okAnimacao = AnimacaoParkour.TocarAcao("PuloTras", nil, function()
+		finalizarPuloTras()
 	end)
 
 	if not okAnimacao then
-		AnimacaoParkour.ResetarBraco()
-		fullCleanup()
+		finalizarPuloTras()
 	end
 
 	return true
@@ -1513,8 +1850,7 @@ function Movimento.TentarSubir()
 		return false, nil
 	end
 
-	-- Primeiro: verificar se pode escalar (subir em cima da plataforma atual)
-	-- Usa CheckEscalar que verifica se o player CABE EM CIMA da plataforma + tem chão
+	-- Verificar escalar e subir no mesmo frame para permitir preferência contextual.
 	local escalarResult = Analisador.CheckEscalar(
 		character,
 		grabData.EdgePosition,
@@ -1522,17 +1858,6 @@ function Movimento.TentarSubir()
 		grabData.Part,
 		grabData.Config
 	)
-
-	if escalarResult and escalarResult.CanEscalar then
-		-- Se cabe em cima, escalar ao invés de subir
-		local ok = executarEscalar(escalarResult, grabData.Config)
-		if ok then
-				dbgPrint("[Parkour] Escalar para cima da plataforma")
-		end
-		return ok, "Escalar", nil, escalarResult
-	end
-
-	-- Segundo: verificar se tem superfície acima para subir (agarrar mais alto)
 	local subirResult = Analisador.CheckSubir(
 		character,
 		grabData.EdgePosition,
@@ -1540,7 +1865,23 @@ function Movimento.TentarSubir()
 		grabData.Config
 	)
 
-	if not subirResult or not subirResult.CanSubir then
+	local escalarDisponivel = escalarResult and escalarResult.CanEscalar
+	local subirDisponivel = subirResult and subirResult.CanSubir
+
+	-- Entre SubirSalto e Escalar, prioriza SubirSalto (confirmação por pulo/hold no input layer).
+	if subirDisponivel and subirResult.Tipo == "SubirSalto" then
+		return true, "SubirSalto", subirResult, escalarResult
+	end
+
+	if escalarDisponivel then
+		local ok = executarEscalar(escalarResult, grabData.Config)
+		if ok then
+				dbgPrint("[Parkour] Escalar para cima da plataforma")
+		end
+		return ok, "Escalar", nil, escalarResult
+	end
+
+	if not subirDisponivel then
 		-- Retornar debug data mesmo quando falha (para visualização)
 		return false, nil, subirResult, escalarResult
 	end
@@ -1901,7 +2242,8 @@ function Movimento.ConfirmarPreviewLateralSalto(direcao, alvoLateralSalto)
 			alvoLateralSalto.Part,
 			idleModeNovo,
 			direcao .. "Salto",
-			finalConfig
+			finalConfig,
+			hrp.CFrame.LookVector
 		)
 		applyOccludedPartVisual(estado.GrabData.Part, finalConfig)
 
@@ -1979,6 +2321,7 @@ function Movimento.ReavaliarIdleAgarrado()
 	end
 
 	local finalConfig = Configs.mergeConfig(grabData.Config)
+	applyOccludedPartVisual(grabData.Part, finalConfig)
 	local idleNovo = resolverIdleModeParaGrab(
 		character,
 		grabData.Part,

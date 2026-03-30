@@ -65,8 +65,19 @@ local function computeFaceVerticalEdges(part, result)
 	return Utilidades.vectorFromTable(topCoords), Utilidades.vectorFromTable(bottomCoords)
 end
 
+local function isWallLikeNormal(normal, config)
+	local maxWallNormalY = config.MaxWallNormalY or 0.35
+	return math.abs(normal.Unit.Y) <= maxWallNormalY
+end
+
 local function buildResultFromCast(castData)
 	if not castData then
+		return nil
+	end
+
+	-- Filtrar faces não-laterais (chão/teto): apenas bordas de faces tipo parede são válidas
+	local resultNormal = castData.Normal or (castData.Result and castData.Result.Normal)
+	if resultNormal and not isWallLikeNormal(resultNormal, Configs.DefaultConfig) then
 		return nil
 	end
 
@@ -76,11 +87,6 @@ local function buildResultFromCast(castData)
 	castData.BottomEdgePosition = castData.Part.CFrame:PointToWorldSpace(bottomLocal)
 
 	return castData
-end
-
-local function isWallLikeNormal(normal, config)
-	local maxWallNormalY = config.MaxWallNormalY or 0.35
-	return math.abs(normal.Unit.Y) <= maxWallNormalY
 end
 
 local function hasBothClearances(character, part, edgePosition, normal, finalConfig)
@@ -117,12 +123,18 @@ local function checkEscalarAtEdge(character, currentEdgePos, currentNormal, curr
 	Debug.Verbose("  EdgePos:", currentEdgePos, "| Normal:", currentNormal)
 	Debug.Verbose("  Part:", currentPart and currentPart.Name or "nil")
 
-	local look = -currentNormal.Unit
+	-- Flatten look para escalar sempre na vertical (sem influência de pitch da part)
+	local flatLook = Vector3.new(-currentNormal.X, 0, -currentNormal.Z)
+	if flatLook.Magnitude < 0.01 then
+		flatLook = Vector3.new(0, 0, -1)
+	end
+	flatLook = flatLook.Unit
+
 	local center = currentEdgePos
 		+ Vector3.yAxis * (finalConfig.EscalarClearanceUpOffset or finalConfig.EscalarUpOffset)
-		+ look * (finalConfig.EscalarClearanceForwardOffset or finalConfig.EscalarForwardOffset)
+		+ flatLook * (finalConfig.EscalarClearanceForwardOffset or finalConfig.EscalarForwardOffset)
 
-	local cf = CFrame.lookAt(center, center + look, Vector3.yAxis)
+	local cf = CFrame.lookAt(center, center + flatLook, Vector3.yAxis)
 	local clearanceSize = finalConfig.EscalarClearanceSize or finalConfig.VaultClearanceSize
 	local minH = finalConfig.MinPartHeight
 
@@ -142,9 +154,10 @@ local function checkEscalarAtEdge(character, currentEdgePos, currentNormal, curr
 
 	Debug.Verbose("  ClearanceResult: clear=", clear, "| blocker=", blocker and blocker.Name or "nil")
 
+	-- PosFinal usa flatLook para que o offset forward seja puramente horizontal
 	local posFinal = currentEdgePos
 		+ Vector3.yAxis * finalConfig.EscalarUpOffset
-		+ look * finalConfig.EscalarForwardOffset
+		+ flatLook * finalConfig.EscalarForwardOffset
 
 	if not clear then
 		Debug.Verbose("  RESULTADO: NoClearanceOnTop | Blocker:", blocker and blocker.Name or "nil")
@@ -188,11 +201,19 @@ end
 function Analisador.HasTopClearance(data, config)
 	local finalConfig = Configs.mergeConfig(config)
 	local normal = data.Normal.Unit
+
+	-- Normal flattenada: verificação de topo sempre horizontal (sem influência de pitch da part)
+	local flatNormal = Vector3.new(normal.X, 0, normal.Z)
+	if flatNormal.Magnitude < 0.01 then
+		flatNormal = Vector3.new(0, 0, -1)
+	end
+	flatNormal = flatNormal.Unit
+
 	local center = data.EdgePosition
 		+ Vector3.yAxis * finalConfig.TopClearanceUpOffset
-		+ normal * finalConfig.TopClearanceNormalOffset
+		+ flatNormal * finalConfig.TopClearanceNormalOffset
 
-	local cf = Utilidades.getSurfaceFrame(center, normal)
+	local cf = CFrame.lookAt(center, center - flatNormal, Vector3.yAxis)
 	local minH = finalConfig.MinPartHeight
 	local clear, blocker = Utilidades.firstBlockingPartInBox(
 		cf,
@@ -207,11 +228,19 @@ end
 function Analisador.HasFrontClearance(data, config)
 	local finalConfig = Configs.mergeConfig(config)
 	local normal = data.Normal.Unit
+
+	-- Normal flattenada: verificação frontal sempre 100% vertical (sem influência de pitch da part)
+	local flatNormal = Vector3.new(normal.X, 0, normal.Z)
+	if flatNormal.Magnitude < 0.01 then
+		flatNormal = Vector3.new(0, 0, -1)
+	end
+	flatNormal = flatNormal.Unit
+
 	local center = data.EdgePosition
 		+ Vector3.yAxis * finalConfig.FrontClearanceUpOffset
-		+ normal * finalConfig.FrontClearanceNormalOffset
+		+ flatNormal * finalConfig.FrontClearanceNormalOffset
 
-	local cf = Utilidades.getSurfaceFrame(center, normal)
+	local cf = CFrame.lookAt(center, center - flatNormal, Vector3.yAxis)
 	local minH = finalConfig.MinPartHeight
 	local clear, blocker = Utilidades.firstBlockingPartInBox(
 		cf,
@@ -454,6 +483,105 @@ local function buildCastDataFromPartPoint(character, part, samplePoint, preferre
 	}
 end
 
+local function getClosestSurfacePointOnPart(part, worldPoint, preferredDirWorld)
+	local half = part.Size / 2
+	local localPoint = part.CFrame:PointToObjectSpace(worldPoint)
+	local clamped = Vector3.new(
+		math.clamp(localPoint.X, -half.X, half.X),
+		math.clamp(localPoint.Y, -half.Y, half.Y),
+		math.clamp(localPoint.Z, -half.Z, half.Z)
+	)
+
+	local isOutside = math.abs(localPoint.X) > half.X
+		or math.abs(localPoint.Y) > half.Y
+		or math.abs(localPoint.Z) > half.Z
+
+	if isOutside then
+		return part.CFrame:PointToWorldSpace(clamped)
+	end
+
+	local dirLocal = nil
+	if preferredDirWorld and preferredDirWorld.Magnitude > 0.001 then
+		dirLocal = part.CFrame:VectorToObjectSpace(preferredDirWorld.Unit)
+	end
+
+	local distToFace = {
+		X = half.X - math.abs(localPoint.X),
+		Y = half.Y - math.abs(localPoint.Y),
+		Z = half.Z - math.abs(localPoint.Z),
+	}
+
+	local axis = "X"
+	if distToFace.Y < distToFace[axis] then
+		axis = "Y"
+	end
+	if distToFace.Z < distToFace[axis] then
+		axis = "Z"
+	end
+
+	local axisValue = Utilidades.getAxisValue(localPoint, axis)
+	local sign = axisValue >= 0 and 1 or -1
+	if math.abs(axisValue) < 0.01 and dirLocal and math.abs(Utilidades.getAxisValue(dirLocal, axis)) > 0.01 then
+		sign = Utilidades.getAxisValue(dirLocal, axis) >= 0 and 1 or -1
+	end
+
+	local facePoint = {
+		X = clamped.X,
+		Y = clamped.Y,
+		Z = clamped.Z,
+	}
+	facePoint[axis] = sign * Utilidades.getAxisValue(half, axis)
+
+	return part.CFrame:PointToWorldSpace(Utilidades.vectorFromTable(facePoint))
+end
+
+local function buildCastDataByRayToPart(character, part, origin, lookXZ, includeRayParams, includeList)
+	local toCenter = part.Position - origin
+	local preferredDir = toCenter.Magnitude > 0.001 and toCenter.Unit or lookXZ
+	local targetPoint = getClosestSurfacePointOnPart(part, origin, preferredDir)
+	local toTarget = targetPoint - origin
+
+	if toTarget.Magnitude < 0.02 then
+		local nudgeDir = preferredDir
+		if not nudgeDir or nudgeDir.Magnitude < 0.001 then
+			nudgeDir = Vector3.zAxis
+		end
+		targetPoint = getClosestSurfacePointOnPart(part, origin + nudgeDir.Unit * 0.2, nudgeDir)
+		toTarget = targetPoint - origin
+	end
+
+	if toTarget.Magnitude < 0.02 then
+		local fallback = buildCastDataFromPartPoint(character, part, origin, -lookXZ)
+		fallback.ClosestTargetPoint = targetPoint
+		return fallback
+	end
+
+	includeList[1] = part
+	includeRayParams.FilterDescendantsInstances = includeList
+
+	-- Overshoot curto evita miss por precisão no limite da superfície.
+	local castDistance = toTarget.Magnitude + 0.2
+	local result = Workspace:Raycast(origin, toTarget.Unit * castDistance, includeRayParams)
+
+	if result and result.Instance == part then
+		return {
+			Character = character,
+			Part = part,
+			Result = result,
+			Origin = origin,
+			HitPosition = result.Position,
+			Normal = result.Normal,
+			ClosestTargetPoint = targetPoint,
+		}
+	end
+
+	local fallback = buildCastDataFromPartPoint(character, part, targetPoint, -lookXZ)
+	fallback.Origin = origin
+	fallback.HitPosition = fallback.Result and fallback.Result.Position or targetPoint
+	fallback.ClosestTargetPoint = targetPoint
+	return fallback
+end
+
 local function collectValidPartsInBox(cframe, size, ignoreList, minPartHeight)
 	local params = Utilidades.createOverlapParams(ignoreList, 0)
 	local rawParts = Workspace:GetPartBoundsInBox(cframe, size, params)
@@ -480,7 +608,7 @@ end
 local function findForwardEdgeInBox(character, hrp, look, config)
 	local lookXZ = getHorizontalUnit(look)
 	if not lookXZ then
-		return nil, nil
+		return nil, nil, nil
 	end
 
 	local baseSize = config.ForwardObstacleBoxSize or Vector3.new(4.5, 5.5, 4.0)
@@ -495,46 +623,63 @@ local function findForwardEdgeInBox(character, hrp, look, config)
 
 	local parts = collectValidPartsInBox(queryCFrame, querySize, {character}, config.MinPartHeight)
 	local samplePoint = hrp.Position + Vector3.yAxis * (config.ForwardObstacleSampleYOffset or 0)
-	local maxDist = config.ForwardObstacleMaxDistance or config.RayDistance
+	local maxDist = config.ForwardObstacleMaxDistance or (maxReach + 0.5)
+
+	local includeRayParams = RaycastParams.new()
+	includeRayParams.FilterType = Enum.RaycastFilterType.Include
+	includeRayParams.IgnoreWater = true
+	local includeList = table.create(1)
 
 	local candidatePoints = {}
-	local bestData = nil
-	local bestForwardDist = math.huge
-	local bestLateralDist = math.huge
+	local rankedCandidates = {}
 
 	for _, part in ipairs(parts) do
-		local castData = buildCastDataFromPartPoint(character, part, samplePoint, -lookXZ)
+		local castData = buildCastDataByRayToPart(character, part, samplePoint, lookXZ, includeRayParams, includeList)
 		local built = buildResultFromCast(castData)
 		if not built then
 			continue
 		end
 
-		local edgePosition = built.TopEdgePosition
+		local edgePosition = Vector3.new(
+			built.Result.Position.X,
+			built.TopEdgePosition.Y,
+			built.Result.Position.Z
+		)
+		built.TopEdgePosition = edgePosition
+
 		local deltaXZ = Vector3.new(edgePosition.X - hrp.Position.X, 0, edgePosition.Z - hrp.Position.Z)
 		local distXZ = deltaXZ.Magnitude
-		local accepted = false
-
-		if distXZ > 0.05 and distXZ <= maxDist then
-			local forwardDist = deltaXZ:Dot(lookXZ)
-			if forwardDist > 0.01 then
-				accepted = true
-
-				local lateral = (deltaXZ - lookXZ * forwardDist).Magnitude
-				if forwardDist < bestForwardDist - 0.05
-					or (math.abs(forwardDist - bestForwardDist) <= 0.05 and lateral < bestLateralDist)
-				then
-					bestData = built
-					bestForwardDist = forwardDist
-					bestLateralDist = lateral
-				end
-			end
-		end
+		local forwardDist = deltaXZ:Dot(lookXZ)
+		local lateral = (deltaXZ - lookXZ * forwardDist).Magnitude
+		local accepted = distXZ > 0.05 and distXZ <= maxDist
 
 		table.insert(candidatePoints, {
 			Position = edgePosition,
 			Accepted = accepted,
 		})
+
+		if accepted then
+			table.insert(rankedCandidates, {
+				Part = part,
+				CastData = built,
+				ForwardDist = math.max(forwardDist, 0.01),
+				LateralDist = lateral,
+				DistXZ = distXZ,
+			})
+		end
 	end
+
+	table.sort(rankedCandidates, function(a, b)
+		if math.abs(a.DistXZ - b.DistXZ) > 0.05 then
+			return a.DistXZ < b.DistXZ
+		end
+		if math.abs(a.LateralDist - b.LateralDist) > 0.05 then
+			return a.LateralDist < b.LateralDist
+		end
+		return a.ForwardDist > b.ForwardDist
+	end)
+
+	local bestData = rankedCandidates[1] and rankedCandidates[1].CastData or nil
 
 	local debugData = {
 		QueryBoxCFrame = queryCFrame,
@@ -542,7 +687,7 @@ local function findForwardEdgeInBox(character, hrp, look, config)
 		CandidatePoints = candidatePoints,
 	}
 
-	return bestData, debugData
+	return bestData, debugData, rankedCandidates
 end
 
 -- ══════════════════════════════════════
@@ -587,12 +732,11 @@ function Analisador.CheckParkour(character, config)
 		}
 	end
 
-	local rayParams = Utilidades.createRaycastParamsForCharacter(character)
 	Debug.Verbose("═══ CheckParkour (Box+XZ) ═══")
 	Debug.Verbose("  HRP:", hrp.Position, "| Floor:", humanoid.FloorMaterial)
 
 	-- 1) Busca por bloco frontal: achar melhor borda candidata
-	local edgeData, blockDebug = findForwardEdgeInBox(character, hrp, lookXZ, finalConfig)
+	local edgeData, blockDebug, rankedForwardCandidates = findForwardEdgeInBox(character, hrp, lookXZ, finalConfig)
 	if not edgeData then
 		Debug.Verbose(
 			"  RESULTADO: NoForwardHit | candidates:",
@@ -621,50 +765,126 @@ function Analisador.CheckParkour(character, config)
 		}
 	end
 
-	-- 2) Edge detection
-	local data = edgeData
-	data.EdgePosition = data.TopEdgePosition
-	data.Mode = "Top"
-	-- Na detecção por caixa não usamos ray frontal primário.
-	-- Limpa campos legados para evitar qualquer dependência acidental de Origin/HitPosition.
-	data.Origin = nil
-	data.HitPosition = nil
-	data.LookVector = lookXZ
-	data.HrpPosition = hrp.Position
-	data.ForwardQueryBoxCFrame = blockDebug and blockDebug.QueryBoxCFrame or nil
-	data.ForwardQueryBoxSize = blockDebug and blockDebug.QueryBoxSize or nil
-	data.ForwardCandidatePoints = blockDebug and blockDebug.CandidatePoints or nil
+	local rayParams = Utilidades.createRaycastParamsForCharacter(character)
 
-	-- 3) Rays XZ (torso + perna) na direção da borda encontrada
-	data.TorsoRayDebug = castRayToEdgeXZ(
-		hrp.Position,
-		data.EdgePosition,
-		finalConfig.TorsoRayOffset,
-		finalConfig.ClassificationRayDistance or finalConfig.RayDistance,
-		finalConfig.ClassificationRayExtraDistance,
-		rayParams,
-		finalConfig
-	)
-	data.LegRayDebug = castRayToEdgeXZ(
-		hrp.Position,
-		data.EdgePosition,
-		finalConfig.PernaRayOffset,
-		finalConfig.ClassificationRayDistance or finalConfig.RayDistance,
-		finalConfig.ClassificationRayExtraDistance,
-		rayParams,
-		finalConfig
-	)
+	local function buildActionDataFromEdge(castData)
+		local candidateData = table.clone(castData)
+		candidateData.EdgePosition = candidateData.TopEdgePosition
+		candidateData.Mode = "Top"
+		-- Na detecção por caixa não usamos ray frontal primário.
+		-- Limpa campos legados para evitar qualquer dependência acidental de Origin/HitPosition.
+		candidateData.Origin = nil
+		candidateData.HitPosition = nil
+		candidateData.LookVector = lookXZ
+		candidateData.HrpPosition = hrp.Position
+		candidateData.ForwardQueryBoxCFrame = blockDebug and blockDebug.QueryBoxCFrame or nil
+		candidateData.ForwardQueryBoxSize = blockDebug and blockDebug.QueryBoxSize or nil
+		candidateData.ForwardCandidatePoints = blockDebug and blockDebug.CandidatePoints or nil
 
-	-- 4) Classificar ação
+		candidateData.TorsoRayDebug = castRayToEdgeXZ(
+			hrp.Position,
+			candidateData.EdgePosition,
+			finalConfig.TorsoRayOffset,
+			finalConfig.ClassificationRayDistance or finalConfig.RayDistance,
+			finalConfig.ClassificationRayExtraDistance,
+			rayParams,
+			finalConfig
+		)
+		candidateData.LegRayDebug = castRayToEdgeXZ(
+			hrp.Position,
+			candidateData.EdgePosition,
+			finalConfig.PernaRayOffset,
+			finalConfig.ClassificationRayDistance or finalConfig.RayDistance,
+			finalConfig.ClassificationRayExtraDistance,
+			rayParams,
+			finalConfig
+		)
+
+		candidateData.Acao = classificarAcaoDePulo(
+			candidateData.EdgePosition.Y,
+			hrp.Position.Y,
+			candidateData.TorsoRayDebug,
+			candidateData.LegRayDebug,
+			finalConfig
+		)
+
+		candidateData.DistanceLine = {
+			PosA = hrp.Position,
+			PosB = candidateData.EdgePosition,
+			Color = Color3.fromRGB(255, 0, 255),
+		}
+
+		return candidateData
+	end
+
+	local function buildGrabCandidateFromCast(castData)
+		local candidateData = table.clone(castData)
+		candidateData.EdgePosition = candidateData.TopEdgePosition
+		candidateData.Mode = "Top"
+		candidateData.Origin = nil
+		candidateData.HitPosition = nil
+		candidateData.LookVector = lookXZ
+		candidateData.HrpPosition = hrp.Position
+		candidateData.ForwardQueryBoxCFrame = blockDebug and blockDebug.QueryBoxCFrame or nil
+		candidateData.ForwardQueryBoxSize = blockDebug and blockDebug.QueryBoxSize or nil
+		candidateData.ForwardCandidatePoints = blockDebug and blockDebug.CandidatePoints or nil
+		candidateData.Acao = "Agarrar"
+		candidateData.DistanceLine = {
+			PosA = hrp.Position,
+			PosB = candidateData.EdgePosition,
+			Color = Color3.fromRGB(255, 0, 255),
+		}
+		return candidateData
+	end
+
+	local rightXZ = lookXZ:Cross(Vector3.yAxis)
+	if rightXZ.Magnitude < 0.05 then
+		rightXZ = Vector3.xAxis
+	else
+		rightXZ = rightXZ.Unit
+	end
+	local grabRetargetLateralOffset = math.max((finalConfig.GrabRetargetLateralOffset or 0.75), 0.1)
+
+	local function buildRetargetedGrabCandidates(sourceCandidate)
+		if not sourceCandidate or not sourceCandidate.Part then
+			return nil
+		end
+
+		local sampleBase = hrp.Position + Vector3.yAxis * (finalConfig.ForwardObstacleSampleYOffset or 0)
+		local offsets = { -grabRetargetLateralOffset, grabRetargetLateralOffset }
+		local retargeted = {}
+
+		for _, lateralOffset in ipairs(offsets) do
+			local samplePoint = sampleBase + rightXZ * lateralOffset
+			local castData = buildCastDataFromPartPoint(character, sourceCandidate.Part, samplePoint, -lookXZ)
+			local built = buildResultFromCast(castData)
+			if built and built.TopEdgePosition then
+				local retargetedCandidate = buildGrabCandidateFromCast(built)
+				if (retargetedCandidate.EdgePosition - sourceCandidate.EdgePosition).Magnitude > 0.08 then
+					retargetedCandidate.Retargeted = true
+					retargetedCandidate.RetargetLateralOffset = lateralOffset
+					table.insert(retargeted, retargetedCandidate)
+				end
+			end
+		end
+
+		return retargeted
+	end
+
+	local function snapshotCandidateForDebug(candidateData)
+		local snapshot = table.clone(candidateData)
+		snapshot.DistanceLine = {
+			PosA = hrp.Position,
+			PosB = candidateData.EdgePosition,
+			Color = Color3.fromRGB(255, 0, 255),
+		}
+		return snapshot
+	end
+
+	-- 2-4) Preparar e classificar candidato primário
+	local data = buildActionDataFromEdge(edgeData)
 	local bordaReal = data.EdgePosition
-	local acao = classificarAcaoDePulo(
-		bordaReal.Y,
-		hrp.Position.Y,
-		data.TorsoRayDebug,
-		data.LegRayDebug,
-		finalConfig
-	)
-	data.Acao = acao
+	local acao = data.Acao
 
 	Debug.Verbose(
 		"  Classificacao:",
@@ -677,15 +897,89 @@ function Analisador.CheckParkour(character, config)
 		bordaReal
 	)
 
-	-- Calcular distancia real (3D) da borda até o HRP do player
+	-- Calcular distancia real (3D) da borda primária até o HRP do player
 	local distReal = (bordaReal - hrp.Position).Magnitude
-	data.DistanceLine = {
-		PosA = hrp.Position,
-		PosB = bordaReal,
-		Color = Color3.fromRGB(255, 0, 255), -- linha rosa para debug
-	}
 
 	-- 5) Verificações específicas por tipo
+	local function avaliarCandidatoAgarrar(candidateData)
+		local checkAttempts = {}
+
+		local function registerAttempt(candidate)
+			table.insert(checkAttempts, snapshotCandidateForDebug(candidate))
+		end
+
+		local function avaliarSemRetarget(candidate)
+			local candidateDist = (candidate.EdgePosition - hrp.Position).Magnitude
+
+		if candidateDist > finalConfig.MaxGrabDistance then
+			candidate.Aprovado = false
+			candidate.Reason = "TooFarToGrab"
+			candidate.GrabDistance = candidateDist
+			registerAttempt(candidate)
+			return false, candidate
+		end
+
+		local hasTopClearance, topBlocker, topCf, topSize = Analisador.HasTopClearance(candidate, finalConfig)
+		candidate.TopClearanceCFrame = topCf
+		candidate.TopClearanceSize = topSize
+		candidate.HasTopClearance = hasTopClearance
+
+		if not hasTopClearance then
+			candidate.Aprovado = false
+			candidate.Reason = "NoTopClearance"
+			candidate.TopBlocker = topBlocker
+			candidate.GrabDistance = candidateDist
+			registerAttempt(candidate)
+			return false, candidate
+		end
+
+		local hasFrontClearance, frontBlocker, frontCf, frontSize = Analisador.HasFrontClearance(candidate, finalConfig)
+		candidate.FrontClearanceCFrame = frontCf
+		candidate.FrontClearanceSize = frontSize
+		candidate.HasFrontClearance = hasFrontClearance
+
+		if not hasFrontClearance then
+			candidate.Aprovado = false
+			candidate.Reason = "NoFrontClearance"
+			candidate.FrontBlocker = frontBlocker
+			candidate.GrabDistance = candidateDist
+			registerAttempt(candidate)
+			return false, candidate
+		end
+
+		local idleMode, legHit, legProbeRaysDebug = Analisador.ResolveIdleMode(candidate, finalConfig)
+		candidate.Aprovado = true
+		candidate.Reason = "Ok"
+		candidate.IdleMode = idleMode
+		candidate.LegHit = legHit
+		candidate.LegProbeRaysDebug = legProbeRaysDebug
+		candidate.GrabDistance = candidateDist
+		registerAttempt(candidate)
+
+		return true, candidate
+		end
+
+		local okPrimary, evaluatedPrimary = avaliarSemRetarget(candidateData)
+		if okPrimary then
+			evaluatedPrimary.CheckAttempts = checkAttempts
+			return true, evaluatedPrimary
+		end
+
+		if evaluatedPrimary.Reason == "NoTopClearance" or evaluatedPrimary.Reason == "NoFrontClearance" then
+			for _, retargetedCandidate in ipairs(buildRetargetedGrabCandidates(candidateData) or {}) do
+				local okRetargeted, evaluatedRetargeted = avaliarSemRetarget(retargetedCandidate)
+				if okRetargeted then
+					evaluatedRetargeted.Reason = "OkRetargeted"
+					evaluatedRetargeted.CheckAttempts = checkAttempts
+					return true, evaluatedRetargeted
+				end
+			end
+		end
+
+		evaluatedPrimary.CheckAttempts = checkAttempts
+		return false, evaluatedPrimary
+	end
+
 	local function tentarAgarrar()
 		if humanoid.FloorMaterial ~= Enum.Material.Air then
 			data.Aprovado = false
@@ -694,49 +988,110 @@ function Analisador.CheckParkour(character, config)
 			return data
 		end
 
-		if distReal > finalConfig.MaxGrabDistance then
-			data.Aprovado = false
-			data.Reason = "TooFarToGrab"
-			Debug.Verbose("  RESULTADO:", data.Reason, "| dist:", distReal)
-			return data
+		local grabCandidates = {}
+
+		local function alreadyAdded(candidateData)
+			for _, existing in ipairs(grabCandidates) do
+				if existing.Part == candidateData.Part and (existing.EdgePosition - candidateData.EdgePosition).Magnitude <= 0.05 then
+					return true
+				end
+			end
+			return false
 		end
 
-		-- Top clearance
-		local hasTopClearance, topBlocker, topCf, topSize = Analisador.HasTopClearance(data, finalConfig)
-		data.TopClearanceCFrame = topCf
-		data.TopClearanceSize = topSize
+		local function pushCandidate(candidateData, forwardDist)
+			if not candidateData or candidateData.Acao ~= "Agarrar" then
+				return
+			end
+			if alreadyAdded(candidateData) then
+				return
+			end
 
-		if not hasTopClearance then
-			data.Aprovado = false
-			data.Reason = "NoTopClearance"
-			data.TopBlocker = topBlocker
-			Debug.Verbose("  RESULTADO:", data.Reason, "| blocker:", topBlocker and topBlocker.Name or "nil")
-			return data
+			candidateData.GrabDistance = (candidateData.EdgePosition - hrp.Position).Magnitude
+			candidateData.ForwardDist = forwardDist or math.huge
+			table.insert(grabCandidates, candidateData)
 		end
 
-		-- Front clearance
-		local hasFrontClearance, frontBlocker, frontCf, frontSize = Analisador.HasFrontClearance(data, finalConfig)
-		data.FrontClearanceCFrame = frontCf
-		data.FrontClearanceSize = frontSize
+		pushCandidate(data, 0)
 
-		if not hasFrontClearance then
-			data.Aprovado = false
-			data.Reason = "NoFrontClearance"
-			data.FrontBlocker = frontBlocker
-			Debug.Verbose("  RESULTADO:", data.Reason, "| blocker:", frontBlocker and frontBlocker.Name or "nil")
-			return data
+		for _, ranked in ipairs(rankedForwardCandidates or {}) do
+			if ranked and ranked.CastData then
+				local candidateData = buildGrabCandidateFromCast(ranked.CastData)
+				pushCandidate(candidateData, ranked.ForwardDist)
+			end
 		end
 
-		-- Idle mode
-		local idleMode, legHit, legProbeRaysDebug = Analisador.ResolveIdleMode(data, finalConfig)
-		data.Aprovado = true
-		data.Reason = "Ok"
-		data.IdleMode = idleMode
-		data.LegHit = legHit
-		data.LegProbeRaysDebug = legProbeRaysDebug
-		Debug.Verbose("  RESULTADO: Ok | Acao=Agarrar | Idle:", idleMode)
+		table.sort(grabCandidates, function(a, b)
+			if math.abs((a.GrabDistance or math.huge) - (b.GrabDistance or math.huge)) > 0.05 then
+				return (a.GrabDistance or math.huge) < (b.GrabDistance or math.huge)
+			end
+			return (a.ForwardDist or math.huge) < (b.ForwardDist or math.huge)
+		end)
 
-		return data
+		Debug.Verbose("  Grab candidates válidos para teste:", #grabCandidates)
+
+		local evaluatedCandidatesDebug = {}
+		local lastFailedCandidate = data
+		local preferredFailedCandidate = nil
+		for index, candidateData in ipairs(grabCandidates) do
+			local okGrab, evaluatedData = avaliarCandidatoAgarrar(candidateData)
+
+			for _, attempt in ipairs(evaluatedData.CheckAttempts or { evaluatedData }) do
+				attempt.GrabCandidateIndex = index
+				attempt.GrabCandidateCount = #grabCandidates
+				table.insert(evaluatedCandidatesDebug, attempt)
+			end
+
+			if okGrab then
+				evaluatedData.GrabCandidateIndex = index
+				evaluatedData.GrabCandidateCount = #grabCandidates
+				evaluatedData.GrabCandidatesDebug = evaluatedCandidatesDebug
+				Debug.Verbose(
+					"  RESULTADO: Ok | Acao=Agarrar | Candidate:",
+					index,
+					"/",
+					#grabCandidates,
+					"| Dist:",
+					string.format("%.2f", evaluatedData.GrabDistance or 0),
+					"| Idle:",
+					evaluatedData.IdleMode
+				)
+				return evaluatedData
+			end
+
+			lastFailedCandidate = evaluatedData
+			if evaluatedData.Reason ~= "TooFarToGrab" and not preferredFailedCandidate then
+				preferredFailedCandidate = evaluatedData
+			end
+			Debug.Verbose(
+				"  Candidato agarrar rejeitado:",
+				index,
+				"/",
+				#grabCandidates,
+				"| Reason:",
+				evaluatedData.Reason,
+				"| Dist:",
+				string.format("%.2f", evaluatedData.GrabDistance or 0),
+				"| TopClear:",
+				evaluatedData.HasTopClearance,
+				"| FrontClear:",
+				evaluatedData.HasFrontClearance,
+				"| TopBlocker:",
+				evaluatedData.TopBlocker and evaluatedData.TopBlocker.Name or "nil",
+				"| FrontBlocker:",
+				evaluatedData.FrontBlocker and evaluatedData.FrontBlocker.Name or "nil",
+				"| Retargeted:",
+				evaluatedData.Retargeted == true
+			)
+		end
+
+		local failedCandidate = preferredFailedCandidate or lastFailedCandidate
+		if failedCandidate then
+			failedCandidate.GrabCandidatesDebug = evaluatedCandidatesDebug
+		end
+
+		Debug.Verbose("  RESULTADO:", failedCandidate and failedCandidate.Reason or "NoGrabCandidate")
+		return failedCandidate
 	end
 
 	if acao == "Agarrar" then
@@ -845,6 +1200,9 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 	local minVerticalDelta = finalConfig.SubirMinVerticalDelta or 0.5
 	local samplePointBase = currentEdgePos + currentNormal.Unit * probeOffset
 	local maxEscalarVerticalDistance = finalConfig.EscalarMaxVerticalDistance or finalConfig.SubirMaxAltura or 6.0
+	local wallForwardXZ = getHorizontalUnit(-currentNormal)
+	local maxHorizontalDistance = math.max(finalConfig.SubirMaxHorizontalDistance or 5.5, 0.1)
+	local maxDepthDistance = math.max(finalConfig.SubirMaxDepthDistance or 3.0, 0.1)
 
 	for _, part in ipairs(parts) do
 		local castData = buildCastDataFromPartPoint(character, part, samplePointBase, currentNormal)
@@ -873,6 +1231,39 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 
 		local horizDelta = Vector3.new(topEdge.X - currentEdgePos.X, 0, topEdge.Z - currentEdgePos.Z)
 		local horizDist = horizDelta.Magnitude
+		local depthDist = wallForwardXZ and math.abs(horizDelta:Dot(wallForwardXZ)) or horizDist
+
+		if horizDist > maxHorizontalDistance then
+			Debug.Verbose(
+				"  Candidato rejeitado (TooFarHorizontally):",
+				part.Name,
+				"| HorizDist:",
+				string.format("%.2f", horizDist),
+				"| Max:",
+				string.format("%.2f", maxHorizontalDistance)
+			)
+			table.insert(subirDebug.CandidatePoints, {
+				Position = topEdge,
+				Accepted = false,
+			})
+			continue
+		end
+
+		if depthDist > maxDepthDistance then
+			Debug.Verbose(
+				"  Candidato rejeitado (TooDeepFromCurrentWall):",
+				part.Name,
+				"| DepthDist:",
+				string.format("%.2f", depthDist),
+				"| Max:",
+				string.format("%.2f", maxDepthDistance)
+			)
+			table.insert(subirDebug.CandidatePoints, {
+				Position = topEdge,
+				Accepted = false,
+			})
+			continue
+		end
 
 		table.insert(candidates, {
 			Part = part,
@@ -880,6 +1271,7 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 			Normal = built.Normal,
 			VertDist = vertDist,
 			HorizDist = horizDist,
+			DepthDist = depthDist,
 		})
 
 		table.insert(subirDebug.CandidatePoints, {
@@ -953,7 +1345,16 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 			end
 		end
 
-		Debug.Verbose("  Testando candidato:", cand.Part.Name, "| HorizDist:", string.format("%.2f", cand.HorizDist), "| VertDist:", string.format("%.1f", cand.VertDist))
+		Debug.Verbose(
+			"  Testando candidato:",
+			cand.Part.Name,
+			"| HorizDist:",
+			string.format("%.2f", cand.HorizDist),
+			"| DepthDist:",
+			string.format("%.2f", cand.DepthDist or 0),
+			"| VertDist:",
+			string.format("%.1f", cand.VertDist)
+		)
 
 		local hasTopClearance, hasFrontClearance = hasBothClearances(
 			character,
@@ -2060,6 +2461,27 @@ function Analisador.TentarFallbackAgarrar(character, parkourResult, config)
 	fallback.Character = character
 	fallback.Acao = "Agarrar"
 	fallback.Aprovado = false
+
+	if not isWallLikeNormal(fallback.Normal, finalConfig) then
+		local lookBase = fallback.LookVector
+		if not lookBase or lookBase.Magnitude < 0.001 then
+			lookBase = hrp.CFrame.LookVector
+		end
+
+		local lookXZ = Vector3.new(lookBase.X, 0, lookBase.Z)
+		if lookXZ.Magnitude > 0.001 then
+			fallback.Normal = -lookXZ.Unit
+		else
+			local planarNormal = Vector3.new(fallback.Normal.X, 0, fallback.Normal.Z)
+			if planarNormal.Magnitude > 0.001 then
+				fallback.Normal = planarNormal.Unit
+			else
+				fallback.Normal = Vector3.new(0, 0, -1)
+			end
+		end
+
+		Debug.Verbose("[Parkour] Fallback Agarrar normal ajustada para parede | novo:", fallback.Normal)
+	end
 
 	local distReal = (fallback.EdgePosition - hrp.Position).Magnitude
 	if distReal > finalConfig.MaxGrabDistance then

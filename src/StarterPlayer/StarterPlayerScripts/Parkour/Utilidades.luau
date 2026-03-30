@@ -150,7 +150,7 @@ function Utilidades.isIgnorablePart(part, minHeight)
 	end
 
 	-- Peças muito pequenas em altura (decoração, grama, detalhes)
-	if part.Size.Y < (minHeight or 0.5) then
+	if part.Size.Y < (minHeight or 0.5) and part.Material == Enum.Material.Grass then
 		return true
 	end
 

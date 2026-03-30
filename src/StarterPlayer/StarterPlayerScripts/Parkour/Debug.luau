@@ -192,6 +192,58 @@ function Debug.DrawDebug(data)
 		end
 	end
 
+	if data.GrabCandidatesDebug then
+		for _, candidate in ipairs(data.GrabCandidatesDebug) do
+			local reason = candidate.Reason or "Unknown"
+			local edgeColor
+			if candidate.Aprovado then
+				edgeColor = Color3.fromRGB(80, 255, 80)
+			elseif reason == "NoTopClearance" then
+				edgeColor = Color3.fromRGB(255, 80, 80)
+			elseif reason == "NoFrontClearance" then
+				edgeColor = Color3.fromRGB(255, 170, 80)
+			elseif reason == "TooFarToGrab" then
+				edgeColor = Color3.fromRGB(170, 170, 170)
+			else
+				edgeColor = Color3.fromRGB(230, 120, 255)
+			end
+
+			if candidate.DistanceLine then
+				Debug.DrawLine(candidate.DistanceLine.PosA, candidate.DistanceLine.PosB, edgeColor)
+			elseif candidate.HrpPosition and candidate.EdgePosition then
+				Debug.DrawLine(candidate.HrpPosition, candidate.EdgePosition, edgeColor)
+			end
+
+			if candidate.EdgePosition then
+				Debug.DrawPoint(candidate.EdgePosition, edgeColor, candidate.Retargeted and Vector3.new(0.18, 0.18, 0.18) or Vector3.new(0.24, 0.24, 0.24))
+			end
+
+			if candidate.TopClearanceCFrame and candidate.TopClearanceSize then
+				Debug.DrawBox(
+					candidate.TopClearanceCFrame,
+					candidate.TopClearanceSize,
+					candidate.HasTopClearance and Color3.fromRGB(0, 210, 255) or Color3.fromRGB(255, 60, 60)
+				)
+			end
+
+			if candidate.FrontClearanceCFrame and candidate.FrontClearanceSize then
+				Debug.DrawBox(
+					candidate.FrontClearanceCFrame,
+					candidate.FrontClearanceSize,
+					candidate.HasFrontClearance and Color3.fromRGB(255, 220, 90) or Color3.fromRGB(255, 120, 40)
+				)
+			end
+
+			if candidate.TopBlocker and candidate.TopBlocker:IsA("BasePart") then
+				Debug.DrawPoint(candidate.TopBlocker.Position, Color3.fromRGB(255, 40, 40), Vector3.new(0.18, 0.18, 0.18))
+			end
+
+			if candidate.FrontBlocker and candidate.FrontBlocker:IsA("BasePart") then
+				Debug.DrawPoint(candidate.FrontBlocker.Position, Color3.fromRGB(255, 140, 40), Vector3.new(0.18, 0.18, 0.18))
+			end
+		end
+	end
+
 	-- Rays da varredura vertical
 	if data.RayDebug then
 		for _, rayInfo in ipairs(data.RayDebug) do

@@ -88,7 +88,14 @@ Configs.DefaultConfig = {
 	GrabVerticalOffsetSuporte = -2.4,
 	GrabSurfaceOffsetSuspenso = 0.8,
 	GrabVerticalOffsetSuspenso = -2.7,
+	GrabSurfaceSafetyMargin = 0.2, -- margem extra para garantir HRP fora da face da parede
+	GrabSafetyProbeScale = 0.9, -- escala da caixa de teste (relativa ao HRP) para detectar penetração
+	GrabSafetyPushStep = 0.15, -- passo de empurrão para fora da parede quando detectar penetração
+	GrabSafetyMaxPushSteps = 6, -- limite de iterações de correção para evitar loop pesado
 	GrabTransitionTime = 0.25, -- tempo (s) pra player chegar na posição agarrada
+	GrabFinalReachDistance = 0.2, -- distância máxima para confirmar que chegou no alvo do grab
+	GrabFinalSnapTimeout = 0.5, -- tempo máximo para forçar snap final e confirmar grab
+	GrabMinSettleTime = 0.06, -- tempo mínimo antes de validar alcance final (evita confirmar cedo demais)
 	GrabIdleStartDelay = 0.02, -- atraso para iniciar idle após agarrar (menor = entra mais rápido)
 	GrabIdleRecheckInterval = 0.2, -- intervalo (s) para reavaliar idle e sincronizar offset enquanto agarrado
 
@@ -105,6 +112,8 @@ Configs.DefaultConfig = {
 	SubirAreaUpOffset = 5.0, -- deslocamento vertical do centro da caixa em relação à borda atual
 	SubirProbeNormalOffset = 2.0, -- afastamento inicial da parede para posicionar a busca
 	SubirMinVerticalDelta = 0.5, -- diferença mínima em Y para considerar uma borda acima
+	SubirMaxHorizontalDistance = 5.5, -- deslocamento máximo XZ permitido para um candidato de subir
+	SubirMaxDepthDistance = 3.0, -- profundidade máxima na direção da parede atual (evita teleporte para superfície distante)
 	SubirMaxAltura = 6.0, -- dist. máx. vertical para "Subir" (só W)
 	SubirSaltoMaxAltura = 10.5, -- dist. máx. vertical para "SubirSalto" (W+Pulo)
 	SubirTransitionTime = 0.3, -- tempo (s) de transição ao subir
@@ -113,6 +122,7 @@ Configs.DefaultConfig = {
 	SubirSaltoCheckCooldown = 0.25, -- cooldown curto da verificação de SubirSalto (evita spam de log em Heartbeat)
 	SubirSaltoConfirmWindow = 0.9, -- tempo máximo para confirmar SubirSalto após ficar pendente
 	SubirSaltoConfirmEdgeTolerance = 2.5, -- deslocamento máximo permitido da borda original ao confirmar
+	SubirSaltoPreferTimeout = 0.77, -- ao segurar frente com SubirSalto+Escalar válidos, converte para Escalar automático
 	MaxWallNormalY = 0.8, -- permite parede inclinada (montanha), ainda bloqueando superfícies quase horizontais
 
 	-- ═══ Descer: detecção de superfície abaixo (area query) ═══
@@ -121,7 +131,7 @@ Configs.DefaultConfig = {
 	DescerProbeNormalOffset = 2.0, -- afastamento inicial da parede para posicionar a busca
 	DescerMinVerticalDelta = 0.5, -- diferença mínima em Y para considerar uma borda abaixo
 	DescerMaxAltura = 10.0, -- dist. máx. vertical para "Descer" (só S)
-	DescerTransitionTime = 0.3, -- tempo (s) de transição ao descer
+	DescerTransitionTime = 0.35, -- tempo (s) de transição ao descer
 
 	-- ═══ Lateral: deslocamento agarrado direita/esquerda (area query) ═══
 	LateralAreaSize = Vector3.new(12.0, 7, 6.0), -- volume de busca por direção (uma única caixa espelhada)
@@ -142,13 +152,13 @@ Configs.DefaultConfig = {
 	LateralExternalCornerMinDot = -0.35, -- dot mínimo para aceitar curva externa (normal mais diferente da atual)
 	LateralExternalCornerMaxProfundidade = 8.0, -- profundidade máxima permitida para curva externa
 	LateralPathClearanceSize = Vector3.new(1.8, 3.8, 1.4), -- caixa de validação do caminho lateral
+	LateralPathClearanceNormalOffset = 1.2, -- offset normal da caixa lateral de clearance
+	LateralPathClearanceHeightOffset = -1.3, -- offset vertical da caixa lateral de clearance
 	LateralPathSideDistance = 2.2, -- deslocamento lateral da caixa única de validação (não usa mais sweep até o destino)
 	LateralMinSideDistance = 0.1, -- distância lateral mínima para aceitar candidato na direção
 	LateralSaltoMinSideDistance = 1.0, -- distância lateral mínima exclusiva para aceitar LateralSalto (evita salto quase no mesmo alinhamento lateral)
 	LateralReverseTolerance = 0.05, -- tolerância para não aceitar candidato no sentido oposto ao input lateral
 	LateralCandidateBoxMargin = 0.5, -- margem extra da caixa de query para aceitar edgePos (evita alvo muito fora da área)
-	LateralPathClearanceNormalOffset = 1.2, -- offset normal da caixa lateral de clearance
-	LateralPathClearanceHeightOffset = 0.0, -- offset vertical da caixa lateral de clearance
 	LateralExternalPathRayUpOffset = 0.2, -- ajuste em Y para origem/destino do ray de curva externa
 	LateralExternalPathRayNormalOffset = 1.2, -- offset normal aplicado no destino do ray de curva externa
 	LateralTransitionTime = 0.2, -- tempo (s) da transição lateral
@@ -164,19 +174,24 @@ Configs.DefaultConfig = {
 	LateralSaltoPreferTimeout = 0.77, -- segurando lateral nesse estado, após esse tempo executa curva interna automaticamente
 
 	-- ═══ Escalar: subir em cima da plataforma atual ═══
-	EscalarMaxVerticalDistance = 6.0,
+	EscalarMaxVerticalDistance = 3.0,
 	EscalarForwardOffset = 1.2, -- studs pra frente da borda ao escalar (posição final)
 	EscalarUpOffset = 2.5, -- studs acima da borda (posição final)
-	EscalarTransitionTime = 0.3,
-	EscalarVerticalFirstRatio = 0.5,
+	EscalarTransitionTime = 0.35, -- tempo (s) de transição ao escalar
+	EscalarVerticalFirstRatio = 0.2, -- proporção do tempo de transição dedicada ao movimento vertical (vs. horizontal)
+	EscalarFinalSnapDistance = 0.2, -- distância máxima para considerar que alcançou o alvo sem depender só do tempo
+	EscalarFinalSnapTimeout = 0.6, -- tempo máximo (s) para forçar snap final mesmo se não convergir
+	EscalarDisableNearbyCollisions = true, -- cria NoCollisionConstraint com partes próximas no snap final
+	EscalarNearbyCollisionBoxSize = Vector3.new(4.0, 5.0, 4.0), -- caixa de busca de partes próximas no snap final
+	EscalarNearbyCollisionHoldTime = 0.12, -- duração (s) do bypass local de colisão após snap final
 	-- Caixa de clearance do Escalar: verifica se há espaço para o player subir por cima
 	EscalarClearanceSize = Vector3.new(1.9, 4.0, 2.0), -- largura x altura x profundidade
 	EscalarClearanceUpOffset = 2.5, -- centro da caixa: studs acima da borda (onde o player vai ficar)
-	EscalarClearanceForwardOffset = 1.2, -- centro da caixa: studs para dentro da plataforma
+	EscalarClearanceForwardOffset = -1.2, -- centro da caixa: studs para dentro da plataforma
 
 	-- ═══ PuloTras: salto para trás estando agarrado ═══
-	PuloTrasImpulse = 30, -- magnitude do impulso para trás (studs/s)
-	PuloTrasUpComponent = 0.4, -- componente vertical do impulso (0-1)
+	PuloTrasImpulse = 40, -- magnitude do impulso para trás (studs/s)
+	PuloTrasUpComponent = 0.7, -- componente vertical do impulso (0-1)
 
 	-- ═══ Descer: cooldown antes de soltar (evita conflito com PuloTras) ═══
 	DescerHoldTime = 0.15, -- segundos que precisa segurar S antes de soltar

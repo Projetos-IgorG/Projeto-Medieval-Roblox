@@ -2032,6 +2032,13 @@ local function OnJumpAnimacaoTerminou()
 	-- Limpa estado do pulo
 	LimparJumpAnimState()
 
+	-- Se entrou em parkour durante o pulo, não sobrescrever estadoMov para Caindo.
+	if parkourState.ativo then
+		movementFlags.isJumping = false
+		DebugPrint("[ControladorEstado] OnJumpAnimacaoTerminou ignorado: parkour ativo")
+		return
+	end
+
 	-- Só transita para Caindo se ainda está no ar
 	if movementFlags.isJumping or movementFlags.isFalling then
 		-- Marca que agora está caindo (animação de pulo terminou)
@@ -2428,6 +2435,13 @@ end
 --- Atualiza animação de movimento baseado no estado
 AtualizarAnimacaoMovimento = function()
 	if parkourState.ativo then
+		if estadoAtual.estadoAcao ~= "Parkour" then
+			estadoAtual.estadoAcao = "Parkour"
+		end
+		if estadoAtual.estadoMov ~= "Parkour" then
+			estadoAtual.estadoMov = "Parkour"
+		end
+		SincronizarStatusLocal()
 		return
 	end
 
@@ -2655,6 +2669,8 @@ local function ProcessarSincronizacao(entidade: Model, dados)
 
 	if parkourState.ativo then
 		estadoAtual.estadoAcao = "Parkour"
+		estadoAtual.estadoMov = "Parkour"
+		SincronizarStatusLocal()
 		return
 	end
 
@@ -2777,6 +2793,7 @@ function ClientBridge.EntrarParkour()
 	estadoAtual.correndo = false
 	movementFlags.isRunning = false
 	AtualizarVelocidadeLocal()
+	SincronizarStatusLocal()
 end
 
 function ClientBridge.SairParkour()
@@ -2837,6 +2854,13 @@ end
 --- Atualiza estado de movimento baseado em inputs e estado do Humanoid
 local function AtualizarEstadoMovimento()
 	if parkourState.ativo then
+		if estadoAtual.estadoAcao ~= "Parkour" then
+			estadoAtual.estadoAcao = "Parkour"
+		end
+		if estadoAtual.estadoMov ~= "Parkour" then
+			estadoAtual.estadoMov = "Parkour"
+		end
+		SincronizarStatusLocal()
 		return
 	end
 
