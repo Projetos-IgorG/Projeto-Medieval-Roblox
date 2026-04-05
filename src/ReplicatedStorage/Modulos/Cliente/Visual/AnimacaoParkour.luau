@@ -34,7 +34,7 @@ local parkourModo = (ModoAnimacoes :: any).Parkour :: ParkourModo
 local configAnim = parkourModo and parkourModo.configAnimacao or {
 	FadeInAcao = 0.08,
 	FadeOutAcao = 0.12,
-	FadeInIdle = 0.08,
+	FadeInIdle = 0.04,
 	FadeOutIdle = 0.18,
 	VelocidadePadrao = 1.0,
 }
