@@ -49,6 +49,7 @@ local conexoesAcao: { RBXScriptConnection } = {}
 local tokenAcao = 0
 local proximoBraco = "Direita"
 local preAcaoAtual: PreAcaoState? = nil
+local speedMultiplier: number = 1.0
 
 local function obterPrioridade(nomeAnimacao: string, looped: boolean): Enum.AnimationPriority
 	if looped or nomeAnimacao == "IdleSuporte" or nomeAnimacao == "IdleSuspenso" then
@@ -66,12 +67,28 @@ local function obterFadeOutIdleParaAcao(nomeAnimacao: string): number
 	return configAnim.FadeOutIdle
 end
 
+local function isLateralAnimation(nome: string): boolean
+	return string.find(nome, "Direita", 1, true) ~= nil
+		or string.find(nome, "Esquerda", 1, true) ~= nil
+end
+
 local function obterFadeInAcaoPara(nomeAnimacao: string): number
 	if nomeAnimacao == "SubirSaltoSuporte" or nomeAnimacao == "SubirSaltoSuspenso" then
 		return 0.05
 	end
-
 	return configAnim.FadeInAcao
+end
+
+local function obterVelocidadeTrack(nomeAnimacao: string, looped: boolean): number
+	if looped then
+		return configAnim.VelocidadePadrao
+	end
+
+	if nomeAnimacao == "Descer" then
+		return 1.3
+	end
+
+	return configAnim.VelocidadePadrao * speedMultiplier
 end
 
 local function limparConexoesAcao()
@@ -130,7 +147,7 @@ local function tocarTrack(track: AnimationTrack, nomeAnimacao: string, fadeIn: n
 	track.Looped = looped
 	track.Priority = obterPrioridade(nomeAnimacao, looped)
 	track:Play(fadeIn)
-	track:AdjustSpeed(configAnim.VelocidadePadrao)
+	track:AdjustSpeed(obterVelocidadeTrack(nomeAnimacao, looped))
 end
 
 function AnimacaoParkour.Inicializar(character: Model): boolean
@@ -188,6 +205,10 @@ function AnimacaoParkour.TocarAcao(nomeAnimacao: string, onEvento: Callback, onC
 	if not track then
 		return false
 	end
+
+	-- Lateral→mesma lateral: não reiniciar animação, apenas disparar evento
+	local isLateral = isLateralAnimation(nomeAnimacao)
+	local skipPlay = isLateral and acaoTrackAtual == track and track.IsPlaying
 
 	tokenAcao += 1
 	local tokenLocal = tokenAcao
@@ -247,7 +268,9 @@ function AnimacaoParkour.TocarAcao(nomeAnimacao: string, onEvento: Callback, onC
 	end)
 	table.insert(conexoesAcao, stoppedConn)
 
-	tocarTrack(track, nomeAnimacao, obterFadeInAcaoPara(nomeAnimacao), false)
+	if not skipPlay then
+		tocarTrack(track, nomeAnimacao, obterFadeInAcaoPara(nomeAnimacao), false)
+	end
 
 	if not markerName then
 		executarEventoUmaVez()
@@ -315,7 +338,7 @@ function AnimacaoParkour.TocarAcaoPausadaNoMarker(nomeAnimacao: string, onCongel
 			end
 
 			if preAcaoAtual.CongeladoNoMarker then
-				track:AdjustSpeed(configAnim.VelocidadePadrao)
+				track:AdjustSpeed(configAnim.VelocidadePadrao * speedMultiplier)
 			end
 
 			return
@@ -390,7 +413,7 @@ function AnimacaoParkour.ConfirmarAcaoPausada(onEvento: Callback, onCompleto: Ca
 			onEvento()
 		end
 		preAcaoAtual.EventoConfirmadoExecutado = true
-		preAcaoAtual.Track:AdjustSpeed(configAnim.VelocidadePadrao)
+		preAcaoAtual.Track:AdjustSpeed(configAnim.VelocidadePadrao * speedMultiplier)
 	end
 
 	return true
@@ -506,6 +529,10 @@ function AnimacaoParkour.ObterAnimacaoLateralSalto(direcao: string, idleMode: st
 	return "DireitaSalto" .. sufixo
 end
 
+function AnimacaoParkour.SetSpeedMultiplier(multiplier: number)
+	speedMultiplier = math.clamp(multiplier, 0.1, 5.0)
+end
+
 function AnimacaoParkour.ResetarBraco()
 	proximoBraco = "Direita"
 end
@@ -515,6 +542,7 @@ function AnimacaoParkour.Destruir()
 	table.clear(trackCache)
 	currentCharacter = nil
 	currentAnimator = nil
+	speedMultiplier = 1.0
 end
 
 return AnimacaoParkour

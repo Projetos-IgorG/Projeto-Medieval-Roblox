@@ -4,7 +4,8 @@
 	Responsável APENAS por captura de input e gerenciamento de estado.
 	Toda lógica de verificação, análise e utilidades está nos módulos dedicados.
 
-	VERSÃO: 2.5v
+	MUDAR A CADA VERSÃO:
+	VERSÃO: "Parkour 3.0v — Momentum System (sem cooldowns, velocidade progressiva"
 
 	Keybinds (baseado em intenção direcional, não teclas específicas):
 	- No chão/ar + Jump: VaultBaixo / VaultMédio / Agarrar
@@ -14,7 +15,7 @@
 	- Agarrado + Jump: Escalar (se couber) ou Soltar
 	- Agarrado + Trás (S) + Jump: PuloTras
 	- Agarrado + Trás (S) segurar: confirma intenção, tenta Descer; se falhar, Soltar
-	- Cooldown para evitar verificações repetidas
+	- Momentum: ações consecutivas aumentam velocidade de animação e transição (1.0 → 1.3x)
 ]]
 
 local Players = game:GetService("Players")
@@ -25,7 +26,7 @@ local Analisador = require(script:WaitForChild("Analisador"))
 local Movimento = require(script:WaitForChild("Movimento"))
 local Configs = require(script:WaitForChild("Configs"))
 local Debug = require(script:WaitForChild("Debug"))
-local CooldownManager = require(script:WaitForChild("CooldownManager"))
+local MomentumManager = require(script:WaitForChild("MomentumManager"))
 local Utilidades = require(script:WaitForChild("Utilidades"))
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Modulos = ReplicatedStorage:WaitForChild("Modulos")
@@ -40,7 +41,7 @@ local connections: { RBXScriptConnection } = {}
 local JUMP_COOLDOWN = 0.15
 local lastJumpTime = 0
 local runtimeConfig = Configs.mergeConfig(nil)
-local cooldownBlockedLogAt = {} :: { [string]: number }
+local failThrottles = {} :: { [string]: number }
 local lastIdleRecheckAt = 0
 local currentHrp: BasePart? = nil
 
@@ -72,6 +73,27 @@ local function resetDescerState()
 	descerHoldStart = 0
 	descerHolding = false
 	descerSemOpcaoStart = 0
+end
+
+local function isFailThrottled(actionKey: string, throttleDelay: number, now: number): boolean
+	local lastFail = failThrottles[actionKey]
+	if lastFail and (now - lastFail) < throttleDelay then
+		return true
+	end
+	return false
+end
+
+local function setFailThrottle(actionKey: string, now: number)
+	failThrottles[actionKey] = now
+end
+
+local function registerMomentum(now: number)
+	MomentumManager.RegisterSuccess(now)
+	AnimacaoParkour.SetSpeedMultiplier(MomentumManager.GetSpeedMultiplier(now))
+end
+
+local function syncMomentumSpeed(now: number)
+	AnimacaoParkour.SetSpeedMultiplier(MomentumManager.GetSpeedMultiplier(now))
 end
 
 local function clearSubirSaltoPendente(cancelarPreview)
@@ -229,13 +251,10 @@ local function onJumpAgarrado(humanoid, hrp)
 	local now = os.clock()
 	local subirSaltoValido = getSubirSaltoPendenteValido()
 	if subirSaltoValido then
-		if not CooldownManager.CanUseWithLog("SubirSalto", nil, now, cooldownBlockedLogAt) then
-			return
-		end
-
+		syncMomentumSpeed(now)
 		local ok = Movimento.ConfirmarPreviewSubirSalto(subirSaltoValido)
 		if ok then
-			CooldownManager.RegisterSuccess("SubirSalto", nil, now)
+			registerMomentum(now)
 			clearSubirSaltoPendente(false)
 			clearLateralSaltoPendente(true)
 			resetDescerState()
@@ -246,14 +265,11 @@ local function onJumpAgarrado(humanoid, hrp)
 	local direcao = Utilidades.GetIntencaoDirecional(humanoid, hrp, runtimeConfig)
 
 	if direcao == "Direita" or direcao == "Esquerda" then
-		if not CooldownManager.CanUseWithLog("LateralSalto", direcao, now, cooldownBlockedLogAt) then
-			return
-		end
-
 		if lateralSaltoPendente and lateralSaltoPendente.Direcao == direcao then
+			syncMomentumSpeed(now)
 			local confirmou = Movimento.ConfirmarPreviewLateralSalto(direcao, lateralSaltoPendente.Target)
 			if confirmou then
-				CooldownManager.RegisterSuccess("LateralSalto", direcao, now)
+				registerMomentum(now)
 				clearLateralSaltoPendente(false)
 				clearSubirSaltoPendente(false)
 				resetDescerState()
@@ -261,9 +277,10 @@ local function onJumpAgarrado(humanoid, hrp)
 			end
 		end
 
+		syncMomentumSpeed(now)
 		local ok = Movimento.PuloLateral(direcao)
 		if ok then
-			CooldownManager.RegisterSuccess("LateralSalto", direcao, now)
+			registerMomentum(now)
 			clearSubirSaltoPendente(false)
 			clearLateralSaltoPendente(false)
 			resetDescerState()
@@ -473,8 +490,10 @@ local function onHeartbeat(character, humanoid)
 			local switchToEscalarAt = subirSaltoPendente.SwitchToEscalarAt
 			if switchToEscalarAt and now >= switchToEscalarAt then
 				clearSubirSaltoPendente(true)
+				syncMomentumSpeed(now)
 				local escalou = Movimento.TentarEscalar()
 				if escalou then
+					registerMomentum(now)
 					dbgPrint("[Parkour] Hold em frente: escalando automaticamente")
 					clearLateralSaltoPendente(true)
 					resetDescerState()
@@ -483,25 +502,24 @@ local function onHeartbeat(character, humanoid)
 			end
 		end
 
-		if not CooldownManager.CanUseWithLog("Subir", nil, now, cooldownBlockedLogAt) then
+		if isFailThrottled("Subir", runtimeConfig.SubirFailThrottle or 0.35, now) then
 			return
 		end
 
+		syncMomentumSpeed(now)
 		local ok, tipo, subirResult, escalarResult = Movimento.TentarSubir()
 
 		drawClimbDebug(escalarResult, subirResult)
 
 		if ok then
 			if tipo == "Escalar" or tipo == "Subir" then
-				if tipo == "Subir" then
-					CooldownManager.RegisterSuccess("Subir", nil, now)
-				end
+				registerMomentum(now)
 				clearSubirSaltoPendente(true)
 			elseif tipo == "SubirSalto" then
 				local escalarFallback = if escalarResult and escalarResult.CanEscalar then escalarResult else nil
 				local iniciouPreview = setSubirSaltoPendente(subirResult, escalarFallback)
 				if iniciouPreview then
-					CooldownManager.BlockAction("Subir", nil, now, runtimeConfig.SubirSaltoCheckCooldown or 0.25)
+					setFailThrottle("Subir", now)
 					if escalarFallback then
 						dbgPrint(
 							"[Parkour] SubirSalto disponível — aperte Pular para confirmar ou segure frente para escalar"
@@ -512,12 +530,7 @@ local function onHeartbeat(character, humanoid)
 				end
 			end
 		else
-			CooldownManager.BlockAction(
-				"Subir",
-				nil,
-				now,
-				CooldownManager.GetFailCooldown("Subir", runtimeConfig.SubirFailCooldown, 0.5, runtimeConfig)
-			)
+			setFailThrottle("Subir", now)
 		end
 	elseif direcao == "Direita" or direcao == "Esquerda" then
 		resetDescerState()
@@ -527,9 +540,10 @@ local function onHeartbeat(character, humanoid)
 			local curveFallbackTarget = lateralSaltoPendente.CurveFallbackTarget
 			local switchToCurveAt = lateralSaltoPendente.SwitchToCurveAt or math.huge
 			if curveFallbackTarget and now >= switchToCurveAt then
+				syncMomentumSpeed(now)
 				local executouCurva = Movimento.ExecutarLateralForcado(curveFallbackTarget)
 				if executouCurva then
-					CooldownManager.RegisterSuccess("Lateral", direcao, now)
+					registerMomentum(now)
 					clearLateralSaltoPendente(false)
 					clearSubirSaltoPendente(false)
 					return
@@ -537,16 +551,17 @@ local function onHeartbeat(character, humanoid)
 			end
 		end
 
-		if not CooldownManager.CanUseWithLog("Lateral", direcao, now, cooldownBlockedLogAt) then
+		if isFailThrottled("Lateral", runtimeConfig.LateralNoSurfaceThrottle or 0.5, now) then
 			return
 		end
 
+		syncMomentumSpeed(now)
 		local ok, estadoLateral, lateralResult = Movimento.TentarMoverLateral(direcao)
 
 		drawLateralDebug(lateralResult)
 
 		if ok then
-			CooldownManager.RegisterSuccess("Lateral", direcao, now)
+			registerMomentum(now)
 			if lateralSaltoPendente then
 				clearLateralSaltoPendente(true)
 			end
@@ -572,17 +587,7 @@ local function onHeartbeat(character, humanoid)
 				clearLateralSaltoPendente(true)
 			end
 			if lateralResult.Reason ~= "PreferLateralSaltoOverInternalCorner" then
-				CooldownManager.BlockAction(
-					"Lateral",
-					direcao,
-					now,
-					CooldownManager.GetFailCooldown(
-						"Lateral",
-						runtimeConfig.LateralNoSurfaceCooldown,
-						0.5,
-						runtimeConfig
-					)
-				)
+				setFailThrottle("Lateral", now)
 			end
 		else
 			if lateralSaltoPendente then
@@ -606,25 +611,21 @@ local function onHeartbeat(character, humanoid)
 			return
 		end
 
-		if not CooldownManager.CanUseWithLog("Descer", nil, now, cooldownBlockedLogAt) then
+		if isFailThrottled("Descer", runtimeConfig.DescerFailThrottle or 0.2, now) then
 			return
 		end
 
+		syncMomentumSpeed(now)
 		local ok, tipo, descerResult = Movimento.TentarDescer()
 
 		drawDescerDebug(descerResult)
 
 		if ok and tipo == "Descer" then
-			CooldownManager.RegisterSuccess("Descer", nil, now)
+			registerMomentum(now)
 			clearSubirSaltoPendente(true)
 			resetDescerState()
 		else
-			CooldownManager.BlockAction(
-				"Descer",
-				nil,
-				now,
-				CooldownManager.GetFailCooldown("Descer", runtimeConfig.DescerFailCooldown, 0.25, runtimeConfig)
-			)
+			setFailThrottle("Descer", now)
 			clearSubirSaltoPendente(true)
 
 			local reason = descerResult and descerResult.Reason or "Unknown"
@@ -674,10 +675,10 @@ local function setupCharacter(character: Model)
 	clearLateralSaltoPendente(false)
 	resetDescerState()
 
-	table.clear(cooldownBlockedLogAt)
+	table.clear(failThrottles)
 	runtimeConfig = Configs.mergeConfig(nil)
-	CooldownManager.Configure(runtimeConfig)
-	CooldownManager.Reset()
+	MomentumManager.Configure(runtimeConfig)
+	MomentumManager.Reset()
 
 	local humanoid = character:WaitForChild("Humanoid") :: Humanoid
 	currentHrp = character:WaitForChild("HumanoidRootPart") :: BasePart
@@ -710,8 +711,8 @@ local function setupCharacter(character: Model)
 		clearLateralSaltoPendente(false)
 		clearSubirSaltoPendente(false)
 		resetDescerState()
-		table.clear(cooldownBlockedLogAt)
-		CooldownManager.Reset()
+		table.clear(failThrottles)
+		MomentumManager.Reset()
 	end)
 	table.insert(connections, diedConn)
 end

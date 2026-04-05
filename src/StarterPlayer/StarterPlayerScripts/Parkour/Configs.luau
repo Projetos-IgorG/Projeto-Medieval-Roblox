@@ -127,7 +127,6 @@ Configs.DefaultConfig = {
 	SubirTransitionTime = 0.3, -- tempo (s) de transição ao subir
 	SubirSaltoMinActionTime = 0.55, -- tempo mínimo (s) para a ação SubirSalto tocar antes de voltar ao Idle
 	SubirSaltoIdleFadeOut = 0.12, -- fade-out (s) para encerrar SubirSalto e entrar no Idle ao fim da transição
-	SubirSaltoCheckCooldown = 0.25, -- cooldown curto da verificação de SubirSalto (evita spam de log em Heartbeat)
 	SubirSaltoConfirmWindow = 0.9, -- tempo máximo para confirmar SubirSalto após ficar pendente
 	SubirSaltoConfirmEdgeTolerance = 2.5, -- deslocamento máximo permitido da borda original ao confirmar
 	SubirSaltoPreferTimeout = 0.77, -- ao segurar frente com SubirSalto+Escalar válidos, converte para Escalar automático
@@ -169,7 +168,7 @@ Configs.DefaultConfig = {
 	LateralCandidateBoxMargin = 0.5, -- margem extra da caixa de query para aceitar edgePos (evita alvo muito fora da área)
 	LateralExternalPathRayUpOffset = 0.2, -- ajuste em Y para origem/destino do ray de curva externa
 	LateralExternalPathRayNormalOffset = 1.2, -- offset normal aplicado no destino do ray de curva externa
-	LateralTransitionTime = 0.2, -- tempo (s) da transição lateral
+	LateralTransitionTime = 0.3, -- tempo (s) da transição lateral
 	LateralTransitionPhaseSplit = 0.55, -- proporção de tempo da fase 1 na transição lateral em duas fases
 	LateralInputDotThreshold = 0.35, -- threshold de intenção para A/D
 	DirectionInputDeadzone = 0.2, -- deadzone horizontal minima para considerar intencao direcional
@@ -199,32 +198,20 @@ Configs.DefaultConfig = {
 	PuloTrasImpulse = 40, -- magnitude do impulso para trás (studs/s)
 	PuloTrasUpComponent = 0.7, -- componente vertical do impulso (0-1)
 
-	-- ═══ Descer: cooldown antes de soltar (evita conflito com PuloTras) ═══
+	-- ═══ Descer: hold antes de soltar (evita conflito com PuloTras) ═══
 	DescerHoldTime = 0.15, -- segundos que precisa segurar S antes de soltar
 	DescerNoOptionReleaseDelay = 0.2, -- tempo adicional segurando S sem opção válida antes de realmente soltar
 
-	-- ═══ Cooldown dinâmico por ação ═══
-	ActionCooldowns = {
-		Lateral = 1.0,
-		LateralSalto = 1.0,
-		Subir = 1.0,
-		SubirSalto = 2.0,
-		Descer = 0.5,
-	},
-	MinimumCooldowns = {
-		Lateral = 0.6,
-		LateralSalto = 1.0,
-		Subir = 0.5,
-		SubirSalto = 2.0,
-		Descer = 0.25,
-	},
-	CooldownStreakReduction = 0.05, -- redução por repetição válida
-	CooldownRepeatWindow = 1.5, -- janela para manter streak com toque rápido
-	CooldownStreakMaxUses = 10, -- limite de contagem para bater no mínimo
-	CooldownBlockedLogInterval = 0.25, -- intervalo mínimo entre logs de bloqueio por ação/direção
-	SubirFailCooldown = 0.35, -- cooldown aplicado quando Subir/Escalar falha (evita spam de verificações)
-	DescerFailCooldown = 0.2, -- cooldown curto de falha na tentativa de descer
-	LateralNoSurfaceCooldown = 0.5, -- cooldown aplicado quando lateral falha por falta de superfície
+	-- ═══ Momentum: velocidade progressiva por ações consecutivas ═══
+	MomentumBaseSpeed = 1.0, -- velocidade base da animação e transição
+	MomentumMaxSpeed = 1.3, -- velocidade máxima (após 6 ações consecutivas)
+	MomentumIncrement = 0.05, -- aumento por ação executada com sucesso
+	MomentumDecayWindow = 2.0, -- segundos sem ação para resetar o momentum
+
+	-- ═══ Fail-throttle: anti-spam de verificações que falharam ═══
+	SubirFailThrottle = 0.35, -- throttle quando Subir/Escalar falha (evita spam de raycasts)
+	DescerFailThrottle = 0.2, -- throttle curto de falha na tentativa de descer
+	LateralNoSurfaceThrottle = 0.5, -- throttle quando lateral falha por falta de superfície
 	LateralNoSurfaceBackoff = 0.15, -- espera curta antes de refazer CheckLateral sem superfície válida
 }
 

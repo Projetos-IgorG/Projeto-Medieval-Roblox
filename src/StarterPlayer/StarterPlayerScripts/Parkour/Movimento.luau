@@ -12,6 +12,7 @@ local Configs = require(script.Parent:WaitForChild("Configs"))
 local Utilidades = require(script.Parent:WaitForChild("Utilidades"))
 local Analisador = require(script.Parent:WaitForChild("Analisador"))
 local Debug = require(script.Parent:WaitForChild("Debug"))
+local MomentumManager = require(script.Parent:WaitForChild("MomentumManager"))
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
@@ -21,11 +22,15 @@ local ClientBridge = require(Modulos:WaitForChild("Core"):WaitForChild("ClientBr
 local AnimacaoParkour = require(Modulos:WaitForChild("Cliente"):WaitForChild("Visual"):WaitForChild("AnimacaoParkour"))
 local CameraBypass = require(Modulos:WaitForChild("Cliente"):WaitForChild("Core"):WaitForChild("CameraBypass"))
 
-local CAMERA_BYPASS_BOX_SIZE = Vector3.new(9, 9, 9)
+local CAMERA_BYPASS_BOX_SIZE = Vector3.new(5, 5, 5)
 
 local Movimento = {}
 local function dbgPrint(...)
 	Debug.Verbose(...)
+end
+
+local function getScaledTransitionTime(baseTime: number): number
+	return baseTime / MomentumManager.GetSpeedMultiplier(os.clock())
 end
 
 local function formatVector3Short(v)
@@ -1029,16 +1034,17 @@ local function executarAgarrar(result, config)
 	end
 
 	-- Criar constraints para transição suave (OneAttachment — estável, sem feedback de força)
-	local grabResponsiveness = 1 / finalConfig.GrabTransitionTime * 10
-	local grabAngVel = calcularVelocidadeAngularSuave(hrp.CFrame, cfAlvo, finalConfig.GrabTransitionTime)
+	local grabTransitionTime = getScaledTransitionTime(finalConfig.GrabTransitionTime)
+	local grabResponsiveness = 1 / grabTransitionTime * 10
+	local grabAngVel = calcularVelocidadeAngularSuave(hrp.CFrame, cfAlvo, grabTransitionTime)
 	local alignPos = criarAlignPosition(hrp, posAlvo, grabResponsiveness)
 	local alignOri = criarAlignOrientation(hrp, cfAlvo, grabResponsiveness, grabAngVel)
 	local grabReachDistance = math.max(finalConfig.GrabFinalReachDistance or 0.2, 0.03)
 	local grabSnapTimeout = math.max(
-		finalConfig.GrabFinalSnapTimeout or (finalConfig.GrabTransitionTime + 0.25),
-		finalConfig.GrabTransitionTime
+		finalConfig.GrabFinalSnapTimeout or (grabTransitionTime + 0.25),
+		grabTransitionTime
 	)
-	local grabMinSettleTime = math.max(finalConfig.GrabMinSettleTime or math.min(finalConfig.GrabTransitionTime, 0.1), 0)
+	local grabMinSettleTime = math.max(finalConfig.GrabMinSettleTime or math.min(grabTransitionTime, 0.1), 0)
 
 	-- Zerar velocidade atual para transição suave
 	zeroAssemblyVelocity(hrp)
@@ -1319,7 +1325,7 @@ local function executarSubir(novaEdgePos, novaNormal, novaPart, config, nomeAnim
 			or resolverIdleModeParaGrab(character, novaPart, novaEdgePos, novaNormal, finalConfig, fallbackIdle)
 		local posAlvo, cfAlvo = calcularPosicaoGrab(novaEdgePos, novaNormal, finalConfig, idleModeNovo)
 
-		local totalTime = finalConfig.SubirTransitionTime
+		local totalTime = getScaledTransitionTime(finalConfig.SubirTransitionTime)
 		local startPos = hrp.Position
 		local posVertical = Vector3.new(startPos.X, posAlvo.Y, startPos.Z)
 		local responsivenessVertical = 1 / math.max(totalTime, 0.01) * 10
@@ -1394,25 +1400,18 @@ local function executarDescer(novaEdgePos, novaNormal, novaPart, config, idleMod
 	local animacaoConcluida = false
 	local finalizacaoExecutada = false
 
-	local function tentarFinalizarDescer(forcarEncerrarAcao: boolean)
+	local function tentarFinalizarDescer()
 		if finalizacaoExecutada then
 			return
 		end
 
-		if not transicaoConcluida then
-			return
-		end
-
-		if not animacaoConcluida and not forcarEncerrarAcao then
+		if not (transicaoConcluida and animacaoConcluida) then
 			return
 		end
 
 		finalizacaoExecutada = true
-
-		if not animacaoConcluida then
-			AnimacaoParkour.EncerrarAcaoAtual(finalConfig.SubirSaltoIdleFadeOut or 0.06)
-		end
-
+		-- Encerrar a pose estática de Descer antes de ir pro Idle
+		AnimacaoParkour.EncerrarAcaoAtual(finalConfig.SubirSaltoIdleFadeOut or 0.06)
 		finalizarAcaoMantendoGrab()
 	end
 
@@ -1428,8 +1427,9 @@ local function executarDescer(novaEdgePos, novaNormal, novaPart, config, idleMod
 		local idleModeNovo = idleModePreferido
 			or resolverIdleModeParaGrab(character, novaPart, novaEdgePos, novaNormal, finalConfig, fallbackIdle)
 		local posAlvo, cfAlvo = calcularPosicaoGrab(novaEdgePos, novaNormal, finalConfig, idleModeNovo)
-		local responsiveness = 1 / finalConfig.DescerTransitionTime * 10
-		local descerAngVel = calcularVelocidadeAngularSuave(hrp.CFrame, cfAlvo, finalConfig.DescerTransitionTime)
+		local descerTime = getScaledTransitionTime(finalConfig.DescerTransitionTime)
+		local responsiveness = 1 / descerTime * 10
+		local descerAngVel = calcularVelocidadeAngularSuave(hrp.CFrame, cfAlvo, descerTime)
 		local alignPos = criarAlignPosition(hrp, posAlvo, responsiveness)
 		local alignOri = criarAlignOrientation(hrp, cfAlvo, responsiveness, descerAngVel)
 
@@ -1445,20 +1445,26 @@ local function executarDescer(novaEdgePos, novaNormal, novaPart, config, idleMod
 			hrp.CFrame.LookVector
 		)
 
-		task.delay(finalConfig.DescerTransitionTime, function()
+		task.delay(descerTime, function()
 			if alignPos.Parent and alignOri.Parent and isCharacterAlive(character) then
 				estado.Agarrado = true
 			end
 
 			transicaoConcluida = true
-			tentarFinalizarDescer(true)
+			tentarFinalizarDescer()
 		end)
 	end
 
 	local okAnimacao = AnimacaoParkour.TocarAcao("Descer", executarMovimentoDescer, function()
 		animacaoConcluida = true
-		tentarFinalizarDescer(false)
+		tentarFinalizarDescer()
 	end)
+
+	-- Animação de Descer é um único frame (pose estática).
+	-- Marcar como concluída imediatamente para não travar esperando Stopped.
+	if okAnimacao then
+		animacaoConcluida = true
+	end
 
 	if not okAnimacao then
 		estado.EmAcao = false
@@ -1508,27 +1514,18 @@ local function executarLateral(lateralResult, config)
 	local finalizacaoExecutada = false
 	local movimentoExecutado = false
 	local nomeAnimacao = lateralResult.Estado or "DireitaSuporte"
-	local tempoTotal = math.max(finalConfig.LateralTransitionTime or 0.2, 0.01)
+	local tempoTotal = math.max(getScaledTransitionTime(finalConfig.LateralTransitionTime or 0.2), 0.01)
 
-	local function tentarFinalizarLateral(forcarEncerrarAcao: boolean)
+	local function tentarFinalizarLateral()
 		if finalizacaoExecutada then
 			return
 		end
 
-		if not transicaoConcluida then
-			return
-		end
-
-		if not animacaoConcluida and not forcarEncerrarAcao then
+		if not (transicaoConcluida and animacaoConcluida) then
 			return
 		end
 
 		finalizacaoExecutada = true
-
-		if not animacaoConcluida then
-			AnimacaoParkour.EncerrarAcaoAtual(finalConfig.SubirSaltoIdleFadeOut or 0.06)
-		end
-
 		finalizarAcaoMantendoGrab()
 	end
 
@@ -1610,13 +1607,13 @@ local function executarLateral(lateralResult, config)
 			end
 
 			transicaoConcluida = true
-			tentarFinalizarLateral(true)
+			tentarFinalizarLateral()
 		end)
 	end
 
 	local okAnimacao = AnimacaoParkour.TocarAcao(nomeAnimacao, executarMovimentoLateral, function()
 		animacaoConcluida = true
-		tentarFinalizarLateral(false)
+		tentarFinalizarLateral()
 	end)
 
 	if not okAnimacao then
@@ -1675,21 +1672,22 @@ local function executarEscalar(escalarResult, config)
 	local posFinal = escalarResult.PosFinal
 
 	local ratioVertical = math.clamp(finalConfig.EscalarVerticalFirstRatio or 0.5, 0.1, 0.9)
-	local tempoVertical = finalConfig.EscalarTransitionTime * ratioVertical
-	local tempoHorizontal = finalConfig.EscalarTransitionTime - tempoVertical
+	local escalarTime = getScaledTransitionTime(finalConfig.EscalarTransitionTime)
+	local tempoVertical = escalarTime * ratioVertical
+	local tempoHorizontal = escalarTime - tempoVertical
 	local responsivenessVertical = 1 / math.max(tempoVertical, 0.01) * 12
 	local responsivenessHorizontal = 1 / math.max(tempoHorizontal, 0.01) * 12
 	local snapDistance = math.max(finalConfig.EscalarFinalSnapDistance or 0.2, 0.05)
 	local snapTimeout = math.max(
-		finalConfig.EscalarFinalSnapTimeout or (finalConfig.EscalarTransitionTime + 0.2),
-		finalConfig.EscalarTransitionTime
+		finalConfig.EscalarFinalSnapTimeout or (escalarTime + 0.2),
+		escalarTime
 	)
 
 	-- Orientação: sempre vertical (100% reto), olhar para frente
 	local targetOri = CFrame.lookAt(posFinal, posFinal + look, Vector3.yAxis)
 
 	-- Fase 1: AlignPosition leva o player para CIMA
-	local escalarAngVel = calcularVelocidadeAngularSuave(hrp.CFrame, targetOri, finalConfig.EscalarTransitionTime)
+	local escalarAngVel = calcularVelocidadeAngularSuave(hrp.CFrame, targetOri, escalarTime)
 	local alignPos = criarAlignPosition(hrp, posUp, responsivenessVertical)
 	local alignOri = criarAlignOrientation(hrp, targetOri, responsivenessVertical, escalarAngVel)
 
@@ -2310,7 +2308,7 @@ function Movimento.ConfirmarPreviewLateralSalto(direcao, alvoLateralSalto)
 	local animacaoConcluida = false
 	local finalizacaoExecutada = false
 	local movimentoExecutado = false
-	local transicaoTempo = finalConfig.LateralSaltoTransitionTime or finalConfig.LateralTransitionTime or 0.28
+	local transicaoTempo = getScaledTransitionTime(finalConfig.LateralSaltoTransitionTime or finalConfig.LateralTransitionTime or 0.28)
 
 	local function tentarFinalizarLateralSalto()
 		if finalizacaoExecutada then

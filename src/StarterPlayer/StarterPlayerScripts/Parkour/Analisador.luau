@@ -1237,10 +1237,10 @@ function Analisador.CheckParkour(character, config)
 		data.PosFinal = posFinal
 
 		if not hasVaultClearance then
-			-- Fallback para Agarrar em caso de VaultMedio no ar
-			if acao == "VaultMedio" and humanoid.FloorMaterial == Enum.Material.Air then
+			-- Fallback para Agarrar quando vault não tem clearance e jogador está no ar
+			if humanoid.FloorMaterial == Enum.Material.Air then
 				data.Acao = "Agarrar"
-				Debug.Verbose("  Fallback: VaultMedio -> Agarrar (NoVaultClearance)")
+				Debug.Verbose("  Fallback:", acao, "-> Agarrar (NoVaultClearance)")
 				return tentarAgarrar()
 			end
 
@@ -1258,10 +1258,10 @@ function Analisador.CheckParkour(character, config)
 		data.VaultClearanceSize = edgeSize
 
 		if not hasEdgeClearance then
-			-- Fallback para Agarrar em caso de VaultMedio no ar
-			if acao == "VaultMedio" and humanoid.FloorMaterial == Enum.Material.Air then
+			-- Fallback para Agarrar quando vault edge não tem clearance e jogador está no ar
+			if humanoid.FloorMaterial == Enum.Material.Air then
 				data.Acao = "Agarrar"
-				Debug.Verbose("  Fallback: VaultMedio -> Agarrar (NoVaultEdgeClearance)")
+				Debug.Verbose("  Fallback:", acao, "-> Agarrar (NoVaultEdgeClearance)")
 				return tentarAgarrar()
 			end
 
