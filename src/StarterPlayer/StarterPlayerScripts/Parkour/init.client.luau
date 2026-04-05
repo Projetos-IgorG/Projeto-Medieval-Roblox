@@ -4,7 +4,7 @@
 	Responsável APENAS por captura de input e gerenciamento de estado.
 	Toda lógica de verificação, análise e utilidades está nos módulos dedicados.
 
-	VERSÃO: 2.2v
+	VERSÃO: 2.5v
 
 	Keybinds (baseado em intenção direcional, não teclas específicas):
 	- No chão/ar + Jump: VaultBaixo / VaultMédio / Agarrar
