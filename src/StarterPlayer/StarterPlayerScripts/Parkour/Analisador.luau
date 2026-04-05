@@ -106,6 +106,64 @@ local function hasBothClearances(character, part, edgePosition, normal, finalCon
 	return hasTopClearance, hasFrontClearance
 end
 
+local function getLegSupportRayFrame(normal)
+	local flatNormal = Vector3.new(normal.X, 0, normal.Z)
+	if flatNormal.Magnitude < 0.01 then
+		flatNormal = Vector3.new(0, 0, 1)
+	end
+
+	local forward = -flatNormal.Unit
+	local right = forward:Cross(Vector3.yAxis)
+	if right.Magnitude < 0.01 then
+		right = Vector3.xAxis
+	else
+		right = right.Unit
+	end
+
+	return forward, right
+end
+
+local function castLegSupportRay(origin, direction, baseIgnoreList, minPartHeight, maxPasses)
+	local ignoreList = table.clone(baseIgnoreList)
+	local remainingDistance = direction.Magnitude
+	if remainingDistance < 0.001 then
+		return nil, nil
+	end
+
+	local directionUnit = direction.Unit
+	local currentOrigin = origin
+	local tries = math.max(maxPasses or 1, 1)
+
+	for _ = 1, tries do
+		if remainingDistance < 0.001 then
+			break
+		end
+
+		local rayResult = Workspace:Raycast(
+			currentOrigin,
+			directionUnit * remainingDistance,
+			Utilidades.createRaycastParams(ignoreList)
+		)
+
+		if not rayResult then
+			break
+		end
+
+		local hitPart = rayResult.Instance
+		if hitPart and hitPart:IsA("BasePart") and not Utilidades.isIgnorablePart(hitPart, minPartHeight) then
+			return hitPart, rayResult.Position
+		end
+
+		table.insert(ignoreList, hitPart)
+
+		local advance = (rayResult.Position - currentOrigin).Magnitude + 0.02
+		remainingDistance = math.max(0, remainingDistance - advance)
+		currentOrigin = currentOrigin + directionUnit * advance
+	end
+
+	return nil, nil
+end
+
 local function checkEscalarAtEdge(character, currentEdgePos, currentNormal, currentPart, finalConfig, debugContext)
 	if not isWallLikeNormal(currentNormal, finalConfig) then
 		Debug.Verbose("  RESULTADO: InvalidCurrentNormalForEscalar | Normal:", currentNormal)
@@ -263,27 +321,72 @@ function Analisador.ResolveIdleMode(data, config)
 		return "IdleSuspenso", nil, nil
 	end
 
-	local boxSize = finalConfig.LegSupportBoxSize or Vector3.new(1.9, 1.8, 1.4)
-	local downOffset = finalConfig.LegSupportBoxDownOffset or finalConfig.LegProbeDownOffset or 2.8
-	local normalOffset = finalConfig.LegSupportBoxNormalOffset or finalConfig.LegProbeStartNormalOffset or 0.9
-	local center = data.EdgePosition
-		- Vector3.yAxis * downOffset
-		+ data.Normal.Unit * normalOffset
-	local cf = Utilidades.getSurfaceFrame(center, data.Normal.Unit)
-	local minH = finalConfig.MinPartHeight
-	local clear, blocker = Utilidades.firstBlockingPartInBox(
-		cf,
-		boxSize,
-		{data.Character},
-		function(part) return Utilidades.isIgnorablePart(part, minH) end
-	)
+	local downOffset = finalConfig.LegSupportRayOriginDownOffset or finalConfig.LegProbeDownOffset or 2.8
+	local forwardOffset = finalConfig.LegSupportRayOriginForwardOffset or 0
+	local rayDistance = math.max(finalConfig.LegSupportRayDistance or 1.8, 0.1)
+	local rayHeights = finalConfig.LegSupportRayHeights or { 1.0, -1.0 }
+	local rayLateralOffsets = finalConfig.LegSupportRayLateralOffsets or { -1.0, 0.0, 1.0 }
+	local maxPasses = finalConfig.LegSupportRayMaxPasses or 6
 
-	local supportDebug = {
-		CFrame = cf,
-		Size = boxSize,
+	local forward, right = getLegSupportRayFrame(data.Normal.Unit)
+	local baseOrigin = data.EdgePosition
+		- Vector3.yAxis * downOffset
+		+ forward * forwardOffset
+
+	local rayDirection = forward * rayDistance
+	local minH = finalConfig.MinPartHeight
+	local blocker = nil
+	local hitCount = 0
+	local _dbg = Configs.DebugEnabled
+	local raysDebug = _dbg and {} or nil
+
+	for _, heightOffset in ipairs(rayHeights) do
+		for _, lateralOffset in ipairs(rayLateralOffsets) do
+			local rayOrigin = baseOrigin
+				+ Vector3.yAxis * heightOffset
+				+ right * lateralOffset
+
+			local hitPart, hitPosition = castLegSupportRay(
+				rayOrigin,
+				rayDirection,
+				{ data.Character },
+				minH,
+				maxPasses
+			)
+
+			local rayHit = hitPart ~= nil
+			if rayHit then
+				hitCount += 1
+				if not blocker then
+					blocker = hitPart
+				end
+			end
+
+			if raysDebug then
+				table.insert(raysDebug, {
+					Origin = rayOrigin,
+					Direction = rayDirection,
+					Hit = rayHit,
+					HitPosition = hitPosition,
+					Blocker = hitPart,
+					HeightOffset = heightOffset,
+					LateralOffset = lateralOffset,
+				})
+			end
+		end
+	end
+
+	local clear = blocker == nil
+
+	local supportDebug = _dbg and {
+		BaseOrigin = baseOrigin,
+		Distance = rayDistance,
+		Direction = rayDirection,
+		HitCount = hitCount,
+		Rays = raysDebug,
 		Clear = clear,
 		Blocker = blocker,
-	}
+	} or nil
 
 	if not clear then
 		return "IdleSuporte", blocker, supportDebug
@@ -406,7 +509,7 @@ local function castRayToEdgeXZ(hrpPosition, edgePosition, yOffset, distance, ext
 	}
 end
 
-local LATERAL_SAMPLE_MULTIPLIERS = table.freeze({ 0.7, 1.0, 1.25 })
+local LATERAL_SAMPLE_MULTIPLIERS = table.freeze({ 0.7, 1.2 })
 
 local function getLateralDirection(currentNormal, direcao)
 	local wallForward = -currentNormal.Unit
@@ -632,18 +735,34 @@ local function findForwardEdgeInBox(character, hrp, look, config)
 
 	local candidatePoints = {}
 	local rankedCandidates = {}
+	local maxGrabReachHeight = config.MaxGrabReachHeight or 6.0
 
 	for _, part in ipairs(parts) do
 		local castData = buildCastDataByRayToPart(character, part, samplePoint, lookXZ, includeRayParams, includeList)
 		local built = buildResultFromCast(castData)
+
+		-- Se a face detectada não é wall-like (ex: topo de ledge), tentar forçar a face lateral
+		if not built then
+			local fallbackCast = buildCastDataFromPartPoint(character, part, samplePoint, -lookXZ)
+			built = buildResultFromCast(fallbackCast)
+		end
+
 		if not built then
 			continue
 		end
 
+		-- Clampar Y da borda ao alcance do jogador (evita bordas inalcançáveis em partes muito altas)
+		local topEdge = built.TopEdgePosition
+		local rawEdgeY = topEdge.Y
+		local maxReachY = hrp.Position.Y + maxGrabReachHeight
+		local clampedEdgeY = math.min(rawEdgeY, maxReachY)
+
+		-- Usar a posição real do TopEdge (3D correto para faces inclinadas).
+		-- Para faces verticais, XZ do TopEdge == XZ do hit; para inclinadas, preserva a geometria.
 		local edgePosition = Vector3.new(
-			built.Result.Position.X,
-			built.TopEdgePosition.Y,
-			built.Result.Position.Z
+			topEdge.X,
+			clampedEdgeY,
+			topEdge.Z
 		)
 		built.TopEdgePosition = edgePosition
 
@@ -902,10 +1021,13 @@ function Analisador.CheckParkour(character, config)
 
 	-- 5) Verificações específicas por tipo
 	local function avaliarCandidatoAgarrar(candidateData)
-		local checkAttempts = {}
+		local _dbgP = Configs.DebugEnabled
+		local checkAttempts = _dbgP and {} or nil
 
 		local function registerAttempt(candidate)
-			table.insert(checkAttempts, snapshotCandidateForDebug(candidate))
+			if checkAttempts then
+				table.insert(checkAttempts, snapshotCandidateForDebug(candidate))
+			end
 		end
 
 		local function avaliarSemRetarget(candidate)
@@ -1030,16 +1152,18 @@ function Analisador.CheckParkour(character, config)
 
 		Debug.Verbose("  Grab candidates válidos para teste:", #grabCandidates)
 
-		local evaluatedCandidatesDebug = {}
+		local evaluatedCandidatesDebug = Configs.DebugEnabled and {} or nil
 		local lastFailedCandidate = data
 		local preferredFailedCandidate = nil
 		for index, candidateData in ipairs(grabCandidates) do
 			local okGrab, evaluatedData = avaliarCandidatoAgarrar(candidateData)
 
-			for _, attempt in ipairs(evaluatedData.CheckAttempts or { evaluatedData }) do
-				attempt.GrabCandidateIndex = index
-				attempt.GrabCandidateCount = #grabCandidates
-				table.insert(evaluatedCandidatesDebug, attempt)
+			if evaluatedCandidatesDebug then
+				for _, attempt in ipairs(evaluatedData.CheckAttempts or { evaluatedData }) do
+					attempt.GrabCandidateIndex = index
+					attempt.GrabCandidateCount = #grabCandidates
+					table.insert(evaluatedCandidatesDebug, attempt)
+				end
 			end
 
 			if okGrab then
@@ -1086,7 +1210,7 @@ function Analisador.CheckParkour(character, config)
 		end
 
 		local failedCandidate = preferredFailedCandidate or lastFailedCandidate
-		if failedCandidate then
+		if failedCandidate and evaluatedCandidatesDebug then
 			failedCandidate.GrabCandidatesDebug = evaluatedCandidatesDebug
 		end
 
@@ -1179,17 +1303,23 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 	local probeOffset = finalConfig.SubirProbeNormalOffset or 2.0
 	local areaSize = finalConfig.SubirAreaSize or Vector3.new(6.0, 10.0, 6.0)
 	local areaUpOffset = finalConfig.SubirAreaUpOffset or 5.0
+	local flatNormal = Vector3.new(currentNormal.X, 0, currentNormal.Z)
+	if flatNormal.Magnitude < 0.01 then
+		flatNormal = currentNormal.Unit
+	else
+		flatNormal = flatNormal.Unit
+	end
 	local areaCenter = currentEdgePos
-		+ currentNormal.Unit * (probeOffset - areaSize.Z * 0.5)
+		+ flatNormal * (probeOffset - areaSize.Z * 0.5)
 		+ Vector3.yAxis * areaUpOffset
-	local areaCFrame = Utilidades.getSurfaceFrame(areaCenter, currentNormal.Unit)
+	local areaCFrame = Utilidades.getSurfaceFrame(areaCenter, flatNormal)
 
-	local subirDebug = {
+	local subirDebug = Configs.DebugEnabled and {
 		QueryBoxCFrame = areaCFrame,
 		QueryBoxSize = areaSize,
 		CandidatePoints = {},
 		EscalarChecks = {},
-	}
+	} or nil
 
 	Debug.Verbose("═══ CheckSubir (Area) ═══")
 	Debug.Verbose("  EdgePos:", currentEdgePos, "| Normal:", currentNormal)
@@ -1202,7 +1332,10 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 	local maxEscalarVerticalDistance = finalConfig.EscalarMaxVerticalDistance or finalConfig.SubirMaxAltura or 6.0
 	local wallForwardXZ = getHorizontalUnit(-currentNormal)
 	local maxHorizontalDistance = math.max(finalConfig.SubirMaxHorizontalDistance or 5.5, 0.1)
-	local maxDepthDistance = math.max(finalConfig.SubirMaxDepthDistance or 3.0, 0.1)
+	local maxProfundidadeSubir = math.max(finalConfig.SubirMaxProfundidade or 3.0, 0.1)
+	local maxProfundidadeSubirSalto = math.max(finalConfig.SubirSaltoMaxProfundidade or 4.5, 0.1)
+	-- Filtro inicial usa o maior dos dois limites para não descartar candidatos prematuramente
+	local maxDepthDistance = math.max(maxProfundidadeSubir, maxProfundidadeSubirSalto)
 
 	for _, part in ipairs(parts) do
 		local castData = buildCastDataFromPartPoint(character, part, samplePointBase, currentNormal)
@@ -1214,18 +1347,22 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 		local topEdge = built.TopEdgePosition
 		local vertDist = topEdge.Y - currentEdgePos.Y
 		if vertDist <= minVerticalDelta then
-			table.insert(subirDebug.CandidatePoints, {
-				Position = topEdge,
-				Accepted = false,
-			})
+			if subirDebug then
+				table.insert(subirDebug.CandidatePoints, {
+					Position = topEdge,
+					Accepted = false,
+				})
+			end
 			continue
 		end
 
 		if not isWallLikeNormal(built.Normal, finalConfig) then
-			table.insert(subirDebug.CandidatePoints, {
-				Position = topEdge,
-				Accepted = false,
-			})
+			if subirDebug then
+				table.insert(subirDebug.CandidatePoints, {
+					Position = topEdge,
+					Accepted = false,
+				})
+			end
 			continue
 		end
 
@@ -1242,10 +1379,12 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 				"| Max:",
 				string.format("%.2f", maxHorizontalDistance)
 			)
-			table.insert(subirDebug.CandidatePoints, {
-				Position = topEdge,
-				Accepted = false,
-			})
+			if subirDebug then
+				table.insert(subirDebug.CandidatePoints, {
+					Position = topEdge,
+					Accepted = false,
+				})
+			end
 			continue
 		end
 
@@ -1258,10 +1397,12 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 				"| Max:",
 				string.format("%.2f", maxDepthDistance)
 			)
-			table.insert(subirDebug.CandidatePoints, {
-				Position = topEdge,
-				Accepted = false,
-			})
+			if subirDebug then
+				table.insert(subirDebug.CandidatePoints, {
+					Position = topEdge,
+					Accepted = false,
+				})
+			end
 			continue
 		end
 
@@ -1274,10 +1415,12 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 			DepthDist = depthDist,
 		})
 
-		table.insert(subirDebug.CandidatePoints, {
-			Position = topEdge,
-			Accepted = true,
-		})
+		if subirDebug then
+			table.insert(subirDebug.CandidatePoints, {
+				Position = topEdge,
+				Accepted = true,
+			})
+		end
 	end
 
 	if #candidates == 0 then
@@ -1316,6 +1459,20 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 			continue
 		end
 
+		-- Filtro de profundidade por tipo de ação
+		local maxProfundidadeParaTipo = if tipo == "SubirSalto" then maxProfundidadeSubirSalto else maxProfundidadeSubir
+		if cand.DepthDist > maxProfundidadeParaTipo then
+			Debug.Verbose(
+				"  Candidato rejeitado (TooDeepFor" .. tipo .. "):",
+				cand.Part.Name,
+				"| DepthDist:",
+				string.format("%.2f", cand.DepthDist),
+				"| MaxProfundidade:",
+				string.format("%.2f", maxProfundidadeParaTipo)
+			)
+			continue
+		end
+
 		if not firstValidDistCandidate then
 			firstValidDistCandidate = { cand = cand, tipo = tipo }
 		end
@@ -1331,11 +1488,13 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 			)
 
 			if escalarCandidate and escalarCandidate.ClearanceCFrame and escalarCandidate.ClearanceSize then
-				table.insert(subirDebug.EscalarChecks, {
-					ClearanceCFrame = escalarCandidate.ClearanceCFrame,
-					ClearanceSize = escalarCandidate.ClearanceSize,
-					CanEscalar = escalarCandidate.CanEscalar,
-				})
+				if subirDebug then
+					table.insert(subirDebug.EscalarChecks, {
+						ClearanceCFrame = escalarCandidate.ClearanceCFrame,
+						ClearanceSize = escalarCandidate.ClearanceSize,
+						CanEscalar = escalarCandidate.CanEscalar,
+					})
+				end
 			end
 
 			if escalarCandidate and escalarCandidate.CanEscalar then
@@ -1466,20 +1625,26 @@ function Analisador.CheckDescer(character, currentEdgePos, currentNormal, config
 	local probeOffset = finalConfig.DescerProbeNormalOffset or 2.0
 	local areaSize = finalConfig.DescerAreaSize or Vector3.new(6.0, 10.0, 6.0)
 	local areaDownOffset = finalConfig.DescerAreaDownOffset or -5.0
+	local flatNormal = Vector3.new(currentNormal.X, 0, currentNormal.Z)
+	if flatNormal.Magnitude < 0.01 then
+		flatNormal = currentNormal.Unit
+	else
+		flatNormal = flatNormal.Unit
+	end
 	local areaCenter = currentEdgePos
-		+ currentNormal.Unit * (probeOffset - areaSize.Z * 0.5)
+		+ flatNormal * (probeOffset - areaSize.Z * 0.5)
 		+ Vector3.yAxis * areaDownOffset
-	local areaCFrame = Utilidades.getSurfaceFrame(areaCenter, currentNormal.Unit)
+	local areaCFrame = Utilidades.getSurfaceFrame(areaCenter, flatNormal)
 
 	Debug.Verbose("═══ CheckDescer (Area) ═══")
 	Debug.Verbose("  EdgePos:", currentEdgePos, "| Normal:", currentNormal)
 	Debug.Verbose("  QueryCenter:", areaCenter, "| AreaSize:", areaSize)
 
-	local descerDebug = {
+	local descerDebug = Configs.DebugEnabled and {
 		QueryBoxCFrame = areaCFrame,
 		QueryBoxSize = areaSize,
 		CandidatePoints = {},
-	}
+	} or nil
 
 	local parts = collectValidPartsInBox(areaCFrame, areaSize, {character}, finalConfig.MinPartHeight)
 	local candidates = table.create(#parts)
@@ -1503,18 +1668,22 @@ function Analisador.CheckDescer(character, currentEdgePos, currentNormal, config
 		local topEdge = built.TopEdgePosition
 		local vertDist = currentEdgePos.Y - topEdge.Y
 		if vertDist <= minVerticalDelta then
-			table.insert(descerDebug.CandidatePoints, {
-				Position = topEdge,
-				Accepted = false,
-			})
+			if descerDebug then
+				table.insert(descerDebug.CandidatePoints, {
+					Position = topEdge,
+					Accepted = false,
+				})
+			end
 			continue
 		end
 
 		if not isWallLikeNormal(built.Normal, finalConfig) then
-			table.insert(descerDebug.CandidatePoints, {
-				Position = topEdge,
-				Accepted = false,
-			})
+			if descerDebug then
+				table.insert(descerDebug.CandidatePoints, {
+					Position = topEdge,
+					Accepted = false,
+				})
+			end
 			continue
 		end
 
@@ -1522,10 +1691,12 @@ function Analisador.CheckDescer(character, currentEdgePos, currentNormal, config
 		local horizDist = horizDelta.Magnitude
 		local depthDistance = math.abs((topEdge - currentEdgePos):Dot(wallPlanarNormal))
 		if depthDistance > maxDepth then
-			table.insert(descerDebug.CandidatePoints, {
-				Position = topEdge,
-				Accepted = false,
-			})
+			if descerDebug then
+				table.insert(descerDebug.CandidatePoints, {
+					Position = topEdge,
+					Accepted = false,
+				})
+			end
 			continue
 		end
 
@@ -1537,10 +1708,12 @@ function Analisador.CheckDescer(character, currentEdgePos, currentNormal, config
 			HorizDist = horizDist,
 		})
 
-		table.insert(descerDebug.CandidatePoints, {
-			Position = topEdge,
-			Accepted = true,
-		})
+		if descerDebug then
+			table.insert(descerDebug.CandidatePoints, {
+				Position = topEdge,
+				Accepted = true,
+			})
+		end
 	end
 
 	if #candidates == 0 then
@@ -1665,19 +1838,20 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 	local areaSize = finalConfig.LateralAreaSize or Vector3.new(6.0, 4.5, 6.0)
 	local areaUpOffset = finalConfig.LateralAreaUpOffset or 0.0
 	local lateralSideBias = math.clamp(finalConfig.LateralAreaSideBias or 0.35, 0.0, 1.0)
+	local flatNormal = Vector3.new(currentNormal.X, 0, currentNormal.Z)
+	if flatNormal.Magnitude < 0.01 then
+		flatNormal = currentNormal.Unit
+	else
+		flatNormal = flatNormal.Unit
+	end
 	local areaCenter = currentEdgePos
-		+ currentNormal.Unit * (probeOffset - areaSize.Z * 0.5)
+		+ flatNormal * (probeOffset - areaSize.Z * 0.5)
 		+ Vector3.yAxis * areaUpOffset
 		+ sideDir * (areaSize.X * lateralSideBias)
-	local currentWallNormal = Vector3.new(currentNormal.X, 0, currentNormal.Z)
-	if currentWallNormal.Magnitude < 0.05 then
-		currentWallNormal = currentNormal.Unit
-	else
-		currentWallNormal = currentWallNormal.Unit
-	end
-	local areaCFrame = Utilidades.getSurfaceFrame(areaCenter, currentNormal.Unit)
+	local currentWallNormal = flatNormal
+	local areaCFrame = Utilidades.getSurfaceFrame(areaCenter, flatNormal)
 
-	local lateralDebug = {
+	local lateralDebug = Configs.DebugEnabled and {
 		Direction = direcao,
 		BasePosition = areaCenter,
 		SideDirection = sideDir,
@@ -1691,7 +1865,7 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 			Lateral = 0,
 			LateralSalto = 0,
 		},
-	}
+	} or nil
 
 	Debug.Verbose("═══ CheckLateral (Area) ═══")
 	Debug.Verbose("  Direction:", direcao, "| EdgePos:", currentEdgePos, "| Normal:", currentNormal)
@@ -1750,10 +1924,12 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 	end
 
 	local function addRejection(reason)
+		if not lateralDebug then return end
 		lateralDebug.RejectionCounts[reason] = (lateralDebug.RejectionCounts[reason] or 0) + 1
 	end
 
 	local function recordRejected(part, topEdge, reason, extra)
+		if not lateralDebug then return end
 		addRejection(reason)
 		local pointData = {
 			Position = topEdge,
@@ -1770,6 +1946,7 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 	end
 
 	local function recordAccepted(part, topEdge, moveType, extra)
+		if not lateralDebug then return end
 		lateralDebug.AcceptedCounts[moveType] = (lateralDebug.AcceptedCounts[moveType] or 0) + 1
 		local pointData = {
 			Position = topEdge,
@@ -1817,10 +1994,10 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 		end
 
 		local probeBase = currentEdgePos
-			+ currentNormal.Unit * pathClearanceNormalOffset
+			+ flatNormal * pathClearanceNormalOffset
 			+ Vector3.yAxis * pathClearanceHeightOffset
 		local probeCenter = probeBase + sideDir * sideClearanceDistance
-		local probeCf = Utilidades.getSurfaceFrame(probeCenter, currentNormal.Unit)
+		local probeCf = Utilidades.getSurfaceFrame(probeCenter, flatNormal)
 		local probeSize = pathClearanceSize
 		local clear, blocker = Utilidades.firstBlockingPartInBox(
 			probeCf,
@@ -1839,11 +2016,13 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 			end
 		)
 
-		table.insert(lateralDebug.PathClearanceBoxes, {
-			CFrame = probeCf,
-			Size = probeSize,
-			Clear = clear,
-		})
+		if lateralDebug then
+			table.insert(lateralDebug.PathClearanceBoxes, {
+				CFrame = probeCf,
+				Size = probeSize,
+				Clear = clear,
+			})
+		end
 
 		return clear, blocker
 	end
@@ -1873,12 +2052,14 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 
 		local rayResult = Workspace:Raycast(rayOrigin, rayDir, rayParams)
 		local hitIsTargetSurface = targetPart ~= nil and rayResult ~= nil and isSameAssemblyPart(rayResult.Instance, targetPart)
-		table.insert(lateralDebug.PathClearanceRays, {
-			Origin = rayOrigin,
-			HitPosition = rayResult and rayResult.Position or rayTarget,
-			Hit = rayResult ~= nil,
-			Clear = rayResult == nil or hitIsTargetSurface,
-		})
+		if lateralDebug then
+			table.insert(lateralDebug.PathClearanceRays, {
+				Origin = rayOrigin,
+				HitPosition = rayResult and rayResult.Position or rayTarget,
+				Hit = rayResult ~= nil,
+				Clear = rayResult == nil or hitIsTargetSurface,
+			})
+		end
 
 		if not rayResult then
 			return true, nil
@@ -2225,14 +2406,16 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 			local jumpBest = jumpCandidates[1]
 			local jumpTarget = buildLateralSaltoTarget(jumpBest)
 
-			lateralDebug.Selected = {
-				Type = "LateralSalto",
-				Part = jumpBest.PartName,
-				SideDistance = jumpBest.SideDistance,
-				SideDistanceRaw = jumpBest.SideDistanceRaw,
-				SideDistanceClamped = jumpBest.SideDistanceClamped,
-				CornerType = jumpBest.CornerType,
-			}
+			if lateralDebug then
+				lateralDebug.Selected = {
+					Type = "LateralSalto",
+					Part = jumpBest.PartName,
+					SideDistance = jumpBest.SideDistance,
+					SideDistanceRaw = jumpBest.SideDistanceRaw,
+					SideDistanceClamped = jumpBest.SideDistanceClamped,
+					CornerType = jumpBest.CornerType,
+				}
+			end
 
 			Debug.Verbose(
 				"  RESULTADO: NoLateralSurface + CanLateralSalto=true",
@@ -2325,14 +2508,16 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 		end
 		local curvaEstado = direcao .. (curvaIdleMode == "IdleSuporte" and "Suporte" or "Suspenso")
 
-		lateralDebug.Selected = {
-			Type = "LateralSaltoPreferido",
-			Part = jumpBest.PartName,
-			SideDistance = jumpBest.SideDistance,
-			SideDistanceRaw = jumpBest.SideDistanceRaw,
-			SideDistanceClamped = jumpBest.SideDistanceClamped,
-			CornerType = jumpBest.CornerType,
-		}
+		if lateralDebug then
+			lateralDebug.Selected = {
+				Type = "LateralSaltoPreferido",
+				Part = jumpBest.PartName,
+				SideDistance = jumpBest.SideDistance,
+				SideDistanceRaw = jumpBest.SideDistanceRaw,
+				SideDistanceClamped = jumpBest.SideDistanceClamped,
+				CornerType = jumpBest.CornerType,
+			}
+		end
 
 		Debug.Verbose(
 			"  RESULTADO: PreferLateralSaltoOverInternalCorner",
@@ -2373,14 +2558,16 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 		Normal = best.Normal,
 	}, finalConfig)
 
-	lateralDebug.Selected = {
-		Type = "Lateral",
-		Part = best.PartName,
-		SideDistance = best.SideDistance,
-		SideDistanceRaw = best.SideDistanceRaw,
-		SideDistanceClamped = best.SideDistanceClamped,
-		CornerType = best.CornerType,
-	}
+	if lateralDebug then
+		lateralDebug.Selected = {
+			Type = "Lateral",
+			Part = best.PartName,
+			SideDistance = best.SideDistance,
+			SideDistanceRaw = best.SideDistanceRaw,
+			SideDistanceClamped = best.SideDistanceClamped,
+			CornerType = best.CornerType,
+		}
+	end
 
 	local estadoLateral = direcao .. (idleMode == "IdleSuporte" and "Suporte" or "Suspenso")
 	Debug.Verbose(

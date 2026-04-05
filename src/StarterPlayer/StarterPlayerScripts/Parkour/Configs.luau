@@ -7,7 +7,7 @@ local MERGED_SENTINEL = "__ParkourMergedConfig"
 
 Configs.DebugEnabled = true -- visuais (linhas, caixas, pontos)
 Configs.DebugVerbose = true -- prints detalhados no console
-Configs.DebugLifetime = 1.5
+Configs.DebugLifetime = 2
 Configs.DebugFolderName = "ParkourDebugFolder"
 
 -- ══════════════════════════════════════
@@ -49,9 +49,12 @@ Configs.DefaultConfig = {
 	-- Probe de pernas (verificar suporte abaixo)
 	LegProbeDownOffset = 2.8,
 	LegProbeStartNormalOffset = 0.75,
-	LegSupportBoxSize = Vector3.new(1.9, 0.8, 1.4), -- volume de verificação de suporte das pernas
-	LegSupportBoxDownOffset = 3.7, -- quanto desce da borda atual para testar suporte
-	LegSupportBoxNormalOffset = -0.1, -- quanto aproxima da parede no teste de suporte
+	LegSupportRayDistance = 0.8, -- alcance de cada ray do suporte de pernas
+	LegSupportRayOriginDownOffset = 3.5, -- quanto desce da borda atual para posicionar a origem-base dos rays
+	LegSupportRayOriginForwardOffset = -0.1, -- deslocamento da origem-base para frente (em direção à parede)
+	LegSupportRayHeights = { 0, -0.8 }, -- duas linhas verticais de rays: superior e inferior
+	LegSupportRayLateralOffsets = { -0.5, 0.0, 0.5 }, -- três colunas laterais: esquerda, centro e direita
+	LegSupportRayMaxPasses = 6, -- ignora superfícies decorativas no caminho e tenta o próximo hit do mesmo ray
 
 	-- ═══ Offsets do corpo (relativos ao HRP.Y) ═══
 	TopoTorsoOffset = 1.5, -- HRP.Y + offset = linha do topo do torso
@@ -63,7 +66,7 @@ Configs.DefaultConfig = {
 	VaultEdgeClearanceUpOffset = 2.2, -- studs acima da borda para o CENTRO da caixa de edge clearance
 
 	-- ═══ Vault: clearance no destino (caixa verde) ═══
-	VaultClearanceForwardOffset = 0.9, -- studs pra frente além da borda
+	VaultClearanceForwardOffset = 2.0, -- studs pra frente além da borda (área estendida para verificar espaço livre)
 	VaultClearanceUpOffset = 2.5, -- studs acima da borda (only affects destination check)
 
 	-- ═══ Vault: offset de movimento (posição ANTES do impulso) ═══
@@ -75,29 +78,33 @@ Configs.DefaultConfig = {
 
 	-- ═══ Limites de Distância (ação) ═══
 	MaxGrabDistance = 4.5, -- quão perto precisa estar do ponto para agarrar
+	MaxGrabReachHeight = 6.0, -- altura máxima acima do HRP para considerar uma borda como alcançável (clamp para partes muito altas)
 	MaxVaultDistance = 5.0, -- quão perto precisa estar para dar vault
 
 	-- ═══ Filtro de peças pequenas ═══
 	MinPartHeight = 0.6, -- peças com Size.Y menor que isso são ignoradas (grama, decoração)
 
 	-- ═══ Movimento: Agarrar ═══
-	GrabSurfaceOffset = 2.0, -- distância do HRP à superfície (studs) ao agarrar
-	GrabVerticalOffset = -2.0, -- quão abaixo da borda o HRP fica (studs)
-	-- Offsets específicos por estado de idle agarrado
-	GrabSurfaceOffsetSuporte = 1.3,
-	GrabVerticalOffsetSuporte = -2.4,
-	GrabSurfaceOffsetSuspenso = 0.8,
-	GrabVerticalOffsetSuspenso = -2.7,
+	GrabSurfaceOffset = 1.3, -- distância do HRP à superfície (studs) ao agarrar
+	GrabVerticalOffset = -2.4, -- quão abaixo da borda o HRP fica (studs)
 	GrabSurfaceSafetyMargin = 0.2, -- margem extra para garantir HRP fora da face da parede
 	GrabSafetyProbeScale = 0.9, -- escala da caixa de teste (relativa ao HRP) para detectar penetração
 	GrabSafetyPushStep = 0.15, -- passo de empurrão para fora da parede quando detectar penetração
 	GrabSafetyMaxPushSteps = 6, -- limite de iterações de correção para evitar loop pesado
-	GrabTransitionTime = 0.25, -- tempo (s) pra player chegar na posição agarrada
-	GrabFinalReachDistance = 0.2, -- distância máxima para confirmar que chegou no alvo do grab
-	GrabFinalSnapTimeout = 0.5, -- tempo máximo para forçar snap final e confirmar grab
-	GrabMinSettleTime = 0.06, -- tempo mínimo antes de validar alcance final (evita confirmar cedo demais)
-	GrabIdleStartDelay = 0.02, -- atraso para iniciar idle após agarrar (menor = entra mais rápido)
+	GrabTransitionTime = 0.15, -- tempo (s) pra player chegar na posição agarrada (menor = idle entra mais rápido)
+	GrabFinalReachDistance = 0.25, -- distância máxima para confirmar que chegou no alvo do grab
+	GrabFinalSnapTimeout = 0.25, -- tempo máximo para forçar snap final e confirmar grab (menor = idle entra mais rápido)
+	GrabMinSettleTime = 0.04, -- tempo mínimo antes de validar alcance final (evita confirmar cedo demais)
+	GrabIdleStartDelay = 0.01, -- atraso para iniciar idle após agarrar (menor = entra mais rápido)
 	GrabIdleRecheckInterval = 0.2, -- intervalo (s) para reavaliar idle e sincronizar offset enquanto agarrado
+	IdleDebugVerbose = true, -- logs detalhados de decisao do idle (suporte vs suspenso)
+	IdleDebugVisualEnabled = true, -- desenha probe de suporte/normal usado para decidir o idle
+	IdleDebugStableLogInterval = 0.35, -- throttling dos logs quando o idle permanece estavel
+	IdleDebugFlipWindow = 1.25, -- janela (s) para detectar ping-pong de idle
+	IdleDebugFlipWarnThreshold = 4, -- quantidade de trocas na janela para emitir alerta de oscilacao
+	IdleSwitchToSupportConfirmations = 2, -- checks consecutivos necessarios para trocar para IdleSuporte
+	IdleSwitchToSuspensoConfirmations = 2, -- checks consecutivos necessarios para trocar para IdleSuspenso
+	IdleSwitchMinInterval = 0.45, -- intervalo minimo (s) entre trocas de idle para reduzir ping-pong
 
 	-- ═══ Movimento: Vault Baixo ═══
 	VaultBaixoImpulse = 50, -- magnitude da velocidade (studs/s) no VaultBaixo
@@ -113,7 +120,8 @@ Configs.DefaultConfig = {
 	SubirProbeNormalOffset = 2.0, -- afastamento inicial da parede para posicionar a busca
 	SubirMinVerticalDelta = 0.5, -- diferença mínima em Y para considerar uma borda acima
 	SubirMaxHorizontalDistance = 5.5, -- deslocamento máximo XZ permitido para um candidato de subir
-	SubirMaxDepthDistance = 3.0, -- profundidade máxima na direção da parede atual (evita teleporte para superfície distante)
+	SubirMaxProfundidade = 1.5, -- profundidade máxima na direção da parede atual para "Subir" (só W)
+	SubirSaltoMaxProfundidade = 2.4, -- profundidade máxima na direção da parede atual para "SubirSalto" (W+Pulo, permite bordas mais afastadas)
 	SubirMaxAltura = 6.0, -- dist. máx. vertical para "Subir" (só W)
 	SubirSaltoMaxAltura = 10.5, -- dist. máx. vertical para "SubirSalto" (W+Pulo)
 	SubirTransitionTime = 0.3, -- tempo (s) de transição ao subir
@@ -142,7 +150,7 @@ Configs.DefaultConfig = {
 	LateralMaxProfundidade = 2.2, -- profundidade máxima (em relação ao plano da parede atual) para aceitar alvo lateral
 	LateralTopEdgeTolerance = 2.0, -- quão perto o topo real da superfície deve estar da linha atual de agarrar
 	LateralMaxHorizontal = 6, -- limite horizontal para classificar como Lateral
-	LateralMaxVertical = 1.75, -- limite vertical para classificar como Lateral
+	LateralMaxVertical = 2.06, -- limite vertical para classificar como Lateral
 	LateralSaltoMaxHorizontal = 11.0, -- limite horizontal para classificar como LateralSalto
 	LateralSaltoMaxVertical = 4.0, -- limite vertical para classificar como LateralSalto
 	LateralSaltoTopEdgeTolerance = 4.0, -- tolerância de diferença vertical do topo para o filtro inicial de candidatos de LateralSalto
@@ -181,13 +189,11 @@ Configs.DefaultConfig = {
 	EscalarVerticalFirstRatio = 0.2, -- proporção do tempo de transição dedicada ao movimento vertical (vs. horizontal)
 	EscalarFinalSnapDistance = 0.2, -- distância máxima para considerar que alcançou o alvo sem depender só do tempo
 	EscalarFinalSnapTimeout = 0.6, -- tempo máximo (s) para forçar snap final mesmo se não convergir
-	EscalarDisableNearbyCollisions = true, -- cria NoCollisionConstraint com partes próximas no snap final
-	EscalarNearbyCollisionBoxSize = Vector3.new(4.0, 5.0, 4.0), -- caixa de busca de partes próximas no snap final
-	EscalarNearbyCollisionHoldTime = 0.12, -- duração (s) do bypass local de colisão após snap final
+
 	-- Caixa de clearance do Escalar: verifica se há espaço para o player subir por cima
 	EscalarClearanceSize = Vector3.new(1.9, 4.0, 2.0), -- largura x altura x profundidade
 	EscalarClearanceUpOffset = 2.5, -- centro da caixa: studs acima da borda (onde o player vai ficar)
-	EscalarClearanceForwardOffset = -1.2, -- centro da caixa: studs para dentro da plataforma
+	EscalarClearanceForwardOffset = -0.3, -- centro da caixa: studs para dentro da plataforma
 
 	-- ═══ PuloTras: salto para trás estando agarrado ═══
 	PuloTrasImpulse = 40, -- magnitude do impulso para trás (studs/s)
@@ -223,24 +229,32 @@ Configs.DefaultConfig = {
 }
 
 -- ══════════════════════════════════════
--- Merge de config parcial com defaults
+-- Merge de config parcial com defaults (cached para nil)
 -- ══════════════════════════════════════
 
+local _cachedDefaultMerge = nil
+
 function Configs.mergeConfig(config)
-	if config and config[MERGED_SENTINEL] then
+	if config == nil then
+		local cached = _cachedDefaultMerge
+		if cached then
+			return cached
+		end
+		local final = table.clone(Configs.DefaultConfig)
+		final[MERGED_SENTINEL] = true
+		_cachedDefaultMerge = final
+		return final
+	end
+
+	if config[MERGED_SENTINEL] then
 		return config
 	end
 
 	local final = table.clone(Configs.DefaultConfig)
-
-	if config then
-		for key, value in pairs(config) do
-			final[key] = value
-		end
+	for key, value in pairs(config) do
+		final[key] = value
 	end
-
 	final[MERGED_SENTINEL] = true
-
 	return final
 end
 

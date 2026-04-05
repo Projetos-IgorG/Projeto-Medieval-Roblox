@@ -5,6 +5,11 @@
 --------------------------------------------------------------------------------
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local CameraBypass = require(
+	ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Cliente"):WaitForChild("Core"):WaitForChild("CameraBypass")
+)
 
 local CommonUtils = script.Parent.Parent.Parent:WaitForChild("CommonUtils")
 local FlagUtil = require(CommonUtils:WaitForChild("FlagUtil"))
@@ -205,11 +210,13 @@ local function canOcclude(part)
 	-- 1. Opaque
 	-- 2. Interactable
 	-- 3. Not in the same assembly as the subject
+	-- 4. Not in the camera bypass set
 
 	return getTotalTransparency(part) < 0.25
 		and part.CanCollide
 		and subjectRoot ~= (part:GetRootPart() or part)
 		and not part:IsA("TrussPart")
+		and not CameraBypass.has(part)
 end
 
 -- Offsets for the volume visibility test
@@ -234,7 +241,7 @@ local function getCollisionPoint(origin, dir)
 			local raycastResult = workspace:Raycast(origin, dir, excludeParams)
 
 			if raycastResult then
-				if raycastResult.Instance.CanCollide then
+				if raycastResult.Instance.CanCollide and not CameraBypass.has(raycastResult.Instance) then
 					return raycastResult.Position, true
 				end
 				excludeParams:AddToFilter(raycastResult.Instance)
@@ -253,7 +260,7 @@ local function getCollisionPoint(origin, dir)
 			local hitPoint = entryResult and entryResult.Position
 
 			if hitPart then
-				if hitPart.CanCollide then
+				if hitPart.CanCollide and not CameraBypass.has(hitPart) then
 					eraseFromEnd(excludeList, originalSize)
 					return hitPoint, true
 				end

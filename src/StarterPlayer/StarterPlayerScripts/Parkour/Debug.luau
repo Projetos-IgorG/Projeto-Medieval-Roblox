@@ -6,17 +6,24 @@ local Configs = require(script.Parent:WaitForChild("Configs"))
 local Debug = {}
 
 -- ══════════════════════════════════════
--- Pasta de Debug no Workspace
+-- Pasta de Debug no Workspace (cached)
 -- ══════════════════════════════════════
 
+local _cachedFolder = nil
+
 local function getDebugFolder()
-	local folder = Workspace:FindFirstChild(Configs.DebugFolderName)
-	if not folder then
-		folder = Instance.new("Folder")
-		folder.Name = Configs.DebugFolderName
-		folder.Parent = Workspace
+	local f = _cachedFolder
+	if f and f.Parent then
+		return f
 	end
-	return folder
+	f = Workspace:FindFirstChild(Configs.DebugFolderName)
+	if not f then
+		f = Instance.new("Folder")
+		f.Name = Configs.DebugFolderName
+		f.Parent = Workspace
+	end
+	_cachedFolder = f
+	return f
 end
 
 -- ══════════════════════════════════════
@@ -24,10 +31,11 @@ end
 -- ══════════════════════════════════════
 
 function Debug.ClearDebug()
-	local folder = Workspace:FindFirstChild(Configs.DebugFolderName)
+	local folder = _cachedFolder or Workspace:FindFirstChild(Configs.DebugFolderName)
 	if folder then
 		folder:Destroy()
 	end
+	_cachedFolder = nil
 end
 
 -- ══════════════════════════════════════

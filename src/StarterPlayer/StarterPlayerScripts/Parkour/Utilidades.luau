@@ -82,14 +82,19 @@ function Utilidades.getCharacterParts(character)
 end
 
 -- ══════════════════════════════════════
--- Raycast / Overlap Params
+-- Raycast / Overlap Params (cached)
 -- ══════════════════════════════════════
 
+local _excludeRayParams = RaycastParams.new()
+_excludeRayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+local _overlapParamsCache = OverlapParams.new()
+_overlapParamsCache.FilterType = Enum.RaycastFilterType.Exclude
+_overlapParamsCache.RespectCanCollide = false
+
 function Utilidades.createRaycastParams(ignoreList)
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = ignoreList or EMPTY_ARRAY
-	return params
+	_excludeRayParams.FilterDescendantsInstances = ignoreList or EMPTY_ARRAY
+	return _excludeRayParams
 end
 
 function Utilidades.createRaycastParamsForCharacter(character, extraIgnore)
@@ -105,12 +110,9 @@ function Utilidades.createRaycastParamsForCharacter(character, extraIgnore)
 end
 
 function Utilidades.createOverlapParams(ignoreList, maxParts)
-	local params = OverlapParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = ignoreList or EMPTY_ARRAY
-	params.MaxParts = maxParts or 0
-	params.RespectCanCollide = false
-	return params
+	_overlapParamsCache.FilterDescendantsInstances = ignoreList or EMPTY_ARRAY
+	_overlapParamsCache.MaxParts = maxParts or 0
+	return _overlapParamsCache
 end
 
 -- ══════════════════════════════════════
