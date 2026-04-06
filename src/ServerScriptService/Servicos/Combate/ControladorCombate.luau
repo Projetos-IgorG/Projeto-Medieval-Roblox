@@ -207,7 +207,7 @@ function ControladorCombate._SincronizarEstado(entidade: Model)
 			end
 			-- Para agachado/bloqueando, ainda ajustamos pois são estados do servidor
 			if dados.agachado then
-				humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAgachado") or 9
+				humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAgachando") or 9
 			elseif dados.bloqueando then
 				humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeBloqueando") or 6
 			end
@@ -506,7 +506,7 @@ function ControladorCombate.ProcessarComboEarlyCancel(entidade: Model)
 		-- Resetar velocidade para normal
 		local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 		if humanoid then
-			humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeNormal") or 14
+			humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAndando") or 14
 		end
 
 		ControladorCombate._SincronizarEstado(entidade)
@@ -531,7 +531,7 @@ function ControladorCombate.ProcessarHeavyAttackEarlyCancel(entidade: Model)
 		-- Resetar velocidade para normal
 		local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 		if humanoid then
-			humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeNormal") or 14
+			humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAndando") or 14
 		end
 
 		ControladorCombate._SincronizarEstado(entidade)
@@ -555,7 +555,7 @@ function ControladorCombate.ProcessarDashEarlyCancel(entidade: Model)
 		-- Resetar velocidade para normal (caso tenha sido alterada)
 		local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 		if humanoid then
-			humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeNormal") or 14
+			humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAndando") or 14
 		end
 
 		-- Atualiza status DashOn
@@ -595,7 +595,7 @@ function ControladorCombate.ProcessarCancelarAtaquePorDefesa(entidade: Model, ti
 		-- Resetar velocidade para normal
 		local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 		if humanoid then
-			humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeNormal") or 14
+			humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAndando") or 14
 		end
 
 		ControladorCombate._SincronizarEstado(entidade)
@@ -869,7 +869,7 @@ function ControladorCombate.ProcessarAgachar(entidade: Model): (boolean, string?
 	-- Reduz velocidade
 	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 	if humanoid then
-		humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAgachado") or 9
+		humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAgachando") or 9
 	end
 
 	return true, nil
@@ -891,7 +891,7 @@ function ControladorCombate.ProcessarLevantar(entidade: Model): (boolean, string
 	-- Restaura velocidade
 	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 	if humanoid then
-		humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeNormal") or 14
+		humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAndando") or 14
 	end
 
 	return true, nil
@@ -1421,7 +1421,7 @@ AcaoAnimacaoTerminou.OnServerEvent:Connect(function(player, nomeAcao)
 		-- Resetar velocidade para normal
 		local humanoid = character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
-			humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeNormal") or 14
+			humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAndando") or 14
 		end
 		ControladorCombate._SincronizarEstado(character)
 	else

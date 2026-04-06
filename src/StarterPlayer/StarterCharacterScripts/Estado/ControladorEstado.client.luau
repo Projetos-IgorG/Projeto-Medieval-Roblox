@@ -139,12 +139,10 @@ local AtualizarVelocidadeLocal
 --- Atualiza a velocidade de movimento localmente baseado no estado atual
 --- Chamada sempre que o estado muda (correndo, parado, etc)
 AtualizarVelocidadeLocal = function()
-	-- Acessa via ObterConfiguracao para cada valor, ou faz um cache local se necessário
-	-- Para velocidade, vamos puxar direto
 	local VelBloq = Modulo_Configuracoes.ObterConfiguracao("VelocidadeBloqueando")
-	local VelAgachado = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAgachado")
+	local VelAgachando = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAgachando")
 	local VelCorrendo = Modulo_Configuracoes.ObterConfiguracao("VelocidadeCorrendo")
-	local VelNormal = Modulo_Configuracoes.ObterConfiguracao("VelocidadeNormal")
+	local VelAndando = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAndando")
 
 	-- Se está em ação de combate, usa velocidade de combate
 	local emCombate = (
@@ -155,7 +153,6 @@ AtualizarVelocidadeLocal = function()
 	)
 
 	if emCombate then
-		-- Velocidade de ataque: VelocidadeBloqueando * 1.5
 		local velBloq = VelBloq or 8
 		humanoid.WalkSpeed = velBloq * 1.5
 		return
@@ -169,11 +166,11 @@ AtualizarVelocidadeLocal = function()
 
 	-- Determina velocidade baseado no estado de corrida (client-side)
 	if estadoAtual.agachado then
-		humanoid.WalkSpeed = VelAgachado or 12
+		humanoid.WalkSpeed = VelAgachando or 12
 	elseif movementFlags.isRunning then
 		humanoid.WalkSpeed = VelCorrendo or 25
 	else
-		humanoid.WalkSpeed = VelNormal or 16
+		humanoid.WalkSpeed = VelAndando or 16
 	end
 end
 
@@ -2397,6 +2394,9 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 end
 
 --- Calcula o multiplicador de velocidade da animação baseado no estado atual
+--- Inclui ajuste dinâmico proporcional à velocidade de movimento:
+--- Se WalkSpeed > VelocidadeBaseAnim*, animação acelera; se menor, desacelera.
+--- O delta é amplificado em 5% para melhor feedback visual.
 ---@return number O multiplicador (0.55 para defesa, 0.85 para ataque, etc.)
 local function ObterMultiplicadorVelocidadeAnimacao(): number
 	local estado = estadoAtual.estadoMov
@@ -2427,6 +2427,30 @@ local function ObterMultiplicadorVelocidadeAnimacao(): number
 	-- Se está agachado andando
 	if estadoAtual.agachado and estado == "Andando" then
 		multiplicador = 0.8
+	end
+
+	-- Ajuste dinâmico proporcional à velocidade de movimento
+	-- Compara WalkSpeed atual com a velocidade base de animação
+	local walkSpeed = humanoid.WalkSpeed
+	local baseAnim: number? = nil
+
+	if estadoAtual.agachado and (estado == "Andando" or estado == "Parado") then
+		baseAnim = Modulo_Configuracoes.ObterConfiguracao("VelocidadeBaseAnimAgachando") or 9
+	elseif estadoAtual.bloqueando or estadoAtual.estadoAcao == "Defendendo" then
+		baseAnim = Modulo_Configuracoes.ObterConfiguracao("VelocidadeBaseAnimBloqueando") or 6
+	elseif estado == "Correndo" then
+		baseAnim = Modulo_Configuracoes.ObterConfiguracao("VelocidadeBaseAnimCorrendo") or 21
+	elseif estado == "Andando" then
+		baseAnim = Modulo_Configuracoes.ObterConfiguracao("VelocidadeBaseAnimAndando") or 14
+	end
+
+	if baseAnim and baseAnim > 0 then
+		-- ratio = velocidade atual / velocidade base de animação
+		-- delta amplificado em 5% para melhor visualização
+		local ratio = walkSpeed / baseAnim
+		local delta = ratio - 1
+		local adjustedRatio = 1 + delta * 1.05
+		multiplicador = multiplicador * math.max(0.3, adjustedRatio)
 	end
 
 	return multiplicador
@@ -2658,6 +2682,10 @@ local function ProcessarSincronizacao(entidade: Model, dados)
 	-- Guarda estado anterior para detectar mudanças
 	local acaoAnterior = estadoAtual.estadoAcao
 	local modoAnterior = estadoAtual.modoAnimacao
+	local estadoMovAnterior = estadoAtual.estadoMov
+	local bloqueandoAnterior = estadoAtual.bloqueando
+	local agachadoAnterior = estadoAtual.agachado
+	local correndoAnterior = estadoAtual.correndo
 
 	-- Atualiza estado local
 	estadoAtual.estadoMov = dados.estadoMov
@@ -2672,6 +2700,17 @@ local function ProcessarSincronizacao(entidade: Model, dados)
 		estadoAtual.estadoMov = "Parkour"
 		SincronizarStatusLocal()
 		return
+	end
+
+	local movimentoMudou =
+		estadoMovAnterior ~= estadoAtual.estadoMov
+		or bloqueandoAnterior ~= estadoAtual.bloqueando
+		or agachadoAnterior ~= estadoAtual.agachado
+		or correndoAnterior ~= estadoAtual.correndo
+		or acaoAnterior ~= estadoAtual.estadoAcao
+
+	if movimentoMudou then
+		AtualizarVelocidadeLocal()
 	end
 
 	-- Atualiza Base Idle se necessário (mudança de modo ou agachado)
@@ -3231,6 +3270,7 @@ local function AtualizarDirecaoAnimacao(deltaTime: number)
 
 	-- Se não usa sistema de direção, apenas interpola para a velocidade alvo
 	if not animacaoUsaDirecao then
+		velocidadeAnimacaoAlvo = ObterMultiplicadorVelocidadeAnimacao()
 		local diferenca = velocidadeAnimacaoAlvo - velocidadeAnimacaoAtual
 		if math.abs(diferenca) > 0.01 then
 			velocidadeAnimacaoAtual = velocidadeAnimacaoAtual
@@ -3278,12 +3318,8 @@ local function AtualizarDirecaoAnimacao(deltaTime: number)
 		direcaoAtual = novaDirecao
 	end
 
-	-- Calcula velocidade alvo (velocidade base * direção)
-	-- A velocidade base é o valor absoluto da velocidade alvo anterior
-	local velocidadeBase = math.abs(velocidadeAnimacaoAlvo)
-	if velocidadeBase == 0 then
-		velocidadeBase = 1
-	end
+	-- Recalcula velocidade base a cada frame para reagir a mudanças de config em tempo real
+	local velocidadeBase = ObterMultiplicadorVelocidadeAnimacao()
 	velocidadeAnimacaoAlvo = velocidadeBase * direcaoAtual
 
 	-- Determina a suavidade da transição

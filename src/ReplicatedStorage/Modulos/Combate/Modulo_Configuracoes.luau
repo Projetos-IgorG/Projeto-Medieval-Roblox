@@ -71,13 +71,19 @@ export type ConfiguracaoGlobal = {
 	CooldownBloqueio: number,
 
 	-- Velocidades de movimento
-	VelocidadeNormal: number,
+	VelocidadeAndando: number,
 	VelocidadeCorrendo: number,
 	VelocidadeBloqueando: number,
 	VelocidadeDefesaQuebrada: number,
-	VelocidadeAgachado: number,
-	VelocidadeAparado: number,
+	VelocidadeAgachando: number,
+	VelocidadeAparando: number,
 	VelocidadeEscalando: number,
+
+	-- Velocidade base para cálculo de animação dinâmica
+	VelocidadeBaseAnimAndando: number,
+	VelocidadeBaseAnimCorrendo: number,
+	VelocidadeBaseAnimAgachando: number,
+	VelocidadeBaseAnimBloqueando: number,
 
 	-- Dash
 	CooldownDash: number,
@@ -150,13 +156,22 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	CooldownBloqueio = 0.5,
 
 	-- Velocidades de movimento
-	VelocidadeNormal = 14,
-	VelocidadeCorrendo = 21,
+	VelocidadeAndando = 12,
+	VelocidadeCorrendo = 20,
 	VelocidadeBloqueando = 6,
 	VelocidadeDefesaQuebrada = 3,
-	VelocidadeAgachado = 9,
-	VelocidadeAparado = 3,
+	VelocidadeAgachando = 7,
+	VelocidadeAparando = 3,
 	VelocidadeEscalando = 12,
+
+	-- Velocidade base para cálculo de animação dinâmica
+	-- A animação toca a 1x quando WalkSpeed == VelocidadeBaseAnim*
+	-- Se WalkSpeed > base, animação acelera proporcionalmente (+5%)
+	-- Se WalkSpeed < base, animação desacelera proporcionalmente (+5%)
+	VelocidadeBaseAnimAndando = 15,
+	VelocidadeBaseAnimCorrendo = 21,
+	VelocidadeBaseAnimAgachando = 11,
+	VelocidadeBaseAnimBloqueando = 6,
 
 	-- Dash
 	CooldownDash = 1.5,
