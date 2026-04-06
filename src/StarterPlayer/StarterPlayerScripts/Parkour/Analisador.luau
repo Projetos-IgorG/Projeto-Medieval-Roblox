@@ -2386,13 +2386,18 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 		end
 	end
 
+	local rejectedCount = 0
+	if lateralDebug then
+		rejectedCount = #lateralDebug.CandidatePoints - #candidates - #jumpCandidates
+	end
+
 	Debug.Verbose(
 		"  Summary: PartsInBox:", #parts,
 		"| AcceptedLateral:", #candidates,
 		"| AcceptedLateralSalto:", #jumpCandidates,
-		"| Rejected:", #lateralDebug.CandidatePoints - #candidates - #jumpCandidates
+		"| Rejected:", rejectedCount
 	)
-	for reason, count in pairs(lateralDebug.RejectionCounts) do
+	for reason, count in pairs(lateralDebug and lateralDebug.RejectionCounts or {}) do
 		Debug.Verbose("    RejectReason:", reason, "| Count:", count)
 	end
 
