@@ -19,7 +19,6 @@
 
 --!strict
 
-local _Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Modulos = ReplicatedStorage:WaitForChild("Modulos")

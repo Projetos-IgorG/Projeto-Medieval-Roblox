@@ -133,6 +133,12 @@ local heavyAttackState = {
 -- A corrida é 100% client-side para evitar lag e spam de requests
 -- ═══════════════════════════════════════════════════════════════════
 
+-- Ramp de velocidade (aceleração gradual)
+local RAMP_UP_TIME = 0.3 -- tempo (s) para atingir velocidade máxima de corrida
+local RAMP_DOWN_TIME = 0.5 -- tempo (s) para desacelerar ao parar de correr
+local velocidadeRampAlvo = 0 -- velocidade de destino definida por AtualizarVelocidadeLocal
+local velocidadeRampAtual = 0 -- velocidade suavizada (aplicada ao humanoid)
+
 -- Forward declaration
 local AtualizarVelocidadeLocal
 
@@ -144,7 +150,7 @@ AtualizarVelocidadeLocal = function()
 	local VelCorrendo = Modulo_Configuracoes.ObterConfiguracao("VelocidadeCorrendo")
 	local VelAndando = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAndando")
 
-	-- Se está em ação de combate, usa velocidade de combate
+	-- Se está em ação de combate, usa velocidade de combate (sem ramp)
 	local emCombate = (
 		estadoAtual.estadoAcao == "AtacandoLeve"
 		or estadoAtual.estadoAcao == "CarregandoPesado"
@@ -154,23 +160,30 @@ AtualizarVelocidadeLocal = function()
 
 	if emCombate then
 		local velBloq = VelBloq or 8
-		humanoid.WalkSpeed = velBloq * 1.5
+		velocidadeRampAlvo = velBloq * 1.5
+		humanoid.WalkSpeed = velocidadeRampAlvo
+		velocidadeRampAtual = velocidadeRampAlvo
 		return
 	end
 
-	-- Se está defendendo, usa velocidade de defesa
+	-- Se está defendendo, usa velocidade de defesa (sem ramp)
 	if estadoAtual.estadoAcao == "Defendendo" or estadoAtual.bloqueando then
-		humanoid.WalkSpeed = VelBloq or 8
+		velocidadeRampAlvo = VelBloq or 8
+		humanoid.WalkSpeed = velocidadeRampAlvo
+		velocidadeRampAtual = velocidadeRampAlvo
 		return
 	end
 
-	-- Determina velocidade baseado no estado de corrida (client-side)
+	-- Determina velocidade alvo (ramp suave feito no Heartbeat)
 	if estadoAtual.agachado then
-		humanoid.WalkSpeed = VelAgachando or 12
+		velocidadeRampAlvo = VelAgachando or 12
+		humanoid.WalkSpeed = velocidadeRampAlvo
+		velocidadeRampAtual = velocidadeRampAlvo
 	elseif movementFlags.isRunning then
-		humanoid.WalkSpeed = VelCorrendo or 25
+		-- Não seta WalkSpeed aqui — o ramp é feito frame a frame
+		velocidadeRampAlvo = VelCorrendo or 25
 	else
-		humanoid.WalkSpeed = VelAndando or 16
+		velocidadeRampAlvo = VelAndando or 16
 	end
 end
 
@@ -242,6 +255,11 @@ local ultimaAnimacaoMovNome = nil -- Nome da última animação de movimento
 local TEMPO_MANTER_ANIMACAO = 0.27 -- Tempo para manter animação pausada antes de realmente parar
 local VELOCIDADE_PAUSA = 0.2 -- Velocidade durante pausa (mantém movimento sutil)
 local timerPararAnimacao = nil -- Timer para parar a animação após tempo
+
+-- ═══════════════════════════════════════════════════════════════════
+-- SISTEMA DE ACELERAÇÃO GRADUAL (corrida)
+-- Ao começar a correr, WalkSpeed sobe gradualmente até VelCorrendo
+-- ═══════════════════════════════════════════════════════════════════
 
 local DEBOUNCE_TROCA_LATERAL = 0.1 -- Tempo mínimo entre trocas de animação lateral
 local ultimaTrocaLateralTime = 0 -- Timestamp da última troca de animação lateral (debounce)
@@ -2140,7 +2158,16 @@ local function TocarAnimacaoMov(nomeAnimacao: string, velocidadeBase: number?)
 
 		track.Priority = Enum.AnimationPriority.Movement
 		track.Looped = deveLoop
-		track:Play(TIMINGS.MoveFadeIn)
+
+		-- Fade mais longo ao transicionar de andar para correr (blending suave)
+		local fadeIn = TIMINGS.MoveFadeIn
+		local eraAndando = ultimaAnimacaoMovNome == "Andando"
+		if eraAndando and nomeAnimacao == "Correndo" then
+			fadeIn = 0.55 -- blending bem lento de andando -> correndo
+		elseif ultimaAnimacaoMovNome == "Correndo" and nomeAnimacao == "Andando" then
+			fadeIn = 0.35 -- um pouco mais lento ao parar de correr
+		end
+		track:Play(fadeIn)
 
 		-- Restaura tempo se disponível
 		if tempoParaRestaurar > 0 then
@@ -3237,6 +3264,37 @@ TocarAnimacao.OnClientEvent:Connect(ProcessarTocarAnimacao)
 
 -- Loop híbrido de atualização (para input-based como MoveDirection)
 RunService.Heartbeat:Connect(AtualizarEstadoMovimento)
+
+-- ═══════════════════════════════════════════════════════════════════
+-- RAMP DE VELOCIDADE (interpolação suave do WalkSpeed)
+-- ═══════════════════════════════════════════════════════════════════
+
+-- Inicializa velocidade atual com a velocidade corrente do humanoid
+velocidadeRampAtual = humanoid.WalkSpeed
+velocidadeRampAlvo = humanoid.WalkSpeed
+
+RunService.Heartbeat:Connect(function(dt)
+	-- Detecta overwrites do servidor que dessincronizam o ramp
+	local realSpeed = humanoid.WalkSpeed
+	if math.abs(realSpeed - velocidadeRampAtual) > 1 then
+		velocidadeRampAtual = realSpeed
+	end
+
+	-- Só aplica ramp quando correndo (ramp up) ou saindo de corrida (ramp down)
+	if velocidadeRampAtual == velocidadeRampAlvo then return end
+
+	local rampTime = if velocidadeRampAtual < velocidadeRampAlvo then RAMP_UP_TIME else RAMP_DOWN_TIME
+	local rampSpeed = 1 / math.max(rampTime, 0.01)
+	local alpha = math.clamp(rampSpeed * dt, 0, 1)
+	velocidadeRampAtual = velocidadeRampAtual + (velocidadeRampAlvo - velocidadeRampAtual) * alpha
+
+	-- Snap se muito perto do alvo (evita drift infinito)
+	if math.abs(velocidadeRampAtual - velocidadeRampAlvo) < 0.1 then
+		velocidadeRampAtual = velocidadeRampAlvo
+	end
+
+	humanoid.WalkSpeed = velocidadeRampAtual
+end)
 
 -- ═══════════════════════════════════════════════════════════════════
 -- INTERPOLAÇÃO SUAVE DE DIREÇÃO DA ANIMAÇÃO

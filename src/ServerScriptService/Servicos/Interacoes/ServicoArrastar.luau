@@ -375,34 +375,29 @@ function ServicoArrastar:Iniciar()
 		end
 	end)
 
-	Players.PlayerAdded:Connect(function(player)
-		if player.Character then
-			OnCharacterAdded(player.Character)
-		end
-		player.CharacterAdded:Connect(OnCharacterAdded)
-	end)
+	local connectedPlayers: { [Player]: boolean } = {}
 
-	for _, player in ipairs(Players:GetPlayers()) do
+	local function setupPlayer(player: Player)
+		if connectedPlayers[player] then return end
+		connectedPlayers[player] = true
+
 		if player.Character then
 			OnCharacterAdded(player.Character)
 		end
 		player.CharacterAdded:Connect(OnCharacterAdded)
+		player.CharacterRemoving:Connect(function()
+			PararArrasto(player)
+		end)
 	end
 
+	Players.PlayerAdded:Connect(setupPlayer)
 	Players.PlayerRemoving:Connect(function(player)
 		PararArrasto(player)
-	end)
-
-	Players.PlayerAdded:Connect(function(player)
-		player.CharacterRemoving:Connect(function()
-			PararArrasto(player)
-		end)
+		connectedPlayers[player] = nil
 	end)
 
 	for _, player in ipairs(Players:GetPlayers()) do
-		player.CharacterRemoving:Connect(function()
-			PararArrasto(player)
-		end)
+		setupPlayer(player)
 	end
 
 	DebugPrint("ServicoArrastar inicializado!")

@@ -3,68 +3,87 @@
 	SombraCabeca.client.luau
 	
 	Projeta sombras da Head e acessórios da cabeça em primeira pessoa.
-	Adaptado e otimizado a partir de um script de shadow projection.
 	
-	Funciona criando clones invisíveis das partes da cabeça,
-	posicionando-os na direção do sol relativo à câmera.
+	Como LocalTransparencyModifier esconde a sombra localmente,
+	criamos clones opacos invisíveis (Transparency = math.huge + Highlight)
+	posicionados exatamente sobre as partes reais. O engine do Roblox
+	projeta as sombras desses clones naturalmente.
 	
-	- Só ativa em primeira pessoa
-	- Só quando a câmera olha na direção oposta ao sol
-	- Sem memory leaks: limpa conexões e clones no respawn
-	- Apenas Head + acessórios da cabeça (HatAttachment, HairAttachment, etc.)
+	- Só ativa em primeira pessoa (via ClientBridge.EstaEmPrimeiraPessoa)
+	- Sem memory leaks: limpa tudo no respawn/saída de 1ª pessoa
+	- Apenas Head + acessórios da cabeça
 ]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local Lighting = game:GetService("Lighting")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
--- ═══════════════════════════════════════════════════════════════════
--- CONFIGURAÇÃO
--- ═══════════════════════════════════════════════════════════════════
-
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ProjetorSombra = require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Cliente"):WaitForChild("Visual"):WaitForChild("ProjetorSombra"))
+local ClientBridge = require(
+	ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Core"):WaitForChild("ClientBridge")
+)
+local ProjetorSombra = require(
+	ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Cliente"):WaitForChild("Visual"):WaitForChild("ProjetorSombra")
+)
 
 -- ═══════════════════════════════════════════════════════════════════
 -- ESTADO
 -- ═══════════════════════════════════════════════════════════════════
 
-local projector = Instance.new("Model")
+local projector: Model = Instance.new("Model")
 projector.Name = "ShadowProjector"
 
 local activeChar: Model? = nil
-local registry: { [BasePart]: BasePart } = {} -- real part → shadow clone
-local connections: { RBXScriptConnection } = {}
+local registry: { [BasePart]: BasePart } = {} -- parte real → clone de sombra
+local charConnections: { RBXScriptConnection } = {}
+local wasActive = false
 
 -- ═══════════════════════════════════════════════════════════════════
--- FUNÇÕES
+-- FUNÇÕES INTERNAS
 -- ═══════════════════════════════════════════════════════════════════
+
+--- Cria clone de sombra para uma parte
+local function createShadowClone(part: BasePart): BasePart
+	local clone = part:Clone()
+	clone.Anchored = true
+	clone.CanCollide = false
+	clone.CanTouch = false
+	clone.CanQuery = false
+	clone.CastShadow = true
+	clone.Transparency = math.huge
+
+	-- Remove joints desnecessários
+	for _, child in clone:GetChildren() do
+		if child:IsA("JointInstance") or child:IsA("Weld") or child:IsA("WeldConstraint") then
+			child:Destroy()
+		end
+	end
+
+	-- Highlight invisível força o engine a manter o mesh no shadow map
+	local highlight = Instance.new("Highlight")
+	highlight.FillTransparency = 1
+	highlight.OutlineTransparency = 1
+	highlight.Parent = clone
+
+	clone.Parent = projector
+	return clone
+end
 
 --- Registra uma parte para projeção de sombra
 local function registerPart(part: BasePart)
-	if registry[part] then
-		return -- Já registrada
+	if registry[part] then return end
+	registry[part] = createShadowClone(part)
+end
+
+--- Remove o clone de uma parte
+local function unregisterPart(part: BasePart)
+	local clone = registry[part]
+	if clone then
+		clone:Destroy()
+		registry[part] = nil
 	end
-
-	local clone = ProjetorSombra.CreateShadowClone(part, projector)
-	registry[part] = clone
-
-	-- Escuta mudanças de mesh na parte original
-	local conn = part.ChildAdded:Connect(function(child)
-		if child:IsA("SpecialMesh") then
-			-- Atualiza mesh no clone
-			for _, c in clone:GetChildren() do
-				if c:IsA("SpecialMesh") then
-					c:Destroy()
-				end
-			end
-			child:Clone().Parent = clone
-		end
-	end)
-	table.insert(connections, conn)
 end
 
 --- Processa um child do character
@@ -79,93 +98,66 @@ local function processChild(child: Instance)
 	end
 end
 
---- Limpa tudo (connections, clones, registry)
+--- Limpa tudo
 local function cleanup()
-	for _, conn in connections do
+	for _, conn in charConnections do
 		conn:Disconnect()
 	end
-	table.clear(connections)
+	table.clear(charConnections)
 
-	projector:ClearAllChildren()
+	for _part, clone in registry do
+		clone:Destroy()
+	end
 	table.clear(registry)
 
 	projector.Parent = nil
 	activeChar = nil
+	wasActive = false
 end
 
---- Atualiza posição da sombra a cada frame
+--- Ativa projeção (mostra clones)
+local function activate()
+	if wasActive then return end
+	wasActive = true
+	projector.Parent = camera
+end
+
+--- Desativa projeção (esconde clones)
+local function deactivate()
+	if not wasActive then return end
+	wasActive = false
+	projector.Parent = nil
+end
+
+--- Atualiza posição dos clones a cada frame
 local function update()
 	if not activeChar then
-		return
-	end
-
-	-- Limpa partes removidas do character
-	for realPart, shadowPart in registry do
-		if not realPart:IsDescendantOf(activeChar) then
-			shadowPart:Destroy()
-			registry[realPart] = nil
-		end
-	end
-
-	-- Verifica se o sol está visível
-	local sunDir = Lighting:GetSunDirection()
-	if sunDir.Y <= 0 then
-		projector.Parent = nil
+		deactivate()
 		return
 	end
 
 	-- Verifica se está em primeira pessoa
-	local cf = camera.CFrame
-	local focus = camera.Focus
-	local dist = (focus.Position - cf.Position).Magnitude
+	local emPrimeiraPessoa = ClientBridge.EstaEmPrimeiraPessoa
+		and ClientBridge.EstaEmPrimeiraPessoa()
+		or false
 
-	if dist >= 1 then
-		projector.Parent = nil
+	if not emPrimeiraPessoa then
+		deactivate()
 		return
 	end
 
-	-- Verifica se está olhando na direção oposta ao sol
-	local sunPos = sunDir * 10000
-	if sunDir:Dot(cf.LookVector) >= 0 then
-		projector.Parent = nil
-		return
-	end
+	activate()
 
-	-- Pega a Head como referência de posição
-	local head = activeChar:FindFirstChild("Head")
-	if not head or not head:IsA("BasePart") or not registry[head] then
-		projector.Parent = nil
-		return
-	end
-
-	-- Calcula projeção da sombra
-	local focusPoint = focus.Position
-	local sunDist = (focusPoint - sunPos).Magnitude
-	local headCF = head.CFrame
-	local headPos = headCF.Position
-	local headRot = headCF.Rotation
-
-	local realDist = (focusPoint - headPos).Magnitude
-	local lerpScale = (realDist / sunDist) * 9
-
-	local projectPos = focusPoint:Lerp(sunPos, lerpScale)
-	local camOffset = headPos - focusPoint
-	local shadowHeadCF = CFrame.new(projectPos + camOffset) * headRot
-
-	-- Atualiza posição do clone da Head
-	local shadowHead = registry[head]
-	shadowHead.CFrame = shadowHeadCF
-
-	-- Atualiza posição dos acessórios relativos à Head
-	for realPart, shadowPart in registry do
-		if realPart ~= head then
-			local offset = headCF:ToObjectSpace(realPart.CFrame)
-			shadowPart.CFrame = shadowHeadCF * offset
-			shadowPart:BreakJoints()
+	-- Atualiza CFrame dos clones para acompanhar as partes reais
+	for realPart, shadowClone in registry do
+		if realPart.Parent and realPart:IsDescendantOf(activeChar) then
+			shadowClone.CFrame = realPart.CFrame
+		else
+			-- Parte foi removida do character
+			shadowClone:Destroy()
+			registry[realPart] = nil
 		end
 	end
-
-	projector.Parent = camera
 end
 
 --- Inicializa para um novo character
@@ -179,11 +171,23 @@ local function onCharacterAdded(char: Model)
 	end
 
 	-- Escuta novas partes (ex: acessórios equipados depois)
-	local conn = char.ChildAdded:Connect(function(child)
-		-- Pequeno delay para garantir que Attachments já existem
+	local addConn = char.ChildAdded:Connect(function(child)
 		task.defer(processChild, child)
 	end)
-	table.insert(connections, conn)
+	table.insert(charConnections, addConn)
+
+	-- Escuta partes removidas
+	local removeConn = char.ChildRemoved:Connect(function(child)
+		if child.Name == "Head" and child:IsA("BasePart") then
+			unregisterPart(child)
+		elseif child:IsA("Accessory") then
+			local handle = child:FindFirstChild("Handle")
+			if handle and handle:IsA("BasePart") then
+				unregisterPart(handle)
+			end
+		end
+	end)
+	table.insert(charConnections, removeConn)
 end
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -195,4 +199,5 @@ if player.Character then
 end
 
 player.CharacterAdded:Connect(onCharacterAdded)
+player.CharacterRemoving:Connect(cleanup)
 RunService:BindToRenderStep("HeadShadowProjection", Enum.RenderPriority.Camera.Value + 1, update)

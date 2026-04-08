@@ -156,4 +156,11 @@ ClientBridge.AtualizarStatusLocal = nil :: ((string, any) -> ())?
 --- Definido por: GerenciadorStatusLocal
 ClientBridge.LerStatusLocal = nil :: ((string) -> any)?
 
+-- ═══════════════════════════════════════════════════════════════════
+-- CÂMERA
+-- ═══════════════════════════════════════════════════════════════════
+--- Verifica se está em modo primeira pessoa
+--- Definido por: CameraModule (init.luau)
+ClientBridge.EstaEmPrimeiraPessoa = nil :: (() -> boolean)?
+
 return ClientBridge

@@ -173,20 +173,17 @@ end
 -- DETECÇÃO DE ALVO (RAYCAST)
 -- ═══════════════════════════════════════════════════════════════════
 
--- Verifica se está em primeira pessoa (câmera muito próxima da cabeça)
+-- RaycastParams reutilizáveis (evita GC por frame)
+local sharedRayParams = RaycastParams.new()
+sharedRayParams.FilterType = Enum.RaycastFilterType.Exclude
+sharedRayParams.IgnoreWater = true
+
+-- Verifica se está em primeira pessoa (usando ClientBridge)
+local ClientBridge =
+	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Core"):WaitForChild("ClientBridge"))
+
 local function EstaPrimeiraPessoa(): boolean
-	local character = ObterCharacter()
-	if not character then
-		return false
-	end
-
-	local head = character:FindFirstChild("Head")
-	if not head then
-		return false
-	end
-
-	local distanciaCamera = (camera.CFrame.Position - head.Position).Magnitude
-	return distanciaCamera < 1.5 -- Threshold para primeira pessoa
+	return ClientBridge.EstaEmPrimeiraPessoa and ClientBridge.EstaEmPrimeiraPessoa() or false
 end
 
 local function DetectarAlvoHover(): Instance?
@@ -210,12 +207,9 @@ local function DetectarAlvoHover(): Instance?
 		direcao = unitRay.Direction * CONFIG.DISTANCIA_MAXIMA
 	end
 
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { character }
-	params.IgnoreWater = true
+	sharedRayParams.FilterDescendantsInstances = { character }
 
-	local resultado = workspace:Raycast(origem, direcao, params)
+	local resultado = workspace:Raycast(origem, direcao, sharedRayParams)
 
 	if not resultado then
 		return nil
@@ -438,12 +432,9 @@ local function CalcularPosicaoAlvo(): Vector3
 		local unitRay = camera:ViewportPointToRay(mouseLocation.X, mouseLocation.Y)
 
 		-- Faz raycast para encontrar onde o mouse aponta
-		local params = RaycastParams.new()
-		params.FilterType = Enum.RaycastFilterType.Exclude
-		params.FilterDescendantsInstances = { character, estado.alvoArrastando }
-		params.IgnoreWater = true
+		sharedRayParams.FilterDescendantsInstances = { character, estado.alvoArrastando }
 
-		local resultado = workspace:Raycast(unitRay.Origin, unitRay.Direction * 100, params)
+		local resultado = workspace:Raycast(unitRay.Origin, unitRay.Direction * 100, sharedRayParams)
 
 		if resultado then
 			-- Ponto onde o mouse aponta no mundo

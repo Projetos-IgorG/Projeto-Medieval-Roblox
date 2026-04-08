@@ -178,6 +178,7 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	ForcaDash = 45,
 	VelocidadeAnimacaoDash = 1.0,
 	JanelaCancelamentoDash = 0.2, -- Tempo antes do fim da animação para early-cancel (segundos)
+	DashCameraFixarY = true, -- Se true, câmera mantém altura Y fixa durante o dash (não acompanha o roll)
 
 	-- Impulso de Ataque (aplicado ao atacante)
 	MagnitudeImpulsoAtaqueLeve = 20,
@@ -404,14 +405,12 @@ function Modulo_Configuracoes.PreCarregarAnimacoes(animator: Animator): { Animat
 
 	local tracks = {}
 	local animacoes = Modulo_Configuracoes.ObterTodasAnimacoes()
+	local animationInstance = Instance.new("Animation")
 
 	for _, animId in ipairs(animacoes) do
 		local sucesso, resultado = pcall(function()
-			local animation = Instance.new("Animation")
-			animation.AnimationId = animId
-			local track = animator:LoadAnimation(animation)
-			animation:Destroy()
-			return track
+			animationInstance.AnimationId = animId
+			return animator:LoadAnimation(animationInstance)
 		end)
 
 		if sucesso and resultado then
@@ -421,6 +420,7 @@ function Modulo_Configuracoes.PreCarregarAnimacoes(animator: Animator): { Animat
 		end
 	end
 
+	animationInstance:Destroy()
 	return tracks
 end
 

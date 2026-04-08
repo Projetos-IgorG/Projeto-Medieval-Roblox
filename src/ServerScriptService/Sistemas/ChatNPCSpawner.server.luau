@@ -65,15 +65,25 @@ local function parseAndSpawn(plr, msg)
 	})
 end
 
-Players.PlayerAdded:Connect(function(plr)
-	plr.Chatted:Connect(function(msg)
+local connectedPlayers: { [Player]: RBXScriptConnection } = {}
+
+local function connectPlayer(plr: Player)
+	if connectedPlayers[plr] then return end
+	connectedPlayers[plr] = plr.Chatted:Connect(function(msg)
 		parseAndSpawn(plr, msg)
 	end)
+end
+
+Players.PlayerAdded:Connect(connectPlayer)
+Players.PlayerRemoving:Connect(function(plr)
+	local conn = connectedPlayers[plr]
+	if conn then
+		conn:Disconnect()
+		connectedPlayers[plr] = nil
+	end
 end)
 
 -- Para jogadores já presentes (em reinícios parciais)
 for _, plr in ipairs(Players:GetPlayers()) do
-	plr.Chatted:Connect(function(msg)
-		parseAndSpawn(plr, msg)
-	end)
+	connectPlayer(plr)
 end

@@ -34,10 +34,8 @@ local Combate = Modulos:WaitForChild("Combate")
 
 local Modulo_Configuracoes = require(Combate:WaitForChild("Modulo_Configuracoes"))
 local Modulo_Dano = require(Combate:WaitForChild("Modulo_Dano"))
-local _Modulo_Hitbox = require(Combate:WaitForChild("Modulo_Hitbox")) -- Mantido para referência (hitbox agora é client-side)
 local Modulo_Impulso = require(Combate:WaitForChild("Modulo_Impulso"))
 local Modulo_Knockback = require(Combate:WaitForChild("Modulo_Knockback"))
-local _Modulo_Combo = require(Combate:WaitForChild("Modulo_Combo")) -- Mantido se precisar no futuro
 local MaquinaDeEstados = require(Modulos:WaitForChild("Core"):WaitForChild("MaquinaDeEstados"))
 
 local ControladorCombate = {}
@@ -56,9 +54,6 @@ local MudarShiftLock = Remotos:WaitForChild("MudarShiftLock")
 local SincronizarEstado = Remotos:WaitForChild("SincronizarEstado")
 local TocarAnimacao = Remotos:WaitForChild("TocarAnimacao")
 local EquipAnimacaoTerminou = Remotos:WaitForChild("EquipAnimacaoTerminou")
-
--- RemoteEvent para knockback físico (usado pelo Modulo_Knockback se disponível)
-local _AplicarKnockback = Remotos:FindFirstChild("AplicarKnockback")
 
 -- ═══════════════════════════════════════════════════════════════════
 -- FUNÇÕES AUXILIARES LOCAIS
@@ -552,11 +547,9 @@ function ControladorCombate.ProcessarDashEarlyCancel(entidade: Model)
 		-- Completa o dash no servidor
 		maquina:CompletarDash()
 
-		-- Resetar velocidade para normal (caso tenha sido alterada)
-		local humanoid = entidade:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAndando") or 14
-		end
+		-- NÃO ajusta WalkSpeed aqui — corrida é 100% client-side.
+		-- O cliente já restaura velocidade no timer de early cancel.
+		maquina.dados.correndoIntent = nil
 
 		-- Atualiza status DashOn
 		local status = entidade:FindFirstChild("Status")
@@ -1105,16 +1098,8 @@ function ControladorCombate.ProcessarDashTerminou(entidade: Model): (boolean, st
 		end
 	end
 
-	-- Se tinha intenção de correr, restaura corrida
-	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
-	if maquina.dados.correndoIntent then
-		maquina.dados.correndoIntent = nil
-		maquina.dados.correndo = true
-		if humanoid then
-			humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeCorrendo") or 21
-		end
-		DebugPrint(string.format("[Combate] %s: Corrida restaurada após dash", entidade.Name))
-	end
+	-- NÃO ajusta WalkSpeed aqui — corrida é 100% client-side.
+	maquina.dados.correndoIntent = nil
 
 	ControladorCombate._SincronizarEstado(entidade)
 	return true, nil

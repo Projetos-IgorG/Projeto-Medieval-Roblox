@@ -124,15 +124,13 @@ local SECTION_RULES: { [string]: { SectionRule } } = {
 	["Camera / Jogador"] = {
 		{ prefix = "Offset", section = "Offsets de Câmera" },
 		{ prefix = "ZoomRange", section = "Zoom" },
-		{ prefix = "DefaultZoom", section = "Zoom" },
-		{ prefix = "FP_", section = "Primeira Pessoa" },
-		{ prefix = "HeadHide", section = "Primeira Pessoa" },
+		{ prefix = "FOVPrimeiraPessoa", section = "Primeira Pessoa" },
+		{ prefix = "FOVCorrendo", section = "Primeira Pessoa" },
+		{ prefix = "Transicao", section = "Primeira Pessoa" },
 		{ prefix = "FOV", section = "FOV" },
 		{ prefix = "Default", section = "FOV" },
 		{ prefix = "Walk", section = "Movimento Câmera" },
 		{ prefix = "Run", section = "Movimento Câmera" },
-		{ prefix = "DeadZone", section = "Dead Zone / Snap" },
-		{ prefix = "Snap", section = "Dead Zone / Snap" },
 		{ prefix = "Smooth", section = "Transição" },
 		{ prefix = "Transition", section = "Transição" },
 	},
@@ -227,6 +225,7 @@ local PARKOUR_DEBUG_KEYS = {
 }
 registrar("Parkour Config", ParkourConfigs.DefaultConfig, nil, nil, function(key, value)
 	ParkourConfigs.DefaultConfig[key] = value
+	ParkourConfigs.invalidateCache()
 end)
 
 -- 3) Combate

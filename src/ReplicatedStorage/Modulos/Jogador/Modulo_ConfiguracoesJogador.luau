@@ -27,24 +27,22 @@ export type ConfiguracaoCamera = {
 
 	-- Offsets de câmera
 	OffsetShoulder: Vector3, -- Câmera de lado (ShiftLock ativo)
-	OffsetFP: Vector3, -- Câmera em 1ª pessoa
 	OffsetCrouch: Vector3, -- Deslocamento ao agachar
 	WalkOffset: Vector3, -- Deslocamento ao andar
 	RunOffset: Vector3, -- Deslocamento ao correr
 
-	-- Zoom
+	-- Zoom (3ª pessoa)
 	ZoomRangeOn: ZoomRange, -- Limites com ShiftLock ativo
 	ZoomRangeOff: ZoomRange, -- Limites com ShiftLock desativado
-	DefaultZoomOut: number, -- Zoom ao sair da 1ª pessoa via toggle
-	FP_ThresholdOn: number, -- Distância para modo FPS em ShiftLock
-	FP_ThresholdOff: number, -- Distância para modo FPS sem ShiftLock
-	HeadHideLimit: number, -- Zoom mínimo onde acessórios de cabeça somem
 
-	-- Dead Zone / Snap
-	DeadZoneSnapDelay: number, -- Tempo em segundos na zona morta antes do snap
-	SnapTransitionTime: number, -- Tempo da transição suave do snap
+	-- Primeira Pessoa
+	TeclaPrimeiraPessoa: Enum.KeyCode, -- Tecla para toggle de 1ª pessoa
+	OffsetFPCabeca: Vector3, -- Offset a partir do centro da cabeça
+	FOVPrimeiraPessoa: number, -- FOV base em 1ª pessoa
+	FOVCorrendoPrimeiraPessoa: number, -- FOV ao correr em 1ª pessoa
+	TransicaoPrimeiraPessoaTempo: number, -- Tempo do tween de transição 3ª→1ª pessoa
 
-	-- FOV
+	-- FOV (3ª pessoa)
 	DefaultFOV: number, -- Valor base de FOV (parado e ao entrar no jogo)
 	WalkFOV: number, -- FOV ao andar
 	RunFOV: number, -- FOV ao correr
@@ -67,30 +65,28 @@ local ConfiguracaoPadrao: ConfiguracaoCamera = {
 
 	-- Offsets de câmera
 	-- Vector3.new(x (largura), y (altura), z (profundidade))
-	OffsetShoulder = Vector3.new(-2.5, 0, 2),
-	OffsetFP = Vector3.new(0, 0.27, 0.9),
+	OffsetShoulder = Vector3.new(-2.5, 0, 0),
 	OffsetCrouch = Vector3.new(0, -0.5, 0),
 	WalkOffset = Vector3.new(0, 0, 0.4),
 	RunOffset = Vector3.new(0, 0, 0.7),
 
-	-- Zoom
-	ZoomRangeOn = { Min = 0.5, Max = 15 },
-	ZoomRangeOff = { Min = 0.5, Max = 50 },
-	DefaultZoomOut = 10,
-	FP_ThresholdOn = 4,
-	FP_ThresholdOff = 1.5,
-	HeadHideLimit = 0.6,
+	-- Zoom (3ª pessoa)
+	ZoomRangeOn = { Min = 4, Max = 15 },
+	ZoomRangeOff = { Min = 4, Max = 50 },
 
-	-- Dead Zone / Snap
-	DeadZoneSnapDelay = 0.3,
-	SnapTransitionTime = 0.25,
+	-- Primeira Pessoa
+	TeclaPrimeiraPessoa = Enum.KeyCode.V,
+	OffsetFPCabeca = Vector3.new(0, 0.3, -0.5),
+	FOVPrimeiraPessoa = 90,
+	FOVCorrendoPrimeiraPessoa = 110,
+	TransicaoPrimeiraPessoaTempo = 0.25,
 
-	-- FOV
-	DefaultFOV = 100, -- 78,
-	WalkFOV = 100, -- 78,
-	RunFOV = 120, -- 86,
+	-- FOV (3ª pessoa)
+	DefaultFOV = 100,
+	WalkFOV = 100,
+	RunFOV = 120,
 	FOVTransitionTime = 0.3,
-	RunFOVRampTime = 0.05, -- tempo pra alcançar FOV máximo de corrida
+	RunFOVRampTime = 0.05,
 
 	-- Velocidade
 	RunSpeedThreshold = 18,
@@ -149,10 +145,10 @@ function Modulo_ConfiguracoesJogador.ObterTweenInfoFOV(): TweenInfo
 	return TweenInfo.new(configuracaoAtual.FOVTransitionTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 end
 
---- Obtém o TweenInfo para snap de câmera
----@return TweenInfo TweenInfo configurado para snap
-function Modulo_ConfiguracoesJogador.ObterTweenInfoSnap(): TweenInfo
-	return TweenInfo.new(configuracaoAtual.SnapTransitionTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+--- Obtém o TweenInfo para transição de primeira pessoa
+---@return TweenInfo TweenInfo configurado para primeira pessoa
+function Modulo_ConfiguracoesJogador.ObterTweenInfoPrimeiraPessoa(): TweenInfo
+	return TweenInfo.new(configuracaoAtual.TransicaoPrimeiraPessoaTempo, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
 end
 
 --- Verifica se uma velocidade é considerada "correndo"
@@ -162,22 +158,17 @@ function Modulo_ConfiguracoesJogador.EstaCorrendo(velocidade: number): boolean
 	return velocidade >= configuracaoAtual.RunSpeedThreshold
 end
 
---- Verifica se uma distância está na zona morta (entre HeadHideLimit e o threshold configurado)
----@param distancia number Distância da câmera ao foco
----@param isMouseLocked boolean Se o player está em ShiftLock
----@return boolean true se está na zona morta
-function Modulo_ConfiguracoesJogador.EstaEmZonaMorta(distancia: number, isMouseLocked: boolean): boolean
-	local threshold = if isMouseLocked then configuracaoAtual.FP_ThresholdOn else configuracaoAtual.FP_ThresholdOff
-	return distancia > configuracaoAtual.HeadHideLimit and distancia < threshold
-end
-
---- Verifica se uma distância é considerada primeira pessoa
----@param distancia number Distância da câmera ao foco
----@param isMouseLocked boolean Se o player está em ShiftLock
----@return boolean true se está em primeira pessoa
-function Modulo_ConfiguracoesJogador.EstaEmPrimeiraPessoa(distancia: number, isMouseLocked: boolean): boolean
-	local threshold = if isMouseLocked then configuracaoAtual.FP_ThresholdOn else configuracaoAtual.FP_ThresholdOff
-	return distancia < threshold
+--- Obtém o FOV alvo baseado no estado de movimento para primeira pessoa
+---@param andando boolean Se está andando
+---@param correndo boolean Se está correndo
+---@return number FOV alvo de primeira pessoa
+function Modulo_ConfiguracoesJogador.ObterFOVAlvoPrimeiraPessoa(andando: boolean, correndo: boolean): number
+	if correndo then
+		return configuracaoAtual.FOVCorrendoPrimeiraPessoa
+	elseif andando then
+		return configuracaoAtual.FOVPrimeiraPessoa -- sem variação ao andar
+	end
+	return configuracaoAtual.FOVPrimeiraPessoa
 end
 
 --- Obtém o FOV alvo baseado no estado de movimento

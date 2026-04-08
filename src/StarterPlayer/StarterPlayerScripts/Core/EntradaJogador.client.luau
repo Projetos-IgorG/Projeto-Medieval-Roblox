@@ -36,7 +36,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 -- Ponte de comunicação entre scripts client-side (substitui _G)
 local ClientBridge =
 	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Core"):WaitForChild("ClientBridge"))
-local _ContextActionService = game:GetService("ContextActionService") -- Reservado para uso futuro
 
 local player = Players.LocalPlayer
 
@@ -48,10 +47,6 @@ local ModEquip =
 -- ═══════════════════════════════════════════════════════════════════
 -- REMOTE EVENTS
 -- ═══════════════════════════════════════════════════════════════════
-
--- Referência ao GUI customizado (reservado para uso futuro)
-local PlayerGui = player:WaitForChild("PlayerGui")
-local _CustomInventoryGUI = PlayerGui:WaitForChild("Custom Inventory", 10) -- Aguarda até 10 segundos
 
 local Remotos = ReplicatedStorage:WaitForChild("Remotos")
 local TentarAcao = Remotos:WaitForChild("TentarAcao")
