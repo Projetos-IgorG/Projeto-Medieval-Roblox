@@ -38,7 +38,7 @@ local AnimacaoParkour = require(Modulos:WaitForChild("Cliente"):WaitForChild("Vi
 -- ══════════════════════════════════════
 
 local connections: { RBXScriptConnection } = {}
-local JUMP_COOLDOWN = 0.15
+local JUMP_COOLDOWN = 0.1
 local lastJumpTime = 0
 local runtimeConfig = Configs.mergeConfig(nil)
 local failThrottles = {} :: { [string]: number }

@@ -159,6 +159,26 @@ function Utilidades.isIgnorablePart(part, minHeight)
 	return false
 end
 
+function Utilidades.isPartOfHumanoidModel(part)
+	if not part:IsA("BasePart") then
+		return false
+	end
+
+	local current = part.Parent
+	while current do
+		if current:IsA("Model") and current:FindFirstChildOfClass("Humanoid") then
+			return true
+		end
+		current = current.Parent
+	end
+
+	return false
+end
+
+function Utilidades.isParkourIgnoredPart(part, minHeight)
+	return Utilidades.isIgnorablePart(part, minHeight) or Utilidades.isPartOfHumanoidModel(part)
+end
+
 -- ══════════════════════════════════════
 -- Intenção Direcional (Input XZ)
 -- Extraído de init.client

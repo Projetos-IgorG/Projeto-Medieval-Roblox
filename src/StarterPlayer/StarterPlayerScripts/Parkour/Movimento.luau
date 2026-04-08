@@ -837,7 +837,7 @@ local function calcularPosicaoGrabSegura(character, hrp, edgePosition, normal, p
 
 		for _, hitPart in ipairs(touching) do
 			if hitPart:IsA("BasePart") and not hitPart:IsDescendantOf(character)
-				and not Utilidades.isIgnorablePart(hitPart, finalConfig.MinPartHeight)
+				and not Utilidades.isParkourIgnoredPart(hitPart, finalConfig.MinPartHeight)
 			then
 				blocker = hitPart
 				break
@@ -1189,23 +1189,12 @@ local function executarVault(result, _config, impulso, transitionTime)
 	-- Zerar velocidade para transição limpa
 	zeroAssemblyVelocity(hrp)
 
-	local movimentoConcluido = false
-	local animacaoConcluida = false
-
-	local function tentarFinalizar()
-		if not (movimentoConcluido and animacaoConcluida) then
-			return
-		end
-		estado.EmAcao = false
-	end
-
 	-- Fase 2: Após chegar na posição (acima da borda), aplicar impulso via LinearVelocity
 	task.delay(transitionTime, function()
 		if not isCharacterAlive(character) then
 			removeConstraint(alignPos)
 			removeConstraint(alignOri)
-			movimentoConcluido = true
-			tentarFinalizar()
+			estado.EmAcao = false
 			return
 		end
 
@@ -1223,20 +1212,15 @@ local function executarVault(result, _config, impulso, transitionTime)
 		local impulseVel = lookFlat * impulso + Vector3.new(0, impulso * 0.4, 0)
 
 		criarLinearVelocity(hrp, impulseVel, finalConfig.VaultImpulseDuration)
-		movimentoConcluido = true
-		tentarFinalizar()
+
+		-- Libera EmAcao imediatamente ao completar o movimento.
+		-- A animação continua blendando normalmente em paralelo.
+		-- Permite encadear vaults em superfícies próximas sem cooldown artificial.
+		estado.EmAcao = false
 	end)
 
 	local nomeAnimacao = if impulso == finalConfig.VaultMedioImpulse then "VaultMedio" else "VaultBaixo"
-	local okAnimacao = AnimacaoParkour.TocarAcao(nomeAnimacao, nil, function()
-		animacaoConcluida = true
-		tentarFinalizar()
-	end)
-
-	if not okAnimacao then
-		animacaoConcluida = true
-		tentarFinalizar()
-	end
+	AnimacaoParkour.TocarAcao(nomeAnimacao, nil, nil)
 
 	return true
 end

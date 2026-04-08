@@ -53,7 +53,7 @@ Configs.DefaultConfig = {
 	LegSupportRayOriginDownOffset = 3.5, -- quanto desce da borda atual para posicionar a origem-base dos rays
 	LegSupportRayOriginForwardOffset = -0.1, -- deslocamento da origem-base para frente (em direção à parede)
 	LegSupportRayHeights = { 0, -0.8 }, -- duas linhas verticais de rays: superior e inferior
-	LegSupportRayLateralOffsets = { -0.5, 0.0, 0.5 }, -- três colunas laterais: esquerda, centro e direita
+	LegSupportRayLateralOffsets = { -0.7, 0.0, 0.7 }, -- três colunas laterais: esquerda, centro e direita
 	LegSupportRayMaxPasses = 6, -- ignora superfícies decorativas no caminho e tenta o próximo hit do mesmo ray
 
 	-- ═══ Offsets do corpo (relativos ao HRP.Y) ═══
@@ -85,8 +85,8 @@ Configs.DefaultConfig = {
 	MinPartHeight = 0.6, -- peças com Size.Y menor que isso são ignoradas (grama, decoração)
 
 	-- ═══ Movimento: Agarrar ═══
-	GrabSurfaceOffset = 1.3, -- distância do HRP à superfície (studs) ao agarrar
-	GrabVerticalOffset = -2.4, -- quão abaixo da borda o HRP fica (studs)
+	GrabSurfaceOffset = 1.2, -- distância do HRP à superfície (studs) ao agarrar
+	GrabVerticalOffset = -2.3, -- quão abaixo da borda o HRP fica (studs)
 	GrabSurfaceSafetyMargin = 0.2, -- margem extra para garantir HRP fora da face da parede
 	GrabSafetyProbeScale = 0.9, -- escala da caixa de teste (relativa ao HRP) para detectar penetração
 	GrabSafetyPushStep = 0.15, -- passo de empurrão para fora da parede quando detectar penetração
@@ -133,7 +133,7 @@ Configs.DefaultConfig = {
 	MaxWallNormalY = 0.8, -- permite parede inclinada (montanha), ainda bloqueando superfícies quase horizontais
 
 	-- ═══ Descer: detecção de superfície abaixo (area query) ═══
-	DescerAreaSize = Vector3.new(6.0, 10.0, 6.0), -- volume de busca (X=lateral da parede, Y=altura, Z=profundidade)
+	DescerAreaSize = Vector3.new(2.0, 10.0, 6.0), -- volume de busca (X=lateral da parede, Y=altura, Z=profundidade)
 	DescerAreaDownOffset = -5.0, -- deslocamento vertical do centro da caixa em relação à borda atual
 	DescerProbeNormalOffset = 2.0, -- afastamento inicial da parede para posicionar a busca
 	DescerMinVerticalDelta = 0.5, -- diferença mínima em Y para considerar uma borda abaixo
@@ -168,7 +168,8 @@ Configs.DefaultConfig = {
 	LateralCandidateBoxMargin = 0.5, -- margem extra da caixa de query para aceitar edgePos (evita alvo muito fora da área)
 	LateralExternalPathRayUpOffset = 0.2, -- ajuste em Y para origem/destino do ray de curva externa
 	LateralExternalPathRayNormalOffset = 1.2, -- offset normal aplicado no destino do ray de curva externa
-	LateralTransitionTime = 0.3, -- tempo (s) da transição lateral
+	LateralTransitionTime = 0.35, -- tempo (s) da transição lateral
+	LateralSaltoTransitionTime = 0.5, -- tempo (s) da transição do salto lateral
 	LateralTransitionPhaseSplit = 0.55, -- proporção de tempo da fase 1 na transição lateral em duas fases
 	LateralInputDotThreshold = 0.35, -- threshold de intenção para A/D
 	DirectionInputDeadzone = 0.2, -- deadzone horizontal minima para considerar intencao direcional
@@ -220,6 +221,16 @@ Configs.DefaultConfig = {
 -- ══════════════════════════════════════
 
 local _cachedDefaultMerge = nil
+
+--- Invalida o cache de mergeConfig e atualiza tabelas já entregues in-place
+function Configs.invalidateCache()
+	if _cachedDefaultMerge then
+		-- Atualiza in-place para que referências existentes vejam os novos valores
+		for key, value in pairs(Configs.DefaultConfig) do
+			_cachedDefaultMerge[key] = value
+		end
+	end
+end
 
 function Configs.mergeConfig(config)
 	if config == nil then

@@ -6,6 +6,11 @@ local Debug = require(script.Parent:WaitForChild("Debug"))
 
 local Analisador = {}
 
+-- RaycastParams reutilizáveis para Include-filter (evita GC por chamada)
+local sharedIncludeRayParams = RaycastParams.new()
+sharedIncludeRayParams.FilterType = Enum.RaycastFilterType.Include
+sharedIncludeRayParams.IgnoreWater = true
+
 -- ══════════════════════════════════════
 -- Funções Internas (local)
 -- ══════════════════════════════════════
@@ -150,7 +155,7 @@ local function castLegSupportRay(origin, direction, baseIgnoreList, minPartHeigh
 		end
 
 		local hitPart = rayResult.Instance
-		if hitPart and hitPart:IsA("BasePart") and not Utilidades.isIgnorablePart(hitPart, minPartHeight) then
+		if hitPart and hitPart:IsA("BasePart") and not Utilidades.isParkourIgnoredPart(hitPart, minPartHeight) then
 			return hitPart, rayResult.Position
 		end
 
@@ -207,7 +212,7 @@ local function checkEscalarAtEdge(character, currentEdgePos, currentNormal, curr
 		cf,
 		clearanceSize,
 		ignoreList,
-		function(part) return Utilidades.isIgnorablePart(part, minH) end
+		function(part) return Utilidades.isParkourIgnoredPart(part, minH) end
 	)
 
 	Debug.Verbose("  ClearanceResult: clear=", clear, "| blocker=", blocker and blocker.Name or "nil")
@@ -277,7 +282,7 @@ function Analisador.HasTopClearance(data, config)
 		cf,
 		finalConfig.TopClearanceSize,
 		{data.Character, data.Part},
-		function(part) return Utilidades.isIgnorablePart(part, minH) end
+		function(part) return Utilidades.isParkourIgnoredPart(part, minH) end
 	)
 
 	return clear, blocker, cf, finalConfig.TopClearanceSize
@@ -304,7 +309,7 @@ function Analisador.HasFrontClearance(data, config)
 		cf,
 		finalConfig.FrontClearanceSize,
 		{data.Character, data.Part},
-		function(part) return Utilidades.isIgnorablePart(part, minH) end
+		function(part) return Utilidades.isParkourIgnoredPart(part, minH) end
 	)
 
 	return clear, blocker, cf, finalConfig.FrontClearanceSize
@@ -417,7 +422,7 @@ function Analisador.HasVaultClearance(data, config)
 		cf,
 		finalConfig.VaultClearanceSize,
 		{data.Character, data.Part},
-		function(part) return Utilidades.isIgnorablePart(part, minH) end
+		function(part) return Utilidades.isParkourIgnoredPart(part, minH) end
 	)
 
 	-- Posição final: apenas ACIMA da borda (sem offset pra frente)
@@ -445,7 +450,7 @@ function Analisador.HasVaultEdgeClearance(data, config)
 		cf,
 		finalConfig.VaultClearanceSize,
 		{data.Character, data.Part},
-		function(part) return Utilidades.isIgnorablePart(part, minH) end
+		function(part) return Utilidades.isParkourIgnoredPart(part, minH) end
 	)
 
 	return clear, blocker, cf, finalConfig.VaultClearanceSize
@@ -470,7 +475,7 @@ local function isValidForwardProbeHit(result, config)
 	end
 
 	local hitPart = result.Instance
-	if Utilidades.isIgnorablePart(hitPart, config.MinPartHeight) then
+	if Utilidades.isParkourIgnoredPart(hitPart, config.MinPartHeight) then
 		return false
 	end
 
@@ -693,7 +698,7 @@ local function collectValidPartsInBox(cframe, size, ignoreList, minPartHeight)
 
 	for _, part in ipairs(rawParts) do
 		if part:IsA("BasePart") and not seen[part]
-			and not Utilidades.isIgnorablePart(part, minPartHeight)
+			and not Utilidades.isParkourIgnoredPart(part, minPartHeight)
 			and not Utilidades.hasTagDeep(part, Configs.Tags.NAO_AGARRAVEL)
 		then
 			seen[part] = true
@@ -728,9 +733,7 @@ local function findForwardEdgeInBox(character, hrp, look, config)
 	local samplePoint = hrp.Position + Vector3.yAxis * (config.ForwardObstacleSampleYOffset or 0)
 	local maxDist = config.ForwardObstacleMaxDistance or (maxReach + 0.5)
 
-	local includeRayParams = RaycastParams.new()
-	includeRayParams.FilterType = Enum.RaycastFilterType.Include
-	includeRayParams.IgnoreWater = true
+	local includeRayParams = sharedIncludeRayParams
 	local includeList = table.create(1)
 
 	local candidatePoints = {}
@@ -745,6 +748,15 @@ local function findForwardEdgeInBox(character, hrp, look, config)
 		if not built then
 			local fallbackCast = buildCastDataFromPartPoint(character, part, samplePoint, -lookXZ)
 			built = buildResultFromCast(fallbackCast)
+		end
+
+		-- Fallback extra: direção horizontal parte→jogador (pega a face mais natural voltada pro player)
+		if not built then
+			local toPlayerXZ = (hrp.Position - part.Position) * Vector3.new(1, 0, 1)
+			if toPlayerXZ.Magnitude > 0.01 then
+				local fallbackCast2 = buildCastDataFromPartPoint(character, part, samplePoint, toPlayerXZ.Unit)
+				built = buildResultFromCast(fallbackCast2)
+			end
 		end
 
 		if not built then
@@ -2004,7 +2016,7 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 			probeSize,
 			ignoreList,
 			function(part)
-				if Utilidades.isIgnorablePart(part, finalConfig.MinPartHeight) then
+				if Utilidades.isParkourIgnoredPart(part, finalConfig.MinPartHeight) then
 					return true
 				end
 
