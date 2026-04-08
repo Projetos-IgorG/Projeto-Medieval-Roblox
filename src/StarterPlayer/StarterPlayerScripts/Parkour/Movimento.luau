@@ -807,14 +807,33 @@ local function calcularPosicaoGrabSegura(character, hrp, edgePosition, normal, p
 
 	if part and typeof(part) == "Instance" and part:IsA("BasePart") then
 		local normalUnit = normal.Unit
-		local normalLocal = part.CFrame:VectorToObjectSpace(normalUnit)
-		local axis, sign = Utilidades.dominantAxis(normalLocal)
-		local half = part.Size / 2
-		local faceCoord = sign * Utilidades.getAxisValue(half, axis)
-		local localPos = part.CFrame:PointToObjectSpace(posicao)
-		local coord = Utilidades.getAxisValue(localPos, axis)
-		local signedGap = sign * (coord - faceCoord)
 		local minGap = math.max((hrp.Size.Z * 0.5) + (finalConfig.GrabSurfaceSafetyMargin or 0.2), 0.9)
+		local signedGap
+
+		-- MeshParts/UnionOperations: usar raycast para medir distância real até a superfície
+		if part:IsA("MeshPart") or part:IsA("UnionOperation") then
+			local rayOrigin = posicao
+			local rayDir = -normalUnit * (part.Size.Magnitude * 0.5 + 2.0)
+			local rayParams = RaycastParams.new()
+			rayParams.FilterType = Enum.RaycastFilterType.Include
+			rayParams.FilterDescendantsInstances = { part }
+			rayParams.IgnoreWater = true
+			local rayResult = Workspace:Raycast(rayOrigin, rayDir, rayParams)
+			if rayResult and rayResult.Instance == part then
+				signedGap = (posicao - rayResult.Position):Dot(normalUnit)
+			end
+		end
+
+		-- Parts normais (ou fallback se ray falhou): box math original
+		if signedGap == nil then
+			local normalLocal = part.CFrame:VectorToObjectSpace(normalUnit)
+			local axis, sign = Utilidades.dominantAxis(normalLocal)
+			local half = part.Size / 2
+			local faceCoord = sign * Utilidades.getAxisValue(half, axis)
+			local localPos = part.CFrame:PointToObjectSpace(posicao)
+			local coord = Utilidades.getAxisValue(localPos, axis)
+			signedGap = sign * (coord - faceCoord)
+		end
 
 		if signedGap < minGap then
 			posicao += normalUnit * (minGap - signedGap)
@@ -827,7 +846,13 @@ local function calcularPosicaoGrabSegura(character, hrp, edgePosition, normal, p
 	local probeSize = hrp.Size * probeScale
 	local pushStep = math.max(finalConfig.GrabSafetyPushStep or 0.15, 0.05)
 	local maxPushSteps = math.max(math.floor(finalConfig.GrabSafetyMaxPushSteps or 6), 1)
-	local overlapParams = Utilidades.createOverlapParams({ character }, 0)
+	-- Excluir a part agarrada do overlap: a distância até ela já foi garantida pelo signedGap acima.
+	-- Sem isso, MeshParts com bounding box maior que a mesh causam falso-positivo no push loop.
+	local overlapIgnore = { character }
+	if part and typeof(part) == "Instance" then
+		table.insert(overlapIgnore, part)
+	end
+	local overlapParams = Utilidades.createOverlapParams(overlapIgnore, 0)
 	local normalUnit = normal.Unit
 
 	for _ = 1, maxPushSteps do
@@ -1312,11 +1337,18 @@ local function executarSubir(novaEdgePos, novaNormal, novaPart, config, nomeAnim
 		local totalTime = getScaledTransitionTime(finalConfig.SubirTransitionTime)
 		local startPos = hrp.Position
 		local posVertical = Vector3.new(startPos.X, posAlvo.Y, startPos.Z)
-		local responsivenessVertical = 1 / math.max(totalTime, 0.01) * 10
+
+		-- Duas fases como lateral: fase 1 = vertical, fase 2 = horizontal até posição final
+		-- Rotação constante distribuída por todo o tempo total
+		local phaseSplit = math.clamp(finalConfig.SubirTransitionPhaseSplit or 0.55, 0.2, 0.8)
+		local tempoFase1 = math.max(totalTime * phaseSplit, 0.01)
+		local tempoFase2 = math.max(totalTime - tempoFase1, 0.01)
+		local responsivenessFase1 = 1 / tempoFase1 * 10
+		local responsivenessFase2 = 1 / tempoFase2 * 10
 		local subirAngVel = calcularVelocidadeAngularSuave(hrp.CFrame, cfAlvo, totalTime)
 
-		criarAlignPosition(hrp, posVertical, responsivenessVertical)
-		criarAlignOrientation(hrp, cfAlvo, responsivenessVertical, subirAngVel)
+		local alignPos = criarAlignPosition(hrp, posVertical, responsivenessFase1)
+		criarAlignOrientation(hrp, cfAlvo, responsivenessFase1, subirAngVel)
 
 		zeroAssemblyVelocity(hrp)
 
@@ -1329,6 +1361,14 @@ local function executarSubir(novaEdgePos, novaNormal, novaPart, config, nomeAnim
 			finalConfig,
 			hrp.CFrame.LookVector
 		)
+
+		task.delay(tempoFase1, function()
+			if alignPos.Parent and isCharacterAlive(character) then
+				alignPos.Position = posAlvo
+				alignPos.Responsiveness = responsivenessFase2
+				-- Não altera orientação: rotação constante por todo totalTime
+			end
+		end)
 
 		task.delay(totalTime, function()
 			transicaoConcluida = true
