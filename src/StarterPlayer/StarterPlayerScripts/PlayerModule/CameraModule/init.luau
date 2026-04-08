@@ -78,6 +78,7 @@ local Poppercam = require(script:WaitForChild("Poppercam"))
 local TransparencyController = require(script:WaitForChild("TransparencyController"))
 local MouseLockController = require(script:WaitForChild("MouseLockController"))
 local DynamicCamFX = require(script:WaitForChild("DynamicCamFX"))
+local ZoomController = require(script:WaitForChild("ZoomController"))
 
 -- Carrega configurações centralizadas do jogador
 local ConfigJogador = require(
@@ -88,17 +89,26 @@ local ConfigJogador = require(
 local ClientBridge =
 	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Core"):WaitForChild("ClientBridge"))
 
+-- Configurações de combate (para DashCameraFixarY)
+local Modulo_Configuracoes = require(
+	ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Combate"):WaitForChild("Modulo_Configuracoes")
+)
+
+-- Estado de Y fixo durante dash (offset relativo ao HRP)
+local dashCamState = {
+	ativo = false,
+	offsetY = nil :: number?,
+}
+
 -- Table of camera controllers that have been instantiated. They are instantiated as they are used.
 local instantiatedCameraControllers = {}
 local instantiatedOcclusionModules = {}
 
 -- ============================================================================
--- SISTEMA DE FOV DINÂMICO E SNAP PARA 1ª PESSOA
+-- SISTEMA DE FOV DINÂMICO
 -- ============================================================================
 
 local fovState = {
-	deadZoneEntryTime = nil :: number?,
-	isInDeadZone = false,
 	runRampProgress = 0, -- 0..1, quanto tempo correndo (para ramp gradual do FOV)
 }
 
@@ -110,23 +120,31 @@ do
 	end
 end
 
--- Atualiza o FOV suavemente a cada frame (sem tweens, lerp contínuo)
-local function updateFOV(camera: Camera, dt: number)
+-- Cache de referências de StatusLocal (evita FindFirstChild a cada frame)
+local cachedEstadoMov: StringValue? = nil
+local cachedShiftLockBool: BoolValue? = nil
+local lastShiftLockSet: boolean? = nil
+
+local function getCachedEstadoMov(): string
+	local val = cachedEstadoMov
+	if val and val.Parent then
+		return val.Value
+	end
 	local character = Players.LocalPlayer.Character
-	if not character then
-		return
-	end
-
-	-- Lê estado de movimento do StatusLocal
+	if not character then return "Parado" end
 	local statusLocal = character:FindFirstChild("StatusLocal")
-	local estadoMov = "Parado"
-
-	if statusLocal then
-		local estadoVal = statusLocal:FindFirstChild("estadoMov")
-		if estadoVal and estadoVal:IsA("StringValue") then
-			estadoMov = estadoVal.Value
-		end
+	if not statusLocal then return "Parado" end
+	local estadoVal = statusLocal:FindFirstChild("estadoMov")
+	if estadoVal and estadoVal:IsA("StringValue") then
+		cachedEstadoMov = estadoVal :: StringValue
+		return estadoVal.Value
 	end
+	return "Parado"
+end
+
+-- Atualiza o FOV suavemente a cada frame (sem tweens, lerp contínuo)
+local function updateFOV(camera: Camera, dt: number, emPrimeiraPessoa: boolean)
+	local estadoMov = getCachedEstadoMov()
 
 	local isRunning = (estadoMov == "Correndo")
 	local isMoving = (estadoMov == "Andando") or isRunning
@@ -136,26 +154,32 @@ local function updateFOV(camera: Camera, dt: number)
 	if isRunning then
 		fovState.runRampProgress = math.min(fovState.runRampProgress + dt / rampTime, 1)
 	else
-		-- Volta pra 0 ao parar de correr (no mesmo ritmo)
 		fovState.runRampProgress = math.max(fovState.runRampProgress - dt / rampTime, 0)
 	end
 
-	-- Calcula FOV alvo
-	local defaultFOV = ConfigJogador.ObterConfiguracao("DefaultFOV") or 78
-	local walkFOV = ConfigJogador.ObterConfiguracao("WalkFOV") or 78
-	local runFOV = ConfigJogador.ObterConfiguracao("RunFOV") or 86
-
+	-- Calcula FOV alvo baseado se está em 1ª ou 3ª pessoa
 	local targetFOV: number
-	if not isMoving and fovState.runRampProgress <= 0 then
-		targetFOV = defaultFOV
+	if emPrimeiraPessoa then
+		local baseFOV = ConfigJogador.ObterConfiguracao("FOVPrimeiraPessoa") or 90
+		local runFOV = ConfigJogador.ObterConfiguracao("FOVCorrendoPrimeiraPessoa") or 110
+		if not isMoving and fovState.runRampProgress <= 0 then
+			targetFOV = baseFOV
+		else
+			targetFOV = baseFOV + (runFOV - baseFOV) * fovState.runRampProgress
+		end
 	else
-		-- Interpola entre walkFOV e runFOV baseado no progresso de corrida
-		targetFOV = walkFOV + (runFOV - walkFOV) * fovState.runRampProgress
+		local defaultFOV = ConfigJogador.ObterConfiguracao("DefaultFOV") or 78
+		local walkFOV = ConfigJogador.ObterConfiguracao("WalkFOV") or 78
+		local runFOV = ConfigJogador.ObterConfiguracao("RunFOV") or 86
+		if not isMoving and fovState.runRampProgress <= 0 then
+			targetFOV = defaultFOV
+		else
+			targetFOV = walkFOV + (runFOV - walkFOV) * fovState.runRampProgress
+		end
 	end
 
 	-- Lerp suave contínuo (sem tweens)
 	local transitionSpeed = ConfigJogador.ObterConfiguracao("FOVTransitionTime") or 0.3
-	-- Converte tempo de transição em velocidade de lerp
 	local lerpRate = math.clamp(dt / transitionSpeed, 0, 1)
 	camera.FieldOfView = camera.FieldOfView + (targetFOV - camera.FieldOfView) * lerpRate
 end
@@ -165,24 +189,40 @@ local zoomState = {
 }
 
 -- ============================================================================
+-- SISTEMA DE PRIMEIRA PESSOA (TOGGLE V)
+-- ============================================================================
+
+local primeiraPessoaState = {
+	ativo = false,
+	transicaoAtiva = false,
+	zoomAnterior = 10, -- zoom para restaurar ao sair (será o min zoom)
+	shiftLockAntesDePrimeiraPessoa = false, -- estado do ShiftLock antes de entrar em 1ª pessoa
+	cursorDesbloqueado = false, -- cursor livre (B toggle) em 1ª pessoa
+}
+
+-- ============================================================================
 -- SISTEMA DE SINCRONIZAÇÃO DO STATUS SHIFTLOCKON
 -- ============================================================================
 
 local function updateShiftLockStatus(isLocked: boolean)
-	local character = Players.LocalPlayer.Character
-	if not character then
-		return
+	-- Skip se o valor não mudou (evita write + FindFirstChild desnecessários)
+	if isLocked == lastShiftLockSet then return end
+
+	local boolVal = cachedShiftLockBool
+	if not boolVal or not boolVal.Parent then
+		local character = Players.LocalPlayer.Character
+		if not character then return end
+		local statusLocal = character:FindFirstChild("StatusLocal")
+		if not statusLocal then return end
+		local found = statusLocal:FindFirstChild("ShiftLockOn")
+		if not found or not found:IsA("BoolValue") then return end
+		boolVal = found :: BoolValue
+		cachedShiftLockBool = boolVal
 	end
 
-	local statusLocal = character:FindFirstChild("StatusLocal")
-	if not statusLocal then
-		return
-	end
-
-	local shiftLockValue = statusLocal:FindFirstChild("ShiftLockOn")
-	if shiftLockValue and shiftLockValue:IsA("BoolValue") then
-		shiftLockValue.Value = isLocked
-	end
+	local resolvedBoolVal = boolVal :: BoolValue
+	resolvedBoolVal.Value = isLocked
+	lastShiftLockSet = isLocked
 end
 
 local function checkFirstPersonAndUpdateStatus(activeCameraController: any, activeMouseLockController: any)
@@ -190,12 +230,12 @@ local function checkFirstPersonAndUpdateStatus(activeCameraController: any, acti
 		return
 	end
 
-	local isInFirstPerson = activeCameraController.IsInFirstPerson and activeCameraController:IsInFirstPerson()
+	local isInFirstPerson = primeiraPessoaState.ativo
 	local isMouseLocked = activeMouseLockController
 		and activeMouseLockController.GetIsMouseLocked
 		and activeMouseLockController:GetIsMouseLocked()
 
-	local shouldBeShiftLocked = isInFirstPerson or isMouseLocked
+	local shouldBeShiftLocked = isInFirstPerson or (isMouseLocked == true)
 	updateShiftLockStatus(shouldBeShiftLocked)
 end
 
@@ -220,43 +260,127 @@ local function updateZoomLimits(player: Player, isMouseLocked: boolean)
 	end
 end
 
--- Lógica de snap para 1ª pessoa (dead zone)
-local function updateDeadZoneSnap(camera: Camera, activeCameraController: any, activeMouseLockController: any)
-	if not activeCameraController then
+-- ============================================================================
+-- FUNÇÕES DE ENTRADA/SAÍDA DE PRIMEIRA PESSOA
+-- ============================================================================
+
+local function entrarPrimeiraPessoa(cameraModule: any)
+	if primeiraPessoaState.ativo or primeiraPessoaState.transicaoAtiva then
 		return
 	end
 
-	-- Verifica se o MouseLock está ativo
-	local isMouseLocked = activeMouseLockController
-		and activeMouseLockController.GetIsMouseLocked
-		and activeMouseLockController:GetIsMouseLocked()
-
-	-- Obtém distância atual da câmera ao foco
-	local distance = (camera.Focus.Position - camera.CFrame.Position).Magnitude
-
-	-- Verifica se está na zona morta
-	if ConfigJogador.EstaEmZonaMorta(distance, isMouseLocked) then
-		if not fovState.isInDeadZone then
-			fovState.isInDeadZone = true
-			fovState.deadZoneEntryTime = tick()
-		else
-			-- Verifica se passou tempo suficiente na zona morta
-			local deadZoneDelay = ConfigJogador.ObterConfiguracao("DeadZoneSnapDelay") or 0.2
-			if fovState.deadZoneEntryTime and (tick() - fovState.deadZoneEntryTime) >= deadZoneDelay then
-				-- Faz snap para 1ª pessoa
-				local headHideLimit = ConfigJogador.ObterConfiguracao("HeadHideLimit") or 0.6
-				if activeCameraController.SetCameraToSubjectDistance then
-					activeCameraController:SetCameraToSubjectDistance(headHideLimit)
-				end
-				fovState.isInDeadZone = false
-				fovState.deadZoneEntryTime = nil
-			end
-		end
-	else
-		fovState.isInDeadZone = false
-		fovState.deadZoneEntryTime = nil
+	local controller = cameraModule.activeCameraController
+	local mouseController = cameraModule.activeMouseLockController
+	if not controller then
+		return
 	end
+
+	-- Salva estado anterior do ShiftLock
+	primeiraPessoaState.shiftLockAntesDePrimeiraPessoa = mouseController
+		and mouseController.GetIsMouseLocked
+		and mouseController:GetIsMouseLocked() or false
+
+	-- Salva zoom anterior
+	if controller.GetCameraToSubjectDistance then
+		primeiraPessoaState.zoomAnterior = controller:GetCameraToSubjectDistance()
+	end
+
+	primeiraPessoaState.ativo = true
+	primeiraPessoaState.transicaoAtiva = true
+
+	-- Ativa ShiftLock (necessário para combate e outros sistemas)
+	if mouseController and mouseController.SetIsMouseLocked then
+		mouseController:SetIsMouseLocked(true)
+	elseif controller.SetIsMouseLocked then
+		controller:SetIsMouseLocked(true)
+	end
+	if controller.EnterFirstPerson then
+		controller:EnterFirstPerson()
+	end
+
+	-- Seta a primeira pessoa no controller para ele saber posicionar na cabeça
+	if controller.SetPrimeiraPessoa then
+		controller:SetPrimeiraPessoa(true)
+	end
+
+	-- Transição suave
+	local tempo = ConfigJogador.ObterConfiguracao("TransicaoPrimeiraPessoaTempo") or 0.4
+	task.delay(tempo, function()
+		primeiraPessoaState.transicaoAtiva = false
+	end)
 end
+
+local function sairPrimeiraPessoa(cameraModule: any)
+	if not primeiraPessoaState.ativo then
+		return
+	end
+
+	local controller = cameraModule.activeCameraController
+	local mouseController = cameraModule.activeMouseLockController
+	if not controller then
+		return
+	end
+
+	local restaurarShiftLock = primeiraPessoaState.shiftLockAntesDePrimeiraPessoa
+
+	primeiraPessoaState.ativo = false
+	primeiraPessoaState.cursorDesbloqueado = false
+	primeiraPessoaState.transicaoAtiva = true
+
+	-- Desativa primeira pessoa no controller
+	if controller.SetPrimeiraPessoa then
+		controller:SetPrimeiraPessoa(false)
+	end
+	if controller.LeaveFirstPerson then
+		controller:LeaveFirstPerson()
+	end
+
+	-- Restaura estado do ShiftLock
+	if mouseController and mouseController.SetIsMouseLocked then
+		mouseController:SetIsMouseLocked(restaurarShiftLock)
+	elseif controller.SetIsMouseLocked then
+		controller:SetIsMouseLocked(restaurarShiftLock)
+	end
+
+	-- Se ShiftLock vai ser restaurado, snap do shoulder offset e pula transição alpha
+	-- para que a câmera vá direto para a posição do ShiftLock sem passar por "atrás da cabeça"
+	if restaurarShiftLock and controller then
+		if controller.GetMouseLockOffset and controller.currentShoulderOffset ~= nil then
+			controller.currentShoulderOffset = controller:GetMouseLockOffset()
+		end
+		if controller.transicaoPrimeiraPessoaAlpha then
+			controller.transicaoPrimeiraPessoaAlpha = 0
+		end
+	end
+
+	-- Volta para o zoom mínimo
+	local isMouseLocked = restaurarShiftLock
+	local zoomRange = if isMouseLocked
+		then ConfigJogador.ObterConfiguracao("ZoomRangeOn")
+		else ConfigJogador.ObterConfiguracao("ZoomRangeOff")
+	local zoomMinimo = zoomRange and zoomRange.Min or 4
+
+	if controller.SetCameraToSubjectDistance then
+		controller:SetCameraToSubjectDistance(zoomMinimo)
+	end
+
+	-- Snap da spring de zoom para a posição final imediatamente.
+	-- Sem isso, a spring começa perto de 0 (FP) e rampeia até zoomMinimo,
+	-- causando um flick da câmera atrás do jogador antes de chegar na órbita correta.
+	ZoomController.ReleaseSpring()
+
+	local tempo = ConfigJogador.ObterConfiguracao("TransicaoPrimeiraPessoaTempo") or 0.4
+	task.delay(tempo, function()
+		primeiraPessoaState.transicaoAtiva = false
+	end)
+end
+
+-- Função acessível globalmente para outros módulos
+local function obterEstadoPrimeiraPessoa(): boolean
+	return primeiraPessoaState.ativo
+end
+
+
 
 if not Players.LocalPlayer then
 	return {}
@@ -379,6 +503,41 @@ function CameraModule.new()
 	RunService:BindToRenderStep("cameraRenderUpdate", Enum.RenderPriority.Camera.Value, function(dt)
 		self:Update(dt)
 	end)
+
+	-- Bind tecla V para toggle de primeira pessoa
+	local ContextActionService = game:GetService("ContextActionService")
+	local teclaPP = ConfigJogador.ObterConfiguracao("TeclaPrimeiraPessoa") or Enum.KeyCode.V
+	ContextActionService:BindActionAtPriority("PrimeiraPessoaToggle", function(_name, state, _input)
+		if state == Enum.UserInputState.Begin then
+			if primeiraPessoaState.ativo then
+				sairPrimeiraPessoa(self)
+			else
+				entrarPrimeiraPessoa(self)
+			end
+			return Enum.ContextActionResult.Sink
+		end
+		return Enum.ContextActionResult.Pass
+	end, false, Enum.ContextActionPriority.Medium.Value, teclaPP)
+
+	-- Bind tecla B para destravar/travar cursor em primeira pessoa
+	local teclaCursor = Enum.KeyCode.B
+	ContextActionService:BindActionAtPriority("CursorTogglePrimeiraPessoa", function(_name, state, _input)
+		if state == Enum.UserInputState.Begin then
+			if not primeiraPessoaState.ativo then
+				return Enum.ContextActionResult.Pass
+			end
+			primeiraPessoaState.cursorDesbloqueado = not primeiraPessoaState.cursorDesbloqueado
+			if primeiraPessoaState.cursorDesbloqueado then
+				UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+				UserInputService.MouseIconEnabled = true
+			end
+			return Enum.ContextActionResult.Sink
+		end
+		return Enum.ContextActionResult.Pass
+	end, false, Enum.ContextActionPriority.Medium.Value, teclaCursor)
+
+	-- Registra função de estado de primeira pessoa no ClientBridge
+	ClientBridge.EstaEmPrimeiraPessoa = obterEstadoPrimeiraPessoa
 
 	-- Connect listeners to camera-related properties
 	for _, propertyName in PLAYER_CAMERA_PROPERTIES do
@@ -736,11 +895,30 @@ end
 --]]
 function CameraModule:Update(dt)
 	if self.activeCameraController then
-		self.activeCameraController:UpdateMouseBehavior()
+		-- Em 1ª pessoa: interceptar scroll para trás (zoom out) para sair
+		if primeiraPessoaState.ativo then
+			local zoomDelta = CameraInput.getZoomDelta()
+			if zoomDelta > 0 then
+				-- Scroll para trás: sair de 1ª pessoa
+				sairPrimeiraPessoa(self)
+				-- Consome o delta de zoom para não afetar o zoom normal
+				CameraInput.resetInputForFrameEnd()
+			end
+			-- Scroll para frente: ignorar (não faz nada em 1ª pessoa)
+		end
+
+		-- Cursor desbloqueado em 1ª pessoa: congela rotação e libera mouse
+		if primeiraPessoaState.cursorDesbloqueado then
+			UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+			UserInputService.MouseIconEnabled = true
+			CameraInput.resetInputForFrameEnd()
+		else
+			self.activeCameraController:UpdateMouseBehavior()
+		end
 
 		local newCameraCFrame, newCameraFocus = self.activeCameraController:Update(dt)
 
-		if self.activeOcclusionModule then
+		if self.activeOcclusionModule and not primeiraPessoaState.ativo then
 			newCameraCFrame, newCameraFocus = self.activeOcclusionModule:Update(dt, newCameraCFrame, newCameraFocus)
 		end
 
@@ -750,27 +928,52 @@ function CameraModule:Update(dt)
 		currentCamera.Focus = newCameraFocus
 
 		-- Efeitos dinâmicos de câmera (bobbing, roll, lean, drift) - só em 1ª pessoa
-		local isInFirstPerson = self.activeCameraController.IsInFirstPerson
-			and self.activeCameraController:IsInFirstPerson()
+		local isInFirstPerson = primeiraPessoaState.ativo
 		local character = Players.LocalPlayer.Character
 		if character then
 			local hrp = character:FindFirstChild("HumanoidRootPart")
 			if hrp then
 				local isDashing = ClientBridge.EstaEmDash and ClientBridge.EstaEmDash() or false
 				currentCamera.CFrame = DynamicCamFX.Update(dt, currentCamera.CFrame, isInFirstPerson, isDashing, hrp)
+
+				-- Sistema de Y fixo durante dash: mantém offset relativo ao HRP
+				local fixarY = Modulo_Configuracoes.ObterConfiguracao("DashCameraFixarY")
+				if fixarY and isInFirstPerson then
+					if isDashing then
+						local hrpY = (hrp :: BasePart).Position.Y
+						if not dashCamState.ativo then
+							-- Captura offset câmera→HRP no início do dash
+							dashCamState.ativo = true
+							dashCamState.offsetY = currentCamera.CFrame.Position.Y - hrpY
+						end
+						-- Força Y = HRP.Y + offset original
+						local pos = currentCamera.CFrame.Position
+						local fixedY = hrpY + (dashCamState.offsetY :: number)
+						local fixedPos = Vector3.new(pos.X, fixedY, pos.Z)
+						currentCamera.CFrame = currentCamera.CFrame - pos + fixedPos
+					else
+						dashCamState.ativo = false
+						dashCamState.offsetY = nil
+					end
+				else
+					dashCamState.ativo = false
+					dashCamState.offsetY = nil
+				end
 			end
 		end
 
 		-- Update to character local transparency as needed based on camera-to-subject distance
 		if self.activeTransparencyController then
-			self.activeTransparencyController:Update(dt)
+			-- Só marca como primeira pessoa para transparência quando a transição terminar
+			local fpTransicaoCompleta = isInFirstPerson
+				and self.activeCameraController
+				and self.activeCameraController.transicaoPrimeiraPessoaAlpha
+				and self.activeCameraController.transicaoPrimeiraPessoaAlpha >= 1
+			self.activeTransparencyController:Update(dt, fpTransicaoCompleta)
 		end
 
 		-- Sistema de FOV dinâmico baseado na velocidade do jogador
-		updateFOV(currentCamera, dt)
-
-		-- Sistema de snap para 1ª pessoa (dead zone)
-		updateDeadZoneSnap(currentCamera, self.activeCameraController, self.activeMouseLockController)
+		updateFOV(currentCamera, dt, isInFirstPerson)
 
 		-- Sincroniza Status.ShiftLockOn (para combate) baseado em 1ª pessoa ou MouseLock
 		checkFirstPersonAndUpdateStatus(self.activeCameraController, self.activeMouseLockController)
@@ -784,6 +987,22 @@ end
 function CameraModule:OnCharacterAdded(char: Model, player: Player)
 	if self.activeOcclusionModule then
 		self.activeOcclusionModule:CharacterAdded(char, player)
+	end
+
+	-- Reseta primeira pessoa ao respawnar
+	if player == Players.LocalPlayer then
+		-- Invalida caches de StatusLocal (novo character = novas instâncias)
+		cachedEstadoMov = nil
+		cachedShiftLockBool = nil
+		lastShiftLockSet = nil
+
+		if primeiraPessoaState.ativo then
+			primeiraPessoaState.ativo = false
+			primeiraPessoaState.transicaoAtiva = false
+			if self.activeCameraController and self.activeCameraController.SetPrimeiraPessoa then
+				self.activeCameraController:SetPrimeiraPessoa(false)
+			end
+		end
 	end
 end
 

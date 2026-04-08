@@ -20,8 +20,8 @@ local ConfigJogador = require(
 	ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Jogador"):WaitForChild("Modulo_ConfiguracoesJogador")
 )
 
--- Offset de câmera customizado (usa valor do módulo de configurações)
-local CAMERA_OFFSET_DEFAULT = ConfigJogador.ObterConfiguracao("OffsetShoulder") or Vector3.new(2, 0, 1)
+-- Offset de câmera customizado (fallback padrão)
+local CAMERA_OFFSET_FALLBACK = Vector3.new(2, 0, 1)
 
 --[[ Services ]]
 --
@@ -106,12 +106,41 @@ function MouseLockController:GetIsMouseLocked()
 	return self.isMouseLocked
 end
 
+function MouseLockController:SetIsMouseLocked(mouseLocked: boolean)
+	if self.isMouseLocked == mouseLocked then
+		return
+	end
+
+	self.isMouseLocked = mouseLocked
+
+	if self.isMouseLocked then
+		local cursorImageValueObj: StringValue? = script:FindFirstChild("CursorImage") :: StringValue?
+		if cursorImageValueObj and cursorImageValueObj:IsA("StringValue") and cursorImageValueObj.Value then
+			CameraUtils.setMouseIconOverride(cursorImageValueObj.Value)
+		else
+			if cursorImageValueObj then
+				cursorImageValueObj:Destroy()
+			end
+			cursorImageValueObj = Instance.new("StringValue")
+			assert(cursorImageValueObj, "")
+			cursorImageValueObj.Name = "CursorImage"
+			cursorImageValueObj.Value = DEFAULT_MOUSE_LOCK_CURSOR
+			cursorImageValueObj.Parent = script
+			CameraUtils.setMouseIconOverride(DEFAULT_MOUSE_LOCK_CURSOR)
+		end
+	else
+		CameraUtils.restoreMouseIcon()
+	end
+
+	self.mouseLockToggledEvent:Fire()
+end
+
 function MouseLockController:GetBindableToggleEvent()
 	return self.mouseLockToggledEvent.Event
 end
 
 function MouseLockController:GetMouseLockOffset()
-	return CAMERA_OFFSET_DEFAULT
+	return ConfigJogador.ObterConfiguracao("OffsetShoulder") or CAMERA_OFFSET_FALLBACK
 end
 
 function MouseLockController:UpdateMouseLockAvailability()
@@ -145,28 +174,7 @@ end
 --[[ Local Functions ]]
 --
 function MouseLockController:OnMouseLockToggled()
-	self.isMouseLocked = not self.isMouseLocked
-
-	if self.isMouseLocked then
-		local cursorImageValueObj: StringValue? = script:FindFirstChild("CursorImage") :: StringValue?
-		if cursorImageValueObj and cursorImageValueObj:IsA("StringValue") and cursorImageValueObj.Value then
-			CameraUtils.setMouseIconOverride(cursorImageValueObj.Value)
-		else
-			if cursorImageValueObj then
-				cursorImageValueObj:Destroy()
-			end
-			cursorImageValueObj = Instance.new("StringValue")
-			assert(cursorImageValueObj, "")
-			cursorImageValueObj.Name = "CursorImage"
-			cursorImageValueObj.Value = DEFAULT_MOUSE_LOCK_CURSOR
-			cursorImageValueObj.Parent = script
-			CameraUtils.setMouseIconOverride(DEFAULT_MOUSE_LOCK_CURSOR)
-		end
-	else
-		CameraUtils.restoreMouseIcon()
-	end
-
-	self.mouseLockToggledEvent:Fire()
+	self:SetIsMouseLocked(not self.isMouseLocked)
 end
 
 function MouseLockController:DoMouseLockSwitch(_name, state, _input)

@@ -1,16 +1,16 @@
 --!strict
 --[[
 	DynamicCamFX - Efeitos dinâmicos de câmera (apenas em 1ª pessoa)
-	
+
 	Baseado no FPV_DynamicCam por @isPauI (YT: @Paul1Rb)
 	Adaptado para funcionar condicionalmente com o CameraModule existente.
-	
+
 	Efeitos aplicados (todos via CFrame direto):
 	- Head Bobbing: oscilação vertical proporcional à velocidade
 	- Respiração: oscilação vertical sutil quando parado
 	- Mouse Drift: inclinação ao mover o mouse rapidamente
 	- Lean Direcional: inclinação na direção do movimento lateral
-	
+
 	Frequência escala automaticamente com WalkSpeed do Humanoid.
 	Efeitos desvanecem ao olhar pra cima/baixo e durante dash.
 ]]

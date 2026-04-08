@@ -15,11 +15,6 @@ local CameraToggleStateController = require(script.Parent:WaitForChild("CameraTo
 local CameraInput = require(script.Parent:WaitForChild("CameraInput"))
 local CameraUI = require(script.Parent:WaitForChild("CameraUI"))
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ConfigJogador = require(
-	ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Jogador"):WaitForChild("Modulo_ConfiguracoesJogador")
-)
-
 local player = Players.LocalPlayer
 
 local FFlagUserFixGamepadMaxZoom
@@ -51,7 +46,6 @@ local R15_HEAD_OFFSET_NO_SCALING = Vector3.new(0, 2, 0)
 local HUMANOID_ROOT_PART_SIZE = Vector3.new(2, 2, 1)
 
 local ZOOM_SENSITIVITY_CURVATURE = 0.5
-local FIRST_PERSON_DISTANCE_MIN = 0.5
 
 local CONNECTIONS = {
 	CHARACTER_ADDED = "CHARACTER_ADDED",
@@ -85,11 +79,6 @@ function BaseCamera.new()
 	self._connections = ConnectionUtil.new()
 
 	self.gamepadZoomLevels = { 0, 10, 20 } -- zoom levels that are cycled through on a gamepad R3 press
-
-	-- So that derived classes have access to this
-	self.FIRST_PERSON_DISTANCE_THRESHOLD = if self.inMouseLockedMode
-		then ConfigJogador.ObterConfiguracao("FP_ThresholdOn")
-		else ConfigJogador.ObterConfiguracao("FP_ThresholdOff")
 
 	self.cameraType = nil
 	self.cameraMovementMode = nil
@@ -340,18 +329,8 @@ function BaseCamera:StepZoom()
 
 		if zoomDelta > 0 then
 			newZoom = zoom + zoomDelta * (1 + zoom * ZOOM_SENSITIVITY_CURVATURE)
-			-- Garante que não fique preso abaixo do threshold ao dar zoom out
-			local threshold = if self.inMouseLockedMode
-				then ConfigJogador.ObterConfiguracao("FP_ThresholdOn")
-				else ConfigJogador.ObterConfiguracao("FP_ThresholdOff")
-			newZoom = math.max(newZoom, threshold)
 		else
 			newZoom = (zoom + zoomDelta) / (1 - zoomDelta * ZOOM_SENSITIVITY_CURVATURE)
-			newZoom = math.max(newZoom, FIRST_PERSON_DISTANCE_MIN)
-		end
-
-		if ConfigJogador.EstaEmPrimeiraPessoa(newZoom, self.inMouseLockedMode) then
-			newZoom = FIRST_PERSON_DISTANCE_MIN
 		end
 
 		self:SetCameraToSubjectDistance(newZoom)
@@ -615,10 +594,6 @@ end
 function BaseCamera:SetCameraToSubjectDistance(desiredSubjectDistance: number): number
 	local lastSubjectDistance = self.currentSubjectDistance
 
-	-- By default, camera modules will respect LockFirstPerson and override the currentSubjectDistance with 0
-	-- regardless of what Player.CameraMinZoomDistance is set to, so that first person can be made
-	-- available by the developer without needing to allow players to mousewheel dolly into first person.
-	-- Some modules will override this function to remove or change first-person capability.
 	if player.CameraMode == Enum.CameraMode.LockFirstPerson then
 		self.currentSubjectDistance = 0.5
 		if not self.inFirstPerson then
@@ -627,17 +602,7 @@ function BaseCamera:SetCameraToSubjectDistance(desiredSubjectDistance: number): 
 	else
 		local newSubjectDistance =
 			math.clamp(desiredSubjectDistance, player.CameraMinZoomDistance, player.CameraMaxZoomDistance)
-		if ConfigJogador.EstaEmPrimeiraPessoa(newSubjectDistance, self.inMouseLockedMode) then
-			self.currentSubjectDistance = 0.5
-			if not self.inFirstPerson then
-				self:EnterFirstPerson()
-			end
-		else
-			self.currentSubjectDistance = newSubjectDistance
-			if self.inFirstPerson then
-				self:LeaveFirstPerson()
-			end
-		end
+		self.currentSubjectDistance = newSubjectDistance
 	end
 
 	-- Pass target distance and zoom direction to the zoom controller
@@ -646,7 +611,6 @@ function BaseCamera:SetCameraToSubjectDistance(desiredSubjectDistance: number): 
 		math.sign(desiredSubjectDistance - lastSubjectDistance)
 	)
 
-	-- Returned only for convenience to the caller to know the outcome
 	return self.currentSubjectDistance
 end
 
@@ -670,9 +634,6 @@ end
 
 function BaseCamera:SetIsMouseLocked(mouseLocked: boolean)
 	self.inMouseLockedMode = mouseLocked
-	self.FIRST_PERSON_DISTANCE_THRESHOLD = if mouseLocked
-		then ConfigJogador.ObterConfiguracao("FP_ThresholdOn")
-		else ConfigJogador.ObterConfiguracao("FP_ThresholdOff")
 end
 
 function BaseCamera:GetIsMouseLocked(): boolean
@@ -689,6 +650,10 @@ end
 
 function BaseCamera:InFirstPerson(): boolean
 	return self.inFirstPerson
+end
+
+function BaseCamera:SetPrimeiraPessoa(_ativo: boolean)
+	-- Override in subclasses (ClassicCamera)
 end
 
 function BaseCamera:EnterFirstPerson()

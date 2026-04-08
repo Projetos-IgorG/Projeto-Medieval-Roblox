@@ -197,7 +197,7 @@ function OrbitalCamera:SetCameraToSubjectDistance(desiredSubjectDistance)
 		self.currentSubjectDistance = math.clamp(desiredSubjectDistance, self.minDistance, self.maxDistance)
 
 		-- OrbitalCamera is not allowed to go into the first-person range
-		self.currentSubjectDistance = math.max(self.currentSubjectDistance, self.FIRST_PERSON_DISTANCE_THRESHOLD)
+		self.currentSubjectDistance = math.max(self.currentSubjectDistance, 4)
 	end
 	self.inFirstPerson = false
 	self:UpdateMouseBehavior()

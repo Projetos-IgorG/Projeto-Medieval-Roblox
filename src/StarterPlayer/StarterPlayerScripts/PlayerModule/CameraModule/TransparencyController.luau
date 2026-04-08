@@ -211,15 +211,23 @@ function TransparencyController:SetSubject(subject)
 	end
 end
 
-function TransparencyController:Update(dt)
+function TransparencyController:Update(dt, isInFirstPerson: boolean?)
 	local currentCamera = workspace.CurrentCamera
 
 	if currentCamera and self.enabled then
-		-- calculate goal transparency based on distance
-		local distance = (currentCamera.Focus.Position - currentCamera.CFrame.Position).Magnitude
-		local transparency = (distance < 2) and (1.0 - (distance - 0.5) / 1.5) or 0 -- (7 - distance) / 5
-		if transparency < 0.5 then -- too far, don't control transparency
-			transparency = 0
+		local transparency: number
+
+		if isInFirstPerson then
+			-- Em 1ª pessoa: Head e acessórios de cabeça ficam invisíveis localmente
+			-- SombraCabeca.client.luau cuida de projetar as sombras via clones
+			transparency = 1
+		else
+			-- Em 3ª pessoa: usa distância normal (comportamento original)
+			local distance = (currentCamera.Focus.Position - currentCamera.CFrame.Position).Magnitude
+			transparency = (distance < 2) and (1.0 - (distance - 0.5) / 1.5) or 0
+			if transparency < 0.5 then
+				transparency = 0
+			end
 		end
 
 		-- tween transparency if the goal is not fully transparent and the subject was not fully transparent last frame
@@ -237,12 +245,9 @@ function TransparencyController:Update(dt)
 		-- update transparencies
 		if self.transparencyDirty or self.lastTransparency ~= transparency then
 			for child, _ in pairs(self.cachedParts) do
-				-- MODIFICAÇÃO: Corpo deve ficar SEMPRE visível em 1ª pessoa
-				-- Apenas cabelo e acessórios de cabeça ficam transparentes
 				if self:IsHeadAccessory(child) then
 					child.LocalTransparencyModifier = transparency
 				else
-					-- Corpo e outros acessórios sempre visíveis
 					child.LocalTransparencyModifier = 0
 				end
 			end

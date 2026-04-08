@@ -54,6 +54,10 @@ function ClassicCamera.new()
 	self.currentShoulderOffset = Vector3.zero
 	self.offsetLerpSpeed = 8 -- Velocidade do lerp (maior = mais rápido)
 
+	-- Estado de primeira pessoa (fixada na cabeça)
+	self.emPrimeiraPessoa = false
+	self.transicaoPrimeiraPessoaAlpha = 0 -- 0 = 3ª pessoa, 1 = 1ª pessoa
+
 	return self
 end
 
@@ -63,7 +67,7 @@ function ClassicCamera:GetCameraToggleOffset(dt: number)
 
 		if CameraInput.getTogglePan() then
 			self.cameraToggleSpring.goal =
-				math.clamp(Util.map(zoom, 0.5, self.FIRST_PERSON_DISTANCE_THRESHOLD, 0, 1), 0, 1)
+				math.clamp(Util.map(zoom, 0.5, 4, 0, 1), 0, 1)
 		else
 			self.cameraToggleSpring.goal = 0
 		end
@@ -138,7 +142,7 @@ function ClassicCamera:Update(dt)
 		end
 
 		-- Aplica offsets de câmera customizados baseados no modo
-		local isFirstPerson = self:IsInFirstPerson()
+		local isFirstPerson = self.emPrimeiraPessoa
 		local isMouseLocked = self:GetIsMouseLocked()
 
 		-- ============================================================================
@@ -147,7 +151,8 @@ function ClassicCamera:Update(dt)
 
 		local targetShoulderOffset = Vector3.zero
 		if isFirstPerson then
-			targetShoulderOffset = ConfigJogador.ObterConfiguracao("OffsetFP") or Vector3.zero
+			-- Em primeira pessoa, não aplica shoulder offset (será fixado na cabeça)
+			targetShoulderOffset = Vector3.zero
 		elseif isMouseLocked then
 			targetShoulderOffset = self:GetMouseLockOffset()
 		end
@@ -354,6 +359,40 @@ function ClassicCamera:Update(dt)
 		newCameraFocus = newCameraFocus + toggleOffset
 		newCameraCFrame = newCameraCFrame + toggleOffset
 
+		-- ============================================================================
+		-- PRIMEIRA PESSOA: FIXAR CÂMERA NA CABEÇA
+		-- ============================================================================
+		-- Transição suave do alpha
+		local transicaoTempo = ConfigJogador.ObterConfiguracao("TransicaoPrimeiraPessoaTempo") or 0.4
+		local alphaSpeed = 1 / math.max(transicaoTempo, 0.01)
+		if self.emPrimeiraPessoa then
+			self.transicaoPrimeiraPessoaAlpha = math.min(self.transicaoPrimeiraPessoaAlpha + timeDelta * alphaSpeed, 1)
+		else
+			self.transicaoPrimeiraPessoaAlpha = math.max(self.transicaoPrimeiraPessoaAlpha - timeDelta * alphaSpeed, 0)
+		end
+
+		if self.transicaoPrimeiraPessoaAlpha > 0 then
+			local character = player.Character
+			local headPart = character and character:FindFirstChild("Head")
+			if headPart and headPart:IsA("BasePart") then
+				-- Posição da câmera = centro da cabeça + offset configurável (relativo ao CFrame do player)
+				local offsetFP = ConfigJogador.ObterConfiguracao("OffsetFPCabeca") or Vector3.zero
+				local headPos = (headPart.CFrame * CFrame.new(offsetFP)).Position
+
+				-- Manter a rotação do mouse (não seguir rotação da cabeça)
+				local lookVector = newCameraCFrame.LookVector
+				local fpCFrame = CFrame.lookAlong(headPos, lookVector)
+
+				-- Focus ligeiramente à frente da câmera (necessário para o engine calcular a direção do corpo)
+				local fpFocus = CFrame.new(headPos + lookVector * 0.5)
+
+				-- Interpola entre posição normal (3ª pessoa) e posição na cabeça (1ª pessoa)
+				local alpha = self.transicaoPrimeiraPessoaAlpha
+				newCameraCFrame = newCameraCFrame:Lerp(fpCFrame, alpha)
+				newCameraFocus = newCameraFocus:Lerp(fpFocus, alpha)
+			end
+		end
+
 		self.lastCameraTransform = newCameraCFrame
 		self.lastCameraFocus = newCameraFocus
 		if (isInVehicle or isOnASkateboard) and cameraSubject:IsA("BasePart") then
@@ -365,6 +404,14 @@ function ClassicCamera:Update(dt)
 
 	self.lastUpdate = now
 	return newCameraCFrame, newCameraFocus
+end
+
+function ClassicCamera:SetPrimeiraPessoa(ativo: boolean)
+	self.emPrimeiraPessoa = ativo
+end
+
+function ClassicCamera:IsInFirstPerson(): boolean
+	return self.emPrimeiraPessoa
 end
 
 return ClassicCamera
