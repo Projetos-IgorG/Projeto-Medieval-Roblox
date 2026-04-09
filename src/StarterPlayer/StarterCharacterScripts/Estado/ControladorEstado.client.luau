@@ -2873,6 +2873,18 @@ function ClientBridge.SairParkour()
 		estadoAtual.estadoAcao = "Nenhuma"
 	end
 
+	-- Resetar flags de pulo/queda que ficaram presas durante o parkour
+	movementFlags.isJumping = false
+	movementFlags.isFalling = false
+
+	-- Reavaliar estadoMov com base no estado físico atual (evita ficar preso em "Parkour" ou "Caindo")
+	if humanoid.FloorMaterial == Enum.Material.Air then
+		movementFlags.isFalling = true
+		estadoAtual.estadoMov = "Caindo"
+	elseif estadoAtual.estadoMov == "Parkour" then
+		estadoAtual.estadoMov = "Parado"
+	end
+
 	if isShiftHeld then
 		movementFlags.isRunning = true
 		estadoAtual.correndo = true

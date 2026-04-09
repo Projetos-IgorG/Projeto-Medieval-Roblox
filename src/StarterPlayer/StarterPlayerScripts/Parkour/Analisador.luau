@@ -832,7 +832,7 @@ local function getClosestSurfacePointOnPart(part, worldPoint, preferredDirWorld)
 	return part.CFrame:PointToWorldSpace(Utilidades.vectorFromTable(facePoint))
 end
 
-local function buildCastDataByRayToPart(character, part, origin, lookXZ, includeRayParams, includeList)
+local function _buildCastDataByRayToPart(character, part, origin, lookXZ, includeRayParams, includeList)
 	local toCenter = part.Position - origin
 	local preferredDir = toCenter.Magnitude > 0.001 and toCenter.Unit or lookXZ
 	local targetPoint = getClosestSurfacePointOnPart(part, origin, preferredDir)
@@ -899,51 +899,159 @@ local function collectValidPartsInBox(cframe, size, ignoreList, minPartHeight)
 end
 
 -- ══════════════════════════════════════
--- Busca frontal por bloco (caixa única)
+-- Busca frontal por grade de rays
 -- ══════════════════════════════════════
 
-local function findForwardEdgeInBox(character, hrp, look, config)
+-- RaycastParams reutilizável (exclude) para o grid — evita criação por frame
+local _gridExcludeRayParams = RaycastParams.new()
+_gridExcludeRayParams.FilterType = Enum.RaycastFilterType.Exclude
+_gridExcludeRayParams.IgnoreWater = true
+
+local function findForwardEdgeByRayGrid(character, hrp, look, config)
 	local lookXZ = getHorizontalUnit(look)
 	if not lookXZ then
 		return nil, nil, nil
 	end
 
-	local baseSize = config.ForwardObstacleBoxSize or Vector3.new(4.5, 5.5, 4.0)
-	local nearOffset = math.max(0, config.ForwardObstacleBoxNearOffset or 0.05)
-	local maxReach = math.max(nearOffset + 0.5, config.ForwardObstacleBoxDistance or 5.25)
-	local depth = math.max(0.75, maxReach - nearOffset)
-	local querySize = Vector3.new(baseSize.X, baseSize.Y, depth)
-	local queryCenter = hrp.Position
-		+ Vector3.yAxis * (config.ForwardObstacleBoxUpOffset or 0)
-		+ lookXZ * (nearOffset + depth * 0.5)
-	local queryCFrame = CFrame.lookAt(queryCenter, queryCenter + lookXZ, Vector3.yAxis)
+	local rows = config.ForwardRayGridRows or 7
+	local cols = config.ForwardRayGridColumns or 5
+	local width = config.ForwardRayGridWidth or 4.5
+	local height = config.ForwardRayGridHeight or 5.5
+	local upOffset = config.ForwardRayGridUpOffset or 0.8
+	local distance = config.ForwardRayGridDistance or 5.25
+	local maxPasses = config.ForwardRayGridMaxPasses or 3
+	local minPartHeight = config.MinPartHeight or 0.6
 
-	local parts = collectValidPartsInBox(queryCFrame, querySize, {character}, config.MinPartHeight)
-	local samplePoint = hrp.Position + Vector3.yAxis * (config.ForwardObstacleSampleYOffset or 0)
-	local maxDist = config.ForwardObstacleMaxDistance or (maxReach + 0.5)
+	-- Eixo lateral perpendicular ao olhar
+	local rightXZ = lookXZ:Cross(Vector3.yAxis)
+	if rightXZ.Magnitude < 0.05 then
+		rightXZ = Vector3.xAxis
+	else
+		rightXZ = rightXZ.Unit
+	end
 
-	local includeRayParams = sharedIncludeRayParams
-	local includeList = table.create(1)
+	local baseOrigin = hrp.Position + Vector3.yAxis * upOffset
+	local halfWidth = width * 0.5
+	local halfHeight = height * 0.5
+	local rowStep = rows > 1 and height / (rows - 1) or 0
+	local colStep = cols > 1 and width / (cols - 1) or 0
+
+	-- Configurar params de raycast (excluir personagem)
+	_gridExcludeRayParams.FilterDescendantsInstances = { character }
+
+	-- Coletar parts únicas atingidas pelos rays
+	local partHits = {} -- part -> { Result, Distance }
+	local seen = {}
+	local debugRays = Configs.DebugEnabled and {} or nil
+
+	for row = 0, rows - 1 do
+		local yOffset = -halfHeight + row * rowStep
+		for col = 0, cols - 1 do
+			local xOffset = -halfWidth + col * colStep
+			local rayOrigin = baseOrigin + Vector3.yAxis * yOffset + rightXZ * xOffset
+
+			-- Multi-pass: pular parts ignoradas/decorativas
+			local currentOrigin = rayOrigin
+			local remainingDist = distance
+			local hitSomething = false
+			local rayHitPosition = nil
+
+			for _ = 1, maxPasses do
+				if remainingDist < 0.01 then
+					break
+				end
+
+				local result = Workspace:Raycast(currentOrigin, lookXZ * remainingDist, _gridExcludeRayParams)
+				if not result then
+					break
+				end
+
+				local hitPart = result.Instance
+				if hitPart and hitPart:IsA("BasePart")
+					and not Utilidades.isParkourIgnoredPart(hitPart, minPartHeight)
+					and not Utilidades.hasTagDeep(hitPart, Configs.Tags.NAO_AGARRAVEL)
+				then
+					hitSomething = true
+					rayHitPosition = result.Position
+					local distToHRP = (result.Position - hrp.Position).Magnitude
+					if not seen[hitPart] then
+						seen[hitPart] = true
+						partHits[hitPart] = {
+							Origin = rayOrigin,
+							Result = result,
+							Distance = distToHRP,
+							GridHitStats = {
+								TotalRows = rows,
+								TotalColumns = cols,
+								HighestRow = row + 1,
+								LowestRow = row + 1,
+								HitCount = 1,
+							},
+						}
+					elseif distToHRP < partHits[hitPart].Distance then
+						partHits[hitPart].Origin = rayOrigin
+						partHits[hitPart].Result = result
+						partHits[hitPart].Distance = distToHRP
+					end
+
+					local stats = partHits[hitPart].GridHitStats
+					stats.HighestRow = math.max(stats.HighestRow, row + 1)
+					stats.LowestRow = math.min(stats.LowestRow, row + 1)
+					stats.HitCount += 1
+					break
+				end
+
+				-- Avançar além da part ignorada
+				local advance = (result.Position - currentOrigin).Magnitude + 0.02
+				remainingDist -= advance
+				currentOrigin = currentOrigin + lookXZ * advance
+			end
+
+			if debugRays then
+				table.insert(debugRays, {
+					Origin = rayOrigin,
+					Hit = hitSomething,
+					HitPosition = rayHitPosition,
+				})
+			end
+		end
+	end
+
+	-- Processar cada part detectada (mesma lógica de borda que o sistema anterior)
+	local maxDist = config.ForwardObstacleMaxDistance or (distance + 0.5)
+	local maxGrabReachHeight = config.MaxGrabReachHeight or 6.0
 
 	local candidatePoints = {}
 	local rankedCandidates = {}
-	local maxGrabReachHeight = config.MaxGrabReachHeight or 6.0
 
-	for _, part in ipairs(parts) do
-		local castData = buildCastDataByRayToPart(character, part, samplePoint, lookXZ, includeRayParams, includeList)
+	for part, hitData in pairs(partHits) do
+		-- Usar o hit real do ray grid como base. Isso evita perder a superfície
+		-- quando o samplePoint genérico já está acima da face durante o salto.
+		local fallbackSamplePoint = hitData.Result.Position
+		local castData = {
+			Character = character,
+			Part = part,
+			Result = hitData.Result,
+			Origin = hitData.Origin,
+			HitPosition = hitData.Result.Position,
+			Normal = hitData.Result.Normal,
+			GridHitStats = hitData.GridHitStats,
+		}
 		local built = buildResultFromCast(castData)
 
-		-- Se a face detectada não é wall-like (ex: topo de ledge), tentar forçar a face lateral
+		-- Fallback: forçar face lateral
 		if not built then
-			local fallbackCast = buildCastDataFromPartPoint(character, part, samplePoint, -lookXZ)
+			local fallbackCast = buildCastDataFromPartPoint(character, part, fallbackSamplePoint, -lookXZ)
+			fallbackCast.GridHitStats = hitData.GridHitStats
 			built = buildResultFromCast(fallbackCast)
 		end
 
-		-- Fallback extra: direção horizontal parte→jogador (pega a face mais natural voltada pro player)
+		-- Fallback extra: direção horizontal parte→jogador
 		if not built then
 			local toPlayerXZ = (hrp.Position - part.Position) * Vector3.new(1, 0, 1)
 			if toPlayerXZ.Magnitude > 0.01 then
-				local fallbackCast2 = buildCastDataFromPartPoint(character, part, samplePoint, toPlayerXZ.Unit)
+				local fallbackCast2 = buildCastDataFromPartPoint(character, part, fallbackSamplePoint, toPlayerXZ.Unit)
+				fallbackCast2.GridHitStats = hitData.GridHitStats
 				built = buildResultFromCast(fallbackCast2)
 			end
 		end
@@ -952,19 +1060,13 @@ local function findForwardEdgeInBox(character, hrp, look, config)
 			continue
 		end
 
-		-- Clampar Y da borda ao alcance do jogador (evita bordas inalcançáveis em partes muito altas)
+		-- Clampar Y da borda ao alcance do jogador
 		local topEdge = built.TopEdgePosition
 		local rawEdgeY = topEdge.Y
 		local maxReachY = hrp.Position.Y + maxGrabReachHeight
 		local clampedEdgeY = math.min(rawEdgeY, maxReachY)
 
-		-- Usar a posição real do TopEdge (3D correto para faces inclinadas).
-		-- Para faces verticais, XZ do TopEdge == XZ do hit; para inclinadas, preserva a geometria.
-		local edgePosition = Vector3.new(
-			topEdge.X,
-			clampedEdgeY,
-			topEdge.Z
-		)
+		local edgePosition = Vector3.new(topEdge.X, clampedEdgeY, topEdge.Z)
 		built.TopEdgePosition = edgePosition
 
 		local deltaXZ = Vector3.new(edgePosition.X - hrp.Position.X, 0, edgePosition.Z - hrp.Position.Z)
@@ -976,6 +1078,8 @@ local function findForwardEdgeInBox(character, hrp, look, config)
 		table.insert(candidatePoints, {
 			Position = edgePosition,
 			Accepted = accepted,
+			DistanceXZ = distXZ,
+			ForwardDistance = forwardDist,
 		})
 
 		if accepted then
@@ -1002,9 +1106,11 @@ local function findForwardEdgeInBox(character, hrp, look, config)
 	local bestData = rankedCandidates[1] and rankedCandidates[1].CastData or nil
 
 	local debugData = {
-		QueryBoxCFrame = queryCFrame,
-		QueryBoxSize = querySize,
 		CandidatePoints = candidatePoints,
+		GridRays = debugRays,
+		GridOrigin = baseOrigin,
+		GridLookXZ = lookXZ,
+		GridDistance = distance,
 	}
 
 	return bestData, debugData, rankedCandidates
@@ -1014,17 +1120,48 @@ end
 -- Classificar ação do pulo
 -- ══════════════════════════════════════
 
-local function classificarAcaoDePulo(bordaY, hrpY, torsoProbe, legProbe, config)
+local function classificarAcaoDePulo(bordaY, hrpY, torsoProbe, legProbe, gridHitStats, config)
+	if gridHitStats and (gridHitStats.TotalRows or 0) > 0 then
+		local totalRows = math.max(gridHitStats.TotalRows or 1, 1)
+		local highestRow = math.clamp(gridHitStats.HighestRow or 1, 1, totalRows)
+		local highestRatio = totalRows > 1 and ((highestRow - 1) / (totalRows - 1)) or 0
+		local grabStartRatio = math.clamp(config.ForwardRayGridGrabStartRatio or 0.72, 0.05, 0.98)
+		local vaultMedioStartRatio = math.clamp(config.ForwardRayGridVaultMedioStartRatio or 0.34, 0.0, grabStartRatio - 0.05)
+
+		if highestRatio >= grabStartRatio then
+			return "Agarrar", {
+				Mode = "RayGrid",
+				HighestRow = highestRow,
+				TotalRows = totalRows,
+				HighestRatio = highestRatio,
+			}
+		elseif highestRatio >= vaultMedioStartRatio then
+			return "VaultMedio", {
+				Mode = "RayGrid",
+				HighestRow = highestRow,
+				TotalRows = totalRows,
+				HighestRatio = highestRatio,
+			}
+		else
+			return "VaultBaixo", {
+				Mode = "RayGrid",
+				HighestRow = highestRow,
+				TotalRows = totalRows,
+				HighestRatio = highestRatio,
+			}
+		end
+	end
+
 	local yTopoTorso = hrpY + config.TopoTorsoOffset
 
 	if bordaY > yTopoTorso then
-		return "Agarrar"
+		return "Agarrar", { Mode = "Legacy", Reason = "EdgeAboveTorso" }
 	elseif torsoProbe and torsoProbe.Hit then
-		return "Agarrar"
+		return "Agarrar", { Mode = "Legacy", Reason = "TorsoHit" }
 	elseif legProbe and legProbe.Hit then
-		return "VaultMedio"
+		return "VaultMedio", { Mode = "Legacy", Reason = "LegHit" }
 	else
-		return "VaultBaixo"
+		return "VaultBaixo", { Mode = "Legacy", Reason = "NoBodyHit" }
 	end
 end
 
@@ -1052,24 +1189,24 @@ function Analisador.CheckParkour(character, config)
 		}
 	end
 
-	Debug.Verbose("═══ CheckParkour (Box+XZ) ═══")
+	Debug.Verbose("═══ CheckParkour (RayGrid) ═══")
 	Debug.Verbose("  HRP:", hrp.Position, "| Floor:", humanoid.FloorMaterial)
 
-	-- 1) Busca por bloco frontal: achar melhor borda candidata
-	local edgeData, blockDebug, rankedForwardCandidates = findForwardEdgeInBox(character, hrp, lookXZ, finalConfig)
+	-- 1) Busca por grade de rays à frente: achar melhor borda candidata
+	local edgeData, blockDebug, rankedForwardCandidates = findForwardEdgeByRayGrid(character, hrp, lookXZ, finalConfig)
 	if not edgeData then
 		Debug.Verbose(
 			"  RESULTADO: NoForwardHit | candidates:",
-			blockDebug and #blockDebug.CandidatePoints or 0,
-			"| boxCenter:",
-			blockDebug and blockDebug.QueryBoxCFrame and blockDebug.QueryBoxCFrame.Position or "nil"
+			blockDebug and #blockDebug.CandidatePoints or 0
 		)
 		return {
 			Aprovado = false,
 			Reason = "NoForwardHit",
-			ForwardQueryBoxCFrame = blockDebug and blockDebug.QueryBoxCFrame or nil,
-			ForwardQueryBoxSize = blockDebug and blockDebug.QueryBoxSize or nil,
 			ForwardCandidatePoints = blockDebug and blockDebug.CandidatePoints or nil,
+			ForwardGridRays = blockDebug and blockDebug.GridRays or nil,
+			ForwardGridOrigin = blockDebug and blockDebug.GridOrigin or nil,
+			ForwardGridLookXZ = blockDebug and blockDebug.GridLookXZ or nil,
+			ForwardGridDistance = blockDebug and blockDebug.GridDistance or nil,
 		}
 	end
 
@@ -1079,9 +1216,11 @@ function Analisador.CheckParkour(character, config)
 			Aprovado = false,
 			Reason = "TaggedNaoAgarravel",
 			Part = edgeData.Part,
-			ForwardQueryBoxCFrame = blockDebug and blockDebug.QueryBoxCFrame or nil,
-			ForwardQueryBoxSize = blockDebug and blockDebug.QueryBoxSize or nil,
 			ForwardCandidatePoints = blockDebug and blockDebug.CandidatePoints or nil,
+			ForwardGridRays = blockDebug and blockDebug.GridRays or nil,
+			ForwardGridOrigin = blockDebug and blockDebug.GridOrigin or nil,
+			ForwardGridLookXZ = blockDebug and blockDebug.GridLookXZ or nil,
+			ForwardGridDistance = blockDebug and blockDebug.GridDistance or nil,
 		}
 	end
 
@@ -1097,9 +1236,11 @@ function Analisador.CheckParkour(character, config)
 		candidateData.HitPosition = nil
 		candidateData.LookVector = lookXZ
 		candidateData.HrpPosition = hrp.Position
-		candidateData.ForwardQueryBoxCFrame = blockDebug and blockDebug.QueryBoxCFrame or nil
-		candidateData.ForwardQueryBoxSize = blockDebug and blockDebug.QueryBoxSize or nil
 		candidateData.ForwardCandidatePoints = blockDebug and blockDebug.CandidatePoints or nil
+		candidateData.ForwardGridRays = blockDebug and blockDebug.GridRays or nil
+		candidateData.ForwardGridOrigin = blockDebug and blockDebug.GridOrigin or nil
+		candidateData.ForwardGridLookXZ = blockDebug and blockDebug.GridLookXZ or nil
+		candidateData.ForwardGridDistance = blockDebug and blockDebug.GridDistance or nil
 
 		candidateData.TorsoRayDebug = castRayToEdgeXZ(
 			hrp.Position,
@@ -1120,11 +1261,12 @@ function Analisador.CheckParkour(character, config)
 			finalConfig
 		)
 
-		candidateData.Acao = classificarAcaoDePulo(
+		candidateData.Acao, candidateData.ClassificationDebug = classificarAcaoDePulo(
 			candidateData.EdgePosition.Y,
 			hrp.Position.Y,
 			candidateData.TorsoRayDebug,
 			candidateData.LegRayDebug,
+			candidateData.GridHitStats,
 			finalConfig
 		)
 
@@ -1145,9 +1287,11 @@ function Analisador.CheckParkour(character, config)
 		candidateData.HitPosition = nil
 		candidateData.LookVector = lookXZ
 		candidateData.HrpPosition = hrp.Position
-		candidateData.ForwardQueryBoxCFrame = blockDebug and blockDebug.QueryBoxCFrame or nil
-		candidateData.ForwardQueryBoxSize = blockDebug and blockDebug.QueryBoxSize or nil
 		candidateData.ForwardCandidatePoints = blockDebug and blockDebug.CandidatePoints or nil
+		candidateData.ForwardGridRays = blockDebug and blockDebug.GridRays or nil
+		candidateData.ForwardGridOrigin = blockDebug and blockDebug.GridOrigin or nil
+		candidateData.ForwardGridLookXZ = blockDebug and blockDebug.GridLookXZ or nil
+		candidateData.ForwardGridDistance = blockDebug and blockDebug.GridDistance or nil
 		candidateData.Acao = "Agarrar"
 		candidateData.DistanceLine = {
 			PosA = hrp.Position,
@@ -1209,6 +1353,12 @@ function Analisador.CheckParkour(character, config)
 	Debug.Verbose(
 		"  Classificacao:",
 		acao,
+		"| mode:",
+		data.ClassificationDebug and data.ClassificationDebug.Mode or "Unknown",
+		"| highestRow:",
+		data.ClassificationDebug and data.ClassificationDebug.HighestRow or "nil",
+		"/",
+		data.ClassificationDebug and data.ClassificationDebug.TotalRows or "nil",
 		"| torsoHit:",
 		data.TorsoRayDebug.Hit,
 		"| legHit:",

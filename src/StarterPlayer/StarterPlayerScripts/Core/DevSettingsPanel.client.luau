@@ -85,6 +85,7 @@ local SECTION_RULES: { [string]: { SectionRule } } = {
 	["Parkour Config"] = {
 		{ prefix = "Debug", section = "Debug" },
 		{ prefix = "Idle", section = "Idle (Agarrado)" },
+		{ prefix = "ForwardRayGrid", section = "Detecção Frontal (RayGrid)" },
 		{ prefix = "ForwardObstacle", section = "Detecção Frontal" },
 		{ prefix = "TopClearance", section = "Clearance Topo" },
 		{ prefix = "FrontClearance", section = "Clearance Frontal" },

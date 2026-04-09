@@ -28,11 +28,16 @@ Configs.DefaultConfig = {
 	ClassificationRayDistance = 8, -- alcance dos rays XZ usados para classificar vault baixo/medio
 	ClassificationRayExtraDistance = 0.75, -- margem extra para o ray passar da borda detectada
 
-	-- Busca primária de obstáculo por bloco (caixa única à frente)
-	ForwardObstacleBoxSize = Vector3.new(4.5, 5.5, 4.0), -- X=largura, Y=altura, Z=profundidade inicial (será ajustada por alcance)
-	ForwardObstacleBoxNearOffset = 0.05, -- distância mínima à frente do HRP para começar a caixa
-	ForwardObstacleBoxDistance = 5.25, -- alcance máximo frontal da caixa a partir do HRP
-	ForwardObstacleBoxUpOffset = 0.8, -- deslocamento vertical do centro da caixa
+	-- Busca primária de obstáculo por grade de rays à frente
+	ForwardRayGridRows = 7, -- fileiras verticais de rays
+	ForwardRayGridColumns = 5, -- rays por fileira (horizontal)
+	ForwardRayGridWidth = 4.5, -- largura total da grade (studs)
+	ForwardRayGridHeight = 5.5, -- altura total da grade (studs)
+	ForwardRayGridUpOffset = 0.8, -- deslocamento vertical do centro da grade
+	ForwardRayGridDistance = 6, -- alcance (comprimento) de cada ray
+	ForwardRayGridMaxPasses = 3, -- passes por ray para pular parts ignoradas
+	ForwardRayGridVaultMedioStartRatio = 0.34, -- a partir desta altura relativa da grade, classifica como VaultMedio
+	ForwardRayGridGrabStartRatio = 0.72, -- a partir desta altura relativa da grade, classifica como Agarrar
 	ForwardObstacleSampleYOffset = 0.0, -- altura usada para amostrar a face mais próxima na part candidata
 	ForwardObstacleMaxDistance = 9.0, -- limite de distância XZ para aceitar a borda candidata
 

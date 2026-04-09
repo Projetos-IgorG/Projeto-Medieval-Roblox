@@ -185,9 +185,21 @@ function Debug.DrawDebug(data)
 		return
 	end
 
-	-- Caixa primária de detecção frontal por bloco
-	if data.ForwardQueryBoxCFrame and data.ForwardQueryBoxSize then
-		Debug.DrawBox(data.ForwardQueryBoxCFrame, data.ForwardQueryBoxSize, Color3.fromRGB(80, 200, 255))
+	-- Grade de rays de detecção frontal
+	if data.ForwardGridRays then
+		local gridOrigin = data.ForwardGridOrigin
+		local gridLook = data.ForwardGridLookXZ
+		local gridDist = data.ForwardGridDistance or 5.25
+		if gridOrigin and gridLook then
+			for _, rayData in ipairs(data.ForwardGridRays) do
+				local endPoint = rayData.HitPosition or (rayData.Origin + gridLook * gridDist)
+				Debug.DrawRay(
+					rayData.Origin,
+					endPoint,
+					rayData.Hit and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(80, 80, 80)
+				)
+			end
+		end
 	end
 
 	if data.ForwardCandidatePoints then
@@ -261,7 +273,7 @@ function Debug.DrawDebug(data)
 				rayInfo.Hit and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(0, 120, 0)
 			)
 		end
-	elseif data.Origin and data.HitPosition and not data.ForwardQueryBoxCFrame then
+	elseif data.Origin and data.HitPosition and not data.ForwardGridRays then
 		Debug.DrawRay(data.Origin, data.HitPosition, Color3.fromRGB(0, 255, 0))
 	end
 

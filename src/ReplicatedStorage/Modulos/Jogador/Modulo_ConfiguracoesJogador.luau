@@ -76,7 +76,7 @@ local ConfiguracaoPadrao: ConfiguracaoCamera = {
 
 	-- Primeira Pessoa
 	TeclaPrimeiraPessoa = Enum.KeyCode.V,
-	OffsetFPCabeca = Vector3.new(0, 0.3, -0.5),
+	OffsetFPCabeca = Vector3.new(0, 0.3, -0.35),
 	FOVPrimeiraPessoa = 90,
 	FOVCorrendoPrimeiraPessoa = 110,
 	TransicaoPrimeiraPessoaTempo = 0.25,

@@ -1734,8 +1734,16 @@ local function executarEscalar(escalarResult, config)
 		end
 
 		CameraBypass.clear()
+		clearLateralNoSurfaceCache()
+		clearCharacterPartsCache()
+
+		if estado.DiedConnection then
+			estado.DiedConnection:Disconnect()
+			estado.DiedConnection = nil
+		end
 
 		estado.EmAcao = false
+		estado.Agarrado = false
 		estado.GrabData = nil
 		estado.CurrentCharacter = nil
 	end
