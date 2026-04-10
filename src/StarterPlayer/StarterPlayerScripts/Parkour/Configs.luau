@@ -36,6 +36,7 @@ Configs.DefaultConfig = {
 	ForwardRayGridUpOffset = 0.8, -- deslocamento vertical do centro da grade
 	ForwardRayGridDistance = 6, -- alcance (comprimento) de cada ray
 	ForwardRayGridMaxPasses = 3, -- passes por ray para pular parts ignoradas
+	ForwardRayGridBorderOnly = true, -- se true, lança rays apenas nas bordas da grade (caixa cobre o interior)
 	ForwardRayGridVaultMedioStartRatio = 0.34, -- a partir desta altura relativa da grade, classifica como VaultMedio
 	ForwardRayGridGrabStartRatio = 0.72, -- a partir desta altura relativa da grade, classifica como Agarrar
 	ForwardObstacleSampleYOffset = 0.0, -- altura usada para amostrar a face mais próxima na part candidata
@@ -79,12 +80,12 @@ Configs.DefaultConfig = {
 	VaultMoveUpOffset = 5.0, -- o quanto sobe antes de receber o impulso
 
 	-- ═══ Vault: impulso (fase de sustentação com LinearVelocity) ═══
-	VaultImpulseDuration = 0.25, -- duração (s) do LinearVelocity de impulso
+	VaultImpulseDuration = 0.2, -- duração (s) do LinearVelocity de impulso
 
 	-- ═══ Limites de Distância (ação) ═══
 	MaxGrabDistance = 4.5, -- quão perto precisa estar do ponto para agarrar
 	MaxGrabReachHeight = 6.0, -- altura máxima acima do HRP para considerar uma borda como alcançável (clamp para partes muito altas)
-	MaxVaultDistance = 5.0, -- quão perto precisa estar para dar vault
+	MaxVaultDistance = 6.0, -- quão perto precisa estar para dar vault
 
 	-- ═══ Filtro de peças pequenas ═══
 	MinPartHeight = 0.6, -- peças com Size.Y menor que isso são ignoradas (grama, decoração)
@@ -129,9 +130,9 @@ Configs.DefaultConfig = {
 	SubirSaltoMaxProfundidade = 2.4, -- profundidade máxima na direção da parede atual para "SubirSalto" (W+Pulo, permite bordas mais afastadas)
 	SubirMaxAltura = 6.0, -- dist. máx. vertical para "Subir" (só W)
 	SubirSaltoMaxAltura = 10.5, -- dist. máx. vertical para "SubirSalto" (W+Pulo)
-	SubirTransitionTime = 0.3, -- tempo (s) de transição ao subir
+	SubirTransitionTime = 0.4, -- tempo (s) de transição ao subir
 	SubirSaltoMinActionTime = 0.55, -- tempo mínimo (s) para a ação SubirSalto tocar antes de voltar ao Idle
-	SubirSaltoIdleFadeOut = 0.12, -- fade-out (s) para encerrar SubirSalto e entrar no Idle ao fim da transição
+	SubirSaltoIdleFadeOut = 0.2, -- fade-out (s) para encerrar SubirSalto e entrar no Idle ao fim da transição
 	SubirSaltoConfirmWindow = 0.9, -- tempo máximo para confirmar SubirSalto após ficar pendente
 	SubirSaltoConfirmEdgeTolerance = 2.5, -- deslocamento máximo permitido da borda original ao confirmar
 	SubirSaltoPreferTimeout = 0.77, -- ao segurar frente com SubirSalto+Escalar válidos, converte para Escalar automático
@@ -168,7 +169,7 @@ Configs.DefaultConfig = {
 	LateralPathClearanceHeightOffset = -1.3, -- offset vertical da caixa lateral de clearance
 	LateralPathSideDistance = 2.2, -- deslocamento lateral da caixa única de validação (não usa mais sweep até o destino)
 	LateralMinSideDistance = 0.1, -- distância lateral mínima para aceitar candidato na direção
-	LateralSaltoMinSideDistance = 1.0, -- distância lateral mínima exclusiva para aceitar LateralSalto (evita salto quase no mesmo alinhamento lateral)
+	LateralSaltoMinSideDistance = 4.5, -- distância lateral mínima exclusiva para aceitar LateralSalto (evita salto quase no mesmo alinhamento lateral)
 	LateralReverseTolerance = 0.05, -- tolerância para não aceitar candidato no sentido oposto ao input lateral
 	LateralCandidateBoxMargin = 0.5, -- margem extra da caixa de query para aceitar edgePos (evita alvo muito fora da área)
 	LateralExternalPathRayUpOffset = 0.2, -- ajuste em Y para origem/destino do ray de curva externa
@@ -202,7 +203,7 @@ Configs.DefaultConfig = {
 
 	-- ═══ PuloTras: salto para trás estando agarrado ═══
 	PuloTrasImpulse = 40, -- magnitude do impulso para trás (studs/s)
-	PuloTrasUpComponent = 0.7, -- componente vertical do impulso (0-1)
+	PuloTrasUpComponent = 0.8, -- componente vertical do impulso (0-1)
 
 	-- ═══ Descer: hold antes de soltar (evita conflito com PuloTras) ═══
 	DescerHoldTime = 0.15, -- segundos que precisa segurar S antes de soltar

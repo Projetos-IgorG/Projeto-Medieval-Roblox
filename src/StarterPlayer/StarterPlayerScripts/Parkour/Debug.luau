@@ -185,6 +185,11 @@ function Debug.DrawDebug(data)
 		return
 	end
 
+	-- Caixa de detecção volumétrica frontal
+	if data.ForwardBoxCFrame and data.ForwardBoxSize then
+		Debug.DrawBox(data.ForwardBoxCFrame, data.ForwardBoxSize, Color3.fromRGB(0, 120, 255))
+	end
+
 	-- Grade de rays de detecção frontal
 	if data.ForwardGridRays then
 		local gridOrigin = data.ForwardGridOrigin
@@ -193,11 +198,15 @@ function Debug.DrawDebug(data)
 		if gridOrigin and gridLook then
 			for _, rayData in ipairs(data.ForwardGridRays) do
 				local endPoint = rayData.HitPosition or (rayData.Origin + gridLook * gridDist)
-				Debug.DrawRay(
-					rayData.Origin,
-					endPoint,
-					rayData.Hit and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(80, 80, 80)
-				)
+				local rayColor
+				if rayData.FromBox then
+					rayColor = Color3.fromRGB(0, 200, 255)
+				elseif rayData.Hit then
+					rayColor = Color3.fromRGB(0, 255, 100)
+				else
+					rayColor = Color3.fromRGB(80, 80, 80)
+				end
+				Debug.DrawRay(rayData.Origin, endPoint, rayColor)
 			end
 		end
 	end

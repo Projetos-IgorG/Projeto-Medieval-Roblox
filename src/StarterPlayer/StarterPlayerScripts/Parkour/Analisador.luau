@@ -24,6 +24,17 @@ local function isMeshLikePart(part)
 	return part:IsA("MeshPart") or part:IsA("UnionOperation")
 end
 
+-- Helper: substitui componente de um eixo num trio (x,y,z) sem alocar tabela
+local function setAxis(x, y, z, axis, value)
+	if axis == "X" then
+		return value, y, z
+	elseif axis == "Y" then
+		return x, value, z
+	else
+		return x, y, value
+	end
+end
+
 -- ══════════════════════════════════════
 -- Funções Internas (local)
 -- ══════════════════════════════════════
@@ -52,35 +63,23 @@ local function computeFaceVerticalEdges(part, result)
 
 	local topSign = Utilidades.getAxisValue(worldUpLocal, verticalAxis) >= 0 and 1 or -1
 
-	local coords = {
-		X = math.clamp(hitLocal.X, -half.X, half.X),
-		Y = math.clamp(hitLocal.Y, -half.Y, half.Y),
-		Z = math.clamp(hitLocal.Z, -half.Z, half.Z),
-	}
+	-- Coordenadas base (sem alocação de tabela)
+	local cX = math.clamp(hitLocal.X, -half.X, half.X)
+	local cY = math.clamp(hitLocal.Y, -half.Y, half.Y)
+	local cZ = math.clamp(hitLocal.Z, -half.Z, half.Z)
 
-	coords[faceAxis] = faceSign * Utilidades.getAxisValue(half, faceAxis)
-	coords[otherAxis] = math.clamp(
+	cX, cY, cZ = setAxis(cX, cY, cZ, faceAxis, faceSign * Utilidades.getAxisValue(half, faceAxis))
+	local otherClamped = math.clamp(
 		Utilidades.getAxisValue(hitLocal, otherAxis),
 		-Utilidades.getAxisValue(half, otherAxis),
 		Utilidades.getAxisValue(half, otherAxis)
 	)
+	cX, cY, cZ = setAxis(cX, cY, cZ, otherAxis, otherClamped)
 
-	local topCoords = {
-		X = coords.X,
-		Y = coords.Y,
-		Z = coords.Z,
-	}
+	local topX, topY, topZ = setAxis(cX, cY, cZ, verticalAxis, topSign * Utilidades.getAxisValue(half, verticalAxis))
+	local botX, botY, botZ = setAxis(cX, cY, cZ, verticalAxis, -topSign * Utilidades.getAxisValue(half, verticalAxis))
 
-	local bottomCoords = {
-		X = coords.X,
-		Y = coords.Y,
-		Z = coords.Z,
-	}
-
-	topCoords[verticalAxis] = topSign * Utilidades.getAxisValue(half, verticalAxis)
-	bottomCoords[verticalAxis] = -topSign * Utilidades.getAxisValue(half, verticalAxis)
-
-	return Utilidades.vectorFromTable(topCoords), Utilidades.vectorFromTable(bottomCoords)
+	return Vector3.new(topX, topY, topZ), Vector3.new(botX, botY, botZ)
 end
 
 -- ══════════════════════════════════════
@@ -253,8 +252,21 @@ local function getLegSupportRayFrame(normal)
 	return forward, right
 end
 
+-- Buffer reutilizável para ignore list do castLegSupportRay (evita table.clone por ray)
+local _legIgnoreBuffer = table.create(8)
+local _legIgnoreLen = 0
+
 local function castLegSupportRay(origin, direction, baseIgnoreList, minPartHeight, maxPasses)
-	local ignoreList = table.clone(baseIgnoreList)
+	-- Copiar base para buffer sem alocar
+	local baseLen = #baseIgnoreList
+	for i = 1, baseLen do
+		_legIgnoreBuffer[i] = baseIgnoreList[i]
+	end
+	_legIgnoreLen = baseLen
+	-- Limpar entradas antigas além do novo comprimento
+	for i = baseLen + 1, #_legIgnoreBuffer do
+		_legIgnoreBuffer[i] = nil
+	end
 	local remainingDistance = direction.Magnitude
 	if remainingDistance < 0.001 then
 		return nil, nil
@@ -272,7 +284,7 @@ local function castLegSupportRay(origin, direction, baseIgnoreList, minPartHeigh
 		local rayResult = Workspace:Raycast(
 			currentOrigin,
 			directionUnit * remainingDistance,
-			Utilidades.createRaycastParams(ignoreList)
+			Utilidades.createRaycastParams(_legIgnoreBuffer)
 		)
 
 		if not rayResult then
@@ -284,7 +296,8 @@ local function castLegSupportRay(origin, direction, baseIgnoreList, minPartHeigh
 			return hitPart, rayResult.Position
 		end
 
-		table.insert(ignoreList, hitPart)
+		_legIgnoreLen += 1
+		_legIgnoreBuffer[_legIgnoreLen] = hitPart
 
 		local advance = (rayResult.Position - currentOrigin).Magnitude + 0.02
 		remainingDistance = math.max(0, remainingDistance - advance)
@@ -292,6 +305,23 @@ local function castLegSupportRay(origin, direction, baseIgnoreList, minPartHeigh
 	end
 
 	return nil, nil
+end
+
+-- Buffer reutilizável para ignore list de clearance (evita alocar {Character, Part} por chamada)
+local _clearanceIgnore = table.create(2)
+
+-- Closure reutilizável para filtro de parts ignoráveis em clearance
+local _clearanceMinH = 0.6
+local function _clearanceFilter(part)
+	return Utilidades.isParkourIgnoredPart(part, _clearanceMinH)
+end
+
+local function setClearanceIgnore(a, b)
+	_clearanceIgnore[1] = a
+	_clearanceIgnore[2] = b
+	for i = 3, #_clearanceIgnore do
+		_clearanceIgnore[i] = nil
+	end
 end
 
 local function checkEscalarAtEdge(character, currentEdgePos, currentNormal, currentPart, finalConfig, debugContext)
@@ -324,20 +354,16 @@ local function checkEscalarAtEdge(character, currentEdgePos, currentNormal, curr
 
 	local cf = CFrame.lookAt(center, center + flatLook, Vector3.yAxis)
 	local clearanceSize = finalConfig.EscalarClearanceSize or finalConfig.VaultClearanceSize
-	local minH = finalConfig.MinPartHeight
 
 	Debug.Verbose("  ClearanceCenter:", center, "| Size:", clearanceSize)
 
-	local ignoreList = {character}
-	if currentPart then
-		table.insert(ignoreList, currentPart)
-	end
-
+	_clearanceMinH = finalConfig.MinPartHeight
+	setClearanceIgnore(character, currentPart)
 	local clear, blocker = Utilidades.firstBlockingPartInBox(
 		cf,
 		clearanceSize,
-		ignoreList,
-		function(part) return Utilidades.isParkourIgnoredPart(part, minH) end
+		_clearanceIgnore,
+		_clearanceFilter
 	)
 
 	Debug.Verbose("  ClearanceResult: clear=", clear, "| blocker=", blocker and blocker.Name or "nil")
@@ -402,12 +428,13 @@ function Analisador.HasTopClearance(data, config)
 		+ flatNormal * finalConfig.TopClearanceNormalOffset
 
 	local cf = CFrame.lookAt(center, center - flatNormal, Vector3.yAxis)
-	local minH = finalConfig.MinPartHeight
+	_clearanceMinH = finalConfig.MinPartHeight
+	setClearanceIgnore(data.Character, data.Part)
 	local clear, blocker = Utilidades.firstBlockingPartInBox(
 		cf,
 		finalConfig.TopClearanceSize,
-		{data.Character, data.Part},
-		function(part) return Utilidades.isParkourIgnoredPart(part, minH) end
+		_clearanceIgnore,
+		_clearanceFilter
 	)
 
 	return clear, blocker, cf, finalConfig.TopClearanceSize
@@ -429,12 +456,13 @@ function Analisador.HasFrontClearance(data, config)
 		+ flatNormal * finalConfig.FrontClearanceNormalOffset
 
 	local cf = CFrame.lookAt(center, center - flatNormal, Vector3.yAxis)
-	local minH = finalConfig.MinPartHeight
+	_clearanceMinH = finalConfig.MinPartHeight
+	setClearanceIgnore(data.Character, data.Part)
 	local clear, blocker = Utilidades.firstBlockingPartInBox(
 		cf,
 		finalConfig.FrontClearanceSize,
-		{data.Character, data.Part},
-		function(part) return Utilidades.isParkourIgnoredPart(part, minH) end
+		_clearanceIgnore,
+		_clearanceFilter
 	)
 
 	return clear, blocker, cf, finalConfig.FrontClearanceSize
@@ -542,12 +570,13 @@ function Analisador.HasVaultClearance(data, config)
 		+ look * finalConfig.VaultClearanceForwardOffset
 
 	local cf = CFrame.lookAt(clearanceCenter, clearanceCenter + look, Vector3.yAxis)
-	local minH = finalConfig.MinPartHeight
+	_clearanceMinH = finalConfig.MinPartHeight
+	setClearanceIgnore(data.Character, data.Part)
 	local clear, blocker = Utilidades.firstBlockingPartInBox(
 		cf,
 		finalConfig.VaultClearanceSize,
-		{data.Character, data.Part},
-		function(part) return Utilidades.isParkourIgnoredPart(part, minH) end
+		_clearanceIgnore,
+		_clearanceFilter
 	)
 
 	-- Posição final: apenas ACIMA da borda (sem offset pra frente)
@@ -570,12 +599,13 @@ function Analisador.HasVaultEdgeClearance(data, config)
 	local center = bordaReal + Vector3.yAxis * (finalConfig.VaultEdgeClearanceUpOffset or (finalConfig.VaultClearanceSize.Y / 2))
 
 	local cf = CFrame.lookAt(center, center + look, Vector3.yAxis)
-	local minH = finalConfig.MinPartHeight
+	_clearanceMinH = finalConfig.MinPartHeight
+	setClearanceIgnore(data.Character, data.Part)
 	local clear, blocker = Utilidades.firstBlockingPartInBox(
 		cf,
 		finalConfig.VaultClearanceSize,
-		{data.Character, data.Part},
-		function(part) return Utilidades.isParkourIgnoredPart(part, minH) end
+		_clearanceIgnore,
+		_clearanceFilter
 	)
 
 	return clear, blocker, cf, finalConfig.VaultClearanceSize
@@ -658,28 +688,35 @@ local function getLateralDirection(currentNormal, direcao)
 	return right
 end
 
+-- Buffer reutilizável para direções de probe em buildCastDataFromPartPoint (evita {} por chamada)
+local _probeDirBuffer = table.create(3)
+local _probeDirLen = 0
+
 local function buildCastDataFromPartPoint(character, part, samplePoint, preferredNormal)
 	-- MeshParts: usar raycast real para encontrar superfície da mesh
 	if isMeshLikePart(part) then
 		local includeParams = sharedIncludeRayParams
 		includeParams.FilterDescendantsInstances = { part }
 
-		-- Tentar direção preferida primeiro, depois fallback para direção ao centro
-		local directions = {}
+		-- Montar direções no buffer reutilizável
+		_probeDirLen = 0
 		if preferredNormal and preferredNormal.Magnitude > 0.001 then
-			table.insert(directions, -preferredNormal.Unit)
+			_probeDirLen += 1
+			_probeDirBuffer[_probeDirLen] = -preferredNormal.Unit
 		end
 		local toCenter = part.Position - samplePoint
 		if toCenter.Magnitude > 0.01 then
-			table.insert(directions, toCenter.Unit)
+			_probeDirLen += 1
+			_probeDirBuffer[_probeDirLen] = toCenter.Unit
 		end
-		-- Fallback: direção horizontalizada ao centro
 		local toCenterXZ = Vector3.new(toCenter.X, 0, toCenter.Z)
 		if toCenterXZ.Magnitude > 0.01 then
-			table.insert(directions, toCenterXZ.Unit)
+			_probeDirLen += 1
+			_probeDirBuffer[_probeDirLen] = toCenterXZ.Unit
 		end
 
-		for _, dir in ipairs(directions) do
+		for i = 1, _probeDirLen do
+			local dir = _probeDirBuffer[i]
 			local rayOrigin = samplePoint
 			local rayLength = (part.Size.Magnitude * 0.5) + MESH_PROBE_OFFSET + 1.0
 			local result = Workspace:Raycast(rayOrigin, dir * rayLength, includeParams)
@@ -879,18 +916,21 @@ local function _buildCastDataByRayToPart(character, part, origin, lookXZ, includ
 	return fallback
 end
 
+-- Buffer reutilizável para deduplicação em collectValidPartsInBox
+local _collectSeen = {}
+
 local function collectValidPartsInBox(cframe, size, ignoreList, minPartHeight)
 	local params = Utilidades.createOverlapParams(ignoreList, 0)
 	local rawParts = Workspace:GetPartBoundsInBox(cframe, size, params)
-	local seen = {}
+	table.clear(_collectSeen)
 	local filtered = table.create(#rawParts)
 
 	for _, part in ipairs(rawParts) do
-		if part:IsA("BasePart") and not seen[part]
+		if part:IsA("BasePart") and not _collectSeen[part]
 			and not Utilidades.isParkourIgnoredPart(part, minPartHeight)
 			and not Utilidades.hasTagDeep(part, Configs.Tags.NAO_AGARRAVEL)
 		then
-			seen[part] = true
+			_collectSeen[part] = true
 			table.insert(filtered, part)
 		end
 	end
@@ -921,6 +961,7 @@ local function findForwardEdgeByRayGrid(character, hrp, look, config)
 	local distance = config.ForwardRayGridDistance or 5.25
 	local maxPasses = config.ForwardRayGridMaxPasses or 3
 	local minPartHeight = config.MinPartHeight or 0.6
+	local borderOnly = config.ForwardRayGridBorderOnly ~= false
 
 	-- Eixo lateral perpendicular ao olhar
 	local rightXZ = lookXZ:Cross(Vector3.yAxis)
@@ -936,17 +977,32 @@ local function findForwardEdgeByRayGrid(character, hrp, look, config)
 	local rowStep = rows > 1 and height / (rows - 1) or 0
 	local colStep = cols > 1 and width / (cols - 1) or 0
 
+	-- 1) Box query — detecção volumétrica ampla
+	local boxCenter = baseOrigin + lookXZ * (distance * 0.5)
+	local boxCFrame = CFrame.lookAt(boxCenter, boxCenter + lookXZ)
+	local boxSize = Vector3.new(width, height, distance)
+	local boxParts = collectValidPartsInBox(boxCFrame, boxSize, { character }, minPartHeight)
+
 	-- Configurar params de raycast (excluir personagem)
 	_gridExcludeRayParams.FilterDescendantsInstances = { character }
 
-	-- Coletar parts únicas atingidas pelos rays
+	-- 2) Rays de borda (ou grade completa quando borderOnly == false)
 	local partHits = {} -- part -> { Result, Distance }
 	local seen = {}
+	local boxPartSet = {} -- parts encontradas pela caixa (priorizadas no ranking)
+	for _, bp in ipairs(boxParts) do
+		boxPartSet[bp] = true
+	end
 	local debugRays = Configs.DebugEnabled and {} or nil
 
 	for row = 0, rows - 1 do
 		local yOffset = -halfHeight + row * rowStep
 		for col = 0, cols - 1 do
+			-- Pular raios internos quando borderOnly está ativo (caixa cobre o interior)
+			if borderOnly and row > 0 and row < rows - 1 and col > 0 and col < cols - 1 then
+				continue
+			end
+
 			local xOffset = -halfWidth + col * colStep
 			local rayOrigin = baseOrigin + Vector3.yAxis * yOffset + rightXZ * xOffset
 
@@ -1017,6 +1073,63 @@ local function findForwardEdgeByRayGrid(character, hrp, look, config)
 		end
 	end
 
+	-- 3) Box-only parts: encontradas pela caixa mas não atingidas por nenhum ray de borda
+	--    Usar include-filter na part alvo para não ser bloqueado por outras parts na frente.
+	--    Disparar ray na altura do centro da part (não do baseOrigin) para garantir
+	--    que acerte parts acima ou abaixo do ponto de origem do grid.
+	local gridBot = baseOrigin.Y - halfHeight
+	for _, boxPart in ipairs(boxParts) do
+		if not seen[boxPart] then
+			local dirXZ = (boxPart.Position - hrp.Position) * Vector3.new(1, 0, 1)
+			if dirXZ.Magnitude < 0.01 then
+				dirXZ = lookXZ
+			else
+				dirXZ = dirXZ.Unit
+			end
+
+			-- Ray na altura do centro da part para garantir intersecção
+			local rayOrig = Vector3.new(baseOrigin.X, boxPart.Position.Y, baseOrigin.Z)
+			sharedIncludeRayParams.FilterDescendantsInstances = { boxPart }
+			local result = Workspace:Raycast(rayOrig, dirXZ * (distance + 2), sharedIncludeRayParams)
+			if result and result.Instance == boxPart then
+				seen[boxPart] = true
+				local distToHRP = (result.Position - hrp.Position).Magnitude
+
+				-- Estimar GridHitStats a partir da posição da part no grid
+				local partHalfY = boxPart.Size.Y * 0.5
+				local partTop = boxPart.Position.Y + partHalfY
+				local partBot = boxPart.Position.Y - partHalfY
+				local topRatio = math.clamp((partTop - gridBot) / math.max(height, 0.01), 0, 1)
+				local botRatio = math.clamp((partBot - gridBot) / math.max(height, 0.01), 0, 1)
+				local highestRow = math.clamp(math.ceil(topRatio * rows), 1, rows)
+				local lowestRow = math.clamp(math.floor(botRatio * rows) + 1, 1, rows)
+
+				partHits[boxPart] = {
+					Origin = rayOrig,
+					Result = result,
+					Distance = distToHRP,
+					GridHitStats = {
+						TotalRows = rows,
+						TotalColumns = cols,
+						HighestRow = highestRow,
+						LowestRow = lowestRow,
+						HitCount = 1,
+						FromBox = true,
+					},
+				}
+
+				if debugRays then
+					table.insert(debugRays, {
+						Origin = rayOrig,
+						Hit = true,
+						HitPosition = result.Position,
+						FromBox = true,
+					})
+				end
+			end
+		end
+	end
+
 	-- Processar cada part detectada (mesma lógica de borda que o sistema anterior)
 	local maxDist = config.ForwardObstacleMaxDistance or (distance + 0.5)
 	local maxGrabReachHeight = config.MaxGrabReachHeight or 6.0
@@ -1025,34 +1138,72 @@ local function findForwardEdgeByRayGrid(character, hrp, look, config)
 	local rankedCandidates = {}
 
 	for part, hitData in pairs(partHits) do
-		-- Usar o hit real do ray grid como base. Isso evita perder a superfície
-		-- quando o samplePoint genérico já está acima da face durante o salto.
 		local fallbackSamplePoint = hitData.Result.Position
-		local castData = {
-			Character = character,
-			Part = part,
-			Result = hitData.Result,
-			Origin = hitData.Origin,
-			HitPosition = hitData.Result.Position,
-			Normal = hitData.Result.Normal,
-			GridHitStats = hitData.GridHitStats,
-		}
-		local built = buildResultFromCast(castData)
 
-		-- Fallback: forçar face lateral
+		-- Prioridade: encontrar a face mais próxima do player na part detectada.
+		-- O ray/box serve apenas para IDENTIFICAR a part; a posição da borda
+		-- deve ser calculada a partir do HRP (XZ) na altura do hit (Y).
+		-- Usar o Y do hit original garante que o probe acerta a face da mesh
+		-- mesmo quando o player está no chão abaixo da face.
+		local hitY = hitData.Result.Position.Y
+		local sampleYOffset = config.ForwardObstacleSampleYOffset or 0
+		local playerSample = Vector3.new(hrp.Position.X, hitY + sampleYOffset, hrp.Position.Z)
+		local primaryCast = buildCastDataFromPartPoint(character, part, playerSample, -lookXZ)
+		if primaryCast then
+			primaryCast.GridHitStats = hitData.GridHitStats
+		end
+		local built = primaryCast and buildResultFromCast(primaryCast) or nil
+
+		-- Fallback 1: ray alinhado do HRP para frente (include filter na part)
 		if not built then
-			local fallbackCast = buildCastDataFromPartPoint(character, part, fallbackSamplePoint, -lookXZ)
-			fallbackCast.GridHitStats = hitData.GridHitStats
-			built = buildResultFromCast(fallbackCast)
+			sharedIncludeRayParams.FilterDescendantsInstances = { part }
+			local alignResult = Workspace:Raycast(playerSample, lookXZ * (distance + 2), sharedIncludeRayParams)
+			if alignResult and alignResult.Instance == part then
+				local castData = {
+					Character = character,
+					Part = part,
+					Result = alignResult,
+					Origin = playerSample,
+					HitPosition = alignResult.Position,
+					Normal = alignResult.Normal,
+					GridHitStats = hitData.GridHitStats,
+				}
+				built = buildResultFromCast(castData)
+			end
 		end
 
-		-- Fallback extra: direção horizontal parte→jogador
+		-- Fallback 2: usar hit original do ray/box
+		if not built then
+			local castData = {
+				Character = character,
+				Part = part,
+				Result = hitData.Result,
+				Origin = hitData.Origin,
+				HitPosition = hitData.Result.Position,
+				Normal = hitData.Result.Normal,
+				GridHitStats = hitData.GridHitStats,
+			}
+			built = buildResultFromCast(castData)
+		end
+
+		-- Fallback 3: forçar face lateral a partir do hit original
+		if not built then
+			local fallbackCast = buildCastDataFromPartPoint(character, part, fallbackSamplePoint, -lookXZ)
+			if fallbackCast then
+				fallbackCast.GridHitStats = hitData.GridHitStats
+			end
+			built = fallbackCast and buildResultFromCast(fallbackCast) or nil
+		end
+
+		-- Fallback 4: direção horizontal parte→jogador
 		if not built then
 			local toPlayerXZ = (hrp.Position - part.Position) * Vector3.new(1, 0, 1)
 			if toPlayerXZ.Magnitude > 0.01 then
 				local fallbackCast2 = buildCastDataFromPartPoint(character, part, fallbackSamplePoint, toPlayerXZ.Unit)
-				fallbackCast2.GridHitStats = hitData.GridHitStats
-				built = buildResultFromCast(fallbackCast2)
+				if fallbackCast2 then
+					fallbackCast2.GridHitStats = hitData.GridHitStats
+				end
+				built = fallbackCast2 and buildResultFromCast(fallbackCast2) or nil
 			end
 		end
 
@@ -1089,11 +1240,18 @@ local function findForwardEdgeByRayGrid(character, hrp, look, config)
 				ForwardDist = math.max(forwardDist, 0.01),
 				LateralDist = lateral,
 				DistXZ = distXZ,
+				FromBox = boxPartSet[part] == true,
 			})
 		end
 	end
 
+	-- Prioridade: parts da caixa primeiro, rays como fallback
 	table.sort(rankedCandidates, function(a, b)
+		-- 1) Box parts sempre antes de ray-only parts
+		if a.FromBox ~= b.FromBox then
+			return a.FromBox
+		end
+		-- 2) Dentro do mesmo tier, ordenar por distância
 		if math.abs(a.DistXZ - b.DistXZ) > 0.05 then
 			return a.DistXZ < b.DistXZ
 		end
@@ -1111,6 +1269,8 @@ local function findForwardEdgeByRayGrid(character, hrp, look, config)
 		GridOrigin = baseOrigin,
 		GridLookXZ = lookXZ,
 		GridDistance = distance,
+		BoxCFrame = boxCFrame,
+		BoxSize = boxSize,
 	}
 
 	return bestData, debugData, rankedCandidates
@@ -1207,6 +1367,8 @@ function Analisador.CheckParkour(character, config)
 			ForwardGridOrigin = blockDebug and blockDebug.GridOrigin or nil,
 			ForwardGridLookXZ = blockDebug and blockDebug.GridLookXZ or nil,
 			ForwardGridDistance = blockDebug and blockDebug.GridDistance or nil,
+			ForwardBoxCFrame = blockDebug and blockDebug.BoxCFrame or nil,
+			ForwardBoxSize = blockDebug and blockDebug.BoxSize or nil,
 		}
 	end
 
@@ -1221,6 +1383,8 @@ function Analisador.CheckParkour(character, config)
 			ForwardGridOrigin = blockDebug and blockDebug.GridOrigin or nil,
 			ForwardGridLookXZ = blockDebug and blockDebug.GridLookXZ or nil,
 			ForwardGridDistance = blockDebug and blockDebug.GridDistance or nil,
+			ForwardBoxCFrame = blockDebug and blockDebug.BoxCFrame or nil,
+			ForwardBoxSize = blockDebug and blockDebug.BoxSize or nil,
 		}
 	end
 
@@ -1241,6 +1405,8 @@ function Analisador.CheckParkour(character, config)
 		candidateData.ForwardGridOrigin = blockDebug and blockDebug.GridOrigin or nil
 		candidateData.ForwardGridLookXZ = blockDebug and blockDebug.GridLookXZ or nil
 		candidateData.ForwardGridDistance = blockDebug and blockDebug.GridDistance or nil
+		candidateData.ForwardBoxCFrame = blockDebug and blockDebug.BoxCFrame or nil
+		candidateData.ForwardBoxSize = blockDebug and blockDebug.BoxSize or nil
 
 		candidateData.TorsoRayDebug = castRayToEdgeXZ(
 			hrp.Position,
@@ -1292,6 +1458,8 @@ function Analisador.CheckParkour(character, config)
 		candidateData.ForwardGridOrigin = blockDebug and blockDebug.GridOrigin or nil
 		candidateData.ForwardGridLookXZ = blockDebug and blockDebug.GridLookXZ or nil
 		candidateData.ForwardGridDistance = blockDebug and blockDebug.GridDistance or nil
+		candidateData.ForwardBoxCFrame = blockDebug and blockDebug.BoxCFrame or nil
+		candidateData.ForwardBoxSize = blockDebug and blockDebug.BoxSize or nil
 		candidateData.Acao = "Agarrar"
 		candidateData.DistanceLine = {
 			PosA = hrp.Position,

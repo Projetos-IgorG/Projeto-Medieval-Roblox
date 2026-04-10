@@ -169,6 +169,14 @@ function AnimacaoParkour.Inicializar(character: Model): boolean
 
 	currentCharacter = character
 	currentAnimator = animator
+
+	-- Pre-warm: carregar todas as tracks no cache para evitar stutter na primeira utilização
+	if parkourModo and parkourModo.animacoes then
+		for nome, _ in pairs(parkourModo.animacoes) do
+			obterTrack(nome)
+		end
+	end
+
 	return true
 end
 
@@ -494,6 +502,7 @@ function AnimacaoParkour.EncerrarAcaoAtual(fadeTime: number?)
 	pararTrack(acaoTrackAtual, fade)
 	acaoTrackAtual = nil
 end
+
 
 function AnimacaoParkour.ObterAnimacaoSubir(idleMode: string?): string
 	local sufixo = if idleMode == "IdleSuspenso" then "Suspenso" else "Suporte"

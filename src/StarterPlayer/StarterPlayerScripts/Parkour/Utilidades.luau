@@ -97,16 +97,21 @@ function Utilidades.createRaycastParams(ignoreList)
 	return _excludeRayParams
 end
 
+-- Buffer reutilizável para createRaycastParamsForCharacter (evita table.create por chamada)
+local _charRayIgnoreBuffer = table.create(4)
+
 function Utilidades.createRaycastParamsForCharacter(character, extraIgnore)
 	local ignoreCount = extraIgnore and #extraIgnore or 0
-	local ignoreList = table.create(ignoreCount + 1)
-	ignoreList[1] = character
-
+	_charRayIgnoreBuffer[1] = character
 	for i = 1, ignoreCount do
-		ignoreList[i + 1] = extraIgnore[i]
+		_charRayIgnoreBuffer[i + 1] = extraIgnore[i]
+	end
+	-- Limpar entradas antigas
+	for i = ignoreCount + 2, #_charRayIgnoreBuffer do
+		_charRayIgnoreBuffer[i] = nil
 	end
 
-	return Utilidades.createRaycastParams(ignoreList)
+	return Utilidades.createRaycastParams(_charRayIgnoreBuffer)
 end
 
 function Utilidades.createOverlapParams(ignoreList, maxParts)

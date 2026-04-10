@@ -17,6 +17,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 
+-- RaycastParams reutilizável (include) para mesh grab — evita alocação por chamada
+local _meshIncludeRayParams = RaycastParams.new()
+_meshIncludeRayParams.FilterType = Enum.RaycastFilterType.Include
+_meshIncludeRayParams.IgnoreWater = true
+
+-- Buffer reutilizável para ignore list do overlap de segurança do grab
+local _grabOverlapIgnore = table.create(2)
+
 local Modulos = ReplicatedStorage:WaitForChild("Modulos")
 local ClientBridge = require(Modulos:WaitForChild("Core"):WaitForChild("ClientBridge"))
 local AnimacaoParkour = require(Modulos:WaitForChild("Cliente"):WaitForChild("Visual"):WaitForChild("AnimacaoParkour"))
@@ -814,11 +822,8 @@ local function calcularPosicaoGrabSegura(character, hrp, edgePosition, normal, p
 		if part:IsA("MeshPart") or part:IsA("UnionOperation") then
 			local rayOrigin = posicao
 			local rayDir = -normalUnit * (part.Size.Magnitude * 0.5 + 2.0)
-			local rayParams = RaycastParams.new()
-			rayParams.FilterType = Enum.RaycastFilterType.Include
-			rayParams.FilterDescendantsInstances = { part }
-			rayParams.IgnoreWater = true
-			local rayResult = Workspace:Raycast(rayOrigin, rayDir, rayParams)
+			_meshIncludeRayParams.FilterDescendantsInstances = { part }
+			local rayResult = Workspace:Raycast(rayOrigin, rayDir, _meshIncludeRayParams)
 			if rayResult and rayResult.Instance == part then
 				signedGap = (posicao - rayResult.Position):Dot(normalUnit)
 			end
@@ -848,11 +853,12 @@ local function calcularPosicaoGrabSegura(character, hrp, edgePosition, normal, p
 	local maxPushSteps = math.max(math.floor(finalConfig.GrabSafetyMaxPushSteps or 6), 1)
 	-- Excluir a part agarrada do overlap: a distância até ela já foi garantida pelo signedGap acima.
 	-- Sem isso, MeshParts com bounding box maior que a mesh causam falso-positivo no push loop.
-	local overlapIgnore = { character }
-	if part and typeof(part) == "Instance" then
-		table.insert(overlapIgnore, part)
+	_grabOverlapIgnore[1] = character
+	_grabOverlapIgnore[2] = (part and typeof(part) == "Instance") and part or nil
+	for i = 3, #_grabOverlapIgnore do
+		_grabOverlapIgnore[i] = nil
 	end
-	local overlapParams = Utilidades.createOverlapParams(overlapIgnore, 0)
+	local overlapParams = Utilidades.createOverlapParams(_grabOverlapIgnore, 0)
 	local normalUnit = normal.Unit
 
 	for _ = 1, maxPushSteps do
@@ -993,11 +999,8 @@ end
 
 local function finalizarAcaoMantendoGrab()
 	estado.EmAcao = false
-	if estado.Agarrado and getValidGrabData() then
-		local grabData = getValidGrabData()
-		if not grabData then
-			return
-		end
+	local grabData = estado.Agarrado and getValidGrabData() or nil
+	if grabData then
 		local idleResolvido, idleDebug = resolverIdleModeParaGrab(
 			estado.CurrentCharacter,
 			grabData.Part,
@@ -1028,6 +1031,7 @@ local function executarAgarrar(result, config)
 	estado.EmAcao = true
 	estado.Agarrado = false
 	estado.CurrentCharacter = character
+
 	if ClientBridge.EntrarParkour then
 		ClientBridge.EntrarParkour()
 	end
@@ -1372,6 +1376,10 @@ local function executarSubir(novaEdgePos, novaNormal, novaPart, config, nomeAnim
 
 		task.delay(totalTime, function()
 			transicaoConcluida = true
+			-- Chegou na posição antes da animação acabar: forçar conclusão para blend direto ao idle
+			if not animacaoConcluida then
+				animacaoConcluida = true
+			end
 			tentarFinalizarSubir()
 		end)
 	end
@@ -2415,6 +2423,11 @@ function Movimento.CancelarPreviewLateralAoSoltar(config)
 		return false
 	end
 
+	-- Iniciar idle por baixo da ação (prioridade menor) para evitar gap durante rewind
+	if estado.GrabData and estado.GrabData.IdleMode then
+		AnimacaoParkour.TocarIdle(estado.GrabData.IdleMode)
+	end
+
 	local velocidade = (config and config.LateralSaltoCancelSpeedAbs) or 1.3
 	estado.EmAcao = true
 
@@ -2434,12 +2447,13 @@ function Movimento.CancelarPreviewLateralAoSoltar(config)
 end
 
 function Movimento.CancelarPreviewAcao(config)
-	if not AnimacaoParkour.CancelarAcaoPausada((config and config.SubirSaltoIdleFadeOut) or nil) then
-		return false
-	end
-
+	-- Iniciar idle por baixo antes de encerrar a ação para evitar gap visual
 	if estado.Agarrado and estado.GrabData and estado.GrabData.IdleMode then
 		AnimacaoParkour.TocarIdle(estado.GrabData.IdleMode)
+	end
+
+	if not AnimacaoParkour.CancelarAcaoPausada((config and config.SubirSaltoIdleFadeOut) or nil) then
+		return false
 	end
 
 	return true
