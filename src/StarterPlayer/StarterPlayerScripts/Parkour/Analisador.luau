@@ -2551,18 +2551,21 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 			return true, nil
 		end
 
+		-- NOTE: targetPart is intentionally NOT ignored so the ray can detect
+		-- if the path goes through it (far-side edge rejection). If the ray
+		-- hits the target part, we verify it struck the correct face (same
+		-- normal as the target edge). A different face means the edge is on
+		-- the far side and the character would need to pass through the part.
 		local ignoreList = { character }
 		if currentPart then
 			table.insert(ignoreList, currentPart)
 		end
-		if targetPart and targetPart ~= currentPart then
-			table.insert(ignoreList, targetPart)
-		end
 
 		local rayParams = Utilidades.createRaycastParams(ignoreList)
 		local rayOrigin = hrp.Position + Vector3.yAxis * externalPathRayUpOffset
+		local targetNormalUnit = targetNormal.Unit
 		local rayTarget = targetEdgePos
-			+ targetNormal.Unit * externalPathRayNormalOffset
+			+ targetNormalUnit * externalPathRayNormalOffset
 			+ Vector3.yAxis * externalPathRayUpOffset
 		local rayDir = rayTarget - rayOrigin
 		if rayDir.Magnitude < 0.05 then
@@ -2570,13 +2573,17 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 		end
 
 		local rayResult = Workspace:Raycast(rayOrigin, rayDir, rayParams)
-		local hitIsTargetSurface = targetPart ~= nil and rayResult ~= nil and isSameAssemblyPart(rayResult.Instance, targetPart)
+		local hitIsTargetPart = targetPart ~= nil and rayResult ~= nil and isSameAssemblyPart(rayResult.Instance, targetPart)
+		local isCorrectFace = hitIsTargetPart and rayResult.Normal:Dot(targetNormalUnit) > 0.5
+		local isClear = rayResult == nil or isCorrectFace
 		if lateralDebug then
 			table.insert(lateralDebug.PathClearanceRays, {
 				Origin = rayOrigin,
 				HitPosition = rayResult and rayResult.Position or rayTarget,
 				Hit = rayResult ~= nil,
-				Clear = rayResult == nil or hitIsTargetSurface,
+				Clear = isClear,
+				HitIsTargetPart = hitIsTargetPart,
+				IsCorrectFace = isCorrectFace,
 			})
 		end
 
@@ -2584,8 +2591,12 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 			return true, nil
 		end
 
-		if hitIsTargetSurface then
-			return true, nil
+		if hitIsTargetPart then
+			if isCorrectFace then
+				return true, nil
+			end
+			-- Ray hit target part on a different face → edge is on the far side
+			return false, rayResult.Instance
 		end
 
 		return false, rayResult.Instance
