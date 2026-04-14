@@ -84,7 +84,7 @@ Configs.DefaultConfig = {
 
 	-- ═══ Limites de Distância (ação) ═══
 	MaxGrabDistance = 4.5, -- quão perto precisa estar do ponto para agarrar
-	MaxGrabReachHeight = 6.0, -- altura máxima acima do HRP para considerar uma borda como alcançável (clamp para partes muito altas)
+	MaxGrabReachHeight = 5.5, -- altura máxima acima do HRP para considerar uma borda como alcançável (clamp para partes muito altas)
 	MaxVaultDistance = 6.0, -- quão perto precisa estar para dar vault
 
 	-- ═══ Filtro de peças pequenas ═══
