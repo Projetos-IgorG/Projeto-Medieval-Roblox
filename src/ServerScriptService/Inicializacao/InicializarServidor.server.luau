@@ -4,7 +4,7 @@
     Responsabilidade: Inicializa servicos centrais do projeto quando o servidor sobe.
     Uso: Script de servidor; roda automaticamente em src/ServerScriptService/Inicializacao quando a instancia existe no jogo.
     Nao faz: Nao controla UI local nem le inputs diretamente; recebe sinais ja autorizados pelo fluxo do jogo.
-    Funcoes principais: CriarRemoto, CriarBindable, ConfigurarEquipamentoPasta, ConfigurarStatusPasta, createValue, RemoverAcessoriosNaoHair
+    Funcoes principais: CriarRemoto, CriarBindable, ConfigurarEquipamentoPasta, ConfigurarStatusPasta, createValue
 ]]
 local DEBUG_ENABLED = false
 
@@ -159,18 +159,6 @@ local function ConfigurarStatusPasta(Character)
 	createValue("NumberValue", "CritMult", 1.5)
 end
 
-local function RemoverAcessoriosNaoHair(Character)
-	local parts = Character:GetChildren()
-	for i = 1, #parts do
-		local instanceA = parts[i]
-		if instanceA.ClassName == "Accessory" then
-			if not instanceA.Handle:FindFirstChild("HairAttachment") then
-				parts[i]:Destroy()
-			end
-		end
-	end
-end
-
 local function AplicarRoupaPadrao(Character)
 
 	for _, child in ipairs(Character:GetChildren()) do
@@ -195,7 +183,6 @@ Players.PlayerAdded:Connect(function(Player)
 	end)
 
 	Player.CharacterAppearanceLoaded:Connect(function(Character)
-		RemoverAcessoriosNaoHair(Character)
 		AplicarRoupaPadrao(Character)
 	end)
 end)
