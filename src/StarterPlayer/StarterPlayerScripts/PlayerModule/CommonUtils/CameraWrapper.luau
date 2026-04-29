@@ -1,28 +1,33 @@
 --!strict
 
+--[[
+    Script: CameraWrapper.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/CommonUtils
+    Responsabilidade: Fornece um wrapper pequeno para acesso controlado a camera atual.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, _connectCallbacks, Enable, Disable, Connect, Disconnect
+]]
 local ConnectionUtil = require(script.Parent.ConnectionUtil)
 
 type CameraWrapperClass = {
 	__index: CameraWrapperClass,
 	new: () -> CameraWrapper,
-	-- Connects a callback to a property of the camera
+
 	Connect: (self: CameraWrapper, property: string, callback: () -> ()) -> (),
-	-- Disconnects a callback to a property of the camera
+
 	Disconnect: (self: CameraWrapper, property: string) -> (),
-	
-    -- Allows for the camera wrapper to be toggled
+
     Enable: (self: CameraWrapper) -> (),
     Disable: (self: CameraWrapper) -> (),
 
-    -- Gets the current camera
 	getCamera: (self: CameraWrapper) -> Camera?,
 
-    -- Re-established callbacks for existing connections
     _connectCallbacks: (self: CameraWrapper) -> (),
 }
 
 export type CameraWrapper = typeof(setmetatable({} :: {
-	-- Mapping from a unique key to a disconnect function
+
 	_camera: Camera?,
     _cameraChangedConnection: RBXScriptConnection?,
 
@@ -70,10 +75,10 @@ function CameraWrapper:Enable()
     self._enabled = true
 
     self._cameraChangedConnection = game.Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-        self:_connectCallbacks()        
+        self:_connectCallbacks()
     end)
 
-    self:_connectCallbacks()  
+    self:_connectCallbacks()
 end
 
 function CameraWrapper:Disable()

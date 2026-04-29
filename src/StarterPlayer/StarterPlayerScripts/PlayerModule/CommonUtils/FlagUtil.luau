@@ -1,8 +1,15 @@
 --!strict
--- Utility module for handling User Fast Flags
+
+--[[
+    Script: FlagUtil.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/CommonUtils
+    Responsabilidade: Centraliza leitura segura de flags usadas pelo PlayerModule.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: getUserFlag
+]]
 export type FlagUtilType = {
-	-- Gets the user fast flag value if it's available, otherwise returns false. Don't include flag prefix.
-	-- Example: local FFlagUserDoStuff = FlagUtil.getUserFlag("UserDoStuff")
+
 	getUserFlag: (string) -> boolean,
 }
 

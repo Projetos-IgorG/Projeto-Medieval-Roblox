@@ -1,17 +1,25 @@
+--[[
+    Script: CoresProximidade.luau
+    Caminho: src/ReplicatedStorage/Interacao/Proximidade/Configuracoes
+    Responsabilidade: Centraliza cores e estados visuais usados por interacoes de proximidade.
+    Uso: ModuleScript; use require(caminho) para ler as tabelas e valores exportados.
+    Nao faz: Nao executa comportamento sozinho; apenas fornece dados para outros scripts.
+    Funcoes principais: GetColorByType, GetDefaultColor
+]]
 local ProximityColors = {}
 
 local COLOR_MAP = {
-	Ferramentas = Color3.fromRGB(149, 149, 149), -- Cinza
-	Armas = Color3.fromRGB(149, 149, 149), -- Cinza
-	ArmasEquipadas = Color3.fromRGB(149, 149, 149), -- Cinza
-	Armaduras = Color3.fromRGB(149, 149, 149), -- Cinza
-	Materiais = Color3.fromRGB(167, 116, 96), -- Marrom
-	Comidas = Color3.fromRGB(186, 174, 104), -- Amarelo
-	Bebidas = Color3.fromRGB(104, 186, 159), -- Azul Claro
-	Pocoes = Color3.fromRGB(162, 104, 186), -- Roxo
-	Ingredientes = Color3.fromRGB(111, 186, 104), -- Verde
-	Interagir = Color3.fromRGB(218, 218, 218), -- Cinza claro
-	NPC = Color3.fromRGB(218, 218, 218), -- Cinza claro
+	Ferramentas = Color3.fromRGB(149, 149, 149),
+	Armas = Color3.fromRGB(149, 149, 149),
+	ArmasEquipadas = Color3.fromRGB(149, 149, 149),
+	Armaduras = Color3.fromRGB(149, 149, 149),
+	Materiais = Color3.fromRGB(167, 116, 96),
+	Comidas = Color3.fromRGB(186, 174, 104),
+	Bebidas = Color3.fromRGB(104, 186, 159),
+	Pocoes = Color3.fromRGB(162, 104, 186),
+	Ingredientes = Color3.fromRGB(111, 186, 104),
+	Interagir = Color3.fromRGB(218, 218, 218),
+	NPC = Color3.fromRGB(218, 218, 218),
 }
 
 local DEFAULT_COLOR = Color3.fromRGB(218, 218, 218)

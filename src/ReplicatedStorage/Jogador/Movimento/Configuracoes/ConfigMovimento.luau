@@ -1,7 +1,13 @@
 --!strict
 
--- MovementConfig: constantes globais de velocidades e tempos de movimentação.
-
+--[[
+    Script: ConfigMovimento.luau
+    Caminho: src/ReplicatedStorage/Jogador/Movimento/Configuracoes
+    Responsabilidade: Centraliza parametros de movimento, velocidade e estados locomotores.
+    Uso: ModuleScript; use require(caminho) para ler as tabelas e valores exportados.
+    Nao faz: Nao executa comportamento sozinho; apenas fornece dados para outros scripts.
+    Funcoes principais: ObterConfiguracao
+]]
 local MovementConfig = {}
 
 MovementConfig.ConfiguracaoGlobal = {

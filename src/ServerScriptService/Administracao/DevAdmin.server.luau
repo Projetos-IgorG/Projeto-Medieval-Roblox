@@ -1,3 +1,11 @@
+--[[
+    Script: DevAdmin.server.luau
+    Caminho: src/ServerScriptService/Administracao
+    Responsabilidade: Fornece comandos administrativos e utilitarios de desenvolvimento no servidor.
+    Uso: Script de servidor; roda automaticamente em src/ServerScriptService/Administracao quando a instancia existe no jogo.
+    Nao faz: Nao controla UI local nem le inputs diretamente; recebe sinais ja autorizados pelo fluxo do jogo.
+    Funcoes principais: CriarToolMundo, DarTool, TrazerAlvo, IrAteAlvo, CongelarAlvo, DescongelarAlvo
+]]
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")

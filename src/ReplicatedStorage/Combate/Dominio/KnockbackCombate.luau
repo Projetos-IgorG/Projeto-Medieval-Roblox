@@ -1,53 +1,30 @@
---[[
-	Modulo_Knockback.luau
-	
-	Aplica knockback no player atacado baseado na configuração do modoAnimacao.
-	
-	Responsabilidades:
-	- Verificar se o modoAnimacao permite knockback
-	- Validar estado do alvo
-	- Aplicar knockback físico ao alvo atacado
-	
-	O knockback é DESABILITADO para:
-	- Ferramentas de interação (tipo "Interacao")
-]]
-
 --!strict
 
+--[[
+    Script: KnockbackCombate.luau
+    Caminho: src/ReplicatedStorage/Combate/Dominio
+    Responsabilidade: Calcula direcao, forca e aplicacao de knockback em alvos atingidos.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao dispara acoes por conta propria; apenas calcula regras para o script chamador.
+    Funcoes principais: ValidarAlvo, ValidarAtacante, ObterMagnitudeKnockback, ModoPermiteKnockback, AplicarKnockback
+]]
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- ==========
--- DEPENDÊNCIAS
--- ==========
 local Modulo_Configuracoes = require(ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Configuracoes"):WaitForChild("ConfigCombate"))
 
--- RemoteEvent para knockback no cliente (pode não existir)
 local Remotos = ReplicatedStorage:FindFirstChild("Remotos")
 local AplicarKnockbackRemote = Remotos and Remotos:FindFirstChild("AplicarKnockback")
 
--- ==========
--- TYPES
--- ==========
 export type ResultadoKnockback = {
 	sucesso: boolean,
 	magnitudeAplicada: number?,
-	metodo: string?, -- "cliente" ou "servidor"
+	metodo: string?,
 	erro: string?,
 }
 
--- ==========
--- MÓDULO
--- ==========
 local Modulo_Knockback = {}
 
--- ==========
--- FUNÇÕES DE VALIDAÇÃO
--- ==========
---- Valida se um alvo pode receber knockback
----@param alvo Model
----@return boolean sucesso
----@return string? erro
 function Modulo_Knockback.ValidarAlvo(alvo: Model): (boolean, string?)
 	if not alvo then
 		return false, "Alvo é nil"
@@ -78,10 +55,6 @@ function Modulo_Knockback.ValidarAlvo(alvo: Model): (boolean, string?)
 	return true, nil
 end
 
---- Valida se o atacante é válido (para obter direção)
----@param atacante Model
----@return boolean sucesso
----@return string? erro
 function Modulo_Knockback.ValidarAtacante(atacante: Model): (boolean, string?)
 	if not atacante then
 		return false, "Atacante é nil"
@@ -95,12 +68,6 @@ function Modulo_Knockback.ValidarAtacante(atacante: Model): (boolean, string?)
 	return true, nil
 end
 
--- ==========
--- FUNÇÕES DE ACESSO
--- ==========
---- Obtém a magnitude do knockback baseado no tipo de ataque
----@param tipoAtaque string
----@return number
 function Modulo_Knockback.ObterMagnitudeKnockback(tipoAtaque: string): number
 	local config = Modulo_Configuracoes.ConfiguracaoGlobal
 
@@ -111,29 +78,17 @@ function Modulo_Knockback.ObterMagnitudeKnockback(tipoAtaque: string): number
 	return config.MagnitudeKnockbackLeve
 end
 
---- Verifica se um modo de animação permite knockback
----@param modoAnimacao string
----@return boolean
 function Modulo_Knockback.ModoPermiteKnockback(modoAnimacao: string): boolean
 	return Modulo_Configuracoes.AplicaKnockback(modoAnimacao)
 end
 
--- ==========
--- FUNÇÃO PRINCIPAL
--- ==========
---- Aplica knockback ao alvo atacado
----@param atacante Model Character atacante (para direção)
----@param alvo Model Character ou NPC alvo
----@param modoAnimacao string Modo de animação atual
----@param tipoAtaque string Tipo de ataque sendo executado
----@return ResultadoKnockback
 function Modulo_Knockback.AplicarKnockback(
 	atacante: Model,
 	alvo: Model,
 	modoAnimacao: string,
 	tipoAtaque: string
 ): ResultadoKnockback
-	-- Verifica se o modo permite knockback
+
 	if not Modulo_Knockback.ModoPermiteKnockback(modoAnimacao) then
 		return {
 			sucesso = false,
@@ -143,7 +98,6 @@ function Modulo_Knockback.AplicarKnockback(
 		}
 	end
 
-	-- Validação de atacante
 	local atacanteValido, atacanteErro = Modulo_Knockback.ValidarAtacante(atacante)
 	if not atacanteValido then
 		return {
@@ -154,7 +108,6 @@ function Modulo_Knockback.AplicarKnockback(
 		}
 	end
 
-	-- Validação de alvo
 	local alvoValido, alvoErro = Modulo_Knockback.ValidarAlvo(alvo)
 	if not alvoValido then
 		return {
@@ -165,19 +118,16 @@ function Modulo_Knockback.AplicarKnockback(
 		}
 	end
 
-	-- Obtém magnitude
 	local magnitude = Modulo_Knockback.ObterMagnitudeKnockback(tipoAtaque)
 
-	-- Calcula direção baseada no LookVector do ATACANTE
 	local atacanteRoot = atacante:FindFirstChild("HumanoidRootPart") :: BasePart
 	local direcao = atacanteRoot.CFrame.LookVector
-	direcao = Vector3.new(direcao.X, 0, direcao.Z).Unit -- Remove componente Y
+	direcao = Vector3.new(direcao.X, 0, direcao.Z).Unit
 
-	-- Verifica se deve enviar para cliente ou aplicar diretamente
 	local player = Players:GetPlayerFromCharacter(alvo)
 
 	if player and AplicarKnockbackRemote then
-		-- Envia para o cliente do alvo
+
 		local sucesso, resultado = pcall(function()
 			AplicarKnockbackRemote:FireClient(player, direcao, magnitude)
 		end)
@@ -198,14 +148,14 @@ function Modulo_Knockback.AplicarKnockback(
 			erro = nil,
 		}
 	else
-		-- NPC ou RemoteEvent não existe: aplica diretamente no servidor
+
 		local alvoRoot = alvo:FindFirstChild("HumanoidRootPart") :: BasePart
 
 		local sucesso, resultado = pcall(function()
 			local velocidadeAtual = alvoRoot.AssemblyLinearVelocity
 			alvoRoot.AssemblyLinearVelocity = Vector3.new(
 				direcao.X * magnitude,
-				velocidadeAtual.Y + 5, -- Leve elevação
+				velocidadeAtual.Y + 5,
 				direcao.Z * magnitude
 			)
 		end)

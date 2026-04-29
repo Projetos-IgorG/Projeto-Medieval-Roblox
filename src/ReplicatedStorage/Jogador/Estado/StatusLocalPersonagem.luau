@@ -1,3 +1,11 @@
+--[[
+    Script: StatusLocalPersonagem.luau
+    Caminho: src/ReplicatedStorage/Jogador/Estado
+    Responsabilidade: Armazena e sincroniza status locais do personagem para sistemas de cliente.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: CriarStatusLocal, ObterStatusLocal, AtualizarStatusLocal, LerStatusLocal, createValue
+]]
 local StatusLocalManager = {}
 
 function StatusLocalManager.CriarStatusLocal(char: Model)

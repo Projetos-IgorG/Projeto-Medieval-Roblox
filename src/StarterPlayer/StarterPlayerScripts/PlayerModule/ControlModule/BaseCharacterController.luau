@@ -1,28 +1,28 @@
 --!strict
+
 --[[
-	BaseCharacterController - Abstract base class for character controllers, not intended to be
-	directly instantiated.
---]]
-
-
---[[ Utils ]]--
+    Script: BaseCharacterController.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/ControlModule
+    Responsabilidade: Define a base comum dos controladores de movimento do personagem.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, GetMoveVector, IsMoveVectorCameraRelative, GetIsJumping, Enable
+]]
 local CommonUtils = script.Parent.Parent:WaitForChild("CommonUtils")
 local ConnectionUtil = require(CommonUtils:WaitForChild("ConnectionUtil"))
 
---[[ The Module ]]--
 export type BaseCharacterControllerType = {
 	new: () -> BaseCharacterControllerType,
 	GetMoveVector: (BaseCharacterControllerType) -> Vector3,
 	IsMoveVectorCameraRelative: (BaseCharacterControllerType) -> boolean,
 	GetIsJumping: (BaseCharacterControllerType) -> boolean,
 	Enable: (BaseCharacterControllerType, enable: boolean) -> boolean,
-	
-	-------------------- Private ----------------------------
+
 	enabled: boolean,
 	moveVector: Vector3,
 	moveVectorIsCameraRelative: boolean,
 	isJumping: boolean,
-	_connectionUtil: any -- ConnectionUtil.ConnectionUtilType
+	_connectionUtil: any
 }
 
 local ZERO_VECTOR3: Vector3 = Vector3.new()
@@ -54,8 +54,6 @@ function BaseCharacterController:GetIsJumping(): boolean
 	return self.isJumping
 end
 
--- Override in derived classes to set self.enabled and return boolean indicating
--- whether Enable/Disable was successful. Return true if controller is already in the requested state.
 function BaseCharacterController:Enable(_enable: boolean): boolean
 	error("BaseCharacterController:Enable must be overridden in derived classes and should not be called.")
 	return false

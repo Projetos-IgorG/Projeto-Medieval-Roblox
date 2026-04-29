@@ -1,32 +1,29 @@
 --!nonstrict
---[[
-	OrbitalCamera - Spherical coordinates control camera for top-down games
-	2018 Camera Update - AllYourBlox
---]]
 
+--[[
+    Script: OrbitalCamera.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/CameraModule
+    Responsabilidade: Implementa camera orbital ao redor do personagem ou foco ativo.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, LoadOrCreateNumberValueParameter, SetAndBoundsCheckAzimuthValues, SetAndBoundsCheckElevationValues, SetAndBoundsCheckDistanceValues, LoadNumberValueParameters
+]]
 local CommonUtils = script.Parent.Parent:WaitForChild("CommonUtils")
 local FlagUtil = require(CommonUtils:WaitForChild("FlagUtil"))
 local FFlagUserFixOrbitalCameraAzimuth = FlagUtil.getUserFlag("UserFixOrbitalCameraAzimuth")
 
--- Local private variables and constants
 local UNIT_Z = Vector3.new(0, 0, 1)
 local ZERO_VECTOR3 = Vector3.new(0, 0, 0)
 local TAU = 2 * math.pi
 
--- Do not edit these values, they are not the developer-set limits, they are limits
--- to the values the camera system equations can correctly handle
 local MIN_ALLOWED_ELEVATION_DEG = -80
 local MAX_ALLOWED_ELEVATION_DEG = 80
 
 local Util = require(script.Parent:WaitForChild("CameraUtils"))
 local CameraInput = require(script.Parent:WaitForChild("CameraInput"))
 
---[[ Services ]]
---
 local PlayersService = game:GetService("Players")
 
---[[ The Module ]]
---
 local BaseCamera = require(script.Parent:WaitForChild("BaseCamera"))
 local OrbitalCamera = setmetatable({}, BaseCamera)
 OrbitalCamera.__index = OrbitalCamera
@@ -36,7 +33,6 @@ function OrbitalCamera.new()
 
 	self.lastUpdate = tick()
 
-	-- OrbitalCamera-specific members
 	self.changedSignalConnections = {}
 	self.refAzimuthRad = nil
 	self.curAzimuthRad = nil
@@ -61,10 +57,10 @@ function OrbitalCamera.new()
 	self.externalProperties["InitialElevation"] = 35
 	self.externalProperties["MinElevation"] = 35
 	self.externalProperties["MaxElevation"] = 35
-	self.externalProperties["ReferenceAzimuth"] = -45 -- Angle around the Y axis where the camera starts. -45 offsets the camera in the -X and +Z directions equally
-	self.externalProperties["CWAzimuthTravel"] = 90 -- How many degrees the camera is allowed to rotate from the reference position, CW as seen from above
-	self.externalProperties["CCWAzimuthTravel"] = 90 -- How many degrees the camera is allowed to rotate from the reference position, CCW as seen from above
-	self.externalProperties["UseAzimuthLimits"] = false -- Full rotation around Y axis available by default
+	self.externalProperties["ReferenceAzimuth"] = -45
+	self.externalProperties["CWAzimuthTravel"] = 90
+	self.externalProperties["CCWAzimuthTravel"] = 90
+	self.externalProperties["UseAzimuthLimits"] = false
 	self:LoadNumberValueParameters()
 
 	return self
@@ -74,10 +70,10 @@ function OrbitalCamera:LoadOrCreateNumberValueParameter(name: string, valueType,
 	local valueObj = script:FindFirstChild(name)
 
 	if valueObj and valueObj:IsA(valueType) then
-		-- Value object exists and is the correct type, use its value
+
 		self.externalProperties[name] = valueObj.Value
 	elseif self.externalProperties[name] ~= nil then
-		-- Create missing (or replace incorrectly-typed) valueObject with default value
+
 		valueObj = Instance.new(valueType)
 		valueObj.Name = name
 		valueObj.Parent = script
@@ -110,15 +106,10 @@ function OrbitalCamera:SetAndBoundsCheckAzimuthValues()
 end
 
 function OrbitalCamera:SetAndBoundsCheckElevationValues()
-	-- These degree values are the direct user input values. It is deliberate that they are
-	-- ranged checked only against the extremes, and not against each other. Any time one
-	-- is changed, both of the internal values in radians are recalculated. This allows for
-	-- A developer to change the values in any order and for the end results to be that the
-	-- internal values adjust to match intent as best as possible.
+
 	local minElevationDeg = math.max(self.externalProperties["MinElevation"], MIN_ALLOWED_ELEVATION_DEG)
 	local maxElevationDeg = math.min(self.externalProperties["MaxElevation"], MAX_ALLOWED_ELEVATION_DEG)
 
-	-- Set internal values in radians
 	self.minElevationRad = math.rad(math.min(minElevationDeg, maxElevationDeg))
 	self.maxElevationRad = math.rad(math.max(minElevationDeg, maxElevationDeg))
 	self.curElevationRad = math.max(self.curElevationRad, self.minElevationRad)
@@ -132,13 +123,11 @@ function OrbitalCamera:SetAndBoundsCheckDistanceValues()
 	self.curDistance = math.min(self.curDistance, self.maxDistance)
 end
 
--- This loads from, or lazily creates, NumberValue objects for exposed parameters
 function OrbitalCamera:LoadNumberValueParameters()
-	-- These initial values do not require change listeners since they are read only once
+
 	self:LoadOrCreateNumberValueParameter("InitialElevation", "NumberValue", nil)
 	self:LoadOrCreateNumberValueParameter("InitialDistance", "NumberValue", nil)
 
-	-- Note: ReferenceAzimuth is also used as an initial value, but needs a change listener because it is used in the calculation of the limits
 	self:LoadOrCreateNumberValueParameter(
 		"ReferenceAzimuth",
 		"NumberValue",
@@ -154,7 +143,6 @@ function OrbitalCamera:LoadNumberValueParameters()
 	self:LoadOrCreateNumberValueParameter("MaxDistance", "NumberValue", self.SetAndBoundsCheckDistanceValues)
 	self:LoadOrCreateNumberValueParameter("UseAzimuthLimits", "BoolValue", self.SetAndBoundsCheckAzimuthValues)
 
-	-- Internal values set (in radians, from degrees), plus sanitization
 	self.curAzimuthRad = math.rad(self.externalProperties["ReferenceAzimuth"])
 	self.curElevationRad = math.rad(self.externalProperties["InitialElevation"])
 	self.curDistance = self.externalProperties["InitialDistance"]
@@ -185,8 +173,6 @@ function OrbitalCamera:SetInitialOrientation(humanoid: Humanoid)
 	end
 end
 
---[[ Functions of BaseCamera that are overridden by OrbitalCamera ]]
---
 function OrbitalCamera:GetCameraToSubjectDistance()
 	return self.curDistance
 end
@@ -196,7 +182,6 @@ function OrbitalCamera:SetCameraToSubjectDistance(desiredSubjectDistance)
 	if player then
 		self.currentSubjectDistance = math.clamp(desiredSubjectDistance, self.minDistance, self.maxDistance)
 
-		-- OrbitalCamera is not allowed to go into the first-person range
 		self.currentSubjectDistance = math.max(self.currentSubjectDistance, 4)
 	end
 	self.inFirstPerson = false
@@ -222,7 +207,6 @@ function OrbitalCamera:CalculateNewLookVector(suppliedLookVector: Vector3, xyRot
 	return newLookVector
 end
 
--- [[ Update ]]--
 function OrbitalCamera:Update(dt: number): (CFrame, CFrame)
 	local now = tick()
 	local timeDelta = (now - self.lastUpdate)
@@ -239,7 +223,6 @@ function OrbitalCamera:Update(dt: number): (CFrame, CFrame)
 		self.lastCameraTransform = nil
 	end
 
-	-- Reset tween speed if user is panning
 	if userPanningTheCamera then
 		self.lastUserPanCamera = tick()
 	end
@@ -247,8 +230,7 @@ function OrbitalCamera:Update(dt: number): (CFrame, CFrame)
 	local subjectPosition = self:GetSubjectPosition()
 
 	if subjectPosition and player and camera then
-		-- Process any dollying being done by gamepad
-		-- TODO: Move this
+
 		if self.gamepadDollySpeedMultiplier ~= 1 then
 			self:SetCameraToSubjectDistance(self.currentSubjectDistance * self.gamepadDollySpeedMultiplier)
 		end
@@ -257,7 +239,6 @@ function OrbitalCamera:Update(dt: number): (CFrame, CFrame)
 
 		local flaggedRotateInput = CameraInput.getRotation(dt)
 
-		-- rotateInput is a Vector2 of mouse movement deltas since last update
 		self.curAzimuthRad = self.curAzimuthRad - flaggedRotateInput.X
 
 		if self.useAzimuthLimits then

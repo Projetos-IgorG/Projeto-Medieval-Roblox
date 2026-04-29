@@ -1,6 +1,13 @@
 --!nonstrict
--- Custom footstep system using animation marker "Footstep"
 
+--[[
+    Script: init.client.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/RbxCharacterSounds
+    Responsabilidade: Controla sons locais do personagem, incluindo passos, queda, pulo e movimento.
+    Uso: LocalScript; roda automaticamente para o jogador local em src/StarterPlayer/StarterPlayerScripts/RbxCharacterSounds.
+    Nao faz: Nao decide movimento, estado ou animacao; apenas reage a estados para tocar sons locais.
+    Funcoes principais: getStatusLocal, getSoundTemplate, getMaterialKey, isDashAction, getPitchRange, chooseRandomPitch
+]]
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
@@ -142,7 +149,6 @@ local function playFootstep(humanoid: Humanoid, rootPart: BasePart, statusState)
 
 	local materialKey = getMaterialKey(humanoid)
 
-	-- Revalida logo antes do play para cobrir race no iní­cio do dash.
 	if not canEmitStep(humanoid, statusState) then
 		return
 	end

@@ -1,18 +1,17 @@
 --!nonstrict
+
 --[[
-	ClassicCamera - Classic Roblox camera control module
-	2018 Camera Update - AllYourBlox
-
-	Note: This module also handles camera control types Follow and Track, the
-	latter of which is currently not distinguished from Classic
---]]
-
--- Local private variables and constants
-
-local tweenAcceleration = math.rad(220) -- Radians/Second^2
-local tweenSpeed = math.rad(0) -- Radians/Second
-local tweenMaxSpeed = math.rad(250) -- Radians/Second
-local TIME_BEFORE_AUTO_ROTATE = 2 -- Seconds, used when auto-aligning camera with vehicles
+    Script: ClassicCamera.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/CameraModule
+    Responsabilidade: Implementa o comportamento classico de camera em terceira pessoa.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, GetCameraToggleOffset, SetCameraMovementMode, Update, SetPrimeiraPessoa, IsInFirstPerson
+]]
+local tweenAcceleration = math.rad(220)
+local tweenSpeed = math.rad(0)
+local tweenMaxSpeed = math.rad(250)
+local TIME_BEFORE_AUTO_ROTATE = 2
 
 local INITIAL_CAMERA_ANGLE = CFrame.fromOrientation(math.rad(-15), 0, 0)
 
@@ -22,21 +21,16 @@ local FlagUtil = require(CommonUtils:WaitForChild("FlagUtil"))
 local FFlagUserCameraInputDt = FlagUtil.getUserFlag("UserCameraInputDt")
 local FFlagUserFixCameraFPError = FlagUtil.getUserFlag("UserFixCameraFPError")
 
---[[ Services ]]
---
 local PlayersService = game:GetService("Players")
 
 local CameraInput = require(script.Parent:WaitForChild("CameraInput"))
 local Util = require(script.Parent:WaitForChild("CameraUtils"))
 
--- Importa configurações centralizadas do jogador para offsets dinâmicos
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ConfigJogador = require(
 	ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Camera"):WaitForChild("Configuracoes"):WaitForChild("ConfigCamera")
 )
 
---[[ The Module ]]
---
 local BaseCamera = require(script.Parent:WaitForChild("BaseCamera"))
 local ClassicCamera = setmetatable({}, BaseCamera)
 ClassicCamera.__index = ClassicCamera
@@ -49,14 +43,12 @@ function ClassicCamera.new()
 	self.lastUpdate = tick()
 	self.cameraToggleSpring = Util.Spring.new(5, 0)
 
-	-- Estado para suavização de offsets dinâmicos
 	self.currentMovementOffset = Vector3.zero
 	self.currentShoulderOffset = Vector3.zero
-	self.offsetLerpSpeed = 8 -- Velocidade do lerp (maior = mais rápido)
+	self.offsetLerpSpeed = 8
 
-	-- Estado de primeira pessoa (fixada na cabeça)
 	self.emPrimeiraPessoa = false
-	self.transicaoPrimeiraPessoaAlpha = 0 -- 0 = 3ª pessoa, 1 = 1ª pessoa
+	self.transicaoPrimeiraPessoaAlpha = 0
 
 	return self
 end
@@ -79,7 +71,6 @@ function ClassicCamera:GetCameraToggleOffset(dt: number)
 	return Vector3.new()
 end
 
--- Movement mode standardized to Enum.ComputerCameraMovementMode values
 function ClassicCamera:SetCameraMovementMode(cameraMovementMode: Enum.ComputerCameraMovementMode)
 	BaseCamera.SetCameraMovementMode(self, cameraMovementMode)
 
@@ -89,7 +80,7 @@ end
 
 function ClassicCamera:Update(dt)
 	local now = tick()
-	local timeDelta = now - self.lastUpdate -- replace with dt if FFlagUserCameraInputDt
+	local timeDelta = now - self.lastUpdate
 	if FFlagUserCameraInputDt then
 		timeDelta = dt
 	end
@@ -126,7 +117,6 @@ function ClassicCamera:Update(dt)
 
 	local cameraHeight = self:GetCameraHeight()
 
-	-- Reset tween speed if user is panning
 	if rotateInput ~= Vector2.new() then
 		tweenSpeed = 0
 		self.lastUserPanCamera = tick()
@@ -141,28 +131,20 @@ function ClassicCamera:Update(dt)
 			zoom = 0.5
 		end
 
-		-- Aplica offsets de câmera customizados baseados no modo
 		local isFirstPerson = self.emPrimeiraPessoa
 		local isMouseLocked = self:GetIsMouseLocked()
 
-		-- ============================================================================
-		-- TRANSICAO SUAVE DE OFFSET (SHIFTLOCK / 1ª PESSOA)
-		-- ============================================================================
-
 		local targetShoulderOffset = Vector3.zero
 		if isFirstPerson then
-			-- Em primeira pessoa, não aplica shoulder offset (será fixado na cabeça)
+
 			targetShoulderOffset = Vector3.zero
 		elseif isMouseLocked then
 			targetShoulderOffset = self:GetMouseLockOffset()
 		end
 
-		-- Interpola o offset atual para o alvo (suaviza entrada e saída do ShiftLock)
 		local lerpAlpha = math.clamp(self.offsetLerpSpeed * timeDelta, 0, 1)
 		self.currentShoulderOffset = self.currentShoulderOffset:Lerp(targetShoulderOffset, lerpAlpha)
 
-		-- Calcula a direção horizontal da câmera para aplicar o offset corretamente
-		-- Precisamos do vetor de olhar PREVISTO (com input de rotação aplicado)
 		local predictedLookVector = self:CalculateNewLookVectorFromArg(overrideCameraLookVector, rotateInput)
 		local lookVectorHorizontal = Vector3.new(predictedLookVector.X, 0, predictedLookVector.Z)
 		if lookVectorHorizontal.Magnitude > 0.001 then
@@ -173,37 +155,25 @@ function ClassicCamera:Update(dt)
 
 		local rightVectorHorizontal = Vector3.new(0, 1, 0):Cross(lookVectorHorizontal).Unit
 
-		-- Aplica o offset globalmente (antes da lógica específica de modo)
 		local globalOffsetWorld = self.currentShoulderOffset.X * rightVectorHorizontal
-			+ Vector3.new(0, self.currentShoulderOffset.Y, 0) -- Y pode variar se configurado
+			+ Vector3.new(0, self.currentShoulderOffset.Y, 0)
 			+ self.currentShoulderOffset.Z * lookVectorHorizontal
 
 		if Util.IsFiniteVector3(globalOffsetWorld) then
 			subjectPosition = subjectPosition + globalOffsetWorld
 		end
 
-		-- ============================================================================
-		-- LÓGICA ESPECÍFICA DE MODO
-		-- ============================================================================
-
 		if isMouseLocked or isFirstPerson then
-			-- We need to use the right vector of the camera after rotation, not before
-			-- local newLookCFrame: CFrame = self:CalculateNewLookCFrameFromArg(overrideCameraLookVector, rotateInput)
-			-- (newLookCFrame removed as it was unused and we use the outer scope vectors)
 
-			-- Recalcula offset apenas para movimento e humanoid (Offset base já aplicado acima)
 			local offset = Vector3.zero
 
-			-- Adiciona offset de movimento dinâmico baseado no estado do humanoid
 			if humanoid then
-				-- Offset base do humanoid
+
 				offset = offset + humanoid.CameraOffset
 
-				-- Calcula o offset alvo baseado no estado de movimento
 				local targetMovementOffset = Vector3.zero
 				local speed = humanoid.MoveDirection.Magnitude
 
-				-- Detecta agachamento via pasta Status do personagem
 				local character = humanoid.Parent
 				local statusFolder = character and character:FindFirstChild("Status")
 				local isAgachado = false
@@ -214,13 +184,11 @@ function ClassicCamera:Update(dt)
 					end
 				end
 
-				-- Offset de agachamento
 				if isAgachado then
 					local crouchOffset = ConfigJogador.ObterConfiguracao("OffsetCrouch") or Vector3.zero
 					targetMovementOffset = targetMovementOffset + crouchOffset
 				end
 
-				-- Offset de movimento (Walk/Run)
 				if speed > 0.1 then
 					local hrp = self:GetHumanoidRootPart()
 					local realSpeed = 0
@@ -240,15 +208,8 @@ function ClassicCamera:Update(dt)
 					end
 				end
 
-				-- Suaviza a transição do offset de movimento
 				self.currentMovementOffset = self.currentMovementOffset:Lerp(targetMovementOffset, lerpAlpha)
 			end
-
-			-- Aplica offsets relativos (Camera Base já foi, agora são os offsets de movimento/humanoide)
-
-			-- NOTA: O código original aplicava offset.X/Y/Z usando rightVectorHorizontal e lookVectorHorizontal.
-			-- Aqui 'offset' contém apenas humanoid.CameraOffset.
-			-- E 'characterRelativeOffset' contém currentMovementOffset.
 
 			local cameraRelativeOffset: Vector3 = offset.X * rightVectorHorizontal
 				+ offset.Y * Vector3.new(0, 1, 0)
@@ -312,18 +273,13 @@ function ClassicCamera:Update(dt)
 						end
 					end
 				elseif self.isFollowCamera and not (isInFirstPerson or userRecentlyPannedCamera) then
-					-- Logic that was unique to the old FollowCamera module
+
 					local lastVec = -(self.lastCameraTransform.Position - subjectPosition)
 
 					local y = Util.GetAngleBetweenXZVectors(lastVec, self:GetCameraLookVector())
 
-					-- This cutoff is to decide if the humanoid's angle of movement,
-					-- relative to the camera's look vector, is enough that
-					-- we want the camera to be following them. The point is to provide
-					-- a sizable dead zone to allow more precise forward movements.
 					local thetaCutoff = 0.4
 
-					-- Check for NaNs
 					if Util.IsFinite(y) and math.abs(y) > 0.0001 and math.abs(y) > thetaCutoff * timeDelta then
 						rotateInput = rotateInput + Vector2.new(y, 0)
 					end
@@ -342,7 +298,7 @@ function ClassicCamera:Update(dt)
 			else
 				newCameraCFrame = CFrame.new(cameraFocusP - (zoom * newLookVector), cameraFocusP)
 			end
-		else -- is FollowCamera
+		else
 			local newLookVector = self:CalculateNewLookVectorFromArg(overrideCameraLookVector, rotateInput)
 
 			newCameraFocus = CFrame.new(subjectPosition)
@@ -359,10 +315,6 @@ function ClassicCamera:Update(dt)
 		newCameraFocus = newCameraFocus + toggleOffset
 		newCameraCFrame = newCameraCFrame + toggleOffset
 
-		-- ============================================================================
-		-- PRIMEIRA PESSOA: FIXAR CÂMERA NA CABEÇA
-		-- ============================================================================
-		-- Transição suave do alpha
 		local transicaoTempo = ConfigJogador.ObterConfiguracao("TransicaoPrimeiraPessoaTempo") or 0.4
 		local alphaSpeed = 1 / math.max(transicaoTempo, 0.01)
 		if self.emPrimeiraPessoa then
@@ -375,18 +327,15 @@ function ClassicCamera:Update(dt)
 			local character = player.Character
 			local headPart = character and character:FindFirstChild("Head")
 			if headPart and headPart:IsA("BasePart") then
-				-- Posição da câmera = centro da cabeça + offset configurável (relativo ao CFrame do player)
+
 				local offsetFP = ConfigJogador.ObterConfiguracao("OffsetFPCabeca") or Vector3.zero
 				local headPos = (headPart.CFrame * CFrame.new(offsetFP)).Position
 
-				-- Manter a rotação do mouse (não seguir rotação da cabeça)
 				local lookVector = newCameraCFrame.LookVector
 				local fpCFrame = CFrame.lookAlong(headPos, lookVector)
 
-				-- Focus ligeiramente à frente da câmera (necessário para o engine calcular a direção do corpo)
 				local fpFocus = CFrame.new(headPos + lookVector * 0.5)
 
-				-- Interpola entre posição normal (3ª pessoa) e posição na cabeça (1ª pessoa)
 				local alpha = self.transicaoPrimeiraPessoaAlpha
 				newCameraCFrame = newCameraCFrame:Lerp(fpCFrame, alpha)
 				newCameraFocus = newCameraFocus:Lerp(fpFocus, alpha)

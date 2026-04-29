@@ -2,16 +2,13 @@
 --!native
 --!optimize 2
 
--- ShapecastHitbox
--- Phin
--- August 2024
-
---[=[
-	Documentation of the hitbox can be found inside at ShapecastHitbox/Types.luau.
-	This module is still relatively new and experimental, use at your own risk for 
-	production-level projects.
-]=]
-
+--[[
+    Script: init.luau
+    Caminho: src/ReplicatedStorage/Combate/Hitbox/Shapecast
+    Responsabilidade: Agrupa a API publica do pacote Shapecast usado pelas hitboxes.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+]]
 local Types = require(script.Types)
 
 export type Segment = Types.Segment

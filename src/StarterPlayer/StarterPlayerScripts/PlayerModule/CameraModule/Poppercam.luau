@@ -1,8 +1,13 @@
 --!nonstrict
---[[
-	Poppercam - Occlusion module that brings the camera closer to the subject when objects are blocking the view.
---]]
 
+--[[
+    Script: Poppercam.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/CameraModule
+    Responsabilidade: Evita que a camera atravesse paredes ajustando distancia contra obstaculos.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, Step, Reset, GetOcclusionMode, Enable, Update
+]]
 local CommonUtils = script.Parent.Parent:WaitForChild("CommonUtils")
 local FlagUtil = require(CommonUtils:WaitForChild("FlagUtil"))
 
@@ -49,8 +54,6 @@ do
 		local lastPos = lastCFrame.Position
 		local lastRot = extractRotation(lastCFrame)
 
-		-- Estimate velocities from the delta between now and the last frame
-		-- This estimation can be a little noisy.
 		local dp = (currentPos - lastPos) / dt
 		local dr = cframeToAxis(currentRot * lastRot:Inverse()) / dt
 
@@ -72,8 +75,6 @@ do
 	end
 end
 
---[[ The Module ]]
---
 local BaseOcclusion = require(script.Parent:WaitForChild("BaseOcclusion"))
 local Poppercam = setmetatable({}, BaseOcclusion)
 Poppercam.__index = Poppercam
@@ -107,10 +108,8 @@ function Poppercam:Update(renderDt, desiredCameraCFrame, desiredCameraFocus, _ca
 	return rotatedFocus * CFrame.new(0, 0, zoom), desiredCameraFocus
 end
 
--- Called when character is added
 function Poppercam:CharacterAdded(_character, _player) end
 
--- Called when character is about to be removed
 function Poppercam:CharacterRemoving(_character, _player) end
 
 function Poppercam:OnCameraSubjectChanged(_newSubject) end

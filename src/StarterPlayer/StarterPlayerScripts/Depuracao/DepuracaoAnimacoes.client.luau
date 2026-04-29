@@ -1,31 +1,15 @@
--- StarterPlayer > StarterPlayerScripts > DebugAnimationUI (LocalScript)
-
 --[[
-    DebugAnimationUI
-    ----------------
-    UI leve para visualizar atributos de estado do jogador.
-    
-    Client-side (StatusLocal):
-    - modoAnimacao, estadoMov, ShiftLockOn, AgachadoOn, CorrendoOn
-    
-    Server-side (Status):
-    - estadoAcao, BloqueandoOn, ProntoAparar, StunadoOn, DashOn
-
-    Útil para inspecionar a máquina de estados e validar transições.
+    Script: DepuracaoAnimacoes.client.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/Depuracao
+    Responsabilidade: Exibe ferramentas locais para depurar animacoes do jogador.
+    Uso: LocalScript; roda automaticamente para o jogador local em src/StarterPlayer/StarterPlayerScripts/Depuracao.
+    Nao faz: Nao valida autoridade do servidor, nao salva dados persistentes e nao substitui regras server-side.
+    Funcoes principais: createLabelGui, mkLabel, getStatusFolders, main
 ]]
-
---==============================================================================
--- Serviços
---==============================================================================
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
-
---==============================================================================
--- Criar UI
---==============================================================================
 
 local function createLabelGui()
 	local gui = Instance.new("ScreenGui")
@@ -78,7 +62,6 @@ local function createLabelGui()
 	return labels
 end
 
--- Atributos que estão em StatusLocal (client-side)
 local CLIENT_SIDE_ATTRS = {
 	modoAnimacao = true,
 	estadoMov = true,
@@ -87,7 +70,6 @@ local CLIENT_SIDE_ATTRS = {
 	CorrendoOn = true,
 }
 
--- Atributos que estão em Status (server-side)
 local SERVER_SIDE_ATTRS = {
 	estadoAcao = true,
 	BloqueandoOn = true,
@@ -103,10 +85,6 @@ local function getStatusFolders()
 	end
 	return char:FindFirstChild("StatusLocal"), char:FindFirstChild("Status")
 end
-
---==============================================================================
--- Update Loop
---==============================================================================
 
 local function main()
 	local labels = createLabelGui()
@@ -132,7 +110,6 @@ local function main()
 			local valObj = nil
 			local source = ""
 
-			-- Determina de qual pasta ler
 			if CLIENT_SIDE_ATTRS[key] then
 				if statusLocal then
 					valObj = statusLocal:FindFirstChild(key)

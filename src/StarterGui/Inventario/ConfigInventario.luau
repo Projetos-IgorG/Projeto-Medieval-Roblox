@@ -1,6 +1,13 @@
+--[[
+    Script: ConfigInventario.luau
+    Caminho: src/StarterGui/Inventario
+    Responsabilidade: Centraliza configuracoes visuais e regras locais da interface de inventario.
+    Uso: ModuleScript; use require(caminho) para ler as tabelas e valores exportados.
+    Nao faz: Nao executa comportamento sozinho; apenas fornece dados para outros scripts.
+    Funcoes principais: isEquipped, DisconnectAll, updateIcon, getParentInstance, showDescription, removeDescription
+]]
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- Ponte de comunicação entre scripts client-side (substitui _G)
 local ClientBridge =
 	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
 
@@ -8,34 +15,30 @@ local module = { OBJECTS = {}, SETTINGS = {}, slotAmount = 9 }
 module.OBJECTS.HotBar = {}
 module.OBJECTS.Inventory = {}
 
--- SETTINGS
 local SETTINGS: { [string]: any } = module.SETTINGS
-SETTINGS.DEFAULT_COLOR = Color3.fromRGB(0, 0, 0) -- ToolFrame background color when unequipped
-SETTINGS.EQUIPPED_COLOR = Color3.fromRGB(100, 100, 100) -- ToolFrame background color when equipped
-SETTINGS.DISABLED_COLOR = Color3.fromRGB(128, 64, 65) -- ToolFrame background color when the tool is disabled
+SETTINGS.DEFAULT_COLOR = Color3.fromRGB(0, 0, 0)
+SETTINGS.EQUIPPED_COLOR = Color3.fromRGB(100, 100, 100)
+SETTINGS.DISABLED_COLOR = Color3.fromRGB(128, 64, 65)
 SETTINGS.DEFAULT_IMAGEID = ""
 SETTINGS.EQUIPPED_IMAGEID = ""
 SETTINGS.DISABLED_IMAGEID = ""
-SETTINGS.INVENTORY_KEYBIND = Enum.KeyCode.Backquote -- KeyCode to open the Inventory itself (set to nil to disable the Inventory or Backpack)
-SETTINGS.DRAG_OUTSIDE_TO_DROP = false -- If set to true any tool you drag outside of the Inventory or HotBar will be dropped to the floor
-SETTINGS.SHOW_EMPTY_TOOL_FRAMES_IN_HOTBAR = false -- If set to true it will display all the tool frames in the HotBar even if they are empty and the Inventory closed
-SETTINGS.SCROLL_HOTBAR_WITH_WHEEL = false -- If set to true it will enable you to scroll the HotBar with the mouse wheel
-SETTINGS.EQUIP_TOUCH_SENSITIVITY = 60 -- The limit of how much you can drag a tool before it dosent equips/unequips it when you release it
+SETTINGS.INVENTORY_KEYBIND = Enum.KeyCode.Backquote
+SETTINGS.DRAG_OUTSIDE_TO_DROP = false
+SETTINGS.SHOW_EMPTY_TOOL_FRAMES_IN_HOTBAR = false
+SETTINGS.SCROLL_HOTBAR_WITH_WHEEL = false
+SETTINGS.EQUIP_TOUCH_SENSITIVITY = 60
 SETTINGS.OPEN_BUTTON = true
 SETTINGS.ALWAYS_SHOW_TOOL_NAME = true
 
--- services
 local ContextActionService = game:GetService("ContextActionService")
 local TextService = game:GetService("TextService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
---// PLAYER
 local player = game:GetService("Players").LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local mouse = player:GetMouse()
 
---// INVENTORY_SYSTEM \\--
 local inventoryGui = script.Parent
 local hotbar = inventoryGui.BarraRapida
 local inventoryFrame = inventoryGui.Inventario
@@ -52,7 +55,7 @@ local EnumKeys = {
 	Enum.KeyCode.Eight,
 	Enum.KeyCode.Nine,
 }
--- Função helper para obter quantidade do Tool
+
 local function getToolQuantidade(tool)
 	local dadosFolder = tool:FindFirstChild("Dados")
 	if dadosFolder then
@@ -61,11 +64,10 @@ local function getToolQuantidade(tool)
 			return quantidadeValue.Value
 		end
 	end
-	-- Fallback para o sistema antigo de Attributes
+
 	return tool:GetAttribute("amount") or 1
 end
 
--- Função helper para obter nome de exibição do Tool
 local function getToolExibirNome(tool)
 	local dadosFolder = tool:FindFirstChild("Dados")
 	if dadosFolder then
@@ -77,11 +79,10 @@ local function getToolExibirNome(tool)
 	return tool.Name
 end
 
--- tool object methods
 local toolObjectMetatable = {}
 toolObjectMetatable.__index = toolObjectMetatable
 
-function toolObjectMetatable:isEquipped() -- Checks if the current object.Tool is equipped
+function toolObjectMetatable:isEquipped()
 	local character = player.Character
 
 	if character then
@@ -91,7 +92,7 @@ function toolObjectMetatable:isEquipped() -- Checks if the current object.Tool i
 	end
 end
 
-function toolObjectMetatable:DisconnectAll() -- Makes a cleanup of connections and binds as well as deletes object.Frame
+function toolObjectMetatable:DisconnectAll()
 	for _, v in pairs(self.CONNECTIONS) do
 		v:Disconnect()
 	end
@@ -127,7 +128,7 @@ function toolObjectMetatable:DisconnectAll() -- Makes a cleanup of connections a
 	self = nil
 end
 
-function toolObjectMetatable:updateIcon() -- Updates the tool Texture
+function toolObjectMetatable:updateIcon()
 	local tool = self.Tool
 	local frame = self.Frame
 	local textureId = tool.TextureId
@@ -147,7 +148,7 @@ function toolObjectMetatable:getParentInstance()
 	return self.Parent == "Inventory" and inventoryFrame.Frame or hotbar
 end
 
-function toolObjectMetatable:showDescription() -- Shows the object.Tool.ToolTip
+function toolObjectMetatable:showDescription()
 	local toolDescription = self.Tool.ToolTip
 	local frame = self.Frame
 	if toolDescription == "" then
@@ -188,20 +189,20 @@ function toolObjectMetatable:showDescription() -- Shows the object.Tool.ToolTip
 	game:GetService("Debris"):AddItem(descriptionFrame, 15)
 end
 
-function toolObjectMetatable:removeDescription() -- Destroys the object.DescriptionFrame created by object:showDescription()
+function toolObjectMetatable:removeDescription()
 	if self.DescriptionFrame then
 		self.DescriptionFrame:Destroy()
 	end
 end
 
-function module:removeCurrentDescription() -- Destroys any current active descriptionFrame
+function module:removeCurrentDescription()
 	local descriptionFrame = inventoryGui:FindFirstChild("descriptionFrame")
 	if descriptionFrame then
 		descriptionFrame:Destroy()
 	end
 end
 
-function module:getObjectFromTool(tool: Tool) -- Returns the ToolObject of a Tool
+function module:getObjectFromTool(tool: Tool)
 	local function searchToolObject(toolParent)
 		for _, toolObject in pairs(toolParent) do
 			if toolObject.Tool == tool then
@@ -214,12 +215,12 @@ function module:getObjectFromTool(tool: Tool) -- Returns the ToolObject of a Too
 	return searchToolObject(self.OBJECTS.HotBar) or searchToolObject(self.OBJECTS.Inventory)
 end
 
-function module:getToolPosition(tool: Tool) -- Returns the tool position on the hotbar (if in inventory retuns nil)
+function module:getToolPosition(tool: Tool)
 	local toolObject = self:getObjectFromTool(tool)
 	return toolObject and toolObject.Position
 end
 
-function module:searchTool() -- Handler for the tool search feature in the inventory
+function module:searchTool()
 	local toolName: string = inventoryFrame.SearchBox.Text
 	if toolName == "" then
 		for _, toolObject in pairs(self.OBJECTS["Inventory"]) do
@@ -232,7 +233,7 @@ function module:searchTool() -- Handler for the tool search feature in the inven
 	end
 end
 
-function module:lockSlots(unequipCurrentTool: boolean) -- Locks the slots so they cant be equipped or unequipped
+function module:lockSlots(unequipCurrentTool: boolean)
 	self.slotsLocked = true
 
 	if unequipCurrentTool then
@@ -243,13 +244,13 @@ function module:lockSlots(unequipCurrentTool: boolean) -- Locks the slots so the
 		end
 	end
 end
-function module:unlockSlots() -- Unlocks the slots so they can be equipped and unequipped again
+function module:unlockSlots()
 	self.slotsLocked = false
 end
-function module:lockSlotsPosition() -- Locks the slots position so they cant be moved around
+function module:lockSlotsPosition()
 	self.slotsPositionLocked = true
 end
-function module:unlockSlotsPosition() -- Unlocks the slots positions so they can be moved again
+function module:unlockSlotsPosition()
 	self.slotsPositionLocked = false
 end
 
@@ -319,8 +320,6 @@ function module:addTool(tool: Tool, parent: string, position: number?)
 	object.Position = position
 	object.Name = tool.Name
 
-	-- Prevent Roblox built-in drop (Backspace) from affecting tools managed by this inventory.
-	-- We handle dropping manually via the custom UI/controls.
 	if tool:IsA("Tool") then
 		tool.CanBeDropped = false
 	end
@@ -348,12 +347,12 @@ function module:addTool(tool: Tool, parent: string, position: number?)
 			return
 		end
 
-		if object:isEquipped() then -- if tool is equipped then unequip it
+		if object:isEquipped() then
 			humanoid:UnequipTools()
 			frame.BackgroundColor3 = SETTINGS.DEFAULT_COLOR
 			frame.Image = SETTINGS.DEFAULT_IMAGEID
 			module.currentlyEquipped = nil
-		elseif tool.Enabled then -- if tool isnt equipped then equip it
+		elseif tool.Enabled then
 			humanoid:EquipTool(tool)
 			if module.currentlyEquipped and module.currentlyEquipped.Parent then
 				module.currentlyEquipped.BackgroundColor3 = SETTINGS.DEFAULT_COLOR
@@ -404,7 +403,6 @@ function module:addTool(tool: Tool, parent: string, position: number?)
 	updateEquipped()
 	object:updateIcon()
 
-	--// CONNECTIONS
 	object.CONNECTIONS = {}
 	object.CONNECTIONS.EnabledConn = tool:GetPropertyChangedSignal("Enabled"):Connect(updateEnabled)
 	object.CONNECTIONS.ToolRemoved = tool.AncestryChanged:Connect(function(_, newParent)
@@ -421,7 +419,7 @@ function module:addTool(tool: Tool, parent: string, position: number?)
 	object.CONNECTIONS.TextureIdChanged = tool:GetPropertyChangedSignal("TextureId"):Connect(function()
 		object:updateIcon()
 	end)
-	-- Monitorar mudanças na quantidade (pasta Dados)
+
 	local dadosFolder = tool:FindFirstChild("Dados")
 	if dadosFolder then
 		local quantidadeValue = dadosFolder:FindFirstChild("Quantidade")
@@ -436,7 +434,7 @@ function module:addTool(tool: Tool, parent: string, position: number?)
 			end)
 		end
 	else
-		-- Fallback para sistema antigo de Attributes
+
 		object.CONNECTIONS.AmountChanged = tool:GetAttributeChangedSignal("amount"):Connect(function()
 			amount = tool:GetAttribute("amount") or 1
 			if amount > 1 then
@@ -491,7 +489,7 @@ function module:addTool(tool: Tool, parent: string, position: number?)
 						continue
 					end
 
-					if newSlotObject then -- Swap between tools
+					if newSlotObject then
 						wasSwapped = true
 
 						object:DisconnectAll()
@@ -503,7 +501,7 @@ function module:addTool(tool: Tool, parent: string, position: number?)
 						if newFrame then
 							newFrame:Destroy()
 						end
-					elseif newSlot.Parent == hotbar then -- Send to Hotbar
+					elseif newSlot.Parent == hotbar then
 						wasSwapped = true
 
 						object:DisconnectAll()
@@ -525,7 +523,7 @@ function module:addTool(tool: Tool, parent: string, position: number?)
 					and newSlot == inventoryFrame
 					and not wasSwapped
 					and parent == "HotBar"
-				then -- Send to Inventory
+				then
 					wasSwapped = true
 					object:DisconnectAll()
 					self:addTool(tool, "Inventory")

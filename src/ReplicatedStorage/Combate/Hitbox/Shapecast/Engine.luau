@@ -2,6 +2,14 @@
 --!native
 --!optimize 2
 
+--[[
+    Script: Engine.luau
+    Caminho: src/ReplicatedStorage/Combate/Hitbox/Shapecast
+    Responsabilidade: Executa o ciclo do Shapecast, varrendo formas no espaco e emitindo resultados de colisao.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: CreateHitbox, GetAllSegments, GetSegment, SetResolution, SetCastData, BeforeStart
+]]
 local RunService = game:GetService("RunService")
 
 local Settings = require(script.Parent.HitboxConfig)

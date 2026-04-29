@@ -1,9 +1,13 @@
 --!nonstrict
---[[
-	VRVehicleCamera - Roblox VR vehicle camera control module
-	2021 Roblox VR
---]]
 
+--[[
+    Script: VRVehicleCamera.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/CameraModule
+    Responsabilidade: Implementa camera VR quando o jogador esta em veiculos.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, Reset, _StepRotation, _GetThirdPersonLocalOffset, _GetFirstPersonLocalOffset, Update
+]]
 local FFlagUserVRVehicleCamera
 do
 	local success, result = pcall(function()
@@ -19,7 +23,7 @@ local YAW_DEFAULT = math.rad(0)
 local ZOOM_MINIMUM = 0.5
 local TP_FOLLOW_DIST = 200
 local TP_FOLLOW_ANGLE_DOT = 0.56
--- assume an assembly radius of 10
+
 local DEFAULT_GAMEPAD_ZOOM_LEVELS = { 0, 30 }
 
 local UserGameSettings = UserSettings():GetService("UserGameSettings")
@@ -38,12 +42,10 @@ local Spring = CameraUtils.Spring
 local mapClamp = CameraUtils.mapClamp
 local sanitizeAngle = CameraUtils.sanitizeAngle
 
--- pitch-axis rotational velocity of a part with a given CFrame and total RotVelocity
 local function pitchVelocity(rotVel, cf)
 	return math.abs(cf.XVector:Dot(rotVel))
 end
 
--- yaw-axis rotational velocity of a part with a given CFrame and total RotVelocity
 local function yawVelocity(rotVel, cf)
 	return math.abs(cf.YVector:Dot(rotVel))
 end
@@ -56,7 +58,6 @@ function VRVehicleCamera.new()
 	local self = setmetatable(VRBaseCamera.new(), VRVehicleCamera)
 	self:Reset()
 
-	-- track physics solver time delta separately from the render loop to correctly synchronize time delta
 	RunService.Stepped:Connect(function(_, _worldDt)
 		worldDt = _worldDt
 	end)
@@ -64,7 +65,6 @@ function VRVehicleCamera.new()
 	return self
 end
 
--- Reset member function is for initialization, not for camera snaps or transitions
 function VRVehicleCamera:Reset()
 	self.vehicleCameraCore = VehicleCameraCore.new(self:GetSubjectCFrame())
 	if FFlagUserVRVehicleCamera then
@@ -87,16 +87,14 @@ function VRVehicleCamera:Reset()
 	assert(cameraSubject, "VRVehicleCamera requires a camera subject")
 	assert(cameraSubject:IsA("VehicleSeat"), "VRVehicleCamera subject must be a VehicleSeat")
 
-	local assemblyParts = cameraSubject:GetConnectedParts(true) -- passing true to recursively get all assembly parts
+	local assemblyParts = cameraSubject:GetConnectedParts(true)
 	local assemblyPosition, assemblyRadius = CameraUtils.getLooseBoundingSphere(assemblyParts)
 
-	-- limit min assembly radius to 5 to prevent extremely small zooms
 	assemblyRadius = math.max(assemblyRadius, MIN_ASSEMBLY_RADIUS)
 
 	self.assemblyRadius = assemblyRadius
-	self.assemblyOffset = cameraSubject.CFrame:Inverse() * assemblyPosition -- seat-space offset of the assembly bounding sphere center
+	self.assemblyOffset = cameraSubject.CFrame:Inverse() * assemblyPosition
 
-	-- scale zoom levels by car radius and headscale
 	self.gamepadZoomLevels = {}
 	for _, zoom in DEFAULT_GAMEPAD_ZOOM_LEVELS do
 		table.insert(self.gamepadZoomLevels, zoom * self.headScale * self.assemblyRadius / 10)
@@ -123,7 +121,7 @@ function VRVehicleCamera:_StepRotation(dt, vdotz): CFrame
 	local pitchDeadzoneAngle = math.rad(VehicleCameraConfig.pitchDeadzoneAngle)
 
 	if os.clock() - self.lastPanTick > VehicleCameraConfig.autocorrectDelay then
-		-- adjust autocorrect response based on forward velocity
+
 		local autocorrectResponse = mapClamp(
 			vdotz,
 			VehicleCameraConfig.autocorrectMinCarSpeed,
@@ -135,7 +133,6 @@ function VRVehicleCamera:_StepRotation(dt, vdotz): CFrame
 		yawSpring.freq = autocorrectResponse
 		pitchSpring.freq = autocorrectResponse
 
-		-- zero out response under a threshold
 		if yawSpring.freq < EPSILON then
 			yawSpring.vel = 0
 		end
@@ -145,7 +142,7 @@ function VRVehicleCamera:_StepRotation(dt, vdotz): CFrame
 		end
 
 		if math.abs(sanitizeAngle(pitchBaseAngle - pitchSpring.pos)) <= pitchDeadzoneAngle then
-			-- do nothing within the deadzone
+
 			pitchSpring.goal = pitchSpring.pos
 		else
 			pitchSpring.goal = pitchBaseAngle
@@ -163,8 +160,6 @@ function VRVehicleCamera:_StepRotation(dt, vdotz): CFrame
 	return CFrame.fromEulerAnglesYXZ(pitchSpring:step(dt), yawSpring:step(dt), 0)
 end
 
--- offset from the subject which describes where on the vehicle should be focused. This is not the offset of the camera
--- from the vehicle subject position.
 function VRVehicleCamera:_GetThirdPersonLocalOffset()
 	return self.assemblyOffset + Vector3.new(0, self.assemblyRadius * VehicleCameraConfig.verticalCenterOffset, 0)
 end
@@ -188,7 +183,6 @@ function VRVehicleCamera:Update()
 		local dt = worldDt
 		worldDt = 0
 
-		-- update fade from black
 		self:UpdateFadeFromBlack(dt)
 		self:UpdateEdgeBlur(localPlayer, dt)
 
@@ -220,12 +214,9 @@ function VRVehicleCamera:addDrift(currentCamera, focus)
 	local subjectVel: Vector3 = self:GetSubjectVelocity()
 	local subjectCFrame: CFrame = self:GetSubjectCFrame()
 
-	-- while moving, slowly adjust camera so the avatar is in front of your head
-	if subjectVel.Magnitude > 0.1 then -- is the subject moving?
+	if subjectVel.Magnitude > 0.1 then
 		local headOffset = VRService:GetUserCFrame(Enum.UserCFrame.Head)
-		--local headOffset = controlModule:GetEstimatedVRTorsoFrame()
 
-		-- account for headscale
 		headOffset = headOffset.Rotation + headOffset.Position * camera.HeadScale
 		local headCframe = camera.CFrame * headOffset
 
@@ -251,7 +242,6 @@ function VRVehicleCamera:addDrift(currentCamera, focus)
 		local headVectorDirection = Vector3.new(angleLook.X, 0, angleLook.Z).Unit * zoom
 		local goalHeadPosition = focus.Position - headVectorDirection
 
-		-- place the camera at currentposition + difference between goalHead and currentHead
 		local moveGoalCameraCFrame = CFrame.new(camera.CFrame.Position + goalHeadPosition - headCframe.Position)
 			* camera.CFrame.Rotation
 
@@ -270,27 +260,22 @@ function VRVehicleCamera:UpdateRotationCamera(dt)
 	assert(cameraSubject, "VRVehicleCamera requires a camera subject")
 	assert(cameraSubject:IsA("VehicleSeat"), "VRVehicleCamera subject must be a VehicleSeat")
 
-	-- consume the physics solver time delta to account for mismatched physics/render cycles
-	-- get subject info
 	local subjectCFrame: CFrame = self:GetSubjectCFrame()
 	local subjectVel: Vector3 = self:GetSubjectVelocity()
 	local subjectRotVel = self:GetSubjectRotVelocity()
 
-	-- measure the local-to-world-space forward velocity of the vehicle
 	local vDotZ = math.abs(subjectVel:Dot(subjectCFrame.ZVector))
 	local yawVel = yawVelocity(subjectRotVel, subjectCFrame)
 	local pitchVel = pitchVelocity(subjectRotVel, subjectCFrame)
 
 	local zoom = self:GetCameraToSubjectDistance()
 
-	-- mix third and first person offsets in local space
 	local firstPerson = mapClamp(zoom, ZOOM_MINIMUM, self.assemblyRadius, 1, 0)
 
 	local tpOffset = self:_GetThirdPersonLocalOffset()
 	local fpOffset = self:_GetFirstPersonLocalOffset(subjectCFrame)
 	local localOffset = tpOffset:Lerp(fpOffset, firstPerson)
 
-	-- step core forward
 	vehicleCameraCore:setTransform(subjectCFrame)
 	local processedRotation = vehicleCameraCore:step(dt, pitchVel, yawVel, firstPerson)
 
@@ -299,7 +284,6 @@ function VRVehicleCamera:UpdateRotationCamera(dt)
 	local focus = self:GetVRFocus(subjectCFrame * localOffset, dt) * processedRotation * objectRotation
 	local cf = focus * CFrame.new(0, 0, zoom)
 
-	-- vignette
 	if subjectVel.Magnitude > 0.1 then
 		self:StartVREdgeBlur(localPlayer)
 	end
@@ -312,14 +296,12 @@ function VRVehicleCamera:UpdateStepRotation(dt)
 
 	local camera = workspace.CurrentCamera
 
-	-- get subject info
 	local lastSubjectCFrame = self.lastSubjectCFrame
 	local subjectCFrame: CFrame = self:GetSubjectCFrame()
 	local subjectVel: Vector3 = self:GetSubjectVelocity()
 
 	local zoom = self:GetCameraToSubjectDistance()
 
-	-- mix third and first person offsets in local space
 	local firstPerson = mapClamp(zoom, ZOOM_MINIMUM, self.assemblyRadius, 1, 0)
 
 	local tpOffset = self:_GetThirdPersonLocalOffset()
@@ -329,7 +311,6 @@ function VRVehicleCamera:UpdateStepRotation(dt)
 
 	focus = self:GetVRFocus(offsetSubject, dt)
 
-	-- maintain the offset of the camera from the subject (ignoring subject rotation)
 	cf = focus:ToWorldSpace(self:GetVRFocus(lastSubjectCFrame * localOffset, dt):ToObjectSpace(camera.CFrame))
 
 	cf, focus = self:addDrift(cf, focus)
@@ -339,24 +320,21 @@ function VRVehicleCamera:UpdateStepRotation(dt)
 		local cameraOffset = focus:ToObjectSpace(cf)
 		local rotatedCamera = focus * CFrame.Angles(0, -yawDelta, 0) * cameraOffset
 
-		-- when using step rotation, the snapping should lock the VR player's head to the car's forward
 		if not UserGameSettings.VRSmoothRotationEnabled then
-			-- get the head's location in world space
+
 			local headOffset = VRService:GetUserCFrame(Enum.UserCFrame.Head)
 
-			-- account for headscale
 			headOffset = headOffset.Rotation + headOffset.Position * camera.HeadScale
 			local focusWithRotation = focus * subjectCFrame.Rotation
 
-			local headOffsetCurrent = focusWithRotation:ToObjectSpace(cf * headOffset) -- current offset without rotation applied
-			local currentVector = Vector3.new(headOffsetCurrent.X, 0, headOffsetCurrent.Z).Unit -- don't care about Y angle
+			local headOffsetCurrent = focusWithRotation:ToObjectSpace(cf * headOffset)
+			local currentVector = Vector3.new(headOffsetCurrent.X, 0, headOffsetCurrent.Z).Unit
 			local currentAngleFromBack = math.acos(currentVector:Dot(Vector3.new(0, 0, 1)))
 
-			local headOffsetRotated = focusWithRotation:ToObjectSpace(rotatedCamera * headOffset) -- where the head would be after rotation
-			local rotatedVector = Vector3.new(headOffsetRotated.X, 0, headOffsetRotated.Z).Unit -- don't care about Y angle
+			local headOffsetRotated = focusWithRotation:ToObjectSpace(rotatedCamera * headOffset)
+			local rotatedVector = Vector3.new(headOffsetRotated.X, 0, headOffsetRotated.Z).Unit
 			local rotatedAngleFromBack = math.acos(rotatedVector:Dot(Vector3.new(0, 0, 1)))
 
-			-- if the player is rotating towards the back of the car
 			if rotatedAngleFromBack < currentAngleFromBack then
 				if yawDelta < 0 then
 					currentAngleFromBack *= -1
@@ -368,7 +346,6 @@ function VRVehicleCamera:UpdateStepRotation(dt)
 		cf = rotatedCamera
 	end
 
-	-- vignette
 	if subjectVel.Magnitude > 0.1 then
 		self:StartVREdgeBlur(localPlayer)
 	end
@@ -400,45 +377,39 @@ function VRVehicleCamera:UpdateComfortCamera(dt)
 	assert(cameraSubject:IsA("VehicleSeat"), "VRVehicleCamera subject must be a VehicleSeat")
 
 	if not FFlagUserVRVehicleCamera then
-		-- consume the physics solver time delta to account for mismatched physics/render cycles
+
 		dt = worldDt
 		worldDt = 0
 	end
 
-	-- get subject info
 	local subjectCFrame: CFrame = self:GetSubjectCFrame()
 	local subjectVel: Vector3 = self:GetSubjectVelocity()
 	local subjectRotVel = self:GetSubjectRotVelocity()
 
-	-- measure the local-to-world-space forward velocity of the vehicle
 	local yawVel = yawVelocity(subjectRotVel, subjectCFrame)
 	local pitchVel = pitchVelocity(subjectRotVel, subjectCFrame)
 
-	-- step camera components forward
 	local zoom = self:StepZoom()
 
-	-- mix third and first person offsets in local space
 	local firstPerson = mapClamp(zoom, ZOOM_MINIMUM, self.assemblyRadius, 1, 0)
 
 	local tpOffset = self:_GetThirdPersonLocalOffset()
 	local fpOffset = self:_GetFirstPersonLocalOffset(subjectCFrame)
 	local localOffset = tpOffset:Lerp(fpOffset, firstPerson)
 
-	-- step core forward
 	vehicleCameraCore:setTransform(subjectCFrame)
 	local processedRotation = vehicleCameraCore:step(dt, pitchVel, yawVel, firstPerson)
 
-	-- end product of this function
 	local focus = nil
 	local cf = nil
 
 	if not FFlagUserVRVehicleCamera then
-		-- update fade from black
+
 		self:UpdateFadeFromBlack(dt)
 	end
 
 	if not self:IsInFirstPerson() then
-		-- third person comfort camera
+
 		focus = CFrame.new(subjectCFrame * localOffset) * processedRotation
 		cf = focus * CFrame.new(0, 0, zoom)
 
@@ -451,18 +422,17 @@ function VRVehicleCamera:UpdateComfortCamera(dt)
 		local curCameraDist = curCameraDir.magnitude
 		curCameraDir = curCameraDir.Unit
 		local cameraDot = curCameraDir:Dot(camera.CFrame.LookVector)
-		if cameraDot > TP_FOLLOW_ANGLE_DOT and curCameraDist < TP_FOLLOW_DIST and not self.needsReset then -- vehicle in view
-			-- keep old focus
+		if cameraDot > TP_FOLLOW_ANGLE_DOT and curCameraDist < TP_FOLLOW_DIST and not self.needsReset then
+
 			focus = self.lastCameraFocus
 
-			-- new cf result
 			local cameraFocusP = focus.p
 			local cameraLookVector = self:GetCameraLookVector()
 			cameraLookVector = Vector3.new(cameraLookVector.X, 0, cameraLookVector.Z).Unit
 			local newLookVector = self:CalculateNewLookVectorFromArg(cameraLookVector, Vector2.new(0, 0))
 			cf = CFrame.new(cameraFocusP - (zoom * newLookVector), cameraFocusP)
 		else
-			-- new focus / teleport
+
 			self.lastCameraFocus = self:GetVRFocus(subjectCFrame.Position, dt)
 			self.needsReset = false
 			self:StartFadeFromBlack()
@@ -473,11 +443,10 @@ function VRVehicleCamera:UpdateComfortCamera(dt)
 			self:UpdateEdgeBlur(localPlayer, dt)
 		end
 	else
-		-- first person in vehicle : lock orientation for stable camera
+
 		local dir = Vector3.new(processedRotation.LookVector.X, 0, processedRotation.LookVector.Z).Unit
 		local planarRotation = CFrame.new(processedRotation.Position, dir)
 
-		-- this removes the pitch to reduce motion sickness
 		focus = CFrame.new(subjectCFrame * localOffset) * planarRotation
 		cf = focus * CFrame.new(0, 0, zoom)
 

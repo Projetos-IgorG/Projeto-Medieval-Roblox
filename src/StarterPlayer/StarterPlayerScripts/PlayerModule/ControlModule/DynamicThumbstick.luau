@@ -1,5 +1,13 @@
 --!nonstrict
---[[ Constants ]]--
+
+--[[
+    Script: DynamicThumbstick.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/ControlModule
+    Responsabilidade: Implementa thumbstick virtual dinamico para controles de toque.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, GetIsJumping, Enable, OnInputEnded, FadeThumbstick, FadeThumbstickFrame
+]]
 local ZERO_VECTOR3 = Vector3.new(0,0,0)
 local TOUCH_CONTROLS_SHEET = "rbxasset://textures/ui/Input/TouchControlsSheetV2.png"
 
@@ -53,7 +61,6 @@ if not LocalPlayer then
 	LocalPlayer = Players.LocalPlayer
 end
 
---[[ The Module ]]--
 local BaseCharacterController = require(script.Parent:WaitForChild("BaseCharacterController"))
 local DynamicThumbstick = setmetatable({}, BaseCharacterController)
 DynamicThumbstick.__index = DynamicThumbstick
@@ -91,8 +98,6 @@ function DynamicThumbstick.new()
 	return self
 end
 
--- Note: Overrides base class GetIsJumping with get-and-clear behavior to do a single jump
--- rather than sustained jumping. This is only to preserve the current behavior through the refactor.
 function DynamicThumbstick:GetIsJumping()
 	local wasJumping = self.isJumping
 	self.isJumping = false
@@ -100,12 +105,12 @@ function DynamicThumbstick:GetIsJumping()
 end
 
 function DynamicThumbstick:Enable(enable: boolean?, uiParentFrame): boolean?
-	if enable == nil then return false end			-- If nil, return false (invalid argument)
-	enable = enable and true or false				-- Force anything non-nil to boolean before comparison
-	if self.enabled == enable then return true end	-- If no state change, return true indicating already in requested state
+	if enable == nil then return false end
+	enable = enable and true or false
+	if self.enabled == enable then return true end
 
 	if enable then
-		-- Enable
+
 		if not self.thumbstickFrame then
 			self:Create(uiParentFrame)
 		end
@@ -118,8 +123,7 @@ function DynamicThumbstick:Enable(enable: boolean?, uiParentFrame): boolean?
 			ContextActionService:UnbindAction(DYNAMIC_THUMBSTICK_ACTION_NAME)
 		end
 
-		-- Disable
-		self:OnInputEnded() -- Cleanup
+		self:OnInputEnded()
 	end
 
 	self.enabled = enable
@@ -127,7 +131,6 @@ function DynamicThumbstick:Enable(enable: boolean?, uiParentFrame): boolean?
 	return nil
 end
 
--- Was called OnMoveTouchEnded in previous version
 function DynamicThumbstick:OnInputEnded()
 	self.moveTouchObject = nil
 	self.moveVector = ZERO_VECTOR3
@@ -199,7 +202,6 @@ function DynamicThumbstick:DoFadeInBackground()
 	local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
 	local hasFadedBackgroundInOrientation = false
 
-	-- only fade in/out the background once per orientation
 	if playerGui then
 		if playerGui.CurrentScreenOrientation == Enum.ScreenOrientation.LandscapeLeft or
 			playerGui.CurrentScreenOrientation == Enum.ScreenOrientation.LandscapeRight then
@@ -221,7 +223,6 @@ end
 function DynamicThumbstick:DoMove(direction: Vector3)
 	local currentMoveVector: Vector3 = direction
 
-	-- Scaled Radial Dead Zone
 	local inputAxisMagnitude: number = currentMoveVector.Magnitude
 	if inputAxisMagnitude < self.radiusOfDeadZone then
 		currentMoveVector = ZERO_VECTOR3
@@ -234,7 +235,6 @@ function DynamicThumbstick:DoMove(direction: Vector3)
 
 	self.moveVector = currentMoveVector
 end
-
 
 function DynamicThumbstick:LayoutMiddleImages(startPos: Vector3, endPos: Vector3)
 	local startDist = (self.thumbstickSize / 2) + self.middleSize

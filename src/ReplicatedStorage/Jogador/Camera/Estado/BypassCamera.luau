@@ -1,13 +1,11 @@
 --[[
-	Nome: CameraBypass
-	Função: Lista compartilhada de BaseParts que o sistema de oclusão da câmera deve ignorar.
-	Responsabilidade:
-		- Manter um conjunto de partes que não devem causar zoom-in da câmera (Popper).
-		- Não altera propriedades das partes; apenas a lógica de raycast da câmera consulta este conjunto.
-	Comunicação: Consultado pelos scripts de câmera no cliente.
-	Uso: local Bypass = require(ReplicatedStorage.Shared.Camera.Bypass)
+    Script: BypassCamera.luau
+    Caminho: src/ReplicatedStorage/Jogador/Camera/Estado
+    Responsabilidade: Controla estados em que a camera deve ignorar travas ou transicoes comuns.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: add, remove, clear, has
 ]]
-
 local CameraBypass = {}
 
 local _bypassed: { [BasePart]: boolean } = {}

@@ -1,13 +1,11 @@
 --[[
-	Movement.luau
-	Módulo de movimento do sistema de Parkour.
-	Responsável por executar Agarrar, VaultBaixo, VaultMédio,
-	Subir, SubirSalto, Escalar e PuloTras.
-
-	Vault e Escalar usam LinearVelocity para impulso suave (sem tremor em 1Âª pessoa).
-	Constraints são limpas automaticamente (anti memory leak).
+    Script: Movimento.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/Jogador/Parkour
+    Responsabilidade: Executa deslocamentos, alinhamentos e transicoes fisicas do parkour.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: Executar, Soltar, TentarSubir, TentarDescer, TentarMoverLateral, ExecutarLateralForcado
 ]]
-
 local Configs = require(script.Parent:WaitForChild("Configuracoes"):WaitForChild("ConfigParkour"))
 local Utilidades = require(script.Parent:WaitForChild("Utilidades"))
 local Analisador = require(script.Parent:WaitForChild("Analisador"))
@@ -17,12 +15,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 
--- RaycastParams reutilizável (include) para mesh grab â€” evita alocação por chamada
 local _meshIncludeRayParams = RaycastParams.new()
 _meshIncludeRayParams.FilterType = Enum.RaycastFilterType.Include
 _meshIncludeRayParams.IgnoreWater = true
 
--- Buffer reutilizável para ignore list do overlap de segurança do grab
 local _grabOverlapIgnore = table.create(2)
 
 local ClientBridge = require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
@@ -55,10 +51,6 @@ local idleDebugState = {
 	FlipCount = 0,
 }
 
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Estado Interno
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
 local estado = {
 	EmAcao = false,
 	Agarrado = false,
@@ -70,7 +62,7 @@ local estado = {
 	SavedCollisions = {} :: { [BasePart]: boolean },
 	SavedHeadCanCollide = nil :: boolean?,
 	HeadPart = nil :: BasePart?,
-	GrabData = nil, -- { EdgePosition, Normal, Part, Config }
+	GrabData = nil,
 }
 
 local lateralNoSurfaceCache = {
@@ -365,10 +357,6 @@ local function isSameGrabForLateralCache(direction, edgePosition, normal)
 	return sameEdge and sameNormal
 end
 
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Cleanup (Anti Memory Leak)
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
 local function destroyConstraints()
 	for _, constraint in ipairs(estado.ActiveConstraints) do
 		if constraint and constraint.Parent then
@@ -387,12 +375,6 @@ local function removeConstraint(constraint)
 		table.remove(estado.ActiveConstraints, idx)
 	end
 end
-
-
-
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Colisão: Desabilitar / Restaurar
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 local function desabilitarColisao(character)
 	table.clear(estado.SavedCollisions)
@@ -443,10 +425,6 @@ local function setHeadCollisionDuringParkour(character, enableNoCollision)
 	estado.SavedHeadCanCollide = nil
 end
 
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Humanoid State Reset
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
 local function resetHumanoidState(character)
 	if not character then
 		return
@@ -470,10 +448,6 @@ local function isCharacterAlive(character)
 
 	return humanoid.Health > 0
 end
-
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Camera Bypass
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 local _cameraBypassOverlap = OverlapParams.new()
 _cameraBypassOverlap.FilterType = Enum.RaycastFilterType.Exclude
@@ -528,10 +502,6 @@ local function fullCleanup()
 	idleDebugState.FlipCount = 0
 end
 
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Helpers: Criar Constraints
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
 local function criarAlignPosition(hrp, targetPosition, responsiveness)
 	local align = Instance.new("AlignPosition")
 	align.Mode = Enum.PositionAlignmentMode.OneAttachment
@@ -547,8 +517,6 @@ local function criarAlignPosition(hrp, targetPosition, responsiveness)
 	return align
 end
 
---- Calcula a velocidade angular (rad/s) necessária para rotacionar de currentCF até targetCF
---- em exatamente `tempo` segundos, com margem de 15% para compensar desaceleração da spring.
 local function calcularVelocidadeAngularSuave(currentCFrame: CFrame, targetCFrame: CFrame, tempo: number): number
 	local rel = currentCFrame:ToObjectSpace(targetCFrame)
 	local _, angle = rel:ToAxisAngle()
@@ -576,8 +544,6 @@ local function criarAlignOrientation(hrp, targetCFrame, responsiveness, maxAngul
 	return align
 end
 
---- Cria um LinearVelocity com auto-destruição.
---- Conceito igual ao Dash: aplica velocidade constante na direção, sem definir trajetória.
 local function criarLinearVelocity(hrp, velocity, duracao)
 	local lv = Instance.new("LinearVelocity")
 	lv.Attachment0 = hrp:FindFirstChild("RootAttachment")
@@ -590,7 +556,6 @@ local function criarLinearVelocity(hrp, velocity, duracao)
 
 	table.insert(estado.ActiveConstraints, lv)
 
-	-- Auto-destruir após duração
 	task.delay(duracao, function()
 		removeConstraint(lv)
 	end)
@@ -598,9 +563,6 @@ local function criarLinearVelocity(hrp, velocity, duracao)
 	return lv
 end
 
---- Cria um Attachment na part agarrada na posição/orientação world indicada.
---- O Attachment se move junto com a part (local space).
---- Se worldCF for fornecido, inclui orientação (para AlignOrientation TwoAttachment).
 local function criarGrabAttachment(part, worldPosition, worldCF)
 	local attachment = Instance.new("Attachment")
 	if worldCF then
@@ -613,9 +575,6 @@ local function criarGrabAttachment(part, worldPosition, worldCF)
 	return attachment
 end
 
---- AlignPosition TwoAttachment: suave ou rígido.
---- Se rigido=true, RigidityEnabled garante posição exata (ignora MaxForce/Responsiveness).
---- Se rigido=false, usa MaxForce/Responsiveness para transição suave.
 local function criarAlignPositionDoisPontos(hrp, targetAttachment, rigido, responsiveness)
 	local align = Instance.new("AlignPosition")
 	align.Mode = Enum.PositionAlignmentMode.TwoAttachment
@@ -634,8 +593,6 @@ local function criarAlignPositionDoisPontos(hrp, targetAttachment, rigido, respo
 	return align
 end
 
---- AlignOrientation TwoAttachment: suave ou rígido.
---- Se rigido=true, RigidityEnabled garante rotação exata (segue part rigidamente).
 local function criarAlignOrientationDoisPontos(hrp, targetAttachment, rigido, responsiveness)
 	local align = Instance.new("AlignOrientation")
 	align.Mode = Enum.OrientationAlignmentMode.TwoAttachment
@@ -652,10 +609,6 @@ local function criarAlignOrientationDoisPontos(hrp, targetAttachment, rigido, re
 	return align
 end
 
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Conectar cleanup no Died
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
 local function conectarDied(character)
 	local humanoid = character:FindFirstChild("Humanoid")
 	if not humanoid then
@@ -670,10 +623,6 @@ local function conectarDied(character)
 		fullCleanup()
 	end)
 end
-
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Calcular posição de Agarrar
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 local function obterOffsetsGrab(finalConfig)
 	return finalConfig.GrabVerticalOffset, finalConfig.GrabSurfaceOffset
@@ -789,7 +738,6 @@ local function calcularPosicaoGrab(edgePosition, normal, config, _idleMode)
 	local finalConfig = Configs.mergeConfig(config)
 	local verticalOffset, surfaceOffset = obterOffsetsGrab(finalConfig)
 
-	-- Flatten da normal: projetar no plano XZ para nunca inclinar o player (só yaw)
 	local flatNormal = Vector3.new(normal.X, 0, normal.Z)
 	if flatNormal.Magnitude < 0.01 then
 		flatNormal = Vector3.new(0, 0, -1)
@@ -817,7 +765,6 @@ local function calcularPosicaoGrabSegura(character, hrp, edgePosition, normal, p
 		local minGap = math.max((hrp.Size.Z * 0.5) + (finalConfig.GrabSurfaceSafetyMargin or 0.2), 0.9)
 		local signedGap
 
-		-- MeshParts/UnionOperations: usar raycast para medir distância real até a superfície
 		if part:IsA("MeshPart") or part:IsA("UnionOperation") then
 			local rayOrigin = posicao
 			local rayDir = -normalUnit * (part.Size.Magnitude * 0.5 + 2.0)
@@ -828,7 +775,6 @@ local function calcularPosicaoGrabSegura(character, hrp, edgePosition, normal, p
 			end
 		end
 
-		-- Parts normais (ou fallback se ray falhou): box math original
 		if signedGap == nil then
 			local normalLocal = part.CFrame:VectorToObjectSpace(normalUnit)
 			local axis, sign = Utilidades.dominantAxis(normalLocal)
@@ -850,8 +796,7 @@ local function calcularPosicaoGrabSegura(character, hrp, edgePosition, normal, p
 	local probeSize = hrp.Size * probeScale
 	local pushStep = math.max(finalConfig.GrabSafetyPushStep or 0.15, 0.05)
 	local maxPushSteps = math.max(math.floor(finalConfig.GrabSafetyMaxPushSteps or 6), 1)
-	-- Excluir a part agarrada do overlap: a distância até ela já foi garantida pelo signedGap acima.
-	-- Sem isso, MeshParts com bounding box maior que a mesh causam falso-positivo no push loop.
+
 	_grabOverlapIgnore[1] = character
 	_grabOverlapIgnore[2] = (part and typeof(part) == "Instance") and part or nil
 	for i = 3, #_grabOverlapIgnore do
@@ -963,14 +908,11 @@ local function sincronizarGrabComIdle(idleMode: string?, debugSource: string?, i
 		)
 	end
 
-	-- Destruir constraints antigos antes de recriar
 	destroyConstraints()
 
-	-- Posicionar diretamente via CFrame e criar ancoragem rígida
 	hrp.CFrame = CFrame.new(posAlvo) * cfAlvo.Rotation
 	zeroAssemblyVelocity(hrp)
 
-	-- Ancoragem rígida TwoAttachment (RigidityEnabled) para acompanhar part móvel
 	local grabPart = grabData.Part
 	if grabPart and grabPart.Parent then
 		local grabAtt = criarGrabAttachment(grabPart, posAlvo, cfAlvo)
@@ -1013,10 +955,6 @@ local function finalizarAcaoMantendoGrab()
 	end
 end
 
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Executar: Agarrar
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
 local function executarAgarrar(result, config)
 	local finalConfig = Configs.mergeConfig(config)
 	local character = result.Character
@@ -1037,11 +975,9 @@ local function executarAgarrar(result, config)
 
 	conectarDied(character)
 
-	-- Travar o humanoid
 	humanoid.AutoRotate = false
 	humanoid.PlatformStand = true
 
-	-- Calcular posição alvo
 	local grabPart = result.Part or (result.Result and result.Result.Instance)
 	local posAlvo, cfAlvo, ajustadaPosicao, bloqueador = calcularPosicaoGrabSegura(
 		character,
@@ -1061,7 +997,6 @@ local function executarAgarrar(result, config)
 		)
 	end
 
-	-- Criar constraints para transição suave (OneAttachment â€” estável, sem feedback de força)
 	local grabTransitionTime = getScaledTransitionTime(finalConfig.GrabTransitionTime)
 	local grabResponsiveness = 1 / grabTransitionTime * 10
 	local grabAngVel = calcularVelocidadeAngularSuave(hrp.CFrame, cfAlvo, grabTransitionTime)
@@ -1074,11 +1009,9 @@ local function executarAgarrar(result, config)
 	)
 	local grabMinSettleTime = math.max(finalConfig.GrabMinSettleTime or math.min(grabTransitionTime, 0.1), 0)
 
-	-- Zerar velocidade atual para transição suave
 	zeroAssemblyVelocity(hrp)
 	setHeadCollisionDuringParkour(character, true)
 
-	-- Salvar dados do grab para ações futuras (Subir, Escalar, PuloTras)
 	setGrabData(
 		result.EdgePosition,
 		result.Normal,
@@ -1089,7 +1022,6 @@ local function executarAgarrar(result, config)
 		hrp.CFrame.LookVector
 	)
 
-	-- Marcar como agarrado após tempo de transição
 	local idleInicial = result.IdleMode or "IdleSuporte"
 
 	local grabFinalizado = false
@@ -1110,7 +1042,6 @@ local function executarAgarrar(result, config)
 			return
 		end
 
-		-- Garantia rígida: só confirma agarrado depois de snap exato no alvo de grab.
 		hrp.CFrame = CFrame.new(posAlvo) * cfAlvo.Rotation
 		zeroAssemblyVelocity(hrp)
 
@@ -1170,13 +1101,6 @@ local function executarAgarrar(result, config)
 	return true
 end
 
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Executar: Vault (Baixo e Médio)
--- Fase 1: AlignPosition move o player APENAS para cima (sem colisão)
--- Fase 2: Aplica impulso via LinearVelocity (conceito do Dash)
---         Não define trajetória, apenas aplica velocidade constante
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
 local function executarVault(result, _config, impulso, transitionTime)
 	local character = result.Character
 	local hrp = Utilidades.getCharacterParts(character)
@@ -1196,28 +1120,22 @@ local function executarVault(result, _config, impulso, transitionTime)
 
 	conectarDied(character)
 
-	-- Desabilitar colisão para não travar no obstáculo
 	desabilitarColisao(character)
 
-	-- Travar humanoid durante a transição
 	humanoid.AutoRotate = false
 	humanoid.PlatformStand = true
 
-	-- Posição final: APENAS acima da borda (sem offset horizontal)
 	local posFinal = result.PosFinal or result.EdgePosition
 	local look = result.LookVector or hrp.CFrame.LookVector
 
-	-- Fase 1: AlignPosition leva o player para cima suavemente
 	local responsiveness = 1 / transitionTime * 12
 	local vaultTargetOri = CFrame.lookAt(posFinal, posFinal + look, Vector3.yAxis)
 	local vaultAngVel = calcularVelocidadeAngularSuave(hrp.CFrame, vaultTargetOri, transitionTime)
 	local alignPos = criarAlignPosition(hrp, posFinal, responsiveness)
 	local alignOri = criarAlignOrientation(hrp, vaultTargetOri, responsiveness, vaultAngVel)
 
-	-- Zerar velocidade para transição limpa
 	zeroAssemblyVelocity(hrp)
 
-	-- Fase 2: Após chegar na posição (acima da borda), aplicar impulso via LinearVelocity
 	task.delay(transitionTime, function()
 		if not isCharacterAlive(character) then
 			removeConstraint(alignPos)
@@ -1226,24 +1144,18 @@ local function executarVault(result, _config, impulso, transitionTime)
 			return
 		end
 
-		-- Destruir as constraints de posicionamento
 		removeConstraint(alignPos)
 		removeConstraint(alignOri)
 
-		-- Restaurar colisão e humanoid
 		humanoid.AutoRotate = true
 		humanoid.PlatformStand = false
 		restaurarColisao()
 
-		-- Impulso via LinearVelocity (frente + cima)
 		local lookFlat = Vector3.new(look.X, 0, look.Z).Unit
 		local impulseVel = lookFlat * impulso + Vector3.new(0, impulso * 0.4, 0)
 
 		criarLinearVelocity(hrp, impulseVel, finalConfig.VaultImpulseDuration)
 
-		-- Libera EmAcao imediatamente ao completar o movimento.
-		-- A animação continua blendando normalmente em paralelo.
-		-- Permite encadear vaults em superfícies próximas sem cooldown artificial.
 		estado.EmAcao = false
 	end)
 
@@ -1252,11 +1164,6 @@ local function executarVault(result, _config, impulso, transitionTime)
 
 	return true
 end
-
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Executar: Subir (move para nova superfície acima)
--- Destrói constraints antigos e cria novos
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 local function executarSubir(novaEdgePos, novaNormal, novaPart, config, nomeAnimacao, confirmarAcaoPausada, idleModePreferido)
 	local finalConfig = Configs.mergeConfig(config)
@@ -1341,8 +1248,6 @@ local function executarSubir(novaEdgePos, novaNormal, novaPart, config, nomeAnim
 		local startPos = hrp.Position
 		local posVertical = Vector3.new(startPos.X, posAlvo.Y, startPos.Z)
 
-		-- Duas fases como lateral: fase 1 = vertical, fase 2 = horizontal até posição final
-		-- Rotação constante distribuída por todo o tempo total
 		local phaseSplit = math.clamp(finalConfig.SubirTransitionPhaseSplit or 0.55, 0.2, 0.8)
 		local tempoFase1 = math.max(totalTime * phaseSplit, 0.01)
 		local tempoFase2 = math.max(totalTime - tempoFase1, 0.01)
@@ -1369,13 +1274,13 @@ local function executarSubir(novaEdgePos, novaNormal, novaPart, config, nomeAnim
 			if alignPos.Parent and isCharacterAlive(character) then
 				alignPos.Position = posAlvo
 				alignPos.Responsiveness = responsivenessFase2
-				-- Não altera orientação: rotação constante por todo totalTime
+
 			end
 		end)
 
 		task.delay(totalTime, function()
 			transicaoConcluida = true
-			-- Chegou na posição antes da animação acabar: forçar conclusão para blend direto ao idle
+
 			if not animacaoConcluida then
 				animacaoConcluida = true
 			end
@@ -1441,7 +1346,7 @@ local function executarDescer(novaEdgePos, novaNormal, novaPart, config, idleMod
 		end
 
 		finalizacaoExecutada = true
-		-- Encerrar a pose estática de Descer antes de ir pro Idle
+
 		AnimacaoParkour.EncerrarAcaoAtual(finalConfig.SubirSaltoIdleFadeOut or 0.06)
 		finalizarAcaoMantendoGrab()
 	end
@@ -1491,8 +1396,6 @@ local function executarDescer(novaEdgePos, novaNormal, novaPart, config, idleMod
 		tentarFinalizarDescer()
 	end)
 
-	-- Animação de Descer é um único frame (pose estática).
-	-- Marcar como concluída imediatamente para não travar esperando Stopped.
 	if okAnimacao then
 		animacaoConcluida = true
 	end
@@ -1607,7 +1510,6 @@ local function executarLateral(lateralResult, config)
 		local responsivenessFase1 = 1 / tempoFase1 * 10
 		local responsivenessFase2 = 1 / tempoFase2 * 10
 
-		-- Rotação suave constante: alvo final (normal da nova superfície), velocidade distribuída por todo tempoTotal
 		local lateralAngVel = calcularVelocidadeAngularSuave(hrp.CFrame, cfAlvo, tempoTotal)
 		local alignPos = criarAlignPosition(hrp, phase1Target, responsivenessFase1)
 		local alignOri = criarAlignOrientation(hrp, cfAlvo, responsivenessFase1, lateralAngVel)
@@ -1628,7 +1530,7 @@ local function executarLateral(lateralResult, config)
 			if alignPos.Parent and alignOri.Parent and isCharacterAlive(character) then
 				alignPos.Position = phase1Target + phase2Delta
 				alignPos.Responsiveness = responsivenessFase2
-				-- Não altera responsiveness/velocidade da orientação: rotação constante por todo tempoTotal
+
 			end
 		end)
 
@@ -1656,12 +1558,6 @@ local function executarLateral(lateralResult, config)
 	return true
 end
 
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Executar: Escalar (subir em cima da plataforma)
--- Move o player diretamente para PosFinal (acima + pra frente da borda)
--- Sem impulso â€” apenas AlignPosition para posição final
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
 local function executarEscalar(escalarResult, config)
 	local finalConfig = Configs.mergeConfig(config)
 	local character = estado.CurrentCharacter
@@ -1682,24 +1578,19 @@ local function executarEscalar(escalarResult, config)
 	estado.EmAcao = true
 	estado.Agarrado = false
 
-	-- Destruir constraints anteriores (do grab)
 	destroyConstraints()
 
-	-- Calcular posições das duas fases
 	local normal = escalarResult.Normal or (estado.GrabData and estado.GrabData.Normal) or hrp.CFrame.LookVector
 
-	-- Flatten look para escalar sempre na vertical (sem inclinação)
 	local look = Vector3.new(-normal.X, 0, -normal.Z)
 	if look.Magnitude < 0.01 then
 		look = Vector3.new(0, 0, -1)
 	end
 	look = look.Unit
 
-	-- Fase 1: subir apenas no eixo Y a partir da posição atual
 	local startPos = hrp.Position
 	local posUp = Vector3.new(startPos.X, escalarResult.EdgePosition.Y + finalConfig.EscalarUpOffset, startPos.Z)
 
-	-- Fase 2: mover pra frente na posição final
 	local posFinal = escalarResult.PosFinal
 
 	local ratioVertical = math.clamp(finalConfig.EscalarVerticalFirstRatio or 0.5, 0.1, 0.9)
@@ -1714,10 +1605,8 @@ local function executarEscalar(escalarResult, config)
 		escalarTime
 	)
 
-	-- Orientação: sempre vertical (100% reto), olhar para frente
 	local targetOri = CFrame.lookAt(posFinal, posFinal + look, Vector3.yAxis)
 
-	-- Fase 1: AlignPosition leva o player para CIMA
 	local escalarAngVel = calcularVelocidadeAngularSuave(hrp.CFrame, targetOri, escalarTime)
 	local alignPos = criarAlignPosition(hrp, posUp, responsivenessVertical)
 	local alignOri = criarAlignOrientation(hrp, targetOri, responsivenessVertical, escalarAngVel)
@@ -1774,7 +1663,6 @@ local function executarEscalar(escalarResult, config)
 		humanoid.AutoRotate = true
 		humanoid.PlatformStand = false
 
-		-- Snap final pós-restore para garantir posição exata.
 		hrp.CFrame = CFrame.new(posFinal) * targetOri.Rotation
 		zeroAssemblyVelocity(hrp)
 
@@ -1782,7 +1670,6 @@ local function executarEscalar(escalarResult, config)
 		tentarFinalizar()
 	end
 
-	-- Fase 2: Após subir, mover pra FRENTE
 	task.delay(tempoVertical, function()
 		if alignPos.Parent and isCharacterAlive(character) then
 			alignPos.Position = posFinal
@@ -1838,11 +1725,6 @@ local function executarEscalar(escalarResult, config)
 	return true
 end
 
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Executar: PuloTras (salto para trás)
--- Solta + impulso na direção da normal (afastando da parede)
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
 local function executarPuloTras(config)
 	local finalConfig = Configs.mergeConfig(config)
 	local character = estado.CurrentCharacter
@@ -1863,7 +1745,6 @@ local function executarPuloTras(config)
 	estado.EmAcao = true
 	estado.Agarrado = false
 
-	-- Pegar a normal antes de limpar
 	local normal = estado.GrabData and estado.GrabData.Normal or hrp.CFrame.LookVector
 
 	destroyConstraints()
@@ -1874,13 +1755,11 @@ local function executarPuloTras(config)
 	estado.GrabData = nil
 	estado.CurrentCharacter = character
 
-	-- Direção do impulso: normal (para longe da parede) + componente pra cima
 	local impulseDir = (normal.Unit + Vector3.yAxis * finalConfig.PuloTrasUpComponent).Unit
 	local impulseVel = impulseDir * finalConfig.PuloTrasImpulse
 
 	hrp.AssemblyLinearVelocity = impulseVel
 
-	-- Sustentação via LinearVelocity (como Dash)
 	criarLinearVelocity(hrp, impulseVel, 0.2)
 
 	local finalizadoPuloTras = false
@@ -1893,7 +1772,6 @@ local function executarPuloTras(config)
 		fullCleanup()
 	end
 
-	-- Não esperar a animação inteira para liberar re-detecção de parkour no ar.
 	task.delay(0.2, finalizarPuloTras)
 
 	local okAnimacao = AnimacaoParkour.TocarAcao("PuloTras", nil, function()
@@ -1932,10 +1810,6 @@ local function executarPuloLateral(direcao, config)
 
 	return true
 end
-
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- API Pública
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function Movimento.Executar(parkourResult, config)
 	if not parkourResult or not parkourResult.Aprovado then
@@ -1981,8 +1855,6 @@ function Movimento.Soltar()
 	fullCleanup()
 end
 
--- Tentar Subir: detecta superfície acima e move para ela
--- Retorna: ok, tipo, subirResult, escalarDebug, subirDebug
 function Movimento.TentarSubir()
 	if not estado.Agarrado or estado.EmAcao then
 		return false, nil
@@ -1998,7 +1870,6 @@ function Movimento.TentarSubir()
 		return false, nil
 	end
 
-	-- Verificar escalar e subir no mesmo frame para permitir preferência contextual.
 	local escalarResult = Analisador.CheckEscalar(
 		character,
 		grabData.EdgePosition,
@@ -2016,7 +1887,6 @@ function Movimento.TentarSubir()
 	local escalarDisponivel = escalarResult and escalarResult.CanEscalar
 	local subirDisponivel = subirResult and subirResult.CanSubir
 
-	-- Entre SubirSalto e Escalar, prioriza SubirSalto (confirmação por pulo/hold no input layer).
 	if subirDisponivel and subirResult.Tipo == "SubirSalto" then
 		return true, "SubirSalto", subirResult, escalarResult
 	end
@@ -2030,7 +1900,7 @@ function Movimento.TentarSubir()
 	end
 
 	if not subirDisponivel then
-		-- Retornar debug data mesmo quando falha (para visualização)
+
 		return false, nil, subirResult, escalarResult
 	end
 
@@ -2051,7 +1921,7 @@ function Movimento.TentarSubir()
 	elseif subirResult.Tipo == "SubirSalto" then
 		return true, "SubirSalto", subirResult, escalarResult
 	elseif subirResult.Tipo == "Escalar" then
-		-- Fallback disparado pelo CheckSubir
+
 		local ok = executarEscalar(subirResult, grabData.Config)
 		if ok then
 				dbgPrint("[Parkour] Escalar direto para nova superfície acima | Dist:", string.format("%.1f", subirResult.VerticalDistance))
@@ -2062,8 +1932,6 @@ function Movimento.TentarSubir()
 	return false, nil, subirResult, escalarResult
 end
 
--- Tentar Descer: detecta superfície abaixo e move para ela
--- Retorna: ok, tipo, descerResult
 function Movimento.TentarDescer()
 	if not estado.Agarrado or estado.EmAcao then
 		return false, nil
@@ -2213,7 +2081,6 @@ function Movimento.ExecutarLateralForcado(lateralTarget)
 	return ok
 end
 
--- Executar SubirSalto (quando W+Pular confirmado)
 function Movimento.ExecutarSubirSalto(subirResult)
 	if not estado.Agarrado or estado.EmAcao then
 		return false
@@ -2422,7 +2289,6 @@ function Movimento.CancelarPreviewLateralAoSoltar(config)
 		return false
 	end
 
-	-- Iniciar idle por baixo da ação (prioridade menor) para evitar gap durante rewind
 	if estado.GrabData and estado.GrabData.IdleMode then
 		AnimacaoParkour.TocarIdle(estado.GrabData.IdleMode)
 	end
@@ -2446,7 +2312,7 @@ function Movimento.CancelarPreviewLateralAoSoltar(config)
 end
 
 function Movimento.CancelarPreviewAcao(config)
-	-- Iniciar idle por baixo antes de encerrar a ação para evitar gap visual
+
 	if estado.Agarrado and estado.GrabData and estado.GrabData.IdleMode then
 		AnimacaoParkour.TocarIdle(estado.GrabData.IdleMode)
 	end
@@ -2499,7 +2365,6 @@ function Movimento.ReavaliarIdleAgarrado()
 	return confirmouTroca
 end
 
--- Tentar Escalar: subir em cima da plataforma atual
 function Movimento.TentarEscalar()
 	if not estado.Agarrado or estado.EmAcao then
 		return false
@@ -2534,7 +2399,6 @@ function Movimento.TentarEscalar()
 	return ok
 end
 
--- PuloTras: salto para trás estando agarrado
 function Movimento.PuloTras()
 	if not estado.Agarrado or estado.EmAcao then
 		return false

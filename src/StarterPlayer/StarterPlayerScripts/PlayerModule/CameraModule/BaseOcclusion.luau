@@ -1,10 +1,11 @@
 --[[
-	BaseOcclusion - Abstract base class for character occlusion control modules
-	2018 Camera Update - AllYourBlox
---]]
-
---[[ The Module ]]
---
+    Script: BaseOcclusion.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/CameraModule
+    Responsabilidade: Define a base para controladores de oclusao da camera.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, CharacterAdded, CharacterRemoving, OnCameraSubjectChanged, GetOcclusionMode, Enable
+]]
 local BaseOcclusion: any = {}
 BaseOcclusion.__index = BaseOcclusion
 setmetatable(BaseOcclusion, {
@@ -18,18 +19,14 @@ function BaseOcclusion.new()
 	return self
 end
 
--- Called when character is added
 function BaseOcclusion:CharacterAdded(_char: Model, _player: Player) end
 
--- Called when character is about to be removed
 function BaseOcclusion:CharacterRemoving(_char: Model, _player: Player) end
 
 function BaseOcclusion:OnCameraSubjectChanged(_newSubject) end
 
---[[ Derived classes are required to override and implement all of the following functions ]]
---
 function BaseOcclusion:GetOcclusionMode(): Enum.DevCameraOcclusionMode?
-	-- Must be overridden in derived classes to return an Enum.DevCameraOcclusionMode value
+
 	warn("BaseOcclusion GetOcclusionMode must be overridden by derived classes")
 	return nil
 end

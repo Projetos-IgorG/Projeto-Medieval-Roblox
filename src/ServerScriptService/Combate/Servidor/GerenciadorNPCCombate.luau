@@ -1,20 +1,12 @@
 --[[
-    GerenciadorNPC.luau (Módulo)
-    
-    Script do servidor para gerenciar IA de NPCs.
-    Usa MaquinaDeEstados e ControladorCombate compartilhados com players.
-    
-    Funcionalidades:
-    - Detecção de alvos
-    - Movimentação e perseguição
-    - Combate usando sistema unificado
-    - Ragdoll na morte
+    Script: GerenciadorNPCCombate.luau
+    Caminho: src/ServerScriptService/Combate/Servidor
+    Responsabilidade: Gerencia IA de NPCs de combate, busca de alvos, perseguicao e ataques.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: Novo, EncontrarAlvo, RotacionarParaAlvo, MoverParaAlvo, TentarAtacar, Atualizar
 ]]
-
--- ----------------------------------------------------------------------------
--- CONFIGURAÇÃO DE DEBUG
--- ----------------------------------------------------------------------------
-local DEBUG_ENABLED = false -- Altere para true para habilitar prints de debug
+local DEBUG_ENABLED = false
 
 local function DebugPrint(...)
 	if DEBUG_ENABLED then
@@ -23,7 +15,7 @@ local function DebugPrint(...)
 end
 
 local Players = game:GetService("Players")
--- local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 local RunService = game:GetService("RunService")
 
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -32,42 +24,26 @@ local ControladorCombate = require(CombateServidor:WaitForChild("CombateServidor
 
 local GerenciadorNPC = {}
 
--- ----------------------------------------------------------------------------
--- CONFIGURAÇÃO DE IA
--- ----------------------------------------------------------------------------
-
 local ConfiguracaoIA = {
-	-- Detecção
+
 	RaioDeteccao = 50,
 	RaioPararPerseguir = 60,
 
-	-- Movimento
 	VelocidadePerto = 13,
 	VelocidadeLonge = 16,
 	DistanciaPerto = 15,
 
-	-- Combate
 	DistanciaAtaque = 6.5,
 	DistanciaIniciarAtaque = 5.8,
 	DistanciaContinuarCombo = 6.2,
 
-	-- Rotação
 	VelocidadeRotacao = 10,
 
-	-- Delays
 	DelayEntreAtaques = 0.3,
 	DelayAposCombo = 1.0,
 }
 
--- ----------------------------------------------------------------------------
--- CACHE DE NPCS
--- ----------------------------------------------------------------------------
-
 local npcsAtivos = {}
-
--- ----------------------------------------------------------------------------
--- CLASSE NPC
--- ----------------------------------------------------------------------------
 
 local NPCController = {}
 NPCController.__index = NPCController
@@ -79,26 +55,21 @@ function NPCController.Novo(modelo: Model)
 	self.humanoid = modelo:FindFirstChildOfClass("Humanoid")
 	self.humanoidRoot = modelo:FindFirstChild("HumanoidRootPart")
 
-	-- Obtém máquina de estados via ControladorCombate
 	self.maquina = ControladorCombate.ObterMaquina(modelo)
 
-	-- Define modo de combate (pode ser configurado via atributo)
 	local modo = modelo:GetAttribute("ModoCombate") or "Punhos"
 	self.maquina:DefinirModo(modo)
 
-	-- Estado da IA
 	self.alvo = nil
 	self.ultimoAtaque = 0
 	self.indiceComboAtual = 0
 	self.ativo = true
 
-	-- Conexões
 	self.conexoes = {}
 
 	return self
 end
 
---- Encontra jogador mais próximo dentro do raio de detecção
 function NPCController:EncontrarAlvo(): Player?
 	local posicaoNPC = self.humanoidRoot.Position
 	local menorDistancia = ConfiguracaoIA.RaioDeteccao
@@ -124,7 +95,6 @@ function NPCController:EncontrarAlvo(): Player?
 	return alvoMaisProximo
 end
 
---- Rotaciona suavemente em direção ao alvo
 function NPCController:RotacionarParaAlvo(dt: number)
 	if not self.alvo or not self.alvo.Character then
 		return
@@ -147,7 +117,6 @@ function NPCController:RotacionarParaAlvo(dt: number)
 
 	local diferenca = anguloAlvo - anguloAtual
 
-	-- Normaliza para -pi a pi
 	while diferenca > math.pi do
 		diferenca = diferenca - 2 * math.pi
 	end
@@ -160,7 +129,6 @@ function NPCController:RotacionarParaAlvo(dt: number)
 	self.humanoidRoot.CFrame = CFrame.new(self.humanoidRoot.Position) * CFrame.Angles(0, novoAngulo, 0)
 end
 
---- Move em direção ao alvo
 function NPCController:MoverParaAlvo()
 	if not self.alvo or not self.alvo.Character then
 		return
@@ -173,18 +141,15 @@ function NPCController:MoverParaAlvo()
 
 	local distancia = (alvoRoot.Position - self.humanoidRoot.Position).Magnitude
 
-	-- Ajusta velocidade baseado na distância
 	if distancia > ConfiguracaoIA.DistanciaPerto then
 		self.humanoid.WalkSpeed = ConfiguracaoIA.VelocidadeLonge
 	else
 		self.humanoid.WalkSpeed = ConfiguracaoIA.VelocidadePerto
 	end
 
-	-- Move
 	self.humanoid:MoveTo(alvoRoot.Position)
 end
 
---- Tenta atacar o alvo
 function NPCController:TentarAtacar(): boolean
 	if not self.alvo or not self.alvo.Character then
 		return false
@@ -198,36 +163,32 @@ function NPCController:TentarAtacar(): boolean
 	local distancia = (alvoRoot.Position - self.humanoidRoot.Position).Magnitude
 	local agora = tick()
 
-	-- Verifica se está em range e pode atacar
 	if self.indiceComboAtual > 0 then
-		-- Continuando combo - range mais generoso
+
 		if distancia > ConfiguracaoIA.DistanciaContinuarCombo then
 			return false
 		end
 	else
-		-- Iniciando ataque - range mais estrito
+
 		if distancia > ConfiguracaoIA.DistanciaIniciarAtaque then
 			return false
 		end
 	end
 
-	-- Verifica cooldown
 	local delay = self.indiceComboAtual > 0 and ConfiguracaoIA.DelayEntreAtaques or ConfiguracaoIA.DelayAposCombo
 	if (agora - self.ultimoAtaque) < delay then
 		return false
 	end
 
-	-- Tenta atacar via ControladorCombate
 	local sucesso, tipoAtaque = ControladorCombate.ProcessarAtacarLeveEmPe(self.modelo)
 
 	if sucesso then
 		self.ultimoAtaque = agora
 		self.indiceComboAtual = self.maquina:ObterIndiceCombo()
 
-		-- Se combo terminou, reseta
 		if self.indiceComboAtual == 0 or tipoAtaque == "AtaqueLeveFinal" then
 			self.indiceComboAtual = 0
-			self.ultimoAtaque = agora -- Delay maior após combo completo
+			self.ultimoAtaque = agora
 		end
 
 		return true
@@ -236,7 +197,6 @@ function NPCController:TentarAtacar(): boolean
 	return false
 end
 
---- Loop principal de IA
 function NPCController:Atualizar(dt: number)
 	if not self.ativo then
 		return
@@ -246,13 +206,11 @@ function NPCController:Atualizar(dt: number)
 		return
 	end
 
-	-- Verifica se está stunado
 	if self.maquina:EstaStunado() then
-		self.humanoid:MoveTo(self.humanoidRoot.Position) -- Para
+		self.humanoid:MoveTo(self.humanoidRoot.Position)
 		return
 	end
 
-	-- Encontra ou valida alvo
 	if self.alvo then
 		local personagemAlvo = self.alvo.Character
 		if not personagemAlvo then
@@ -277,32 +235,28 @@ function NPCController:Atualizar(dt: number)
 		self.indiceComboAtual = 0
 	end
 
-	-- Sem alvo, fica parado
 	if not self.alvo then
 		self.humanoid:MoveTo(self.humanoidRoot.Position)
 		return
 	end
 
-	-- Rotaciona para o alvo
 	self:RotacionarParaAlvo(dt)
 
-	-- Verifica distância para atacar ou perseguir
 	local alvoRoot = self.alvo.Character:FindFirstChild("HumanoidRootPart")
 	if alvoRoot then
 		local distancia = (alvoRoot.Position - self.humanoidRoot.Position).Magnitude
 
 		if distancia <= ConfiguracaoIA.DistanciaAtaque then
-			-- Em range de ataque
-			self.humanoid:MoveTo(self.humanoidRoot.Position) -- Para
+
+			self.humanoid:MoveTo(self.humanoidRoot.Position)
 			self:TentarAtacar()
 		else
-			-- Persegue
+
 			self:MoverParaAlvo()
 		end
 	end
 end
 
---- Aplica ragdoll na morte
 function NPCController:AplicarRagdoll()
 	for _, parte in ipairs(self.modelo:GetDescendants()) do
 		if parte:IsA("Motor6D") then
@@ -328,34 +282,24 @@ function NPCController:AplicarRagdoll()
 	self.humanoid.PlatformStand = true
 end
 
---- Desativa NPC
 function NPCController:Desativar()
 	self.ativo = false
 
-	-- Desconecta eventos
 	for _, conexao in ipairs(self.conexoes) do
 		if conexao.Connected then
 			conexao:Disconnect()
 		end
 	end
 
-	-- Remove do cache
 	npcsAtivos[self.modelo] = nil
 
-	-- Aplica ragdoll se morreu
 	if self.humanoid and self.humanoid.Health <= 0 then
 		self:AplicarRagdoll()
 	end
 
-	-- Remove máquina de estados
 	ControladorCombate.RemoverMaquina(self.modelo)
 end
 
--- ----------------------------------------------------------------------------
--- FUNÇâ€¢ES PÅ¡BLICAS
--- ----------------------------------------------------------------------------
-
---- Registra um NPC para ser gerenciado
 function GerenciadorNPC.RegistrarNPC(modelo: Model)
 	if npcsAtivos[modelo] then
 		return
@@ -364,7 +308,6 @@ function GerenciadorNPC.RegistrarNPC(modelo: Model)
 	local controller = NPCController.Novo(modelo)
 	npcsAtivos[modelo] = controller
 
-	-- Conecta morte
 	if controller.humanoid then
 		table.insert(
 			controller.conexoes,
@@ -374,7 +317,6 @@ function GerenciadorNPC.RegistrarNPC(modelo: Model)
 		)
 	end
 
-	-- Conecta remoção do modelo
 	table.insert(
 		controller.conexoes,
 		modelo.AncestryChanged:Connect(function(_, parent)
@@ -387,7 +329,6 @@ function GerenciadorNPC.RegistrarNPC(modelo: Model)
 	DebugPrint("[GerenciadorNPC] NPC registrado: " .. modelo.Name)
 end
 
---- Remove NPC do gerenciamento
 function GerenciadorNPC.RemoverNPC(modelo: Model)
 	local controller = npcsAtivos[modelo]
 	if controller then
@@ -395,14 +336,9 @@ function GerenciadorNPC.RemoverNPC(modelo: Model)
 	end
 end
 
---- Obtém controller de um NPC
 function GerenciadorNPC.ObterController(modelo: Model)
 	return npcsAtivos[modelo]
 end
-
--- ----------------------------------------------------------------------------
--- LOOP DE ATUALIZAÇÃO
--- ----------------------------------------------------------------------------
 
 RunService.Heartbeat:Connect(function(dt)
 	for _modelo, controller in pairs(npcsAtivos) do
@@ -412,11 +348,6 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 
--- ----------------------------------------------------------------------------
--- AUTO-REGISTRO DE NPCS EXISTENTES
--- ----------------------------------------------------------------------------
-
--- Busca NPCs na pasta NPCs (se existir)
 local pastaNPCs = workspace:FindFirstChild("NPCs")
 if pastaNPCs then
 	for _, modelo in ipairs(pastaNPCs:GetChildren()) do
@@ -427,7 +358,7 @@ if pastaNPCs then
 
 	pastaNPCs.ChildAdded:Connect(function(modelo)
 		if modelo:IsA("Model") and modelo:FindFirstChildOfClass("Humanoid") then
-			task.wait(0.1) -- Aguarda modelo carregar
+			task.wait(0.1)
 			GerenciadorNPC.RegistrarNPC(modelo)
 		end
 	end)

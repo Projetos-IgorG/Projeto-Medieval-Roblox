@@ -1,3 +1,11 @@
+--[[
+    Script: ControladorAmbiente.client.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/Mundo/Ambiente
+    Responsabilidade: Recebe estados de ambiente do servidor e aplica transicoes visuais no cliente.
+    Uso: LocalScript; roda automaticamente para o jogador local em src/StarterPlayer/StarterPlayerScripts/Mundo/Ambiente.
+    Nao faz: Nao valida autoridade do servidor, nao salva dados persistentes e nao substitui regras server-side.
+    Funcoes principais: lerValor, tempoPausado, ambientePausado, distanciaCircularMinutos, deltaCircularMinutos, obterMinutosVisuais
+]]
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
@@ -20,15 +28,13 @@ local acumulado = 0
 local ultimoCodigoVisual = ""
 local transicaoVisualAte = 0
 
--- Estado da extrapolacao continua de tempo
 local minutosBase = ConfiguracaoTempo.HorarioInicialMinutos
 local relogioBase = os.clock()
 
--- Estado da transicao suave de horario (lerp local)
 local transicaoTempoInicio = 0
 local transicaoTempoDuracao = 0
 local transicaoTempoOrigem = 0
-local transicaoTempoDelta = 0 -- delta com sinal (curto caminho no circulo)
+local transicaoTempoDelta = 0
 
 local function lerValor(nome: string, padrao)
 	local valor = EstadoMundo:FindFirstChild(nome)
@@ -52,7 +58,7 @@ local function distanciaCircularMinutos(a: number, b: number): number
 end
 
 local function deltaCircularMinutos(de: number, ate: number): number
-	-- Caminho mais curto no circulo (-MinutosPorDia/2 .. +MinutosPorDia/2)
+
 	local diff = ConfiguracaoTempo.NormalizarMinutos(ate) - ConfiguracaoTempo.NormalizarMinutos(de)
 	if diff > ConfiguracaoTempo.MinutosPorDia / 2 then
 		diff -= ConfiguracaoTempo.MinutosPorDia
@@ -93,14 +99,13 @@ local function iniciarTransicaoSuaveAte(novoMinutos: number)
 	end
 
 	local duracaoConfig = tonumber(lerValor("DuracaoTransicaoHorario", ConfiguracaoTempo.DuracaoTransicaoHorarioPadrao)) or 2.5
-	-- Distancias maiores levam um pouco mais de tempo, mas sempre suaves.
+
 	local fatorDistancia = math.clamp(math.abs(delta) / 360, 0.3, 1.6)
 	transicaoTempoInicio = os.clock()
 	transicaoTempoDuracao = math.max(duracaoConfig * fatorDistancia, 0.4)
 	transicaoTempoOrigem = origemVisual
 	transicaoTempoDelta = delta
 
-	-- Apos a transicao, o relogio normal continua a partir do destino.
 	ancorarTempoEm(novoMinutos)
 	relogioBase = os.clock() + transicaoTempoDuracao
 end
@@ -155,13 +160,11 @@ if minutosValor and minutosValor:IsA("NumberValue") then
 		local visualAtual = obterMinutosVisuais()
 		local diff = distanciaCircularMinutos(visualAtual, novoMinutos)
 
-		-- Diff pequeno (avanco normal do relogio): apenas re-ancorar sem reiniciar transicao.
 		if diff <= 1.5 and transicaoTempoDuracao == 0 then
 			ancorarTempoEm(novoMinutos)
 			return
 		end
 
-		-- Diff grande (DefinirHorario, AvancarTempo): transicao suave local.
 		iniciarTransicaoSuaveAte(novoMinutos)
 	end)
 else
@@ -172,7 +175,7 @@ local pausadoAmbValor = EstadoMundo:FindFirstChild("AmbientePausado")
 if pausadoAmbValor and pausadoAmbValor:IsA("BoolValue") then
 	pausadoAmbValor.Changed:Connect(function(novo)
 		if not novo then
-			-- Saindo da pausa: re-aplica o estado atual para sincronizar visuais.
+
 			aplicarAmbiente(true)
 		end
 	end)
@@ -183,7 +186,6 @@ aplicarAmbiente(true)
 RunService.Heartbeat:Connect(function(deltaTime)
 	atualizarClockTime()
 
-	-- Quando uma transicao suave termina, encerra explicitamente.
 	if transicaoTempoDuracao > 0 and (os.clock() - transicaoTempoInicio) >= transicaoTempoDuracao then
 		transicaoTempoDuracao = 0
 		ancorarTempoEm(transicaoTempoOrigem + transicaoTempoDelta)

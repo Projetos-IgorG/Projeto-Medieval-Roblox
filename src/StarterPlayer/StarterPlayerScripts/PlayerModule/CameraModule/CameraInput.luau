@@ -1,4 +1,13 @@
 --!nonstrict
+
+--[[
+    Script: CameraInput.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/CameraModule
+    Responsabilidade: Coleta e normaliza inputs de camera vindos de mouse, toque, teclado e gamepad.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: thumbstickCurve, getRotationActivated, getRotation, getZoomDelta, touchBegan, touchEnded
+]]
 local ContextActionService = game:GetService("ContextActionService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
@@ -16,29 +25,25 @@ local FFlagUserPSTextboxResetCameraInput = FlagUtil.getUserFlag("UserPSTextboxRe
 local player = Players.LocalPlayer
 
 local CAMERA_INPUT_PRIORITY = Enum.ContextActionPriority.Medium.Value
-local MB_TAP_LENGTH = 0.3 -- (s) length of time for a short mouse button tap to be registered
+local MB_TAP_LENGTH = 0.3
 
-local ROTATION_SPEED_KEYS = math.rad(120) -- (rad/s)
-local ROTATION_SPEED_GAMEPAD = Vector2.new(1, 0.77) * math.rad(4) -- (rad/s)
+local ROTATION_SPEED_KEYS = math.rad(120)
+local ROTATION_SPEED_GAMEPAD = Vector2.new(1, 0.77) * math.rad(4)
 
--- these speeds should not be scaled by dt because the input returned is not normalized.
--- that is, at lower framerates, the magnitude of the input delta will be larger because the pointer/mouse/touch
--- has moved more pixels between frames.
-local ROTATION_SPEED_MOUSE = Vector2.new(1, 0.77) * math.rad(0.5) -- (rad/inputdelta)
-local ROTATION_SPEED_POINTERACTION = Vector2.new(1, 0.77) * math.rad(7) -- (rad/inputdelta)
-local ROTATION_SPEED_TOUCH = Vector2.new(1, 0.66) * math.rad(1) -- (rad/inputdelta)
+local ROTATION_SPEED_MOUSE = Vector2.new(1, 0.77) * math.rad(0.5)
+local ROTATION_SPEED_POINTERACTION = Vector2.new(1, 0.77) * math.rad(7)
+local ROTATION_SPEED_TOUCH = Vector2.new(1, 0.66) * math.rad(1)
 
 if FFlagUserCameraInputDt then
-	ROTATION_SPEED_GAMEPAD *= 60 -- inline with FFlagUserCameraInputDt
+	ROTATION_SPEED_GAMEPAD *= 60
 end
 
-local ZOOM_SPEED_MOUSE = 1 -- (scaled studs/wheel click)
-local ZOOM_SPEED_KEYS = 0.1 -- (studs/s)
-local ZOOM_SPEED_TOUCH = 0.04 -- (scaled studs/DIP %)
+local ZOOM_SPEED_MOUSE = 1
+local ZOOM_SPEED_KEYS = 0.1
+local ZOOM_SPEED_TOUCH = 0.04
 
-local MIN_TOUCH_SENSITIVITY_FRACTION = 0.25 -- 25% sensitivity at 90°
+local MIN_TOUCH_SENSITIVITY_FRACTION = 0.25
 
--- right mouse button up & down events
 local rmbDown, rmbUp
 do
 	local rmbDownBindable = Instance.new("BindableEvent")
@@ -62,23 +67,19 @@ end
 
 local thumbstickCurve
 do
-	local K_CURVATURE = 2 -- amount of upwards curvature (0 is flat)
-	local K_DEADZONE = 0.1 -- deadzone
+	local K_CURVATURE = 2
+	local K_DEADZONE = 0.1
 
 	function thumbstickCurve(x)
-		-- remove sign, apply linear deadzone
+
 		local fDeadzone = (math.abs(x) - K_DEADZONE) / (1 - K_DEADZONE)
 
-		-- apply exponential curve and scale to fit in [0, 1]
 		local fCurve = (math.exp(K_CURVATURE * fDeadzone) - 1) / (math.exp(K_CURVATURE) - 1)
 
-		-- reapply sign and clamp
 		return math.sign(x) * math.clamp(fCurve, 0, 1)
 	end
 end
 
--- Adjust the touch sensitivity so that sensitivity is reduced when swiping up
--- or down, but stays the same when swiping towards the middle of the screen
 local function adjustTouchPitchSensitivity(delta: Vector2): Vector2
 	local camera = workspace.CurrentCamera
 
@@ -86,20 +87,15 @@ local function adjustTouchPitchSensitivity(delta: Vector2): Vector2
 		return delta
 	end
 
-	-- get the camera pitch in world space
 	local pitch = camera.CFrame:ToEulerAnglesYXZ()
 
 	if delta.Y * pitch >= 0 then
-		-- do not reduce sensitivity when pitching towards the horizon
+
 		return delta
 	end
 
-	-- set up a line to fit:
-	-- 1 = f(0)
-	-- 0 = f(±pi/2)
 	local curveY = 1 - (2 * math.abs(pitch) / math.pi) ^ 0.75
 
-	-- remap curveY from [0, 1] -> [MIN_TOUCH_SENSITIVITY_FRACTION, 1]
 	local sensitivity = curveY * (1 - MIN_TOUCH_SENSITIVITY_FRACTION) + MIN_TOUCH_SENSITIVITY_FRACTION
 
 	return Vector2.new(1, sensitivity) * delta
@@ -125,7 +121,7 @@ local function isInDynamicThumbstickArea(pos: Vector3): boolean
 	return pos.X >= posTopLeft.X and pos.Y >= posTopLeft.Y and pos.X <= posBottomRight.X and pos.Y <= posBottomRight.Y
 end
 
-local worldDt = 1 / 60 -- remove with FFlagUserCameraInputDt
+local worldDt = 1 / 60
 RunService.Stepped:Connect(function(_, _worldDt)
 	worldDt = _worldDt
 end)
@@ -160,9 +156,9 @@ do
 	}
 	local mouseState = {
 		Movement = Vector2.new(),
-		Wheel = 0, -- PointerAction
-		Pan = Vector2.new(), -- PointerAction
-		Pinch = 0, -- PointerAction
+		Wheel = 0,
+		Pan = Vector2.new(),
+		Pinch = 0,
 	}
 	local touchState = {
 		Move = Vector2.new(),
@@ -184,7 +180,6 @@ do
 	function CameraInput.getRotation(dt, disableKeyboardRotation: boolean?): Vector2
 		local inversionVector = Vector2.new(1, UserGameSettings:GetCameraYInvertValue())
 
-		-- keyboard input is non-coalesced, so must account for time delta
 		local kKeyboard
 		if FFlagUserCameraInputDt then
 			kKeyboard = Vector2.new(keyboardState.Right - keyboardState.Left, 0) * dt
@@ -194,7 +189,7 @@ do
 		local kGamepad = gamepadState.Thumbstick2 * UserGameSettings.GamepadCameraSensitivity
 
 		if FFlagUserCameraInputDt then
-			kGamepad *= dt -- inline with FFlagUserCameraInputDt
+			kGamepad *= dt
 		end
 
 		local kMouse = mouseState.Movement
@@ -265,7 +260,7 @@ do
 					if type(v) == "boolean" then
 						device[k] = false
 					else
-						device[k] *= 0 -- Mul by zero to preserve vector types
+						device[k] *= 0
 					end
 				end
 			end
@@ -275,10 +270,9 @@ do
 
 		local touchBegan, touchChanged, touchEnded, resetTouchState
 		do
-			-- Use TouchPan & TouchPinch when they work in the Studio emulator
 
-			local touches: { [InputObject]: boolean? } = {} -- {[InputObject] = sunk}
-			local dynamicThumbstickInput: InputObject? -- Special-cased
+			local touches: { [InputObject]: boolean? } = {}
+			local dynamicThumbstickInput: InputObject?
 			local lastPinchDiameter: number?
 
 			function touchBegan(input: InputObject, sunk: boolean)
@@ -286,9 +280,7 @@ do
 				assert(input.UserInputState == Enum.UserInputState.Begin, "Expected Begin input state")
 
 				if dynamicThumbstickInput == nil and isInDynamicThumbstickArea(input.Position) and not sunk then
-					-- any finger down starting in the dynamic thumbstick area should always be
-					-- ignored for camera purposes. these must be handled specially from all other
-					-- inputs, as the DT does not sink inputs by itself
+
 					dynamicThumbstickInput = input
 					return
 				end
@@ -297,7 +289,6 @@ do
 					incPanInputCount()
 				end
 
-				-- register the finger
 				touches[input] = sunk
 			end
 
@@ -305,18 +296,15 @@ do
 				assert(input.UserInputType == Enum.UserInputType.Touch, "Expected Touch input type")
 				assert(input.UserInputState == Enum.UserInputState.End, "Expected End input state")
 
-				-- reset the DT input
 				if input == dynamicThumbstickInput then
 					dynamicThumbstickInput = nil
 				end
 
-				-- reset pinch state if one unsunk finger lifts
 				if touches[input] == false then
 					lastPinchDiameter = nil
 					decPanInputCount()
 				end
 
-				-- unregister input
 				touches[input] = nil
 			end
 
@@ -324,12 +312,10 @@ do
 				assert(input.UserInputType == Enum.UserInputType.Touch, "Expected Touch input type")
 				assert(input.UserInputState == Enum.UserInputState.Change, "Expected Change input state")
 
-				-- ignore movement from the DT finger
 				if input == dynamicThumbstickInput then
 					return
 				end
 
-				-- fixup unknown touches
 				if touches[input] == nil then
 					if FFlagUserPSSinkUnknownTouchEvents then
 						touches[input] = true
@@ -338,7 +324,6 @@ do
 					end
 				end
 
-				-- collect unsunk touches
 				local unsunkTouches = {}
 				for touch, isSunk in pairs(touches) do
 					if not isSunk then
@@ -346,15 +331,13 @@ do
 					end
 				end
 
-				-- 1 finger: pan
 				if #unsunkTouches == 1 then
 					if touches[input] == false then
 						local delta = input.Delta
-						touchState.Move += Vector2.new(delta.X, delta.Y) -- total touch pan movement (reset at end of frame)
+						touchState.Move += Vector2.new(delta.X, delta.Y)
 					end
 				end
 
-				-- 2 fingers: pinch
 				if #unsunkTouches == 2 then
 					local pinchDiameter = (unsunkTouches[1].Position - unsunkTouches[2].Position).Magnitude
 
@@ -419,7 +402,7 @@ do
 			resetInputDevices()
 			resetTouchState()
 
-			if inputEnabled then -- enable
+			if inputEnabled then
 				ContextActionService:BindActionAtPriority(
 					"RbxCameraThumbstick",
 					thumbstick,
@@ -450,7 +433,7 @@ do
 				table.insert(connectionList, UserInputService.InputEnded:Connect(inputEnded))
 				table.insert(connectionList, UserInputService.PointerAction:Connect(pointerAction))
 				table.insert(connectionList, GuiService.MenuOpened:Connect(resetTouchState))
-			else -- disable
+			else
 				ContextActionService:UnbindAction("RbxCameraThumbstick")
 				ContextActionService:UnbindAction("RbxCameraMouseMove")
 				ContextActionService:UnbindAction("RbxCameraMouseWheel")
@@ -477,9 +460,9 @@ do
 			touchState.Move = Vector2.new()
 			touchState.Pinch = 0
 
-			mouseState.Wheel = 0 -- PointerAction
-			mouseState.Pan = Vector2.new() -- PointerAction
-			mouseState.Pinch = 0 -- PointerAction
+			mouseState.Wheel = 0
+			mouseState.Pan = Vector2.new()
+			mouseState.Pinch = 0
 		end
 
 		UserInputService.WindowFocused:Connect(resetInputDevices)
@@ -490,11 +473,10 @@ do
 	end
 end
 
--- Toggle pan
 do
 	local holdPan = false
 	local togglePan = false
-	local lastRmbDown = 0 -- tick() timestamp of the last right mouse button down event
+	local lastRmbDown = 0
 
 	function CameraInput.getHoldPan(): boolean
 		return holdPan

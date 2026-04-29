@@ -1,12 +1,15 @@
 --!nonstrict
+
 --[[
-	TransparencyController - Manages transparency of player character at close camera-to-subject distances
-	2018 Camera Update - AllYourBlox
---]]
+    Script: TransparencyController.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/CameraModule
+    Responsabilidade: Controla transparencia local do personagem conforme a camera se aproxima.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, HasToolAncestor, IsHeadAccessory, IsValidPartToModify, CachePartsRecursive, TeardownTransparency
+]]
+local MAX_TWEEN_RATE = 2.8
 
-local MAX_TWEEN_RATE = 2.8 -- per second
-
--- Classes with a LocalTransparencyModifier property that we should hide in first person
 local HIDE_IN_FIRST_PERSON_CLASSES = {
 	"BasePart",
 	"Decal",
@@ -29,8 +32,6 @@ do
 	FFlagUserHideCharacterParticlesInFirstPerson = success and result
 end
 
---[[ The Module ]]
---
 local TransparencyController = {}
 TransparencyController.__index = TransparencyController
 
@@ -46,8 +47,6 @@ function TransparencyController.new()
 	self.toolDescendantRemovingConns = {}
 	self.cachedParts = {}
 
-	-- Tipos de acessórios que devem ficar transparentes em 1ª pessoa
-	-- (apenas acessórios de cabeça - cabelo, chapéus, face, etc.)
 	self.headAccessoryTypes = {
 		[Enum.AccessoryType.Hat] = true,
 		[Enum.AccessoryType.Hair] = true,
@@ -67,15 +66,12 @@ function TransparencyController:HasToolAncestor(object: Instance)
 	return object.Parent:IsA("Tool") or self:HasToolAncestor(object.Parent)
 end
 
--- Verifica se o objeto é um acessório de cabeça (cabelo, chapéu, face, etc.)
--- Apenas esses devem ficar transparentes em 1ª pessoa
 function TransparencyController:IsHeadAccessory(object: Instance): boolean
-	-- Verifica se é a parte Head diretamente
+
 	if object.Name == "Head" then
 		return true
 	end
 
-	-- Verifica se é parte de um acessório de cabeça
 	local accessory = object:FindFirstAncestorWhichIsA("Accessory")
 	if accessory then
 		local accessoryType = accessory.AccessoryType
@@ -147,11 +143,11 @@ function TransparencyController:SetupTransparency(character)
 		self.descendantAddedConn:Disconnect()
 	end
 	self.descendantAddedConn = character.DescendantAdded:Connect(function(object)
-		-- This is a part we want to invisify
+
 		if self:IsValidPartToModify(object) then
 			self.cachedParts[object] = true
 			self.transparencyDirty = true
-		-- There is now a tool under the character
+
 		elseif object:IsA("Tool") then
 			if self.toolDescendantAddedConns[object] then
 				self.toolDescendantAddedConns[object]:Disconnect()
@@ -159,7 +155,7 @@ function TransparencyController:SetupTransparency(character)
 			self.toolDescendantAddedConns[object] = object.DescendantAdded:Connect(function(toolChild)
 				self.cachedParts[toolChild] = nil
 				if toolChild:IsA("BasePart") or toolChild:IsA("Decal") then
-					-- Reset the transparency
+
 					toolChild.LocalTransparencyModifier = 0
 				end
 			end)
@@ -167,7 +163,7 @@ function TransparencyController:SetupTransparency(character)
 				self.toolDescendantRemovingConns[object]:Disconnect()
 			end
 			self.toolDescendantRemovingConns[object] = object.DescendantRemoving:Connect(function(formerToolChild)
-				task.wait() -- wait for new parent
+				task.wait()
 				if character and formerToolChild and formerToolChild:IsDescendantOf(character) then
 					if self:IsValidPartToModify(formerToolChild) then
 						self.cachedParts[formerToolChild] = true
@@ -183,7 +179,7 @@ function TransparencyController:SetupTransparency(character)
 	self.descendantRemovingConn = character.DescendantRemoving:Connect(function(object)
 		if self.cachedParts[object] then
 			self.cachedParts[object] = nil
-			-- Reset the transparency
+
 			object.LocalTransparencyModifier = 0
 		end
 	end)
@@ -218,11 +214,10 @@ function TransparencyController:Update(dt, isInFirstPerson: boolean?)
 		local transparency: number
 
 		if isInFirstPerson then
-			-- Em 1ª pessoa: Head e acessórios de cabeça ficam invisíveis localmente
-			-- SombraCabeca.client.luau cuida de projetar as sombras via clones
+
 			transparency = 1
 		else
-			-- Em 3ª pessoa: usa distância normal (comportamento original)
+
 			local distance = (currentCamera.Focus.Position - currentCamera.CFrame.Position).Magnitude
 			transparency = (distance < 2) and (1.0 - (distance - 0.5) / 1.5) or 0
 			if transparency < 0.5 then
@@ -230,7 +225,6 @@ function TransparencyController:Update(dt, isInFirstPerson: boolean?)
 			end
 		end
 
-		-- tween transparency if the goal is not fully transparent and the subject was not fully transparent last frame
 		if self.lastTransparency and transparency < 1 and self.lastTransparency < 0.95 then
 			local deltaTransparency = transparency - self.lastTransparency
 			local maxDelta = MAX_TWEEN_RATE * dt
@@ -242,7 +236,6 @@ function TransparencyController:Update(dt, isInFirstPerson: boolean?)
 
 		transparency = math.clamp(Util.Round(transparency, 2), 0, 1)
 
-		-- update transparencies
 		if self.transparencyDirty or self.lastTransparency ~= transparency then
 			for child, _ in pairs(self.cachedParts) do
 				if self:IsHeadAccessory(child) then

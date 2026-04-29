@@ -1,14 +1,16 @@
 --[[
-	Módulo de Diálogo: Ferreiro
-	Contém a árvore de falas e escolhas do NPC Ferreiro.
-	Requisitos progressivos: ConheceuGuarda → ConheceuFerreiro → ConheceuAmbos
+    Script: Ferreiro.luau
+    Caminho: src/ReplicatedStorage/Dialogo/Conversas/Profissoes
+    Responsabilidade: Define a arvore de conversa e opcoes do NPC ferreiro.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao concede recompensas nem altera estado do jogador; isso fica nos servicos do servidor.
 ]]
 local DialogoFerreiro = {}
 
 DialogoFerreiro.Dialogos = {
 
 	Inicio = {
-		-- Fala 3: Requer conhecer ambos (Guarda e Ferreiro)
+
 		{
 			IdFala = "VelhoAmigo",
 			FalaNPC = "Ah, meu melhor cliente! Tenho uma encomenda especial para você. Venha ver isto.",
@@ -27,7 +29,7 @@ DialogoFerreiro.Dialogos = {
 				},
 			},
 		},
-		-- Fala 2: Requer conhecer o Guarda, mas NÃO o Ferreiro ainda
+
 		{
 			IdFala = "ConhecidoDoGuarda",
 			FalaNPC = "O guarda me disse que um viajante novo estava na cidade. Deve ser você, não?",
@@ -46,7 +48,7 @@ DialogoFerreiro.Dialogos = {
 				},
 			},
 		},
-		-- Fala 1: Fallback sem requisitos (não conhece o guarda)
+
 		{
 			IdFala = "Desconhecido",
 			FalaNPC = "Hm? Não te conheço. Fale com o guarda primeiro, forasteiro. Ele define quem entra na forja.",

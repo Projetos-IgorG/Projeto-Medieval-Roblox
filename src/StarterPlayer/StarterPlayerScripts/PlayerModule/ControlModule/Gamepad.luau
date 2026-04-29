@@ -1,19 +1,20 @@
 --!nonstrict
+
 --[[
-	Gamepad Character Control - This module handles controlling your avatar using a game console-style controller
-
-	2018 PlayerScripts Update - AllYourBlox
---]]
-
+    Script: Gamepad.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/ControlModule
+    Responsabilidade: Converte entrada de gamepad em movimento do personagem.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, Enable, GetHighestPriorityGamepad, BindContextActions, UnbindContextActions, OnNewGamepadConnected
+]]
 local UserInputService = game:GetService("UserInputService")
 local ContextActionService = game:GetService("ContextActionService")
 
---[[ Constants ]]--
 local ZERO_VECTOR3 = Vector3.new(0,0,0)
 local NONE = Enum.UserInputType.None
 local thumbstickDeadzone = 0.2
 
---[[ The Module ]]--
 local BaseCharacterController = require(script.Parent:WaitForChild("BaseCharacterController"))
 local Gamepad = setmetatable({}, BaseCharacterController)
 Gamepad.__index = Gamepad
@@ -28,7 +29,7 @@ function Gamepad.new(CONTROL_ACTION_PRIORITY)
 	self.leftValue = 0
 	self.rightValue = 0
 
-	self.activeGamepad = NONE	-- Enum.UserInputType.Gamepad1, 2, 3...
+	self.activeGamepad = NONE
 	self.gamepadConnectedConn = nil
 	self.gamepadDisconnectedConn = nil
 	return self
@@ -36,9 +37,7 @@ end
 
 function Gamepad:Enable(enable: boolean): boolean
 	if enable == self.enabled then
-		-- Module is already in the state being requested. True is returned here since the module will be in the state
-		-- expected by the code that follows the Enable() call. This makes more sense than returning false to indicate
-		-- no action was necessary. False indicates failure to be in requested/expected state.
+
 		return true
 	end
 
@@ -55,7 +54,7 @@ function Gamepad:Enable(enable: boolean): boolean
 			self:BindContextActions()
 			self:ConnectGamepadConnectionListeners()
 		else
-			-- No connected gamepads, failure to enable
+
 			return false
 		end
 	else
@@ -68,11 +67,9 @@ function Gamepad:Enable(enable: boolean): boolean
 	return true
 end
 
--- This function selects the lowest number gamepad from the currently-connected gamepad
--- and sets it as the active gamepad
 function Gamepad:GetHighestPriorityGamepad()
 	local connectedGamepads = UserInputService:GetConnectedGamepads()
-	local bestGamepad = NONE -- Note that this value is higher than all valid gamepad values
+	local bestGamepad = NONE
 	for _, gamepad in pairs(connectedGamepads) do
 		if gamepad.Value < bestGamepad.Value then
 			bestGamepad = gamepad
@@ -84,7 +81,7 @@ end
 function Gamepad:BindContextActions()
 
 	if self.activeGamepad == NONE then
-		-- There must be an active gamepad to set up bindings
+
 		return false
 	end
 
@@ -131,25 +128,23 @@ function Gamepad:UnbindContextActions()
 end
 
 function Gamepad:OnNewGamepadConnected()
-	-- A new gamepad has been connected.
+
 	local bestGamepad: Enum.UserInputType = self:GetHighestPriorityGamepad()
 
 	if bestGamepad == self.activeGamepad then
-		-- A new gamepad was connected, but our active gamepad is not changing
+
 		return
 	end
 
 	if bestGamepad == NONE then
-		-- There should be an active gamepad when GamepadConnected fires, so this should not
-		-- normally be hit. If there is no active gamepad, unbind actions but leave
-		-- the module enabled and continue to listen for a new gamepad connection.
+
 		warn("Gamepad:OnNewGamepadConnected found no connected gamepads")
 		self:UnbindContextActions()
 		return
 	end
 
 	if self.activeGamepad ~= NONE then
-		-- Switching from one active gamepad to another
+
 		self:UnbindContextActions()
 	end
 
@@ -172,11 +167,11 @@ function Gamepad:OnCurrentGamepadDisconnected()
 	end
 
 	if bestGamepad == NONE then
-		-- No active gamepad, unbinding actions but leaving gamepad connection listener active
+
 		self:UnbindContextActions()
 		self.activeGamepad = NONE
 	else
-		-- Set new gamepad as active and bind to tool activation
+
 		self.activeGamepad = bestGamepad
 		ContextActionService:BindActivate(self.activeGamepad, Enum.KeyCode.ButtonR2)
 	end

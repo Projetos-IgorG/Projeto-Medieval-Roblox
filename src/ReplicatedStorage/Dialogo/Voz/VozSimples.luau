@@ -1,18 +1,17 @@
 --[[
-	VozSimples ââ‚¬â€ Sistema legado de voz: toca um som de "tick" a cada N letras.
-	Extraído do DialogoClient para modularidade.
+    Script: VozSimples.luau
+    Caminho: src/ReplicatedStorage/Dialogo/Voz
+    Responsabilidade: Fornece uma voz simples baseada em sons curtos para falas de NPC.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: Iniciar, TocarTick, Parar, ObterVelocidade, ObterFrequenciaSom
 ]]
-
 local VozSimples = {}
 
 local Debris = game:GetService("Debris")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Modulos = ReplicatedStorage
 local VozConfig = require(Modulos:WaitForChild("Dialogo"):WaitForChild("Voz"):WaitForChild("ConfigVoz"))
-
--- ==========================================
--- Handle (instância por frase)
--- ==========================================
 
 export type Handle = {
 	TocarTick: (self: Handle) -> (),
@@ -21,9 +20,6 @@ export type Handle = {
 	ObterFrequenciaSom: (self: Handle) -> number,
 }
 
---- Cria um handle de voz simples para uma frase.
---- @param head ââ‚¬â€ Part "Head" do NPC (onde o som será criado)
---- @param tipoVoz ââ‚¬â€ Tipo de voz do NPC (ex: "NeutralMale", "StrongFemale")
 function VozSimples.Iniciar(head: BasePart, tipoVoz: string): Handle
 	local chaveSimples = VozConfig.ResolverSimpleVoice(tipoVoz)
 	local cfg = VozConfig.SimpleVoiceConfigs[chaveSimples]
@@ -41,7 +37,6 @@ function VozSimples.Iniciar(head: BasePart, tipoVoz: string): Handle
 			return
 		end
 
-		-- Variação aleatória do pitch (entre -0.05 e +0.05)
 		local variacaoPitch = (math.random() * 0.1) - 0.05
 
 		local sound = Instance.new("Sound")

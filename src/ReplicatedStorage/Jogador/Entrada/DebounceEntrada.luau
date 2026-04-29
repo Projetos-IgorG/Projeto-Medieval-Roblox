@@ -1,5 +1,11 @@
--- ReplicatedStorage > Modulos > Cliente > Core > InputDebounce.luau
-
+--[[
+    Script: DebounceEntrada.luau
+    Caminho: src/ReplicatedStorage/Jogador/Entrada
+    Responsabilidade: Aplica debounce e janelas de repeticao para inputs do jogador.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: PodeEnviarAcao, EnviarAcaoComDebounce, RemoverDebounce
+]]
 local InputDebounce = {}
 
 local ultimasAcoes = {}

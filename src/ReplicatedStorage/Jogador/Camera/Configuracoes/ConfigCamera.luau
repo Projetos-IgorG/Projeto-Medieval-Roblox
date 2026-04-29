@@ -1,21 +1,14 @@
 --!strict
+
 --[[
-	Nome: Modulo_ConfiguracoesJogador
-	Funcao: Configuracoes centralizadas para camera e jogador.
-	Responsabilidade:
-		- Manter os valores padrao de ShiftLock, FOV, offsets e velocidades.
-		- Expor getters/setters consumidos pelos scripts de camera.
-	Comunicacao: Consumido pelos scripts de camera no cliente.
-	Uso:
-		local ConfigJogador = require(ReplicatedStorage.Shared.Camera.Config)
-		local toggleKey = ConfigJogador.ObterConfiguracao("ToggleKey")
+    Script: ConfigCamera.luau
+    Caminho: src/ReplicatedStorage/Jogador/Camera/Configuracoes
+    Responsabilidade: Centraliza parametros de camera usados pelos sistemas do jogador.
+    Uso: ModuleScript; use require(caminho) para ler as tabelas e valores exportados.
+    Nao faz: Nao executa comportamento sozinho; apenas fornece dados para outros scripts.
+    Funcoes principais: ObterConfiguracao, ObterTodasConfiguracoes, DefinirConfiguracao, ResetarConfiguracoes, ObterTweenInfo, ObterTweenInfoFOV
 ]]
-
 local Modulo_ConfiguracoesJogador = {}
-
--- ==========
--- TIPOS
--- ==========
 
 export type ZoomRange = {
 	Min: number,
@@ -50,10 +43,6 @@ export type ConfiguracaoCamera = {
 	SmoothFactor: number,
 }
 
--- ==========
--- CONFIGURACOES PADRAO
--- ==========
-
 local ConfiguracaoPadrao: ConfiguracaoCamera = {
 	ToggleKey = Enum.KeyCode.LeftControl,
 
@@ -82,15 +71,7 @@ local ConfiguracaoPadrao: ConfiguracaoCamera = {
 	SmoothFactor = 0.3,
 }
 
--- ==========
--- ESTADO INTERNO
--- ==========
-
 local configuracaoAtual: ConfiguracaoCamera = ConfiguracaoPadrao
-
--- ==========
--- FUNCOES PUBLICAS
--- ==========
 
 function Modulo_ConfiguracoesJogador.ObterConfiguracao(nome: string): any
 	return (configuracaoAtual :: any)[nome]

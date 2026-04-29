@@ -1,19 +1,12 @@
 --[[
-    Bootstrap.server.luau
-    
-    Script unificado que prepara o sistema de combate e jogadores:
-    1. Cria RemoteEvents/RemoteFunctions
-    2. Configura pasta Status de cada jogador
-	3. Inicializa maquina de estados e NPC
-	4. Carrega e inicializa todos os servicos
-    
-	Execucao: Este script deve rodar PRIMEIRO na ServerScriptService
+    Script: InicializarServidor.server.luau
+    Caminho: src/ServerScriptService/Inicializacao
+    Responsabilidade: Inicializa servicos centrais do projeto quando o servidor sobe.
+    Uso: Script de servidor; roda automaticamente em src/ServerScriptService/Inicializacao quando a instancia existe no jogo.
+    Nao faz: Nao controla UI local nem le inputs diretamente; recebe sinais ja autorizados pelo fluxo do jogo.
+    Funcoes principais: CriarRemoto, CriarBindable, ConfigurarEquipamentoPasta, ConfigurarStatusPasta, createValue, RemoverAcessoriosNaoHair
 ]]
-
--- ----------------------------------------------------------------------------
--- CONFIGURAÇÃO DE DEBUG
--- ----------------------------------------------------------------------------
-local DEBUG_ENABLED = false -- Altere para true para habilitar prints de debug
+local DEBUG_ENABLED = false
 
 local function DebugPrint(...)
 	if DEBUG_ENABLED then
@@ -26,10 +19,6 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local Players = game:GetService("Players")
 
 DebugPrint("[ConfigIniciar] Iniciando...")
-
--- ----------------------------------------------------------------------------
--- PART 1: CREATE REMOTES AND BINDABLES
--- ----------------------------------------------------------------------------
 
 local function CriarRemoto(pasta, nome, tipo)
 	local existente = pasta:FindFirstChild(nome)
@@ -68,7 +57,6 @@ local function CriarBindable(pasta, nome, tipo)
 	return bindable
 end
 
--- Cria pasta principal de Remotos
 local Remotos = ReplicatedStorage:FindFirstChild("Remotos")
 if not Remotos then
 	Remotos = Instance.new("Folder")
@@ -76,7 +64,6 @@ if not Remotos then
 	Remotos.Parent = ReplicatedStorage
 end
 
--- Cria pasta de Bindables (server-side)
 local Bindables = ReplicatedStorage:FindFirstChild("Bindables")
 if not Bindables then
 	Bindables = Instance.new("Folder")
@@ -95,7 +82,6 @@ CriarRemoto(Remotos, "ArrastarItem", "Event")
 CriarRemoto(Remotos, "EquipamentoAcao", "Event")
 CriarRemoto(Remotos, "DroparTool", "Event")
 
--- Sistema de dialogo
 local SistemaDialogo = ReplicatedStorage:FindFirstChild("Dialogo")
 if SistemaDialogo then
 	local DialogoRemotes = SistemaDialogo:FindFirstChild("DialogoRemotes")
@@ -109,20 +95,14 @@ if SistemaDialogo then
 	CriarRemoto(DialogoRemotes, "RespostaChatIA", "Event")
 end
 
--- BindableEvents: server-side apenas
 CriarBindable(Bindables, "SpawnNPC", "Event")
 
 DebugPrint("[ConfigIniciar] Remotos criados")
-
--- ----------------------------------------------------------------------------
--- PART 2: SET UP THE STATUS FOLDER FOR PLAYERS
--- ----------------------------------------------------------------------------
 
 local function ConfigurarEquipamentoPasta(Character)
 	local equipFolder = Instance.new("Folder")
 	equipFolder.Name = "Equipamento"
 
-	-- Bracos (ObjectValues para RightArm e LeftArm)
 	local bracosFolder = Instance.new("Folder")
 	bracosFolder.Name = "Bracos"
 	bracosFolder.Parent = equipFolder
@@ -135,7 +115,6 @@ local function ConfigurarEquipamentoPasta(Character)
 	leftArm.Name = "LeftArm"
 	leftArm.Parent = bracosFolder
 
-	-- Corpo (ObjectValues para slots de armadura)
 	local corpoFolder = Instance.new("Folder")
 	corpoFolder.Name = "Corpo"
 	corpoFolder.Parent = equipFolder
@@ -146,7 +125,6 @@ local function ConfigurarEquipamentoPasta(Character)
 		slotOV.Parent = corpoFolder
 	end
 
-	-- EquipamentosAtivos (armazena Tools nao selecionaveis: escudos, flechas e armaduras)
 	local equipAtivos = Instance.new("Folder")
 	equipAtivos.Name = "EquipamentosAtivos"
 	equipAtivos.Parent = equipFolder
@@ -169,18 +147,13 @@ local function ConfigurarStatusPasta(Character)
 		return v
 	end
 
-	-- Estados de acao (server-authoritative)
-	-- NOTA: modoAnimacao, estadoMov, ShiftLockOn, AgachadoOn, CorrendoOn agora sao gerenciados
-	-- pelo client na pasta StatusLocal (ver StatusLocal.client.luau)
 	createValue("StringValue", "estadoAcao", "Nenhuma")
 
-	-- Flags de combate (server-authoritative)
 	createValue("BoolValue", "BloqueandoOn", false)
 	createValue("BoolValue", "ProntoAparar", false)
 	createValue("BoolValue", "StunadoOn", false)
 	createValue("BoolValue", "DashOn", false)
 
-	-- Atributos de combate
 	createValue("NumberValue", "Forca", 0)
 	createValue("NumberValue", "CritChance", 0)
 	createValue("NumberValue", "CritMult", 1.5)
@@ -198,17 +171,14 @@ local function RemoverAcessoriosNaoHair(Character)
 	end
 end
 
---- Aplica roupa padrao medieval ao personagem
---- Remove qualquer Clothing generico e garante Shirt/Pants corretos
 local function AplicarRoupaPadrao(Character)
-	-- Remover TODAS as instancias de Clothing (base class), Shirt e Pants existentes
+
 	for _, child in ipairs(Character:GetChildren()) do
 		if child:IsA("Clothing") then
 			child:Destroy()
 		end
 	end
 
-	-- Criar Shirt e Pants do zero com os templates medievais
 	local shirt = Instance.new("Shirt")
 	shirt.ShirtTemplate = "rbxassetid://79449264778033"
 	shirt.Parent = Character
@@ -233,24 +203,12 @@ end)
 DebugPrint(
 	"[ConfigIniciar] Setup de Status configurado (server-only: estadoAcao, BloqueandoOn, ProntoAparar, StunadoOn, DashOn)"
 )
--- ============================================================================
--- DEBUG CONFIGURATION
--- ============================================================================
--- ----------------------------------------------------------------------------
-
--- ----------------------------------------------------------------------------
--- PARTE 4: CARREGAMENTO DE MÓDULOS DE COMBATE
--- ----------------------------------------------------------------------------
 
 local CombateServidor = ServerScriptService:WaitForChild("Combate"):WaitForChild("Servidor")
 local _GerenciadorNPC = require(CombateServidor:WaitForChild("GerenciadorNPCCombate"))
 local _ControladorCombate = require(CombateServidor:WaitForChild("CombateServidor"))
 
 DebugPrint("[Bootstrap] Modulos de combate carregados")
-
--- ----------------------------------------------------------------------------
--- PARTE 5: CARREGAR E INICIAR SERVIÇOS
--- ----------------------------------------------------------------------------
 
 local ServicoDrop = require(ServerScriptService:WaitForChild("Inventario"):WaitForChild("Servidor"):WaitForChild("ServicoSoltarItem"))
 local ModuloServicoArrastar = ServerScriptService:WaitForChild("Interacao"):WaitForChild("Arrastar"):WaitForChild("ArrastarServidor") :: ModuleScript
@@ -260,7 +218,6 @@ local ServicosAmbiente = ServerScriptService:WaitForChild("Mundo"):WaitForChild(
 local ServicoTempoMundo = require(ServicosAmbiente:WaitForChild("ServicoTempoMundo"))
 local ServicoAmbienteMundo = require(ServicosAmbiente:WaitForChild("ServicoAmbienteMundo"))
 
--- Sistema de Equipamento
 local ServicoEquipamento = require(ServerScriptService:WaitForChild("Equipamentos"):WaitForChild("Servidor"):WaitForChild("ServicoEquipamentos"))
 
 ServicoTempoMundo:Iniciar()
@@ -276,10 +233,6 @@ end
 
 DebugPrint("[Bootstrap] Servicos inicializados")
 
--- ----------------------------------------------------------------------------
--- PARTE 6: CRIAR PASTA NPCS
--- ----------------------------------------------------------------------------
-
 local pastaNPCs = workspace:FindFirstChild("NPCs")
 if not pastaNPCs then
 	pastaNPCs = Instance.new("Folder")
@@ -287,10 +240,6 @@ if not pastaNPCs then
 	pastaNPCs.Parent = workspace
 	DebugPrint("[ConfigIniciar] Pasta NPCs criada")
 end
-
--- ----------------------------------------------------------------------------
--- PARTE 7: TEMPLATE NPC BÁSICO E LISTENER SPAWNNPC
--- ----------------------------------------------------------------------------
 
 local function CriarNPCBasico(dados)
 	local posicao = dados.cframe or CFrame.new(0, 5, 0)
@@ -386,10 +335,6 @@ else
 	warn("[ConfigIniciar] BindableEvent SpawnNPC não encontrado!")
 end
 
--- ----------------------------------------------------------------------------
--- PARTE 8: INICIALIZAÇÃO DE JOGADORES (MÁQUINA DE ESTADOS)
--- ----------------------------------------------------------------------------
-
 Players.PlayerAdded:Connect(function(jogador)
 	jogador.CharacterAdded:Connect(function(personagem)
 		task.wait(0.5)
@@ -404,10 +349,6 @@ for _, jogador in ipairs(Players:GetPlayers()) do
 		DebugPrint(string.format("[ConfigIniciar] Jogador existente %s detectado", jogador.Name))
 	end
 end
-
--- ----------------------------------------------------------------------------
--- PARTE 9: LIMPEZA DE WORKSPACE
--- ----------------------------------------------------------------------------
 
 local folderDeletar = workspace:FindFirstChild("Deletar")
 if folderDeletar then

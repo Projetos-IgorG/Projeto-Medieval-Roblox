@@ -1,20 +1,11 @@
 --[[
-	EquipmentController.client.luau
-
-	Controlador client-side do sistema de equipamento.
-	Responsável por:
-	- Interceptar Tool.Activated em Tools de Tipo "Armas" e "Armaduras"
-	- Enviar RemoteEvent EquipamentoAcao para o servidor
-	- Atualizar UI dos slots de equipamento (ArmsEquipment, BodyEquipment)
-	- Desequipar via clique nos slots da UI
-	- Expor funções via ClientBridge: ObterEquipamentoBraco(), ObterCategoriaRightArm()
-
-	NÃO interfere com Tools de Tipo "ArmasEquipadas" (fluxo de combate via EntradaJogador).
+    Script: ControladorEquipamentos.client.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/Equipamentos
+    Responsabilidade: Controla entrada, selecao e feedback local de equipamentos do jogador.
+    Uso: LocalScript; roda automaticamente para o jogador local em src/StarterPlayer/StarterPlayerScripts/Equipamentos.
+    Nao faz: Nao valida autoridade do servidor, nao salva dados persistentes e nao substitui regras server-side.
+    Funcoes principais: ObterEquipamentoBraco, ObterCategoriaRightArm, ObterEquipamentoCorpo, ConectarToolActivated, DesconectarToolActivated, MonitorarCharacter
 ]]
-
--- ----------------------------------------------------------------------------
--- CONFIGURAÇÃO DE DEBUG
--- ----------------------------------------------------------------------------
 local DEBUG_ENABLED = false
 
 local function DebugPrint(...)
@@ -23,69 +14,42 @@ local function DebugPrint(...)
 	end
 end
 
--- ----------------------------------------------------------------------------
--- SERVICES
--- ----------------------------------------------------------------------------
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- Ponte de comunicação entre scripts client-side (substitui _G)
 local ClientBridge =
 	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- ----------------------------------------------------------------------------
--- MÃ“DULOS
--- ----------------------------------------------------------------------------
 local Modulos = ReplicatedStorage
 local ModEquip = require(Modulos:WaitForChild("Equipamentos"):WaitForChild("ValidacaoEquipamentos"))
 
--- ----------------------------------------------------------------------------
--- REMOTE EVENTS
--- ----------------------------------------------------------------------------
 local Remotos = ReplicatedStorage:WaitForChild("Remotos")
 local EquipamentoAcao = Remotos:WaitForChild("EquipamentoAcao")
 
--- ----------------------------------------------------------------------------
--- CONSTANTES
--- ----------------------------------------------------------------------------
-local DEBOUNCE_EQUIPAR = 0.5 -- Mínimo entre cliques de equipar (anti-spam)
-local DEBOUNCE_DESEQUIPAR = 0.5 -- Mínimo entre cliques de desequipar
+local DEBOUNCE_EQUIPAR = 0.5
+local DEBOUNCE_DESEQUIPAR = 0.5
 
--- Cor padrão e highlight para os slots
 local COR_SLOT_VAZIO = Color3.fromRGB(40, 40, 40)
 local COR_SLOT_OCUPADO = Color3.fromRGB(80, 120, 80)
 local COR_SLOT_HIGHLIGHT = Color3.fromRGB(200, 200, 100)
 
--- ----------------------------------------------------------------------------
--- ESTADO LOCAL
--- ----------------------------------------------------------------------------
 local ultimoEquipar = 0
 local ultimoDesequipar = 0
 
--- Conexões de Tool.Activated para Tools interceptados
 local toolConexoes: { [Tool]: { RBXScriptConnection } } = {}
 
--- Referências de UI slots (preenchido em Inicializar)
 local slotsUI: { [string]: ImageButton } = {}
 
--- Imagens originais dos slots (para restaurar quando desequipar)
 local imagensOriginaisSlots: { [string]: string } = {}
 
--- Referências dos ObjectValues no Character.Equipamento
 local equipOVs: { [string]: ObjectValue } = {}
 
--- Conexões de ObjectValue.Changed
 local ovConexoes: { RBXScriptConnection } = {}
 
--- Conexões de character monitoring
 local charConexoes: { RBXScriptConnection } = {}
-
--- ----------------------------------------------------------------------------
--- FUNÇÃ•ES UTILITÁRIAS
--- ----------------------------------------------------------------------------
 
 local EquipmentHelpers = require(ReplicatedStorage:WaitForChild("Equipamentos"):WaitForChild("LeituraDadosEquipamento"))
 
@@ -93,7 +57,6 @@ local LerTipo = EquipmentHelpers.LerTipo
 local LerNome = EquipmentHelpers.LerNome
 local DeveInterceptar = EquipmentHelpers.DeveInterceptar
 
---- Mapa de nomes dos slots na UI para os nomes canônicos do sistema
 local SLOT_UI_MAP = {
 	["1RightArm"] = "RightArm",
 	["2LeftArm"] = "LeftArm",
@@ -103,20 +66,14 @@ local SLOT_UI_MAP = {
 	["4Foot"] = "Foot",
 }
 
---- Mapa inverso: slot canônico â†’ nome na UI
 local SLOT_CANONICO_PARA_UI = {}
 for uiName, canonicoName in pairs(SLOT_UI_MAP) do
 	SLOT_CANONICO_PARA_UI[canonicoName] = uiName
 end
 
--- ----------------------------------------------------------------------------
--- TOOL.ACTIVATED HANDLING
--- ----------------------------------------------------------------------------
-
---- Conecta Tool.Activated para interceptar M1 em Armas/Armaduras
 local function ConectarToolActivated(tool: Tool)
 	if toolConexoes[tool] then
-		return -- Já conectado
+		return
 	end
 
 	local tipo = LerTipo(tool)
@@ -135,10 +92,10 @@ local function ConectarToolActivated(tool: Tool)
 		ultimoEquipar = agora
 
 		if tipo == "Armas" then
-			DebugPrint("[EquipamentoController] Tool.Activated â†’ EquiparArma:", tool.Name)
+			DebugPrint("[EquipamentoController] Tool.Activated -> EquiparArma:", tool.Name)
 			EquipamentoAcao:FireServer("EquiparArma", tool)
 		elseif tipo == "Armaduras" then
-			DebugPrint("[EquipamentoController] Tool.Activated â†’ EquiparArmadura:", tool.Name)
+			DebugPrint("[EquipamentoController] Tool.Activated -> EquiparArmadura:", tool.Name)
 			EquipamentoAcao:FireServer("EquiparArmadura", tool)
 		end
 	end)
@@ -148,7 +105,6 @@ local function ConectarToolActivated(tool: Tool)
 	DebugPrint("[EquipamentoController] Conectado Tool.Activated para:", tool.Name, "Tipo:", tipo)
 end
 
---- Desconecta Tool.Activated de um Tool
 local function DesconectarToolActivated(tool: Tool)
 	local conexoes = toolConexoes[tool]
 	if not conexoes then
@@ -162,20 +118,17 @@ local function DesconectarToolActivated(tool: Tool)
 	DebugPrint("[EquipamentoController] Desconectado Tool.Activated para:", tool.Name)
 end
 
---- Monitora Tools no Character para conectar/desconectar Activated
 local function MonitorarCharacter(character: Model)
-	-- Limpar conexões anteriores do character
+
 	for _, conn in ipairs(charConexoes) do
 		conn:Disconnect()
 	end
 	table.clear(charConexoes)
 
-	-- Limpar conexões de tools anteriores
 	for tool, _ in pairs(toolConexoes) do
 		DesconectarToolActivated(tool)
 	end
 
-	-- Monitor ChildAdded ao Character (quando tool é equipado nas mãos)
 	local addedConn = character.ChildAdded:Connect(function(child)
 		if child:IsA("Tool") and DeveInterceptar(child) then
 			ConectarToolActivated(child)
@@ -183,7 +136,6 @@ local function MonitorarCharacter(character: Model)
 	end)
 	table.insert(charConexoes, addedConn)
 
-	-- Monitor ChildRemoved do Character
 	local removedConn = character.ChildRemoved:Connect(function(child)
 		if child:IsA("Tool") then
 			DesconectarToolActivated(child)
@@ -191,7 +143,6 @@ local function MonitorarCharacter(character: Model)
 	end)
 	table.insert(charConexoes, removedConn)
 
-	-- Conectar tools existentes
 	for _, child in ipairs(character:GetChildren()) do
 		if child:IsA("Tool") and DeveInterceptar(child) then
 			ConectarToolActivated(child)
@@ -199,11 +150,6 @@ local function MonitorarCharacter(character: Model)
 	end
 end
 
--- ----------------------------------------------------------------------------
--- EQUIPMENT UI
--- ----------------------------------------------------------------------------
-
---- Atualiza visual de um slot de UI
 local function AtualizarSlotUI(slotName: string, toolRef: Tool?)
 	local uiName = SLOT_CANONICO_PARA_UI[slotName]
 	if not uiName then
@@ -219,10 +165,9 @@ local function AtualizarSlotUI(slotName: string, toolRef: Tool?)
 	local toolName = slotButton:FindFirstChild("toolName") :: TextLabel
 
 	if toolRef and toolRef.Parent then
-		-- Slot ocupado: mostrar ícone do Tool
+
 		local textureId = toolRef.TextureId
 
-		-- Atualiza a imagem do próprio botão conforme pedido
 		if textureId and textureId ~= "" then
 			slotButton.Image = textureId
 		end
@@ -244,9 +189,9 @@ local function AtualizarSlotUI(slotName: string, toolRef: Tool?)
 
 		slotButton.BackgroundColor3 = COR_SLOT_OCUPADO
 		local nomeExibicao = LerNome(toolRef)
-		DebugPrint("[EquipamentoController] Slot UI atualizado:", slotName, "â†’", nomeExibicao)
+		DebugPrint("[EquipamentoController] Slot UI atualizado:", slotName, "->", nomeExibicao)
 	else
-		-- Slot vazio: limpar e restaurar imagem original
+
 		slotButton.Image = imagensOriginaisSlots[uiName] or ""
 
 		if toolIcon then
@@ -264,7 +209,6 @@ local function AtualizarSlotUI(slotName: string, toolRef: Tool?)
 	end
 end
 
---- Conecta clique nos slots de UI para desequipar
 local function ConectarSlotClick(uiName: string, slotButton: ImageButton)
 	local canonicoName = SLOT_UI_MAP[uiName]
 	if not canonicoName then
@@ -278,7 +222,6 @@ local function ConectarSlotClick(uiName: string, slotButton: ImageButton)
 			return
 		end
 
-		-- Verificar se slot tem item
 		local ov = equipOVs[canonicoName]
 		if not ov or not ov.Value then
 			DebugPrint("[EquipamentoController] Slot vazio, nada para desequipar:", canonicoName)
@@ -288,12 +231,11 @@ local function ConectarSlotClick(uiName: string, slotButton: ImageButton)
 		ultimoDesequipar = agora
 		DebugPrint("[EquipamentoController] Desequipar slot:", canonicoName)
 
-		-- Feedback visual: highlight temporário
 		slotButton.BackgroundColor3 = COR_SLOT_HIGHLIGHT
 		task.delay(0.2, function()
-			-- Só restaura se ainda existe
+
 			if slotButton and slotButton.Parent then
-				-- Verificar se slot ainda está ocupado
+
 				if ov and ov.Value then
 					slotButton.BackgroundColor3 = COR_SLOT_OCUPADO
 				else
@@ -306,16 +248,14 @@ local function ConectarSlotClick(uiName: string, slotButton: ImageButton)
 	end)
 end
 
---- Inicializa conexões com ObjectValues do Equipamento
 local function ConectarEquipamentoOVs(character: Model)
-	-- Limpar conexões anteriores
+
 	for _, conn in ipairs(ovConexoes) do
 		conn:Disconnect()
 	end
 	table.clear(ovConexoes)
 	table.clear(equipOVs)
 
-	-- Esperar Equipamento folder
 	local equipamento = character:WaitForChild("Equipamento", 10)
 	if not equipamento then
 		warn("[EquipamentoController] Equipamento folder não encontrado no Character!")
@@ -325,14 +265,13 @@ local function ConectarEquipamentoOVs(character: Model)
 	local bracos = equipamento:WaitForChild("Bracos", 5)
 	local corpo = equipamento:WaitForChild("Corpo", 5)
 
-	-- Conectar ObjectValues dos Bracos
 	if bracos then
 		for _, ov in ipairs(bracos:GetChildren()) do
 			if ov:IsA("ObjectValue") then
 				equipOVs[ov.Name] = ov
-				-- Atualizar UI com valor atual
+
 				AtualizarSlotUI(ov.Name, ov.Value)
-				-- Escutar mudanças
+
 				local conn = ov:GetPropertyChangedSignal("Value"):Connect(function()
 					AtualizarSlotUI(ov.Name, ov.Value)
 				end)
@@ -341,14 +280,13 @@ local function ConectarEquipamentoOVs(character: Model)
 		end
 	end
 
-	-- Conectar ObjectValues do Corpo
 	if corpo then
 		for _, ov in ipairs(corpo:GetChildren()) do
 			if ov:IsA("ObjectValue") then
 				equipOVs[ov.Name] = ov
-				-- Atualizar UI com valor atual
+
 				AtualizarSlotUI(ov.Name, ov.Value)
-				-- Escutar mudanças
+
 				local conn = ov:GetPropertyChangedSignal("Value"):Connect(function()
 					AtualizarSlotUI(ov.Name, ov.Value)
 				end)
@@ -360,11 +298,6 @@ local function ConectarEquipamentoOVs(character: Model)
 	DebugPrint("[EquipamentoController] ObjectValues do Equipamento conectados")
 end
 
--- ----------------------------------------------------------------------------
--- FUNÇÃ•ES EXPOSTAS VIA CLIENTBRIDGE
--- ----------------------------------------------------------------------------
-
---- Retorna o Tool equipado em um slot de braço
 ClientBridge.ObterEquipamentoBraco = function(slot: string): Tool?
 	local ov = equipOVs[slot]
 	if ov and ov.Value then
@@ -373,7 +306,6 @@ ClientBridge.ObterEquipamentoBraco = function(slot: string): Tool?
 	return nil
 end
 
---- Retorna a Categoria da arma equipada no RightArm
 ClientBridge.ObterCategoriaRightArm = function(): string?
 	local ov = equipOVs["RightArm"]
 	if not ov or not ov.Value then
@@ -382,7 +314,6 @@ ClientBridge.ObterCategoriaRightArm = function(): string?
 	return ModEquip.LerCategoria(ov.Value)
 end
 
---- Retorna o Tool equipado em um slot do corpo
 ClientBridge.ObterEquipamentoCorpo = function(slot: string): Tool?
 	local ov = equipOVs[slot]
 	if ov and ov.Value then
@@ -391,12 +322,8 @@ ClientBridge.ObterEquipamentoCorpo = function(slot: string): Tool?
 	return nil
 end
 
--- ----------------------------------------------------------------------------
--- INICIALIZAÇÃO
--- ----------------------------------------------------------------------------
-
 local function InicializarUI()
-	-- Buscar a EquipmentInventory GUI
+
 	local customInventory = playerGui:WaitForChild("Inventario", 10)
 	if not customInventory then
 		warn("[EquipamentoController] Custom Inventory GUI não encontrada!")
@@ -410,11 +337,9 @@ local function InicializarUI()
 		return
 	end
 
-	-- Buscar seções
 	local armsEquipment = equipmentInventory:FindFirstChild("ArmsEquipment")
 	local bodyEquipment = equipmentInventory:FindFirstChild("BodyEquipment")
 
-	-- Mapear slots de braços
 	if armsEquipment then
 		for _, child in ipairs(armsEquipment:GetChildren()) do
 			if child:IsA("ImageButton") or child:IsA("TextButton") or child:IsA("Frame") then
@@ -422,7 +347,7 @@ local function InicializarUI()
 					slotsUI[child.Name] = child :: ImageButton
 					imagensOriginaisSlots[child.Name] = (child :: ImageButton).Image
 					ConectarSlotClick(child.Name, child :: ImageButton)
-					DebugPrint("[EquipamentoController] Slot UI mapeado:", child.Name, "â†’", SLOT_UI_MAP[child.Name])
+					DebugPrint("[EquipamentoController] Slot UI mapeado:", child.Name, "->", SLOT_UI_MAP[child.Name])
 				end
 			end
 		end
@@ -430,7 +355,6 @@ local function InicializarUI()
 		warn("[EquipamentoController] ArmsEquipment não encontrado!")
 	end
 
-	-- Mapear slots de corpo
 	if bodyEquipment then
 		for _, child in ipairs(bodyEquipment:GetChildren()) do
 			if child:IsA("ImageButton") or child:IsA("TextButton") or child:IsA("Frame") then
@@ -438,7 +362,7 @@ local function InicializarUI()
 					slotsUI[child.Name] = child :: ImageButton
 					imagensOriginaisSlots[child.Name] = (child :: ImageButton).Image
 					ConectarSlotClick(child.Name, child :: ImageButton)
-					DebugPrint("[EquipamentoController] Slot UI mapeado:", child.Name, "â†’", SLOT_UI_MAP[child.Name])
+					DebugPrint("[EquipamentoController] Slot UI mapeado:", child.Name, "->", SLOT_UI_MAP[child.Name])
 				end
 			end
 		end
@@ -456,30 +380,23 @@ end
 local function Inicializar()
 	DebugPrint("[EquipamentoController] Inicializando...")
 
-	-- Inicializar UI
 	InicializarUI()
 
-	-- Monitorar Character atual e futuros
 	local function OnCharacterAdded(character: Model)
 		DebugPrint("[EquipamentoController] Character adicionado:", character.Name)
 
-		-- Monitorar Tools no Character
 		MonitorarCharacter(character)
 
-		-- Conectar ObjectValues do Equipamento
 		ConectarEquipamentoOVs(character)
 	end
 
-	-- Character atual
 	if player.Character then
 		OnCharacterAdded(player.Character)
 	end
 
-	-- Futuros characters (respawn)
 	player.CharacterAdded:Connect(OnCharacterAdded)
 
 	DebugPrint("[EquipamentoController] Inicializado com sucesso!")
 end
 
--- Executar
 Inicializar()

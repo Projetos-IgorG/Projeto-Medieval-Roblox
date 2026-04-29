@@ -1,10 +1,11 @@
--- ServerScriptService/ChatNPCSpawner.server.lua
--- Comandos:
---   /npc
---   /npc <vida> <nome> <modoCombate>
--- Ex.: /npc 50 Lutador UmaMaoEscudo
--- Requisitos: ReplicatedStorage/SpawnNPC (BindableEvent) criado pelo NPC_SimpleAI
-
+--[[
+    Script: CriarNPCChat.server.luau
+    Caminho: src/ServerScriptService/NPCs/Criacao
+    Responsabilidade: Cria NPCs de teste ou conversa e liga componentes de chat/dialogo.
+    Uso: Script de servidor; roda automaticamente em src/ServerScriptService/NPCs/Criacao quando a instancia existe no jogo.
+    Nao faz: Nao controla UI local nem le inputs diretamente; recebe sinais ja autorizados pelo fluxo do jogo.
+    Funcoes principais: canUse, parseAndSpawn, connectPlayer
+]]
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -13,10 +14,9 @@ local SPAWN_BINDABLE_NAME = "SpawnNPC"
 local bindablesFolder = ReplicatedStorage:WaitForChild("Bindables")
 local spawnBindable = bindablesFolder:WaitForChild(SPAWN_BINDABLE_NAME)
 
--- Permissões simples: permitir no Studio ou ao(s) usuário(s) especificado(s)
 local ALLOW_IN_STUDIO = true
 local ALLOWED_USER_IDS = {
-	-- [12345678] = true,
+
 }
 
 local function canUse(plr)
@@ -32,12 +32,11 @@ local function parseAndSpawn(plr, msg)
 	if not canUse(plr) then return end
 
 	local tokens = string.split(msg, " ")
-	-- Defaults
+
 	local vida = 50
 	local nome = "Lutador"
 	local modo = "Punhos"
 
-	-- /npc <vida> <nome> <modo>
 	if tokens[2] and tonumber(tokens[2]) then
 		vida = tonumber(tokens[2]) or vida
 	end
@@ -83,7 +82,6 @@ Players.PlayerRemoving:Connect(function(plr)
 	end
 end)
 
--- Para jogadores já presentes (em reinícios parciais)
 for _, plr in ipairs(Players:GetPlayers()) do
 	connectPlayer(plr)
 end

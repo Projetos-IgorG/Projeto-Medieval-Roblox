@@ -1,21 +1,21 @@
 --!nonstrict
---[[
-	LegacyCamera - Implements legacy controller types: Attach, Fixed, Watch
-	2018 Camera Update - AllYourBlox
---]]
 
+--[[
+    Script: LegacyCamera.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/CameraModule
+    Responsabilidade: Mantem comportamento legado de camera para compatibilidade.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, GetModuleName, SetCameraToSubjectDistance, Update
+]]
 local _ZERO_VECTOR2 = Vector2.new()
 local PITCH_LIMIT = math.rad(80)
 
 local _Util = require(script.Parent:WaitForChild("CameraUtils"))
 local CameraInput = require(script.Parent:WaitForChild("CameraInput"))
 
---[[ Services ]]
---
 local PlayersService = game:GetService("Players")
 
---[[ The Module ]]
---
 local BaseCamera = require(script.Parent:WaitForChild("BaseCamera"))
 local LegacyCamera = setmetatable({}, BaseCamera)
 LegacyCamera.__index = LegacyCamera
@@ -34,14 +34,12 @@ function LegacyCamera:GetModuleName()
 	return "LegacyCamera"
 end
 
---[[ Functions overridden from BaseCamera ]]
---
 function LegacyCamera:SetCameraToSubjectDistance(desiredSubjectDistance)
 	return BaseCamera.SetCameraToSubjectDistance(self, desiredSubjectDistance)
 end
 
 function LegacyCamera:Update(dt: number): (CFrame?, CFrame?)
-	-- Cannot update until cameraType has been set
+
 	if not self.cameraType then
 		return nil, nil
 	end
@@ -64,7 +62,7 @@ function LegacyCamera:Update(dt: number): (CFrame?, CFrame?)
 			local distanceToSubject = self:GetCameraToSubjectDistance()
 			local newLookVector = self:CalculateNewLookVectorFromArg(nil, rotateInput)
 
-			newCameraFocus = camera.Focus -- Fixed camera does not change focus
+			newCameraFocus = camera.Focus
 			newCameraCFrame =
 				CFrame.new(camera.CFrame.Position, camera.CFrame.Position + (distanceToSubject * newLookVector))
 		end
@@ -92,7 +90,7 @@ function LegacyCamera:Update(dt: number): (CFrame?, CFrame?)
 				cameraLook = diffVector.unit
 
 				if self.lastDistanceToSubject and self.lastDistanceToSubject == self:GetCameraToSubjectDistance() then
-					-- Don't clobber the zoom if they zoomed the camera
+
 					local newDistanceToSubject = diffVector.magnitude
 					self:SetCameraToSubjectDistance(newDistanceToSubject)
 				end
@@ -107,7 +105,7 @@ function LegacyCamera:Update(dt: number): (CFrame?, CFrame?)
 			self.lastDistanceToSubject = distanceToSubject
 		end
 	else
-		-- Unsupported type, return current values unchanged
+
 		return camera.CFrame, camera.Focus
 	end
 

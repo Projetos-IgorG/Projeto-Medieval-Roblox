@@ -1,9 +1,13 @@
 --!nonstrict
---------------------------------------------------------------------------------
--- Popper.lua
--- Prevents your camera from clipping through walls.
---------------------------------------------------------------------------------
 
+--[[
+    Script: Popper.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/CameraModule/ZoomController
+    Responsabilidade: Calcula recuo de zoom para impedir colisao da camera com o mundo.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: getTotalTransparency, eraseFromEnd, updateProjection, refreshIgnoreList, playerAdded, characterAdded
+]]
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -16,7 +20,6 @@ local FlagUtil = require(CommonUtils:WaitForChild("FlagUtil"))
 local CameraWrapper = require(CommonUtils:WaitForChild("CameraWrapper"))
 local ConnectionUtil = require(CommonUtils:WaitForChild("ConnectionUtil"))
 
--- Flags
 local FFlagUserRaycastUpdateAPI = FlagUtil.getUserFlag("UserRaycastUpdateAPI")
 local FFlagUserCurrentCameraUpdate = FlagUtil.getUserFlag("UserCurrentCameraUpdate2")
 local FFlagUserPlayerConnectionMemoryLeak = FlagUtil.getUserFlag("UserPlayerConnectionMemoryLeak")
@@ -53,7 +56,6 @@ local function eraseFromEnd(t, toSize)
 	end
 end
 
--- On removing the flag, put this back before the do statement
 local nearPlaneZ, projX, projY
 if FFlagUserCurrentCameraUpdate then
 	do
@@ -161,23 +163,6 @@ do
 	refreshIgnoreList()
 end
 
---------------------------------------------------------------------------------------------
--- Popper uses the level geometry find an upper bound on subject-to-camera distance.
---
--- Hard limits are applied immediately and unconditionally. They are generally caused
--- when level geometry intersects with the near plane (with exceptions, see below).
---
--- Soft limits are only applied under certain conditions.
--- They are caused when level geometry occludes the subject without actually intersecting
--- with the near plane at the target distance.
---
--- Soft limits can be promoted to hard limits and hard limits can be demoted to soft limits.
--- We usually don"t want the latter to happen.
---
--- A soft limit will be promoted to a hard limit if an obstruction
--- lies between the current and target camera positions.
---------------------------------------------------------------------------------------------
-
 local subjectRoot
 local subjectPart
 
@@ -206,11 +191,6 @@ else
 end
 
 local function canOcclude(part)
-	-- Occluders must be:
-	-- 1. Opaque
-	-- 2. Interactable
-	-- 3. Not in the same assembly as the subject
-	-- 4. Not in the camera bypass set
 
 	return getTotalTransparency(part) < 0.25
 		and part.CanCollide
@@ -219,7 +199,6 @@ local function canOcclude(part)
 		and not CameraBypass.has(part)
 end
 
--- Offsets for the volume visibility test
 local SCAN_SAMPLE_OFFSETS = {
 	Vector2.new(0.4, 0.0),
 	Vector2.new(-0.4, 0.0),
@@ -228,11 +207,7 @@ local SCAN_SAMPLE_OFFSETS = {
 	Vector2.new(0.0, 0.2),
 }
 
--- Maximum number of rays that can be cast
 local QUERY_POINT_CAST_LIMIT = 64
-
---------------------------------------------------------------------------------
--- Piercing raycasts
 
 local function getCollisionPoint(origin, dir)
 	if FFlagUserRaycastUpdateAPI then
@@ -273,8 +248,6 @@ local function getCollisionPoint(origin, dir)
 
 	return origin + dir, false
 end
-
---------------------------------------------------------------------------------
 
 local function queryPoint(origin, unitDir, dist, lastPos)
 	debug.profilebegin("queryPoint")
@@ -320,14 +293,14 @@ local function queryPoint(origin, unitDir, dist, lastPos)
 						else false
 
 					if promote then
-						-- Ostensibly a soft limit, but the camera has passed through it in the last frame, so promote to a hard limit.
+
 						hardLimit = lim
 					elseif dist < softLimit then
-						-- Trivial soft limit
+
 						softLimit = lim
 					end
 				else
-					-- Trivial hard limit
+
 					hardLimit = lim
 				end
 			end
@@ -352,7 +325,7 @@ local function queryPoint(origin, unitDir, dist, lastPos)
 			numPierced += 1
 
 			if entryPart then
-				-- forces the current iteration into a hard limit to cap the number of raycasts
+
 				local earlyAbort = numPierced >= QUERY_POINT_CAST_LIMIT
 
 				if canOcclude(entryPart) or earlyAbort then
@@ -371,14 +344,14 @@ local function queryPoint(origin, unitDir, dist, lastPos)
 						end
 
 						if promote then
-							-- Ostensibly a soft limit, but the camera has passed through it in the last frame, so promote to a hard limit.
+
 							hardLimit = lim
 						elseif dist < softLimit then
-							-- Trivial soft limit
+
 							softLimit = lim
 						end
 					else
-						-- Trivial hard limit
+
 						hardLimit = lim
 					end
 				end
@@ -410,7 +383,6 @@ local function queryViewport(focus, dist)
 	local hardBoxLimit = inf
 	local softBoxLimit = inf
 
-	-- Center the viewport on the PoI, sweep points on the edge towards the target, and take the minimum limits
 	for viewX = 0, 1 do
 		local worldX = fX * ((viewX - 0.5) * projX)
 
@@ -444,18 +416,18 @@ local function testPromotion(focus, dist, focusExtrapolation)
 	local fZ = -focus.lookVector
 
 	do
-		-- Dead reckoning the camera rotation and focus
+
 		debug.profilebegin("extrapolate")
 
 		local SAMPLE_DT = 0.0625
 		local SAMPLE_MAX_T = 1.25
 
 		local maxDist = (getCollisionPoint(fP, focusExtrapolation.posVelocity * SAMPLE_MAX_T) - fP).Magnitude
-		-- Metric that decides how many samples to take
+
 		local combinedSpeed = focusExtrapolation.posVelocity.magnitude
 
 		for dt = 0, min(SAMPLE_MAX_T, focusExtrapolation.rotVelocity.magnitude + maxDist / combinedSpeed), SAMPLE_DT do
-			local cfDt = focusExtrapolation.extrapolate(dt) -- Extrapolated CFrame at time dt
+			local cfDt = focusExtrapolation.extrapolate(dt)
 
 			if queryPoint(cfDt.p, -cfDt.lookVector, dist) >= dist then
 				return false
@@ -466,7 +438,7 @@ local function testPromotion(focus, dist, focusExtrapolation)
 	end
 
 	do
-		-- Test screen-space offsets from the focus for the presence of soft limits
+
 		debug.profilebegin("testOffsets")
 
 		for _, offset in ipairs(SCAN_SAMPLE_OFFSETS) do

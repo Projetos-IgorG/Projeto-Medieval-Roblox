@@ -1,4 +1,13 @@
 --!nonstrict
+
+--[[
+    Script: ClickToMoveDisplay.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/ControlModule
+    Responsabilidade: Mostra indicadores visuais do sistema ClickToMove.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: Destroy, NewDisplayModel, new, CreateTween, TweenInFrom, Hide
+]]
 local ClickToMoveDisplay = {}
 
 local FAILURE_ANIMATION_ID = "rbxassetid://2874840706"
@@ -95,7 +104,6 @@ local function CreateWaypointTemplates()
 	EndWaypointImageLabel.BackgroundTransparency = 1
 	EndWaypointImageLabel.Size = UDim2.fromScale(1, 1)
 	EndWaypointImageLabel.Parent = EndWaypointBillboard
-
 
 	local FailureWaypointTemplate = Instance.new("Part")
 	FailureWaypointTemplate.Size = Vector3.new(2, 2, 2)
@@ -290,8 +298,8 @@ function FailureWaypoint:NewDisplayModel(position)
 end
 
 function FailureWaypoint:RunFailureTween()
-	task.wait(FAILURE_TWEEN_LENGTH) -- Delay one tween length betfore starting tweening
-	-- Tween out from center
+	task.wait(FAILURE_TWEEN_LENGTH)
+
 	local tweenInfo = TweenInfo.new(FAILURE_TWEEN_LENGTH/2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
 	local tweenLeft = TweenService:Create(self.DisplayModel.FailureWaypointBillboard, tweenInfo,
 		{ SizeOffset = FAIL_WAYPOINT_SIZE_OFFSET_LEFT })
@@ -303,14 +311,12 @@ function FailureWaypoint:RunFailureTween()
 
 	tweenLeft.Completed:wait()
 
-	-- Tween back and forth
 	tweenInfo = TweenInfo.new(FAILURE_TWEEN_LENGTH, Enum.EasingStyle.Sine, Enum.EasingDirection.Out,
 		FAILURE_TWEEN_COUNT - 1, true)
 	local tweenSideToSide = TweenService:Create(self.DisplayModel.FailureWaypointBillboard, tweenInfo,
 		{ SizeOffset = FAIL_WAYPOINT_SIZE_OFFSET_RIGHT})
 	tweenSideToSide:Play()
 
-	-- Tween flash dark and roate left and right
 	tweenInfo = TweenInfo.new(FAILURE_TWEEN_LENGTH, Enum.EasingStyle.Sine, Enum.EasingDirection.Out,
 		FAILURE_TWEEN_COUNT - 1, true)
 	local tweenFlash = TweenService:Create(self.DisplayModel.FailureWaypointBillboard.Frame.ImageLabel, tweenInfo,
@@ -323,7 +329,6 @@ function FailureWaypoint:RunFailureTween()
 
 	tweenSideToSide.Completed:wait()
 
-	-- Tween back to center
 	tweenInfo = TweenInfo.new(FAILURE_TWEEN_LENGTH/2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
 	local tweenCenter = TweenService:Create(self.DisplayModel.FailureWaypointBillboard, tweenInfo,
 		{ SizeOffset = FAIL_WAYPOINT_SIZE_OFFSET_CENTER })
@@ -335,7 +340,7 @@ function FailureWaypoint:RunFailureTween()
 
 	tweenCenter.Completed:wait()
 
-	task.wait(FAILURE_TWEEN_LENGTH) -- Delay one tween length betfore removing
+	task.wait(FAILURE_TWEEN_LENGTH)
 end
 
 function FailureWaypoint.new(position)
@@ -404,13 +409,13 @@ local function getTrailDotScale(distanceToCamera: number, defaultSize: Vector2)
 end
 
 local createPathCount = 0
--- originalEndWaypoint is optional, causes the waypoint to tween from that position.
+
 function ClickToMoveDisplay.CreatePathDisplay(wayPoints, originalEndWaypoint)
 	createPathCount = createPathCount + 1
 	local trailDots = createTrailDots(wayPoints, originalEndWaypoint)
 
 	local function removePathBeforePoint(wayPointNumber)
-		-- kill all trailDots before and at wayPointNumber
+
 		for i = #trailDots, 1, -1 do
 			local trailDot = trailDots[i]
 			if trailDot.ClosestWayPoint <= wayPointNumber then

@@ -1,3 +1,10 @@
+--[[
+    Script: TiposAmbiente.luau
+    Caminho: src/ReplicatedStorage/Mundo/Ambiente
+    Responsabilidade: Centraliza tipos e estruturas de dados do sistema de ambiente.
+    Uso: ModuleScript; use require(caminho) para ler as tabelas e valores exportados.
+    Nao faz: Nao executa comportamento sozinho; apenas fornece dados para outros scripts.
+]]
 local TiposAmbiente = {}
 
 export type Propriedades = { [string]: any }

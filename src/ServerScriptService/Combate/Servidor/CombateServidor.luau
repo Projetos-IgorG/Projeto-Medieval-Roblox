@@ -1,24 +1,14 @@
---[[
-    ControladorCombate.module.lua
-    
-	Modulo do servidor responsavel por:
-	- Receber acoes via RemoteEvent
-    - Validar via MaquinaDeEstados
-	- Aplicar animacoes (notificar clientes)
-    - Criar hitboxes usando Modulo_Hitbox
-    - Calcular e aplicar dano usando Modulo_Dano
-    - Aplicar knockback usando Modulo_Knockback
-    - Gerenciar stun e parry
-    
-	Autoridade: O servidor e a autoridade final de todos os estados.
-]]
-
 --!strict
 
--- ----------------------------------------------------------------------------
--- DEBUG CONFIGURATION
--- ----------------------------------------------------------------------------
-local DEBUG_ENABLED = false -- Altere para true para habilitar prints de debug
+--[[
+    Script: CombateServidor.luau
+    Caminho: src/ServerScriptService/Combate/Servidor
+    Responsabilidade: Autoriza, valida e aplica acoes de combate recebidas dos clientes.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: ObterMaquina, RemoverMaquina, _SincronizarEstado, _TocarAnimacao, _AplicarImpulsoAtacante, _AplicarKnockback
+]]
+local DEBUG_ENABLED = false
 
 local function DebugPrint(...)
 	if DEBUG_ENABLED then
@@ -40,24 +30,14 @@ local MaquinaDeEstados = require(ReplicatedStorage:WaitForChild("Jogador"):WaitF
 
 local ControladorCombate = {}
 
--- ----------------------------------------------------------------------------
--- CACHE DE ENTIDADES (PLAYERS E NPCS)
--- ----------------------------------------------------------------------------
-
--- Armazena instancias de MaquinaDeEstados por entidade
 local maquinasDeEstado = {}
 
--- RemoteEvents
 local Remotos = ReplicatedStorage:WaitForChild("Remotos")
 local TentarAcao = Remotos:WaitForChild("TentarAcao")
 local MudarShiftLock = Remotos:WaitForChild("MudarShiftLock")
 local SincronizarEstado = Remotos:WaitForChild("SincronizarEstado")
 local TocarAnimacao = Remotos:WaitForChild("TocarAnimacao")
 local EquipAnimacaoTerminou = Remotos:WaitForChild("EquipAnimacaoTerminou")
-
--- ----------------------------------------------------------------------------
--- FUNCOES AUXILIARES LOCAIS
--- ----------------------------------------------------------------------------
 
 local function DeterminarTipoAtaque(indice: number): string
 	if indice >= 4 then
@@ -70,17 +50,11 @@ local function EhGolpeFinal(indice: number): boolean
 	return indice >= 4
 end
 
--- Mapeamento de mao (Right/Left) para slot de equipamento
 local MAO_PARA_SLOT = {
 	Right = "RightArm",
 	Left = "LeftArm",
 }
 
---- Obtem a Tool equipada para uma determinada mao
---- Busca via ObjectValue na pasta Equipamento > Bracos
----@param character Model
----@param mao string "Right" ou "Left"
----@return Tool?
 local function ObterToolPorMao(character: Model, mao: string): Tool?
 	local slotName = MAO_PARA_SLOT[mao]
 	if not slotName then
@@ -102,7 +76,6 @@ local function ObterToolPorMao(character: Model, mao: string): Tool?
 		return slotOV.Value :: Tool
 	end
 
-	-- Fallback: para Punhos, a Tool está diretamente no character
 	local toolNaMao = character:FindFirstChildOfClass("Tool")
 	if toolNaMao then
 		return toolNaMao
@@ -111,18 +84,10 @@ local function ObterToolPorMao(character: Model, mao: string): Tool?
 	return nil
 end
 
--- ----------------------------------------------------------------------------
--- FUNCOES DO MODULO
--- ----------------------------------------------------------------------------
-
---- Obtem ou cria maquina de estados para entidade
----@param entidade Model
----@return table MaquinaDeEstados
 function ControladorCombate.ObterMaquina(entidade: Model)
 	if not maquinasDeEstado[entidade] then
 		maquinasDeEstado[entidade] = MaquinaDeEstados.Novo(entidade)
 
-		-- Configurar callbacks para sincronizar estado
 		maquinasDeEstado[entidade]:AoMudarEstadoAcao(function(_novo, _anterior)
 			ControladorCombate._SincronizarEstado(entidade)
 		end)
@@ -139,12 +104,10 @@ function ControladorCombate.ObterMaquina(entidade: Model)
 	return maquinasDeEstado[entidade]
 end
 
---- Remove máquina de estados quando entidade é destruída
 function ControladorCombate.RemoverMaquina(entidade: Model)
 	maquinasDeEstado[entidade] = nil
 end
 
---- Sincroniza estado com todos os clientes e atualiza pasta Status
 function ControladorCombate._SincronizarEstado(entidade: Model)
 	local maquina = maquinasDeEstado[entidade]
 	if not maquina then
@@ -153,9 +116,6 @@ function ControladorCombate._SincronizarEstado(entidade: Model)
 
 	local dados = maquina:ObterDados()
 
-	-- Atualiza pasta Status no character (apenas atributos server-authoritative)
-	-- NOTA: modoAnimacao, estadoMov, AgachadoOn, CorrendoOn agora são gerenciados
-	-- pelo client na pasta StatusLocal
 	local status = entidade:FindFirstChild("Status")
 	if status then
 		local function atualizarValor(nome, valor)
@@ -168,7 +128,6 @@ function ControladorCombate._SincronizarEstado(entidade: Model)
 			end
 		end
 
-		-- Server-authoritative: apenas estadoAcao e flags de combate
 		atualizarValor("estadoAcao", dados.estadoAcao)
 		atualizarValor("BloqueandoOn", dados.bloqueando)
 		atualizarValor("ProntoAparar", dados.prontoParaAparar)
@@ -176,7 +135,6 @@ function ControladorCombate._SincronizarEstado(entidade: Model)
 		atualizarValor("DashOn", dados.dashando)
 	end
 
-	-- Debug log
 	DebugPrint(
 		string.format(
 			"[Estado] %s: Mov=%s, Acao=%s, Modo=%s",
@@ -187,33 +145,28 @@ function ControladorCombate._SincronizarEstado(entidade: Model)
 		)
 	)
 
-	-- NOTA: WalkSpeed de corrida agora é controlado 100% pelo cliente para evitar lag
-	-- O servidor so ajusta WalkSpeed durante acoes de combate especificas
-	-- Quando estadoAcao == "Nenhuma", o cliente controla a velocidade baseado em isShiftHeld
 	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		if dados.estadoAcao == "Nenhuma" then
-			-- Se cliente pediu para correr durante a ação, mantém a flag
-			-- mas NÃO ajusta velocidade - o cliente faz isso localmente
+
 			if maquina.dados.correndoIntent then
 				maquina.dados.correndoIntent = nil
 				maquina.dados.correndo = true
-				-- NÃO ajusta WalkSpeed aqui - cliente controla corrida
+
 			end
-			-- Para agachado/bloqueando, ainda ajustamos pois são estados do servidor
+
 			if dados.agachado then
 				humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAgachando") or 9
 			elseif dados.bloqueando then
 				humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeBloqueando") or 6
 			end
-			-- Corrida normal é controlada pelo cliente
+
 		end
 	end
 
 	SincronizarEstado:FireAllClients(entidade, dados)
 end
 
---- Notifica cliente(s) para tocar animação
 function ControladorCombate._TocarAnimacao(entidade: Model, nomeAnimacao: string, loop: boolean?, velocidade: number?)
 	local maquina = maquinasDeEstado[entidade]
 	if not maquina then
@@ -228,7 +181,6 @@ function ControladorCombate._TocarAnimacao(entidade: Model, nomeAnimacao: string
 	end
 end
 
---- Aplica impulso ao atacante
 function ControladorCombate._AplicarImpulsoAtacante(entidade: Model, tipoAtaque: string)
 	local maquina = maquinasDeEstado[entidade]
 	if not maquina then
@@ -243,7 +195,6 @@ function ControladorCombate._AplicarImpulsoAtacante(entidade: Model, tipoAtaque:
 	end
 end
 
---- Aplica knockback físico baseado na direção que o atacante está virado
 function ControladorCombate._AplicarKnockback(alvo: Model, atacante: Model, tipoAtaque: string)
 	local maquina = maquinasDeEstado[atacante]
 	if not maquina then
@@ -263,24 +214,18 @@ function ControladorCombate._AplicarKnockback(alvo: Model, atacante: Model, tipo
 			)
 		)
 	else
-		-- Knockback pode falhar se o modo não permitir, o que é normal (ex: ferramenta)
+
 		if resultado.erro and not resultado.erro:match("não permite") then
 			DebugPrint("[Combate] Falha ao aplicar knockback: " .. tostring(resultado.erro))
 		end
 	end
 end
 
---- [DEPRECATED] Cria hitbox e detecta colisões via GetPartBoundsInBox
---- Mantido para referência. O novo sistema usa ShapecastHitbox no cliente.
---- Hits são reportados via "HitboxAcerto".
----@return table Lista de entidades atingidas
 function ControladorCombate._CriarHitbox(_atacante: Model, _tipoAtaque: string, _cframeCliente: CFrame?)
 	warn("[ControladorCombate] _CriarHitbox está deprecado. Use ShapecastHitbox no cliente.")
 	return {}
 end
 
---- Processa hit em uma entidade
----@param danoOverride number? Se fornecido, usa este valor como dano base (ex: metade para dual-wield)
 function ControladorCombate._ProcessarHit(atacante: Model, alvo: Model, tipoAtaque: string, danoOverride: number?)
 	local maquinaAtacante = maquinasDeEstado[atacante]
 	local maquinaAlvo = ControladorCombate.ObterMaquina(alvo)
@@ -289,46 +234,40 @@ function ControladorCombate._ProcessarHit(atacante: Model, alvo: Model, tipoAtaq
 		return
 	end
 
-	-- Verifica parry
 	if maquinaAlvo:EstaProntoParaAparar() and maquinaAlvo:EstaBloqueando() then
-		-- PARRY!
+
 		local tempoStun = Modulo_Configuracoes.ObterConfiguracao("TempoStunAparado") or 0.7
 
-		-- Toca efeito de parry
 		ControladorCombate._TocarAnimacao(alvo, "Aparar")
 		ControladorCombate._TocarAnimacao(atacante, "Aparado")
 
-		-- Aplica stun no atacante
 		maquinaAtacante:EntrarStun(tempoStun)
 
 		DebugPrint(string.format("[Combate] %s APAROU ataque de %s!", alvo.Name, atacante.Name))
 		return
 	end
 
-	-- Verifica bloqueio
 	if maquinaAlvo:EstaBloqueando() then
-		-- BLOQUEIO!
-		-- Verifica se ataque pesado quebra defesa
+
 		if tipoAtaque == "AtaquePesado" or tipoAtaque == "AtaqueLeveFinal" then
 			local tempoStun = Modulo_Configuracoes.ObterConfiguracao("TempoStunPesado") or 0.6
 
 			maquinaAlvo:QuebrarDefesa(tempoStun)
 			ControladorCombate._TocarAnimacao(alvo, "DefesaQuebrada")
-			ControladorCombate._TocarAnimacao(atacante, "AtaquePesado") -- Reinicia/continua anim
+			ControladorCombate._TocarAnimacao(atacante, "AtaquePesado")
 
 			DebugPrint(string.format("[Combate] %s teve a defesa QUEBRADA por %s!", alvo.Name, atacante.Name))
 		else
-			-- Bloqueio normal
+
 			local _tempoBlock = Modulo_Configuracoes.ObterConfiguracao("TempoStunLeve") or 0.3
 			DebugPrint(string.format("[Combate] %s bloqueou ataque de %s", alvo.Name, atacante.Name))
 			return
 		end
 	end
 
-	-- Aplica dano
 	local resultado
 	if danoOverride then
-		-- Usa dano explicito (ex: dual-wield, cada mao aplica metade)
+
 		resultado = Modulo_Dano.AplicarDanoComValor(atacante, alvo, tipoAtaque, danoOverride)
 	else
 		local characterAtacante = atacante
@@ -344,7 +283,6 @@ function ControladorCombate._ProcessarHit(atacante: Model, alvo: Model, tipoAtaq
 		local danoAplicado = resultado.danoAplicado or 0
 		DebugPrint(string.format("[Combate] Dano aplicado: %.1f em %s", danoAplicado, alvo.Name))
 
-		-- Stun no alvo
 		local tempoStun
 		if tipoAtaque == "AtaquePesado" then
 			tempoStun = Modulo_Configuracoes.ObterConfiguracao("TempoStunPesado")
@@ -355,25 +293,19 @@ function ControladorCombate._ProcessarHit(atacante: Model, alvo: Model, tipoAtaq
 		maquinaAlvo:EntrarStun(tempoStun or 0.3)
 		ControladorCombate._TocarAnimacao(alvo, "Stunado")
 
-		-- Knockback
 		ControladorCombate._AplicarKnockback(alvo, atacante, tipoAtaque)
 	else
 		DebugPrint("[Combate] Falha ao aplicar dano: " .. tostring(resultado.erro))
 	end
 end
 
--- ----------------------------------------------------------------------------
--- PROCESSADORES DE AÇÃO
--- ----------------------------------------------------------------------------
-
---- Processa ação de ataque leve em pé
 function ControladorCombate.ProcessarAtacarLeveEmPe(entidade: Model): (boolean, string?)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
 	local sucesso, tipoAtaque, motivo = maquina:TenteAtacarLeveEmPe()
 
 	if not sucesso then
-		-- Se motivo é "ComboContinuado", foi um input válido durante janela
+
 		if motivo == "ComboContinuado" then
 			DebugPrint(string.format("[Combate] %s: Combo input registrado", entidade.Name))
 			return true, nil
@@ -383,17 +315,13 @@ function ControladorCombate.ProcessarAtacarLeveEmPe(entidade: Model): (boolean, 
 		return false, motivo
 	end
 
-	-- Só toca animação se foi um novo ataque (não continuação de combo)
 	if tipoAtaque then
 		DebugPrint(string.format("[Combate] %s: AtacarLeveEmPe OK - tipo=%s", entidade.Name, tipoAtaque))
 
-		-- Toca animação (cliente configura marcadores)
 		ControladorCombate._TocarAnimacao(entidade, tipoAtaque)
 
-		-- Aplica impulso ao atacante
 		ControladorCombate._AplicarImpulsoAtacante(entidade, tipoAtaque)
 
-		-- Ao atacar, aplica velocidade de ataque baseada na velocidade de defesa (X + X/2)
 		local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 		if humanoid then
 			local velBloq = Modulo_Configuracoes.ObterConfiguracao("VelocidadeBloqueando") or 6
@@ -405,41 +333,24 @@ function ControladorCombate.ProcessarAtacarLeveEmPe(entidade: Model): (boolean, 
 	return true, tipoAtaque
 end
 
--- ----------------------------------------------------------------------------
--- PROCESSADORES DE COMBO POR MARCADORES
--- ----------------------------------------------------------------------------
-
---- Processa hitbox de combo (chamado pelo cliente via marcador de ataque)
---- O servidor não cria mais hitboxes ââ‚¬â€ o cliente faz raycasting e envia hits via HitboxAcerto.
---- Este processador apenas valida estado, avança combo e aplica impulso.
---- @param entidade Model Personagem atacante
---- @param dados any {indice: number, tipoMarcador: string?, cframe: CFrame?}
 function ControladorCombate.ProcessarComboHitbox(entidade: Model, dados: any): (boolean, string?)
 	local indiceGolpe = typeof(dados) == "table" and dados.indice or (tonumber(dados) or 0)
 
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
-	-- Verifica se ainda está atacando
 	if maquina:ObterEstadoAcao() ~= "AtacandoLeve" then
 		DebugPrint(string.format("[Combate] %s: ComboHitbox ignorado - não está atacando", entidade.Name))
 		return false, "NaoAtacando"
 	end
 
-	-- Determina o tipo de ataque baseado no índice
 	local tipoAtaque = DeterminarTipoAtaque(indiceGolpe)
 
 	DebugPrint(string.format("[Combate] %s: ComboHitbox golpe %d - tipo=%s", entidade.Name, indiceGolpe, tipoAtaque))
 
-	-- Avança o índice do combo na máquina de estados
 	maquina:AvancarGolpeCombo(indiceGolpe)
 
-	-- Aplica impulso ao atacante
 	ControladorCombate._AplicarImpulsoAtacante(entidade, tipoAtaque)
 
-	-- Hitbox é agora gerenciada pelo cliente (ShapecastHitbox)
-	-- Hits serão reportados via "HitboxAcerto"
-
-	-- Se foi o golpe final, agenda completar ação
 	if EhGolpeFinal(indiceGolpe) then
 		local tempoFinal = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelamentoComboFinal") or 0.6
 		task.delay(tempoFinal, function()
@@ -453,18 +364,13 @@ function ControladorCombate.ProcessarComboHitbox(entidade: Model, dados: any): (
 	return true, tipoAtaque
 end
 
---- Processa notificação de combo continuado
---- @param entidade Model Personagem atacante
---- @param proximoIndice number Índice do próximo golpe
 function ControladorCombate.ProcessarComboContinuado(entidade: Model, proximoIndice: number): (boolean, string?)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
-	-- Verifica se ainda está atacando
 	if maquina:ObterEstadoAcao() ~= "AtacandoLeve" then
 		return false, "NaoAtacando"
 	end
 
-	-- Ativa janela para o próximo golpe na máquina de estados
 	maquina:DesativarJanelaCombo()
 
 	DebugPrint(string.format("[Combate] %s: Combo continuado para golpe %d", entidade.Name, proximoIndice))
@@ -472,12 +378,9 @@ function ControladorCombate.ProcessarComboContinuado(entidade: Model, proximoInd
 	return true, nil
 end
 
---- Processa notificação de combo terminado
---- @param entidade Model Personagem atacante
 function ControladorCombate.ProcessarComboTerminou(entidade: Model)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
-	-- Completa a ação se ainda está atacando
 	if maquina:ObterEstadoAcao() == "AtacandoLeve" then
 		maquina:CompletarAcao()
 		ControladorCombate._SincronizarEstado(entidade)
@@ -488,17 +391,12 @@ function ControladorCombate.ProcessarComboTerminou(entidade: Model)
 	return true, nil
 end
 
---- Processa notificação de early cancel do combo final
---- Muda o estado para Normal antes da animação terminar completamente
---- @param entidade Model Personagem atacante
 function ControladorCombate.ProcessarComboEarlyCancel(entidade: Model)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
-	-- Completa a ação se ainda está atacando
 	if maquina:ObterEstadoAcao() == "AtacandoLeve" then
 		maquina:CompletarAcao()
 
-		-- Resetar velocidade para normal
 		local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 		if humanoid then
 			humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAndando") or 14
@@ -512,18 +410,13 @@ function ControladorCombate.ProcessarComboEarlyCancel(entidade: Model)
 	return true, nil
 end
 
---- Processa notificação de early cancel do ataque pesado
---- Muda o estado para Normal antes da animação terminar completamente
---- @param entidade Model Personagem atacante
 function ControladorCombate.ProcessarHeavyAttackEarlyCancel(entidade: Model)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
-	-- Completa a ação se ainda está em ataque pesado (SoltandoPesado ou AtaquePesado)
 	local estadoAcao = maquina:ObterEstadoAcao()
 	if estadoAcao == "SoltandoPesado" or estadoAcao == "AtaquePesado" then
 		maquina:CompletarAcao()
 
-		-- Resetar velocidade para normal
 		local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 		if humanoid then
 			humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAndando") or 14
@@ -537,21 +430,15 @@ function ControladorCombate.ProcessarHeavyAttackEarlyCancel(entidade: Model)
 	return true, nil
 end
 
---- Processa notificação de early cancel do Dash
---- Permite que o servidor marque o dash como terminado antes da animação cliente
---- @param entidade Model Personagem
 function ControladorCombate.ProcessarDashEarlyCancel(entidade: Model)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
 	if maquina:ObterEstadoAcao() == MaquinaDeEstados.EstadoAcao.Dashando then
-		-- Completa o dash no servidor
+
 		maquina:CompletarDash()
 
-		-- NÃO ajusta WalkSpeed aqui ââ‚¬â€ corrida é 100% client-side.
-		-- O cliente já restaura velocidade no timer de early cancel.
 		maquina.dados.correndoIntent = nil
 
-		-- Atualiza status DashOn
 		local status = entidade:FindFirstChild("Status")
 		if status then
 			local dashOn = status:FindFirstChild("DashOn")
@@ -568,16 +455,11 @@ function ControladorCombate.ProcessarDashEarlyCancel(entidade: Model)
 	return true, nil
 end
 
---- Processa cancelamento de ataque por defesa
---- Chamado quando o jogador inicia bloqueio durante a janela de cancelamento de um ataque
---- @param entidade Model Personagem atacante
---- @param tipoAtaque string Tipo do ataque cancelado ("AtaqueLeve" ou "CarregandoPesado")
 function ControladorCombate.ProcessarCancelarAtaquePorDefesa(entidade: Model, tipoAtaque: string)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
 	local estadoAcao = maquina:ObterEstadoAcao()
 
-	-- Verifica se está em um estado válido para cancelar
 	local podeCancel = (tipoAtaque == "AtaqueLeve" and estadoAcao == "AtacandoLeve")
 		or (tipoAtaque == "CarregandoPesado"
 			and (estadoAcao == "CarregandoPesado" or estadoAcao == "SoltandoPesado" or estadoAcao == "AtaquePesado"))
@@ -585,7 +467,6 @@ function ControladorCombate.ProcessarCancelarAtaquePorDefesa(entidade: Model, ti
 	if podeCancel then
 		maquina:CompletarAcao()
 
-		-- Resetar velocidade para normal
 		local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 		if humanoid then
 			humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAndando") or 14
@@ -599,7 +480,6 @@ function ControladorCombate.ProcessarCancelarAtaquePorDefesa(entidade: Model, ti
 	return true, nil
 end
 
---- Processa ação de ataque leve agachado
 function ControladorCombate.ProcessarAtacarLeveAgachado(entidade: Model)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
@@ -612,20 +492,16 @@ function ControladorCombate.ProcessarAtacarLeveAgachado(entidade: Model)
 	ControladorCombate._TocarAnimacao(entidade, "AtaqueLeveAgachado")
 	ControladorCombate._AplicarImpulsoAtacante(entidade, "AtaqueLeve")
 
-	-- Hitbox agora é gerenciada pelo cliente (ShapecastHitbox)
-	-- Hits serão reportados via "HitboxAcerto"
-
 	return true, nil
 end
 
---- Processa carregar ataque pesado
 function ControladorCombate.ProcessarCarregarPesado(entidade: Model)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
 	local sucesso, motivo = maquina:TenteCarregarPesado()
 
 	if not sucesso then
-		-- Notifica jogador se a ação foi rejeitada (ex: Cooldown)
+
 		local player = Players:GetPlayerFromCharacter(entidade)
 		if player then
 			local rem = ReplicatedStorage:FindFirstChild("Remotos")
@@ -636,28 +512,25 @@ function ControladorCombate.ProcessarCarregarPesado(entidade: Model)
 		return false, motivo
 	end
 
-	-- Ao carregar, aplica velocidade de ataque (X + X/2)
 	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		local velBloq = Modulo_Configuracoes.ObterConfiguracao("VelocidadeBloqueando") or 6
 		humanoid.WalkSpeed = velBloq * 1.5
 	end
 
-	-- Usa velocidade configurável para o carregamento
 	local velocidadeCarregar = Modulo_Configuracoes.ObterConfiguracao("VelocidadeCarregandoPesado") or 1.1
 	ControladorCombate._TocarAnimacao(entidade, "AtaquePesado", false, velocidadeCarregar)
 
 	return true, nil
 end
 
---- Processa soltar ataque pesado
 function ControladorCombate.ProcessarSoltarPesado(entidade: Model)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
 	local sucesso, motivo = maquina:TenteSoltarPesado()
 
 	if not sucesso then
-		-- Notifica jogador se a ação foi rejeitada (ex: Cooldown)
+
 		local player = Players:GetPlayerFromCharacter(entidade)
 		if player then
 			local rem = ReplicatedStorage:FindFirstChild("Remotos")
@@ -668,33 +541,22 @@ function ControladorCombate.ProcessarSoltarPesado(entidade: Model)
 		return false, motivo
 	end
 
-	-- Ao soltar, aplica velocidade de ataque (X + X/2)
 	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		local velBloq = Modulo_Configuracoes.ObterConfiguracao("VelocidadeBloqueando") or 6
 		humanoid.WalkSpeed = velBloq * 1.5
 	end
 
-	-- NÃO envia nova animação - o cliente já está tocando e vai ajustar a velocidade
-	-- A animação continua de onde parou, apenas com velocidade diferente
 	ControladorCombate._AplicarImpulsoAtacante(entidade, "AtaquePesado")
 
-	-- Sincroniza estado para notificar cliente que mudou para SoltandoPesado
 	ControladorCombate._SincronizarEstado(entidade)
-
-	-- Hitbox será criada pelo marcador HeavyAttack na animação
-	-- O cliente notifica o servidor via TentarAcao quando o marcador é atingido
 
 	return true, nil
 end
 
---- Processa hitbox do ataque pesado (chamado pelo cliente quando o marcador HeavyAttack é atingido)
---- Transiciona de SoltandoPesado para AtaquePesado
---- Hitbox é gerenciada pelo cliente via ShapecastHitbox; hits chegam via HitboxAcerto
 function ControladorCombate.ProcessarHeavyAttackHitbox(entidade: Model, _dados: any?): (boolean, string?)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
-	-- Verifica se está no estado correto (SoltandoPesado - M1 foi solto, mas ataque ainda não aconteceu)
 	if maquina.dados.estadoAcao ~= "SoltandoPesado" then
 		DebugPrint(
 			string.format(
@@ -706,7 +568,6 @@ function ControladorCombate.ProcessarHeavyAttackHitbox(entidade: Model, _dados: 
 		return false, "EstadoInvalido"
 	end
 
-	-- Transiciona para AtaquePesado (momento real do ataque)
 	local sucesso, motivo = maquina:TenteExecutarPesado()
 	if not sucesso then
 		DebugPrint(
@@ -723,17 +584,11 @@ function ControladorCombate.ProcessarHeavyAttackHitbox(entidade: Model, _dados: 
 		string.format("[Combate] %s: HeavyAttackHitbox - estado mudou para AtaquePesado", entidade.Name)
 	)
 
-	-- Sincroniza estado para notificar cliente que mudou para AtaquePesado
 	ControladorCombate._SincronizarEstado(entidade)
-
-	-- Hitbox agora é gerenciada pelo cliente (ShapecastHitbox)
-	-- Hits serão reportados via "HitboxAcerto"
 
 	return true, nil
 end
 
---- Processa início de bloqueio
---- @param shiftLockAtivo boolean? Estado do ShiftLock enviado pelo cliente
 function ControladorCombate.ProcessarBloquear(entidade: Model, shiftLockAtivo: boolean?): (boolean, string?)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
@@ -746,15 +601,13 @@ function ControladorCombate.ProcessarBloquear(entidade: Model, shiftLockAtivo: b
 
 	DebugPrint(string.format("[Combate] %s: Bloquear OK", entidade.Name))
 
-	-- Ajusta velocidade
 	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeBloqueando") or 6
 	end
 
-	ControladorCombate._TocarAnimacao(entidade, "Defesa", true) -- Loop
+	ControladorCombate._TocarAnimacao(entidade, "Defesa", true)
 
-	-- Parry readiness: imediato se cooldown expirado; janela curta; senão permanece false
 	local status = entidade:FindFirstChild("Status")
 	local agora = tick()
 	local cooldownParry = Modulo_Configuracoes.ObterConfiguracao("CooldownParry") or 2.4
@@ -771,7 +624,6 @@ function ControladorCombate.ProcessarBloquear(entidade: Model, shiftLockAtivo: b
 		end
 		ControladorCombate._SincronizarEstado(entidade)
 
-		-- Desativa após janela
 		task.delay(Modulo_Configuracoes.ObterConfiguracao("JanelaParry") or 0.2, function()
 			maquina:DesativarParry()
 			if status then
@@ -796,7 +648,6 @@ function ControladorCombate.ProcessarBloquear(entidade: Model, shiftLockAtivo: b
 	return true, nil
 end
 
---- Processa fim de bloqueio
 function ControladorCombate.ProcessarPararBloqueio(entidade: Model): (boolean, string?)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
@@ -806,7 +657,6 @@ function ControladorCombate.ProcessarPararBloqueio(entidade: Model): (boolean, s
 		return false, motivo
 	end
 
-	-- Atualiza Status.ProntoAparar para false
 	local status = entidade:FindFirstChild("Status")
 	if status then
 		local prontoAparar = status:FindFirstChild("ProntoAparar")
@@ -815,17 +665,11 @@ function ControladorCombate.ProcessarPararBloqueio(entidade: Model): (boolean, s
 		end
 	end
 
-	-- NOTA: Velocidade não é mais ajustada aqui
-	-- O cliente controla velocidade ao sair de defesa via AtualizarVelocidadeLocal()
-	-- Isso permite restaurar corrida se Shift estiver pressionado
-
-	-- Sincroniza estado (client irá parar animação de defesa)
 	ControladorCombate._SincronizarEstado(entidade)
 
 	return true, nil
 end
 
---- Processa quebrar defesa própria
 function ControladorCombate.ProcessarQuebrarDefesa(entidade: Model): (boolean, string?)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
@@ -835,7 +679,6 @@ function ControladorCombate.ProcessarQuebrarDefesa(entidade: Model): (boolean, s
 		return false, motivo
 	end
 
-	-- Velocidade muito lenta
 	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeDefesaQuebrada") or 3
@@ -846,7 +689,6 @@ function ControladorCombate.ProcessarQuebrarDefesa(entidade: Model): (boolean, s
 	return true, nil
 end
 
---- Processa agachar
 function ControladorCombate.ProcessarAgachar(entidade: Model): (boolean, string?)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
@@ -859,7 +701,6 @@ function ControladorCombate.ProcessarAgachar(entidade: Model): (boolean, string?
 
 	DebugPrint(string.format("[Combate] %s: Agachar OK", entidade.Name))
 
-	-- Reduz velocidade
 	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAgachando") or 9
@@ -868,7 +709,6 @@ function ControladorCombate.ProcessarAgachar(entidade: Model): (boolean, string?
 	return true, nil
 end
 
---- Processa levantar
 function ControladorCombate.ProcessarLevantar(entidade: Model): (boolean, string?)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
@@ -881,7 +721,6 @@ function ControladorCombate.ProcessarLevantar(entidade: Model): (boolean, string
 
 	DebugPrint(string.format("[Combate] %s: Levantar OK", entidade.Name))
 
-	-- Restaura velocidade
 	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAndando") or 14
@@ -890,7 +729,6 @@ function ControladorCombate.ProcessarLevantar(entidade: Model): (boolean, string
 	return true, nil
 end
 
---- Processa pular
 function ControladorCombate.ProcessarPular(entidade: Model)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
@@ -900,11 +738,9 @@ function ControladorCombate.ProcessarPular(entidade: Model)
 		return false, motivo
 	end
 
-	-- O humanoid:Jump() será chamado separadamente
 	return true, nil
 end
 
---- Processa equipar modo
 function ControladorCombate.ProcessarEquipar(entidade: Model, modo: string): (boolean, string?)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
@@ -917,16 +753,13 @@ function ControladorCombate.ProcessarEquipar(entidade: Model, modo: string): (bo
 
 	DebugPrint(string.format("[Combate] %s: Equipar '%s' OK", entidade.Name, modo))
 
-	-- Define o novo modo
 	maquina:DefinirModo(modo)
 
 	ControladorCombate._TocarAnimacao(entidade, "Equipar")
 
-	-- Mantém estadoAcao = Equipando até o cliente notificar que a animação terminou
 	return true, nil
 end
 
---- Processa desequipar
 function ControladorCombate.ProcessarDesequipar(entidade: Model)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
@@ -936,25 +769,20 @@ function ControladorCombate.ProcessarDesequipar(entidade: Model)
 		return false, motivo
 	end
 
-	-- Toca animacao ANTES de mudar modo (para usar animacoes da arma atual)
 	ControladorCombate._TocarAnimacao(entidade, "Desequipar")
 
-	-- Após animação começar, define modo Base
 	task.delay(0.1, function()
 		maquina:DefinirModo("Base")
 		ControladorCombate._SincronizarEstado(entidade)
 	end)
 
-	-- Mantém estadoAcao = Desequipando até o cliente notificar que a animação terminou
 	return true, nil
 end
 
---- Processa mudança de shift lock
 function ControladorCombate.ProcessarShiftLock(entidade: Model, ativo: boolean)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 	maquina:DefinirShiftLock(ativo)
 
-	-- Atualiza Status folder
 	local status = entidade:FindFirstChild("Status")
 	if status then
 		local shiftLockValue = status:FindFirstChild("ShiftLockOn")
@@ -964,7 +792,6 @@ function ControladorCombate.ProcessarShiftLock(entidade: Model, ativo: boolean)
 	end
 end
 
---- Processa começar a correr
 function ControladorCombate.ProcessarCorrer(entidade: Model): (boolean, string?)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
@@ -972,10 +799,7 @@ function ControladorCombate.ProcessarCorrer(entidade: Model): (boolean, string?)
 
 	if not sucesso then
 		DebugPrint(string.format("[Combate] %s: Correr FALHOU - %s", entidade.Name, motivo or "?"))
-		-- Se falhou por ação em andamento, registra intenção de correr
-		-- para aplicar quando a ação terminar.
-		-- Além disso, permite enfileirar quando o estado é bloqueante
-		-- devido a Equipando/Desequipando (comportamento esperado pelo cliente).
+
 		if motivo == "AcaoEmAndamento" then
 			(maquina.dados :: any).correndoIntent = true
 			DebugPrint(
@@ -1002,15 +826,10 @@ function ControladorCombate.ProcessarCorrer(entidade: Model): (boolean, string?)
 
 	DebugPrint(string.format("[Combate] %s: Correr OK", entidade.Name))
 
-	-- NOTA: WalkSpeed não é mais ajustado aqui
-	-- Corrida é 100% client-side para evitar lag e spam de requests
-	-- O cliente ajusta WalkSpeed localmente via AtualizarVelocidadeLocal()
-
 	ControladorCombate._SincronizarEstado(entidade)
 	return true, nil
 end
 
---- Processa parar de correr
 function ControladorCombate.ProcessarPararCorrer(entidade: Model)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
@@ -1018,11 +837,6 @@ function ControladorCombate.ProcessarPararCorrer(entidade: Model)
 
 	DebugPrint(string.format("[Combate] %s: PararCorrer OK", entidade.Name))
 
-	-- NOTA: WalkSpeed não é mais ajustado aqui
-	-- Corrida é 100% client-side para evitar lag e spam de requests
-	-- O cliente ajusta WalkSpeed localmente via AtualizarVelocidadeLocal()
-
-	-- Limpamos qualquer pedido enfileirado de corrida
 	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		maquina.dados.correndoIntent = nil
@@ -1032,17 +846,9 @@ function ControladorCombate.ProcessarPararCorrer(entidade: Model)
 	return true, nil
 end
 
--- ----------------------------------------------------------------------------
--- SISTEMA DE DASH
--- ----------------------------------------------------------------------------
-
---- Processa dash
----@param entidade Model
----@param direcao string "Frente", "Tras", "Esquerda", "Direita"
 function ControladorCombate.ProcessarDash(entidade: Model, direcao: string): (boolean, string?)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
-	-- Salva se estava correndo antes do dash para restaurar depois
 	local estavaCorrendo = maquina.dados.correndo
 
 	local sucesso, motivo = maquina:TenteDash(direcao)
@@ -1054,17 +860,14 @@ function ControladorCombate.ProcessarDash(entidade: Model, direcao: string): (bo
 
 	DebugPrint(string.format("[Combate] %s: Dash OK - direção=%s", entidade.Name, direcao))
 
-	-- Se estava correndo, guarda intenção de correr para depois do dash
 	if estavaCorrendo then
 		(maquina.dados :: any).correndoIntent = true
 	end
 
-	-- Toca animação direcional
-	local nomeAnimacao = "Dash" .. direcao -- "DashFrente", "DashTras", etc.
+	local nomeAnimacao = "Dash" .. direcao
 	local velocidadeAnim = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAnimacaoDash") or 1.0
 	ControladorCombate._TocarAnimacao(entidade, nomeAnimacao, false, velocidadeAnim)
 
-	-- Atualiza status DashOn
 	local status = entidade:FindFirstChild("Status")
 	if status then
 		local dashOn = status:FindFirstChild("DashOn")
@@ -1077,7 +880,6 @@ function ControladorCombate.ProcessarDash(entidade: Model, direcao: string): (bo
 	return true, nil
 end
 
---- Processa fim do dash (chamado pelo cliente quando animação termina)
 function ControladorCombate.ProcessarDashTerminou(entidade: Model): (boolean, string?)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
@@ -1089,7 +891,6 @@ function ControladorCombate.ProcessarDashTerminou(entidade: Model): (boolean, st
 
 	DebugPrint(string.format("[Combate] %s: Dash TERMINOU", entidade.Name))
 
-	-- Atualiza status DashOn
 	local status = entidade:FindFirstChild("Status")
 	if status then
 		local dashOn = status:FindFirstChild("DashOn")
@@ -1098,14 +899,12 @@ function ControladorCombate.ProcessarDashTerminou(entidade: Model): (boolean, st
 		end
 	end
 
-	-- NÃO ajusta WalkSpeed aqui ââ‚¬â€ corrida é 100% client-side.
 	maquina.dados.correndoIntent = nil
 
 	ControladorCombate._SincronizarEstado(entidade)
 	return true, nil
 end
 
---- Processa aterrissar (quando jogador toca o chão)
 function ControladorCombate.ProcessarAterrissar(entidade: Model)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
@@ -1118,11 +917,9 @@ function ControladorCombate.ProcessarAterrissar(entidade: Model)
 	return sucesso
 end
 
---- Processa sincronizar movimento (cliente envia estado de movimento)
 function ControladorCombate.ProcessarSincronizarMovimento(entidade: Model, novoEstado: string)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
-	-- Valida e define o novo estado
 	local sucesso = maquina:DefinirEstadoMov(novoEstado)
 
 	if sucesso then
@@ -1132,14 +929,6 @@ function ControladorCombate.ProcessarSincronizarMovimento(entidade: Model, novoE
 	return sucesso
 end
 
--- ----------------------------------------------------------------------------
--- PROCESSADOR DE HIT REPORTADO PELO CLIENTE (NOVO SISTEMA)
--- ----------------------------------------------------------------------------
-
---- Processa um hit reportado pelo cliente via ShapecastHitbox
---- Valida estado, distância e aplica dano
---- @param entidade Model Personagem atacante
---- @param dados table {mao: "Right"|"Left", alvo: Model, cframe: CFrame?}
 function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): (boolean, string?)
 	if typeof(dados) ~= "table" then
 		return false, "DadosInvalidos"
@@ -1149,7 +938,6 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 	local alvoInstance: any = dados.alvo
 	local _cframeCliente: CFrame? = dados.cframe
 
-	-- Validação básica
 	if not mao or (mao ~= "Right" and mao ~= "Left") then
 		return false, "MaoInvalida"
 	end
@@ -1160,12 +948,10 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 
 	local alvo = alvoInstance :: Model
 
-	-- Não pode se acertar
 	if alvo == entidade then
 		return false, "AutoHit"
 	end
 
-	-- Verifica se alvo tem humanoid e está vivo
 	local alvoHumanoid = alvo:FindFirstChildOfClass("Humanoid")
 	if not alvoHumanoid or alvoHumanoid.Health <= 0 then
 		return false, "AlvoMorto"
@@ -1173,7 +959,6 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
-	-- Verifica se está em estado de ataque válido
 	local estadoAcao = maquina:ObterEstadoAcao()
 	local emAtaque = estadoAcao == "AtacandoLeve"
 		or estadoAcao == "AtaquePesado"
@@ -1187,13 +972,12 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 		return false, "NaoAtacando"
 	end
 
-	-- Validação de distância (anti-exploit)
 	local hrpAtacante = entidade:FindFirstChild("HumanoidRootPart") :: BasePart?
 	local hrpAlvo = alvo:FindFirstChild("HumanoidRootPart") :: BasePart?
 
 	if hrpAtacante and hrpAlvo then
 		local alcanceMaximo = Modulo_Configuracoes.ObterConfiguracao("Alcance") or 8
-		-- Margem generosa para compensar latência
+
 		local distancia = (hrpAtacante.Position - hrpAlvo.Position).Magnitude
 		if distancia > alcanceMaximo * 2 then
 			DebugPrint(
@@ -1208,24 +992,22 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 		end
 	end
 
-	-- Determina tipo de ataque baseado no estado
 	local tipoAtaque = "AtaqueLeve"
 	if estadoAcao == "AtaquePesado" or estadoAcao == "SoltandoPesado" then
 		tipoAtaque = "AtaquePesado"
 	elseif estadoAcao == "AtacandoLeve" then
-		-- Verifica se é golpe final baseado no índice do combo
+
 		local indiceCombo = maquina.dados.indiceCombo or 1
 		tipoAtaque = DeterminarTipoAtaque(indiceCombo)
 	end
 
-	-- Determina dano baseado na mao e no modo
 	local modo = maquina:ObterModo()
 	local configCombo = Modulo_Configuracoes.ObterConfiguracaoCombo(modo)
 	local ehDivideDano = configCombo and configCombo.divideDano == true
 
 	local tool = ObterToolPorMao(entidade, mao)
 	if not tool then
-		-- Fallback: Tool na mao direta do character
+
 		tool = entidade:FindFirstChildOfClass("Tool")
 	end
 
@@ -1239,13 +1021,11 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 		return false, "SemDanoBase"
 	end
 
-	-- Se divideDano, cada mao aplica metade do dano
 	local danoOverride: number? = nil
 	if ehDivideDano then
 		danoOverride = danoBase / 2
 	end
 
-	-- Processa o hit com as validacoes de parry, bloqueio e dano
 	ControladorCombate._ProcessarHit(entidade, alvo, tipoAtaque, danoOverride)
 
 	DebugPrint(
@@ -1261,10 +1041,6 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 	return true, tipoAtaque
 end
 
--- ----------------------------------------------------------------------------
--- MAPA DE AÇâ€¢ES
--- ----------------------------------------------------------------------------
-
 local MapaAcoes = {
 	AtacarLeveEmPe = ControladorCombate.ProcessarAtacarLeveEmPe,
 	AtacarLeveAgachado = ControladorCombate.ProcessarAtacarLeveAgachado,
@@ -1272,7 +1048,7 @@ local MapaAcoes = {
 	SoltarPesado = ControladorCombate.ProcessarSoltarPesado,
 	HeavyAttackHitbox = ControladorCombate.ProcessarHeavyAttackHitbox,
 	Bloquear = function(entidade, dados)
-		-- Cliente envia shiftLock junto com ação de bloqueio
+
 		local shiftLockAtivo = typeof(dados) == "table" and dados.shiftLock or nil
 		return ControladorCombate.ProcessarBloquear(entidade, shiftLockAtivo)
 	end,
@@ -1296,13 +1072,12 @@ local MapaAcoes = {
 	end,
 	Desequipar = ControladorCombate.ProcessarDesequipar,
 
-	-- Acoes de combo por marcadores
 	ComboHitbox = function(entidade, dados)
-		-- dados = índice do golpe (1, 2, 3, 4)
+
 		return ControladorCombate.ProcessarComboHitbox(entidade, dados)
 	end,
 	ComboContinuado = function(entidade, dados)
-		-- dados = índice do próximo golpe
+
 		return ControladorCombate.ProcessarComboContinuado(entidade, dados)
 	end,
 	ComboTerminou = ControladorCombate.ProcessarComboTerminou,
@@ -1310,19 +1085,16 @@ local MapaAcoes = {
 	HeavyAttackEarlyCancel = ControladorCombate.ProcessarHeavyAttackEarlyCancel,
 	DashEarlyCancel = ControladorCombate.ProcessarDashEarlyCancel,
 
-	-- Hit reportado pelo cliente (novo sistema ShapecastHitbox)
 	HitboxAcerto = function(entidade, dados)
 		return ControladorCombate.ProcessarHitboxAcerto(entidade, dados)
 	end,
 
-	-- Cancelamento de ataque por defesa
 	CancelarAtaquePorDefesa = function(entidade, dados)
-		-- dados = tipo do ataque ("AtaqueLeve" ou "CarregandoPesado")
+
 		return ControladorCombate.ProcessarCancelarAtaquePorDefesa(entidade, dados)
 	end,
 }
 
---- Processa ação genérica
 function ControladorCombate.ProcessarAcao(entidade: Model, acao: string, dados: any?)
 	local processador = MapaAcoes[acao]
 	if not processador then
@@ -1332,10 +1104,6 @@ function ControladorCombate.ProcessarAcao(entidade: Model, acao: string, dados: 
 
 	return processador(entidade, dados)
 end
-
--- ----------------------------------------------------------------------------
--- CONEXÃO COM REMOTE EVENTS
--- ----------------------------------------------------------------------------
 
 TentarAcao.OnServerEvent:Connect(function(player, acao, dados)
 	local character = player.Character
@@ -1377,8 +1145,6 @@ EquipAnimacaoTerminou.OnServerEvent:Connect(function(player)
 	end
 end)
 
--- Recebe notificação genérica de que uma animação de AÇÃO terminou
--- Ex: AtaqueLeve, AtaquePesado, CarregandoPesado
 local AcaoAnimacaoTerminou = Remotos:WaitForChild("AcaoAnimacaoTerminou")
 AcaoAnimacaoTerminou.OnServerEvent:Connect(function(player, nomeAcao)
 	local character = player.Character
@@ -1392,8 +1158,7 @@ AcaoAnimacaoTerminou.OnServerEvent:Connect(function(player, nomeAcao)
 	end
 
 	local estadoAcao = maquina:ObterEstadoAcao()
-	-- Só completa a ação se o que terminou no cliente for o que o servidor acha que está acontecendo
-	-- Isso evita que animacoes anteriores interrompidas (ex: Pesado cancelado por Leve) resetem o novo estado
+
 	if estadoAcao == nomeAcao then
 		DebugPrint(
 			string.format(
@@ -1403,7 +1168,7 @@ AcaoAnimacaoTerminou.OnServerEvent:Connect(function(player, nomeAcao)
 			)
 		)
 		maquina:CompletarAcao()
-		-- Resetar velocidade para normal
+
 		local humanoid = character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
 			humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAndando") or 14
@@ -1421,22 +1186,16 @@ AcaoAnimacaoTerminou.OnServerEvent:Connect(function(player, nomeAcao)
 	end
 end)
 
--- ----------------------------------------------------------------------------
--- LIMPEZA
--- ----------------------------------------------------------------------------
-
 Players.PlayerAdded:Connect(function(player)
 	player.CharacterAdded:Connect(function(character)
-		-- Aguarda pasta Status ser criada pelo Setup.lua
+
 		local status = character:WaitForChild("Status", 5)
 		if not status then
 			warn("[ControladorCombate] Status não encontrado para " .. player.Name)
 		end
 
-		-- Inicializa máquina de estados para o personagem
 		local _maquina = ControladorCombate.ObterMaquina(character)
 
-		-- Sincroniza estado inicial
 		task.defer(function()
 			ControladorCombate._SincronizarEstado(character)
 		end)
@@ -1457,14 +1216,12 @@ Players.PlayerAdded:Connect(function(player)
 	end)
 end)
 
--- Inicializa para players já conectados
 for _, player in ipairs(Players:GetPlayers()) do
 	if player.Character then
-		-- Aguarda pasta Status
+
 		local _status = player.Character:WaitForChild("Status", 5)
 		ControladorCombate.ObterMaquina(player.Character)
 
-		-- Sincroniza estado inicial
 		task.defer(function()
 			ControladorCombate._SincronizarEstado(player.Character)
 		end)

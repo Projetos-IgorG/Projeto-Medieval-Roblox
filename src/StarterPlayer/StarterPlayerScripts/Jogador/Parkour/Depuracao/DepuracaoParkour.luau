@@ -1,3 +1,11 @@
+--[[
+    Script: DepuracaoParkour.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/Jogador/Parkour/Depuracao
+    Responsabilidade: Desenha e registra informacoes locais para depurar acoes de parkour.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: ClearDebug, Log, Verbose, DrawRay, DrawPoint, DrawBox
+]]
 local Workspace = game:GetService("Workspace")
 local Debris = game:GetService("Debris")
 
@@ -5,9 +13,6 @@ local Configs = require(script.Parent.Parent:WaitForChild("Configuracoes"):WaitF
 
 local Debug = {}
 
--- ==========
--- Pasta de Debug no Workspace (cached)
--- ==========
 local _cachedFolder = nil
 
 local function getDebugFolder()
@@ -25,9 +30,6 @@ local function getDebugFolder()
 	return f
 end
 
--- ==========
--- Limpar Debug
--- ==========
 function Debug.ClearDebug()
 	local folder = _cachedFolder or Workspace:FindFirstChild(Configs.DebugFolderName)
 	if folder then
@@ -36,9 +38,6 @@ function Debug.ClearDebug()
 	_cachedFolder = nil
 end
 
--- ==========
--- Log no Console
--- ==========
 function Debug.Log(...)
 	if not Configs.DebugEnabled then
 		return
@@ -53,9 +52,6 @@ function Debug.Verbose(...)
 	print("[ParkourVerbose]", ...)
 end
 
--- ==========
--- Desenhar Visual: Raio
--- ==========
 function Debug.DrawRay(origin, hitPosition, color)
 	if not Configs.DebugEnabled then
 		return nil
@@ -80,9 +76,6 @@ function Debug.DrawRay(origin, hitPosition, color)
 	return rayPart
 end
 
--- ==========
--- Desenhar Visual: Ponto (esfera)
--- ==========
 function Debug.DrawPoint(position, color, size)
 	if not Configs.DebugEnabled then
 		return nil
@@ -108,9 +101,6 @@ function Debug.DrawPoint(position, color, size)
 	return point
 end
 
--- ==========
--- Desenhar Visual: Box (transparente)
--- ==========
 function Debug.DrawBox(cframe, size, color)
 	if not Configs.DebugEnabled then
 		return nil
@@ -136,9 +126,6 @@ function Debug.DrawBox(cframe, size, color)
 	return box
 end
 
--- ==========
--- Desenhar Visual: Linha entre 2 pontos
--- ==========
 function Debug.DrawLine(posA, posB, color)
 	if not Configs.DebugEnabled then
 		return nil
@@ -165,9 +152,6 @@ function Debug.DrawLine(posA, posB, color)
 	return line
 end
 
--- ==========
--- Desenhar Debug Completo de um Resultado
--- ==========
 function Debug.DrawDebug(data)
 	if not Configs.DebugEnabled then
 		return
@@ -177,12 +161,10 @@ function Debug.DrawDebug(data)
 		return
 	end
 
-	-- Caixa de detecção volumétrica frontal
 	if data.ForwardBoxCFrame and data.ForwardBoxSize then
 		Debug.DrawBox(data.ForwardBoxCFrame, data.ForwardBoxSize, Color3.fromRGB(0, 120, 255))
 	end
 
-	-- Grade de rays de detecção frontal
 	if data.ForwardGridRays then
 		local gridOrigin = data.ForwardGridOrigin
 		local gridLook = data.ForwardGridLookXZ
@@ -265,7 +247,6 @@ function Debug.DrawDebug(data)
 		end
 	end
 
-	-- Rays da varredura vertical
 	if data.RayDebug then
 		for _, rayInfo in ipairs(data.RayDebug) do
 			Debug.DrawRay(
@@ -278,13 +259,11 @@ function Debug.DrawDebug(data)
 		Debug.DrawRay(data.Origin, data.HitPosition, Color3.fromRGB(0, 255, 0))
 	end
 
-	-- Ray extra: torso
 	if data.TorsoRayDebug then
 		local t = data.TorsoRayDebug
 		Debug.DrawRay(t.Origin, t.HitPosition, t.Hit and Color3.fromRGB(255, 200, 0) or Color3.fromRGB(120, 100, 0))
 	end
 
-	-- Ray extra: perna
 	if data.LegProbeRaysDebug then
 		if data.LegProbeRaysDebug.CFrame and data.LegProbeRaysDebug.Size then
 			Debug.DrawBox(
@@ -306,17 +285,14 @@ function Debug.DrawDebug(data)
 		Debug.DrawRay(l.Origin, l.HitPosition, l.Hit and Color3.fromRGB(0, 150, 255) or Color3.fromRGB(0, 60, 120))
 	end
 
-	-- Linha de debug da distância da Head até a borda
 	if data.DistanceLine then
 		Debug.DrawLine(data.DistanceLine.PosA, data.DistanceLine.PosB, data.DistanceLine.Color)
 	end
 
-	-- Ponto da borda
 	if data.EdgePosition then
 		Debug.DrawPoint(data.EdgePosition, Color3.fromRGB(255, 0, 0))
 	end
 
-	-- Clearance de agarrar (topo / frente)
 	if data.TopClearanceCFrame and data.TopClearanceSize then
 		Debug.DrawBox(data.TopClearanceCFrame, data.TopClearanceSize, Color3.fromRGB(0, 170, 255))
 	end
@@ -325,31 +301,24 @@ function Debug.DrawDebug(data)
 		Debug.DrawBox(data.FrontClearanceCFrame, data.FrontClearanceSize, Color3.fromRGB(255, 170, 0))
 	end
 
-	-- Clearance de vault (destino)
 	if data.VaultClearanceCFrame and data.VaultClearanceSize then
 		Debug.DrawBox(data.VaultClearanceCFrame, data.VaultClearanceSize, Color3.fromRGB(0, 255, 100))
 	end
 end
 
--- ==========
--- Debug Completo de Subir/Escalar
--- Mostra TODOS os rays e caixas de verificação
--- ==========
 function Debug.DrawClimbDebug(escalarResult, subirResult)
 	if not Configs.DebugEnabled then
 		return
 	end
 
-	-- Escalar: clearance box + floor ray
 	if escalarResult then
-		-- Caixa de clearance do escalar (magenta)
+
 		if escalarResult.ClearanceCFrame and escalarResult.ClearanceSize then
-			local cor = escalarResult.CanEscalar and Color3.fromRGB(255, 0, 0) -- magenta = pode escalar
-				or Color3.fromRGB(120, 0, 0) -- escuro = não pode
+			local cor = escalarResult.CanEscalar and Color3.fromRGB(255, 0, 0)
+				or Color3.fromRGB(120, 0, 0)
 			Debug.DrawBox(escalarResult.ClearanceCFrame, escalarResult.ClearanceSize, cor)
 		end
 
-		-- Floor ray (amarelo = tem chão, vermelho = sem chão)
 		if escalarResult.FloorRayDebug then
 			local f = escalarResult.FloorRayDebug
 			if f.Probes then
@@ -368,7 +337,6 @@ function Debug.DrawClimbDebug(escalarResult, subirResult)
 		end
 	end
 
-	-- Subir: up ray + forward rays
 	if subirResult and subirResult.Debug then
 		local subirDebug = subirResult.Debug
 
@@ -398,13 +366,11 @@ function Debug.DrawClimbDebug(escalarResult, subirResult)
 			end
 		end
 
-		-- Ray vertical para cima (ciano)
 		if subirDebug.UpRay then
 			local u = subirDebug.UpRay
 			Debug.DrawRay(u.Origin, u.HitPosition, u.Hit and Color3.fromRGB(0, 255, 255) or Color3.fromRGB(0, 120, 120))
 		end
 
-		-- Rays horizontais (verde brilhante = hit, escuro = miss)
 		if subirDebug.ForwardRays then
 			for _, rayInfo in ipairs(subirDebug.ForwardRays) do
 				Debug.DrawRay(
@@ -415,7 +381,6 @@ function Debug.DrawClimbDebug(escalarResult, subirResult)
 			end
 		end
 
-		-- Ponto da borda encontrada (se existir)
 		if subirResult.EdgePosition then
 			Debug.DrawPoint(subirResult.EdgePosition, Color3.fromRGB(255, 100, 0), Vector3.new(0.35, 0.35, 0.35))
 		end

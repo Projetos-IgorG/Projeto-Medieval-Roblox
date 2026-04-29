@@ -1,48 +1,25 @@
---[[
-	Modulo_Impulso.luau
-	
-	Aplica impulso no player atacante baseado na configuração do modoAnimacao.
-	
-	Responsabilidades:
-	- Verificar se o modoAnimacao permite impulso
-	- Validar parâmetros de entrada
-	- Aplicar impulso físico ao atacante
-	
-	O impulso é DESABILITADO para:
-	- Arcos (tipo "Combate" mas aplicaImpulso = false)
-	- Ferramentas de interação (tipo "Interacao")
-]]
-
 --!strict
 
+--[[
+    Script: ImpulsoCombate.luau
+    Caminho: src/ReplicatedStorage/Combate/Dominio
+    Responsabilidade: Calcula impulsos fisicos gerados por ataques, bloqueios e impactos.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao dispara acoes por conta propria; apenas calcula regras para o script chamador.
+    Funcoes principais: ValidarEntidade, ObterMagnitudeImpulso, ModoPermiteImpulso, AplicarImpulso
+]]
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- ==========
--- DEPENDÊNCIAS
--- ==========
 local Modulo_Configuracoes = require(ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Configuracoes"):WaitForChild("ConfigCombate"))
 
--- ==========
--- TYPES
--- ==========
 export type ResultadoImpulso = {
 	sucesso: boolean,
 	magnitudeAplicada: number?,
 	erro: string?,
 }
 
--- ==========
--- MÓDULO
--- ==========
 local Modulo_Impulso = {}
 
--- ==========
--- FUNÇÕES DE VALIDAÇÃO
--- ==========
---- Valida se uma entidade pode receber impulso
----@param entidade Model
----@return boolean sucesso
----@return string? erro
 function Modulo_Impulso.ValidarEntidade(entidade: Model): (boolean, string?)
 	if not entidade then
 		return false, "Entidade é nil"
@@ -73,12 +50,6 @@ function Modulo_Impulso.ValidarEntidade(entidade: Model): (boolean, string?)
 	return true, nil
 end
 
--- ==========
--- FUNÇÕES DE ACESSO
--- ==========
---- Obtém a magnitude do impulso baseado no tipo de ataque
----@param tipoAtaque string
----@return number
 function Modulo_Impulso.ObterMagnitudeImpulso(tipoAtaque: string): number
 	local config = Modulo_Configuracoes.ConfiguracaoGlobal
 
@@ -89,23 +60,12 @@ function Modulo_Impulso.ObterMagnitudeImpulso(tipoAtaque: string): number
 	return config.MagnitudeImpulsoAtaqueLeve
 end
 
---- Verifica se um modo de animação permite impulso
----@param modoAnimacao string
----@return boolean
 function Modulo_Impulso.ModoPermiteImpulso(modoAnimacao: string): boolean
 	return Modulo_Configuracoes.AplicaImpulso(modoAnimacao)
 end
 
--- ==========
--- FUNÇÃO PRINCIPAL
--- ==========
---- Aplica impulso ao atacante
----@param atacante Model Character atacante
----@param modoAnimacao string Modo de animação atual
----@param tipoAtaque string Tipo de ataque sendo executado
----@return ResultadoImpulso
 function Modulo_Impulso.AplicarImpulso(atacante: Model, modoAnimacao: string, tipoAtaque: string): ResultadoImpulso
-	-- Verifica se o modo permite impulso
+
 	if not Modulo_Impulso.ModoPermiteImpulso(modoAnimacao) then
 		return {
 			sucesso = false,
@@ -114,7 +74,6 @@ function Modulo_Impulso.AplicarImpulso(atacante: Model, modoAnimacao: string, ti
 		}
 	end
 
-	-- Validação de entidade
 	local valido, erro = Modulo_Impulso.ValidarEntidade(atacante)
 	if not valido then
 		return {
@@ -124,17 +83,13 @@ function Modulo_Impulso.AplicarImpulso(atacante: Model, modoAnimacao: string, ti
 		}
 	end
 
-	-- Obtém magnitude
 	local magnitude = Modulo_Impulso.ObterMagnitudeImpulso(tipoAtaque)
 
-	-- Obtém HumanoidRootPart
 	local humanoidRoot = atacante:FindFirstChild("HumanoidRootPart") :: BasePart
 
-	-- Calcula direção (para frente)
 	local direcao = humanoidRoot.CFrame.LookVector
-	local elevacao = Vector3.new(0, 5, 0) -- Pequena elevação
+	local elevacao = Vector3.new(0, 5, 0)
 
-	-- Aplica impulso com pcall para segurança
 	local sucesso, resultado = pcall(function()
 		local impulsoVetor = (direcao * magnitude) + elevacao
 		local massa = humanoidRoot.AssemblyMass or 1

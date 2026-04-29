@@ -1,3 +1,11 @@
+--[[
+    Script: CompositorAmbiente.luau
+    Caminho: src/ReplicatedStorage/Mundo/Ambiente
+    Responsabilidade: Combina clima, hora do dia e transicoes para gerar um estado final de ambiente.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: Compor, copiar, mesclar, interpolar, obterPesoClima
+]]
 local CatalogoAmbiente = require(script.Parent:WaitForChild("CatalogoAmbiente"))
 local ConfiguracaoTempo = require(script.Parent:WaitForChild("ConfiguracaoTempo"))
 local PerfisTempoDia = require(script.Parent:WaitForChild("PerfisTempoDia"))
@@ -74,9 +82,7 @@ function CompositorAmbiente.Compor(ambienteId: any, climaId: any, minutosDoDia: 
 	local pesoClima = obterPesoClima(template)
 
 	local lighting = interpolar(perfilTempo.lighting, template.lighting or {}, pesoClima)
-	-- ClockTime NAO entra no estado resolvido. O ControladorAmbiente atualiza
-	-- ClockTime todo Heartbeat de forma continua. Se incluirmos aqui, o Tween
-	-- do AplicadorAmbiente fica brigando com o Heartbeat e o sol da pulinhos.
+
 	lighting.ClockTime = nil
 
 	local transicao = mesclar(TRANSICAO_PADRAO, template.transicao or {})

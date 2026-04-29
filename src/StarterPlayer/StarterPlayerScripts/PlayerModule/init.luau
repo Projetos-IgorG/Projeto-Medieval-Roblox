@@ -1,11 +1,11 @@
 --[[
-	PlayerModule - This module requires and instantiates the camera and control modules,
-	and provides getters for developers to access methods on these singletons without
-	having to modify Roblox-supplied scripts.
-
-	2018 PlayerScripts Update - AllYourBlox
---]]
-
+    Script: init.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule
+    Responsabilidade: Instancia e fornece acesso aos modulos de camera e controle do jogador.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, GetCameras, GetControls, GetClickToMoveController
+]]
 local PlayerModule = {}
 PlayerModule.__index = PlayerModule
 

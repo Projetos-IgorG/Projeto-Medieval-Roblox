@@ -1,18 +1,18 @@
 --!nonstrict
+
 --[[
-	Keyboard Character Control - This module handles controlling your avatar from a keyboard
-
-	2018 PlayerScripts Update - AllYourBlox
---]]
-
---[[ Roblox Services ]]--
+    Script: Keyboard.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/ControlModule
+    Responsabilidade: Converte teclado e mouse em vetor de movimento do personagem.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, Enable, UpdateMovement, UpdateJump, BindContextActions, ConnectFocusEventListeners
+]]
 local UserInputService = game:GetService("UserInputService")
 local ContextActionService = game:GetService("ContextActionService")
 
---[[ Constants ]]--
 local ZERO_VECTOR3 = Vector3.new()
 
---[[ The Module ]]--
 local BaseCharacterController = require(script.Parent:WaitForChild("BaseCharacterController"))
 local Keyboard = setmetatable({}, BaseCharacterController)
 Keyboard.__index = Keyboard
@@ -34,9 +34,7 @@ end
 
 function Keyboard:Enable(enable: boolean)
 	if enable == self.enabled then
-		-- Module is already in the state being requested. True is returned here since the module will be in the state
-		-- expected by the code that follows the Enable() call. This makes more sense than returning false to indicate
-		-- no action was necessary. False indicates failure to be in requested/expected state.
+
 		return true
 	end
 
@@ -44,7 +42,7 @@ function Keyboard:Enable(enable: boolean)
 	self.backwardValue = 0
 	self.leftValue = 0
 	self.rightValue = 0
-	self.moveVector = ZERO_VECTOR3 
+	self.moveVector = ZERO_VECTOR3
 	self.jumpRequested = false
 	self:UpdateJump()
 
@@ -61,7 +59,7 @@ end
 
 function Keyboard:UpdateMovement(inputState)
 	if inputState == Enum.UserInputState.Cancel then
-		self.moveVector = ZERO_VECTOR3 
+		self.moveVector = ZERO_VECTOR3
 	else
 		self.moveVector = Vector3.new(self.leftValue + self.rightValue, 0, self.forwardValue + self.backwardValue)
 	end
@@ -73,10 +71,6 @@ end
 
 function Keyboard:BindContextActions()
 
-	-- Note: In the previous version of this code, the movement values were not zeroed-out on UserInputState. Cancel, now they are,
-	-- which fixes them from getting stuck on.
-	-- We return ContextActionResult.Pass here for legacy reasons.
-	-- Many games rely on gameProcessedEvent being false on UserInputService.InputBegan for these control actions.
 	local handleMoveForward = function(_actionName, inputState, _inputObject)
 		self.forwardValue = (inputState == Enum.UserInputState.Begin) and -1 or 0
 		self:UpdateMovement(inputState)
@@ -107,8 +101,6 @@ function Keyboard:BindContextActions()
 		return Enum.ContextActionResult.Pass
 	end
 
-	-- TODO: Revert to KeyCode bindings so that in the future the abstraction layer from actual keys to
-	-- movement direction is done in Lua
 	ContextActionService:BindActionAtPriority("moveForwardAction", handleMoveForward, false,
 		self.CONTROL_ACTION_PRIORITY, Enum.PlayerActions.CharacterForward)
 	ContextActionService:BindActionAtPriority("moveBackwardAction", handleMoveBackward, false,
@@ -119,7 +111,7 @@ function Keyboard:BindContextActions()
 		self.CONTROL_ACTION_PRIORITY, Enum.PlayerActions.CharacterRight)
 	ContextActionService:BindActionAtPriority("jumpAction", handleJumpAction, false,
 		self.CONTROL_ACTION_PRIORITY, Enum.PlayerActions.CharacterJump)
-	
+
 	self._connectionUtil:trackBoundFunction("moveForwardAction", function()
 		ContextActionService:UnbindAction("moveForwardAction")
 	end)

@@ -2,6 +2,14 @@
 --!native
 --!optimize 2
 
+--[[
+    Script: Bone.luau
+    Caminho: src/ReplicatedStorage/Combate/Hitbox/Shapecast/Solvers
+    Responsabilidade: Resolve Shapecasts presos a Bones de rigs animados.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao decide regras de combate; apenas resolve a varredura fisica solicitada.
+    Funcoes principais: ToPosition, ToDirection, ToVisual
+]]
 local Types = require(script.Parent.Parent.Types)
 local Solver = {}
 

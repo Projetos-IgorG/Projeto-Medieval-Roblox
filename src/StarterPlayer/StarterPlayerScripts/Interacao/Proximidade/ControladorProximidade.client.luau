@@ -1,5 +1,11 @@
--- StarterPlayerScripts > CustomProximityScript.luau
-
+--[[
+    Script: ControladorProximidade.client.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/Interacao/Proximidade
+    Responsabilidade: Controla deteccao, destaque e ativacao local de interacoes por proximidade.
+    Uso: LocalScript; roda automaticamente para o jogador local em src/StarterPlayer/StarterPlayerScripts/Interacao/Proximidade.
+    Nao faz: Nao valida autoridade do servidor, nao salva dados persistentes e nao substitui regras server-side.
+    Funcoes principais: AtualizarBloqueioProximity, ConectarStatusLocalProximity
+]]
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -7,29 +13,19 @@ local Players = game:GetService("Players")
 
 local ProximityColors = require(ReplicatedStorage:WaitForChild("Interacao"):WaitForChild("Proximidade"):WaitForChild("Configuracoes"):WaitForChild("CoresProximidade"))
 
--- Criar ScreenGui para hospedar prompts (permite TextButton funcionar)
 local player = Players.LocalPlayer
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "CustomPromptsGui"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
--- ----------------------------------------------------------------------------
--- BLOQUEIO DE INTERAÇÃO (COMBATE/FERRAMENTA)
--- Oculta e bloqueia todos os prompts enquanto modoAnimacao for de Combate ou Interação.
--- Controla cada BillboardGui.Enabled individualmente (ScreenGui.Enabled não
--- afeta BillboardGuis com Adornee de forma confiável).
--- ----------------------------------------------------------------------------
-
 local Modulo_Configuracoes =
 	require(ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Configuracoes"):WaitForChild("ConfigCombate"))
 
 local interacaoBloqueada = false
 
--- Rastreia prompts atualmente visíveis (para desabilitar ao entrar em combate)
 local promptsVisiveis: { [ProximityPrompt]: boolean } = {}
 
--- Prompts que desabilitamos via .Enabled = false (para reabilitar ao sair de combate)
 local promptsDesabilitados: { [ProximityPrompt]: boolean } = {}
 
 local function AtualizarBloqueioProximity(modoAnimacao: string)
@@ -41,7 +37,7 @@ local function AtualizarBloqueioProximity(modoAnimacao: string)
 	interacaoBloqueada = novoBloqueio
 
 	if interacaoBloqueada then
-		-- Entrou em combate: desabilita todos os prompts que já estão visíveis
+
 		for prompt in pairs(promptsVisiveis) do
 			if prompt and prompt.Parent then
 				prompt.Enabled = false
@@ -50,7 +46,7 @@ local function AtualizarBloqueioProximity(modoAnimacao: string)
 		end
 		promptsVisiveis = {}
 	else
-		-- Saiu de combate: reabilita todos os prompts que desabilitamos
+
 		for prompt in pairs(promptsDesabilitados) do
 			if prompt and prompt.Parent then
 				prompt.Enabled = true
@@ -93,7 +89,6 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 		return
 	end
 
-	-- Se em combate/ferramenta, desabilita o prompt e não cria UI
 	if interacaoBloqueada then
 		promptInstance.Enabled = false
 		promptsDesabilitados[promptInstance] = true
@@ -102,7 +97,6 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 
 	local CustomProximity = ReplicatedStorage:WaitForChild("Interacao"):WaitForChild("Proximidade"):WaitForChild("Modelos"):WaitForChild("ModeloProximidade"):Clone()
 
-	-- Acessa o KeyText (Frame circular) e o KeyLabel (texto da tecla)
 	local KeyText = CustomProximity:FindFirstChild("KeyText", true)
 	local KeyLabel = KeyText and KeyText:FindFirstChild("KeyLabel")
 
@@ -110,7 +104,6 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 		KeyLabel.Text = promptInstance.KeyboardKeyCode.Name
 	end
 
-	-- Atualiza os textos de ação e objeto
 	local actionText = CustomProximity:FindFirstChild("ActionText", true)
 	if actionText then
 		actionText.Text = promptInstance.ActionText
@@ -120,7 +113,6 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 	if objectText then
 		objectText.Text = promptInstance.ObjectText
 
-		-- Preferir o StringValue `Dados/Tipo` do Tool se existir (fallback para atributo do prompt)
 		local tipoFinal = nil
 		local adornee = promptInstance.Parent
 		if adornee then
@@ -146,17 +138,12 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 		objectText.TextColor3 = ProximityColors.GetColorByType(tipoFinal)
 	end
 
-	-- Configura o BillboardGui para usar Adornee e ficar no PlayerGui
-	CustomProximity.Active = true -- IMPORTANTE: permite detectar input
+	CustomProximity.Active = true
 	CustomProximity.Adornee = promptInstance.Parent
 	CustomProximity.Parent = screenGui
 
-	-- Registra como visível (para desabilitar se entrar em combate)
 	promptsVisiveis[promptInstance] = true
 
-	-- ========================================
-	-- TextButton para detectar clique/touch (usa o existente no template)
-	-- ========================================
 	local clickButton = CustomProximity:FindFirstChild("Frame"):FindFirstChild("ClickDetector", true)
 
 	if clickButton then
@@ -186,7 +173,6 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 			end
 		end)
 	end
-	-- ========================================
 
 	local Progress = KeyText and KeyText:FindFirstChild("Progress")
 	local ProgressHoldBg = KeyText and KeyText:FindFirstChild("ProgressHoldBg")
@@ -198,7 +184,7 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 			if currentTween then
 				currentTween:Cancel()
 			end
-			-- Calcula o progresso atual (0..1) com base no Scale X do tamanho presente
+
 			local currentScale = Progress.Size.X.Scale
 			local remaining = promptInstance.HoldDuration * (1 - currentScale / 0.94)
 			currentTween = TweenService:Create(Progress, TweenInfo.new(remaining), {
@@ -206,7 +192,7 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 			})
 			currentTween:Play()
 		end
-		-- Mostrar o background de hold com animação suave
+
 		if ProgressHoldBg then
 			if currentBgTween then
 				currentBgTween:Cancel()
@@ -223,14 +209,14 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 			currentTween:Cancel()
 		end
 		if Progress then
-			-- Transiciona suavemente de volta ao zero
+
 			local shrinkDuration = 0.25
 			currentTween = TweenService:Create(Progress, TweenInfo.new(shrinkDuration), {
 				Size = UDim2.fromScale(0, 0),
 			})
 			currentTween:Play()
 		end
-		-- Esconder o background de hold com animação suave
+
 		if ProgressHoldBg then
 			if currentBgTween then
 				currentBgTween:Cancel()
@@ -243,7 +229,7 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 	end)
 
 	promptInstance.PromptHidden:Once(function()
-		-- Remove do rastreamento
+
 		promptsVisiveis[promptInstance] = nil
 
 		if CustomProximity then

@@ -1,5 +1,13 @@
 --!strict
 
+--[[
+    Script: AnimacaoParkour.luau
+    Caminho: src/ReplicatedStorage/Jogador/Parkour/Animacoes
+    Responsabilidade: Carrega e controla animacoes usadas pelas acoes de parkour.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: Inicializar, TocarIdle, TocarAcao, TocarAcaoPausadaNoMarker, ConfirmarAcaoPausada, CancelarAcaoPausada
+]]
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Modulos = ReplicatedStorage
@@ -170,7 +178,6 @@ function AnimacaoParkour.Inicializar(character: Model): boolean
 	currentCharacter = character
 	currentAnimator = animator
 
-	-- Pre-warm: carregar todas as tracks no cache para evitar stutter na primeira utilizacao
 	if parkourModo and parkourModo.animacoes then
 		for nome, _ in pairs(parkourModo.animacoes) do
 			obterTrack(nome)
@@ -214,7 +221,6 @@ function AnimacaoParkour.TocarAcao(nomeAnimacao: string, onEvento: Callback, onC
 		return false
 	end
 
-	-- Reuso lateral: nao reiniciar a mesma animacao, apenas disparar o evento
 	local isLateral = isLateralAnimation(nomeAnimacao)
 	local skipPlay = isLateral and acaoTrackAtual == track and track.IsPlaying
 
@@ -502,7 +508,6 @@ function AnimacaoParkour.EncerrarAcaoAtual(fadeTime: number?)
 	pararTrack(acaoTrackAtual, fade)
 	acaoTrackAtual = nil
 end
-
 
 function AnimacaoParkour.ObterAnimacaoSubir(idleMode: string?): string
 	local sufixo = if idleMode == "IdleSuspenso" then "Suspenso" else "Suporte"

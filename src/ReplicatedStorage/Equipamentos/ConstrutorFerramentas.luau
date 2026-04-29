@@ -1,75 +1,18 @@
 --[[
-	ToolBuilder - Módulo de Geração de Tools
-    ReplicatedStorage > Modulos > ToolBuilder.luau
-	
-	Responsável por criar Tools a partir de templates pré-definidos.
-	Pega um template da pasta ToolsTemplates, clona e atualiza os valores
-	dentro do folder "Dados" conforme os dados do item passado.
-	
-	ESTRUTURA DO TEMPLATE:
-		Tool
-		â”œâ”€â”€ Handle (Part)
-		â””â”€â”€ Dados (Folder)
-		    â”œâ”€â”€ Nome (StringValue)
-		    â”œâ”€â”€ Id (StringValue)
-		    â”œâ”€â”€ Tipo (StringValue)
-		    â”œâ”€â”€ Quantidade (NumberValue)
-		    â”œâ”€â”€ Peso (NumberValue)
-		    â””â”€â”€ ... outros atributos
-	
-	USO:
-		local ToolBuilder = require(game.ReplicatedStorage:WaitForChild("Equipamentos"):WaitForChild("ConstrutorFerramentas"))
-		
-		-- Criar Tool na backpack de um player
-		local tool = ToolBuilder.CriarTool(itemData, player.Backpack)
-		
-		-- Criar Tool no mundo (item dropado)
-		local tool = ToolBuilder.CriarToolNoMundo(itemData, posicaoCFrame)
-		
-		-- Criar Tool em um container (baú, etc.)
-		local tool = ToolBuilder.CriarTool(itemData, bau.Inventario)
-
-    TEMPLATES DOS TOOLS:
-    ReplicatedStorage
-    â””â”€â”€ ToolsTemplates
-        â”œâ”€â”€ Materiais
-        â”‚   â”œâ”€â”€ madeira_carvalho (Tool)
-        â”‚   â”œâ”€â”€ pedra_comum (Tool)
-        â”‚   â””â”€â”€ ...
-        â”œâ”€â”€ Armas
-        â”‚   â”œâ”€â”€ espada_ferro (Tool)
-        â”‚   â”œâ”€â”€ machado_guerra_ferro (Tool)
-        â”‚   â””â”€â”€ ...
-        â”œâ”€â”€ ArmasEquipadas
-        â”‚   â”œâ”€â”€ espada_ferro_equipada (Tool)
-        â”‚   â”œâ”€â”€ machado_guerra_ferro_equipada (Tool)
-        â”‚   â””â”€â”€ ...
-        â”œâ”€â”€ Ferramentas
-        â”‚   â”œâ”€â”€ picareta_ferro (Tool)
-        â”‚   â”œâ”€â”€ enxada_ferro (Tool)
-        â”‚   â”œâ”€â”€ machado_ferro (Tool)
-        â”‚   â””â”€â”€ ...
-        â””â”€â”€ Armaduras
-            â”œâ”€â”€ peitoral_ferro (Tool)
-            â”œâ”€â”€ elmo_ferro (Tool)
-            â””â”€â”€ ...
---]]
-
+    Script: ConstrutorFerramentas.luau
+    Caminho: src/ReplicatedStorage/Equipamentos
+    Responsabilidade: Monta Tools do Roblox a partir dos dados e modelos de equipamentos.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: CriarTool, CriarToolNoMundo, ExtrairDados, RestaurarComponentesTool, ExtrairDadosDoMundo, PodeEmpilhar
+]]
 local ToolBuilder = {}
 
--- ============================================
--- CONFIGURAÇÃO
--- ============================================
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TemplatesFolder = ReplicatedStorage:WaitForChild("Equipamentos"):WaitForChild("Modelos")
 local ColetaFolder = ReplicatedStorage:WaitForChild("Equipamentos"):WaitForChild("Coleta")
 local ColetorToolTemplate = ColetaFolder:WaitForChild("ColetarTool")
 
--- ============================================
--- FUNÇÃ•ES PRIVADAS
--- ============================================
-
--- Busca o template correto baseado no tipo e ID do item
 local function ObterTemplate(itemData)
 	warn("[ToolBuilder] Buscando template para:", itemData.Tipo, itemData.Id)
 
@@ -83,10 +26,9 @@ local function ObterTemplate(itemData)
 		return nil
 	end
 
-	-- Mapear tipo para pasta de templates
 	local pastaTipo = TemplatesFolder:FindFirstChild(itemData.Tipo .. "s")
 	if not pastaTipo then
-		-- Tentar sem pluralização
+
 		pastaTipo = TemplatesFolder:FindFirstChild(itemData.Tipo)
 		if not pastaTipo then
 			warn("[ToolBuilder] ERRO: Pasta de templates não encontrada para tipo:", itemData.Tipo)
@@ -94,7 +36,6 @@ local function ObterTemplate(itemData)
 		end
 	end
 
-	-- Buscar template específico pelo ID
 	local template = pastaTipo:FindFirstChild(itemData.Id)
 	if not template then
 		warn("[ToolBuilder] ERRO: Template não encontrado:", itemData.Id, "na pasta:", pastaTipo.Name)
@@ -110,7 +51,6 @@ local function ObterTemplate(itemData)
 	return template
 end
 
--- Atualiza os valores dentro do folder "Dados" do Tool
 local function AtualizarDados(tool, itemData)
 	warn("[ToolBuilder] Atualizando dados do Tool:", tool.Name)
 
@@ -120,12 +60,11 @@ local function AtualizarDados(tool, itemData)
 		return false
 	end
 
-	-- Atualizar cada campo do itemData
 	for campo, valor in pairs(itemData) do
 		local valueObject = dadosFolder:FindFirstChild(campo)
 
 		if valueObject then
-			-- Atualizar valor existente
+
 			if valueObject:IsA("StringValue") then
 				valueObject.Value = tostring(valor)
 			elseif valueObject:IsA("NumberValue") then
@@ -138,7 +77,7 @@ local function AtualizarDados(tool, itemData)
 
 			warn("[ToolBuilder]   Atualizado:", campo, "=", valueObject.Value)
 		else
-			-- Criar novo ValueObject se não existir
+
 			local tipoValor = type(valor)
 			local novoValue = nil
 
@@ -146,7 +85,7 @@ local function AtualizarDados(tool, itemData)
 				novoValue = Instance.new("StringValue")
 				novoValue.Value = valor
 			elseif tipoValor == "number" then
-				-- Verificar se é inteiro ou decimal
+
 				if valor == math.floor(valor) then
 					novoValue = Instance.new("IntValue")
 				else
@@ -166,7 +105,6 @@ local function AtualizarDados(tool, itemData)
 		end
 	end
 
-	-- Atualizar o nome do Tool baseado no campo "Nome"
 	local nomeValue = dadosFolder:FindFirstChild("Nome")
 	if nomeValue and nomeValue:IsA("StringValue") then
 		tool.Name = nomeValue.Value
@@ -176,7 +114,6 @@ local function AtualizarDados(tool, itemData)
 	return true
 end
 
--- Valida os dados do item antes de criar
 local function ValidarItemData(itemData)
 	if not itemData then
 		warn("[ToolBuilder] ERRO: itemData é nil!")
@@ -188,7 +125,6 @@ local function ValidarItemData(itemData)
 		return false
 	end
 
-	-- Campos obrigatórios
 	local camposObrigatorios = { "Tipo", "Id", "Nome" }
 	for _, campo in ipairs(camposObrigatorios) do
 		if not itemData[campo] then
@@ -197,7 +133,6 @@ local function ValidarItemData(itemData)
 		end
 	end
 
-	-- Validação de tipos específicos
 	if itemData.Tipo == "Materiais" and not itemData.Quantidade then
 		warn("[ToolBuilder] AVISO: Materiais sem campo 'Quantidade', definindo como 1")
 		itemData.Quantidade = 1
@@ -263,23 +198,10 @@ local function CriarPromptColeta(tool, handle, itemData)
 	return prompt
 end
 
--- ============================================
--- FUNÇÃ•ES PÃšBLICAS
--- ============================================
-
---[[
-    CriarTool
-    Cria um Tool baseado nos dados fornecidos e o coloca no parent especificado.
-    
-    @param itemData (table): Dados do item (Tipo, Id, Nome, Quantidade, Peso, etc.)
-    @param parent (Instance): Onde colocar o Tool criado (Backpack, Folder, etc.)
-    @return (Tool|nil): Tool criado ou nil se falhar
-]]
 function ToolBuilder.CriarTool(itemData, parent)
 	warn("[ToolBuilder] ========================================")
 	warn("[ToolBuilder] Iniciando criação de Tool")
 
-	-- Validar dados
 	if not ValidarItemData(itemData) then
 		warn("[ToolBuilder] ERRO: Validação de itemData falhou!")
 		return nil
@@ -290,9 +212,8 @@ function ToolBuilder.CriarTool(itemData, parent)
 		return nil
 	end
 
-	-- If parent is a player's Backpack, try to stack with an existing Tool
 	if parent and parent:IsA("Backpack") then
-		-- First, check if the player has the same item equipped (in Character)
+
 		local player = parent.Parent
 		if player and player:IsA("Player") then
 			local character = player.Character
@@ -312,7 +233,6 @@ function ToolBuilder.CriarTool(itemData, parent)
 			end
 		end
 
-		-- If not stacked with equipped tool, check Backpack
 		for _, child in ipairs(parent:GetChildren()) do
 			if child and child:IsA("Tool") then
 				local dadosExist = ToolBuilder.ExtrairDados(child)
@@ -328,19 +248,16 @@ function ToolBuilder.CriarTool(itemData, parent)
 		end
 	end
 
-	-- Obter template
 	local template = ObterTemplate(itemData)
 	if not template then
 		warn("[ToolBuilder] ERRO: Falha ao obter template!")
 		return nil
 	end
 
-	-- Clonar template
 	local novoTool = template:Clone()
 	warn("[ToolBuilder] Template clonado com sucesso")
 	RemoverColetaTool(novoTool)
 
-	-- Atualizar dados
 	local sucesso = AtualizarDados(novoTool, itemData)
 	if not sucesso then
 		warn("[ToolBuilder] ERRO: Falha ao atualizar dados do Tool!")
@@ -348,13 +265,11 @@ function ToolBuilder.CriarTool(itemData, parent)
 		return nil
 	end
 
-	-- Configurações adicionais baseadas no tipo
 	if itemData.Tipo == "ArmasEquipadas" then
 		novoTool.CanBeDropped = false
 		warn("[ToolBuilder] ArmasEquipadas configurada como não dropável")
 	end
 
-	-- Configurar Draggable como false para Tools na backpack
 	local dadosFolder = novoTool:FindFirstChild("Dados")
 	if dadosFolder then
 		local draggableValue = dadosFolder:FindFirstChild("Draggable")
@@ -364,7 +279,6 @@ function ToolBuilder.CriarTool(itemData, parent)
 		end
 	end
 
-	-- Remover qualquer ProximityPrompt se existir (buscar por tipo, não por nome)
 	local handle = novoTool:FindFirstChild("Handle")
 	if handle then
 		for _, child in ipairs(handle:GetChildren()) do
@@ -375,10 +289,8 @@ function ToolBuilder.CriarTool(itemData, parent)
 		end
 	end
 
-	-- Configurar componentes visuais e físicos para uso na mão (Backpack)
 	ToolBuilder.RestaurarComponentesTool(novoTool)
 
-	-- Parentar o Tool
 	novoTool.Parent = parent
 	warn("[ToolBuilder] Tool criado e parentado com sucesso:", novoTool.Name)
 	warn("[ToolBuilder] ========================================")
@@ -386,19 +298,10 @@ function ToolBuilder.CriarTool(itemData, parent)
 	return novoTool
 end
 
---[[
-    CriarToolNoMundo
-    Cria um Tool no mundo (como item dropado) com ProximityPrompt para coleta.
-    
-    @param itemData (table): Dados do item
-    @param cframe (CFrame): Posição onde spawnar o item
-    @return (Tool|nil): Tool dropado no mundo ou nil se falhar
-]]
 function ToolBuilder.CriarToolNoMundo(itemData, cframe)
 	warn("[ToolBuilder] ========================================")
 	warn("[ToolBuilder] Criando item no mundo")
 
-	-- Validar dados
 	if not ValidarItemData(itemData) then
 		warn("[ToolBuilder] ERRO: Validação de itemData falhou!")
 		return nil
@@ -409,19 +312,16 @@ function ToolBuilder.CriarToolNoMundo(itemData, cframe)
 		return nil
 	end
 
-	-- Obter template
 	local template = ObterTemplate(itemData)
 	if not template then
 		warn("[ToolBuilder] ERRO: Falha ao obter template!")
 		return nil
 	end
 
-	-- Clonar template
 	local toolClone = template:Clone()
 	warn("[ToolBuilder] Template clonado para o mundo")
 	RemoverColetaTool(toolClone)
 
-	-- Atualizar dados
 	local sucesso = AtualizarDados(toolClone, itemData)
 	if not sucesso then
 		warn("[ToolBuilder] ERRO: Falha ao atualizar dados!")
@@ -429,7 +329,6 @@ function ToolBuilder.CriarToolNoMundo(itemData, cframe)
 		return nil
 	end
 
-	-- Obter o Handle
 	local handle = toolClone:FindFirstChild("Handle")
 	if not handle then
 		warn("[ToolBuilder] ERRO: Handle não encontrado no template!")
@@ -437,7 +336,6 @@ function ToolBuilder.CriarToolNoMundo(itemData, cframe)
 		return nil
 	end
 
-	-- Configurar Draggable como true para items no mundo
 	local dadosFolder = toolClone:FindFirstChild("Dados")
 	if dadosFolder then
 		local draggableValue = dadosFolder:FindFirstChild("Draggable")
@@ -447,21 +345,17 @@ function ToolBuilder.CriarToolNoMundo(itemData, cframe)
 		end
 	end
 
-	-- Configurar Tool para não poder ser dropado novamente (evita loops)
 	toolClone.CanBeDropped = false
 
 	CriarPromptColeta(toolClone, handle, itemData)
 
-	-- Parentar o Tool completo ao workspace depois de preparar coleta
 	toolClone.Parent = workspace
 	warn("[ToolBuilder] Tool parentado ao workspace")
 
-	-- Configurar Handle DEPOIS de parentar (ancorado e colidível)
 	handle.Anchored = false
 	handle.CanCollide = true
 	handle.CFrame = cframe
 
-	-- Garantir que todas as partes filhas do Handle também estejam visíveis e colidíveis (armaduras, etc.)
 	for _, desc in ipairs(handle:GetDescendants()) do
 		if desc:IsA("BasePart") then
 			desc.Transparency = 0
@@ -480,13 +374,6 @@ function ToolBuilder.CriarToolNoMundo(itemData, cframe)
 	return toolClone
 end
 
---[[
-    ExtrairDados
-    Extrai os dados de um Tool existente (lê o folder "Dados").
-    
-    @param tool (Tool): Tool para extrair dados
-    @return (table|nil): Tabela com os dados ou nil se falhar
-]]
 function ToolBuilder.ExtrairDados(tool)
 	if not tool or not tool:IsA("Tool") then
 		warn("[ToolBuilder] ERRO: Tool inválido fornecido para ExtrairDados!")
@@ -501,7 +388,6 @@ function ToolBuilder.ExtrairDados(tool)
 
 	local dados = {}
 
-	-- Ler todos os ValueObjects
 	for _, valueObject in ipairs(dadosFolder:GetChildren()) do
 		if
 			valueObject:IsA("StringValue")
@@ -517,16 +403,15 @@ function ToolBuilder.ExtrairDados(tool)
 	return dados
 end
 
---- Restaura as propriedades visuais de um Tool (para quando ele volta para a Backpack ou é criado)
 function ToolBuilder.RestaurarComponentesTool(tool: Tool)
 	for _, desc in ipairs(tool:GetDescendants()) do
 		if desc:IsA("BasePart") then
-			-- Verificar se a parte está dentro de um Accessory ou Model (WeaponModel)
+
 			local ehComponenteVisual = desc:FindFirstAncestorOfClass("Accessory")
 				or desc:FindFirstAncestorOfClass("Model")
 
 			if ehComponenteVisual then
-				-- Acessórios/WeaponModels dentro do Tool ficam invisíveis, ancorados e sem colisão
+
 				desc.Transparency = 1
 				desc.CanCollide = false
 				desc.CanTouch = false
@@ -534,7 +419,7 @@ function ToolBuilder.RestaurarComponentesTool(tool: Tool)
 				desc.Massless = true
 				desc.Anchored = true
 			else
-				-- Parte principal do Tool (Handle/Handler) fica visível, mas sem colisão/toque
+
 				desc.Transparency = 0
 				desc.CanCollide = false
 				desc.CanTouch = false
@@ -554,20 +439,12 @@ function ToolBuilder.RestaurarComponentesTool(tool: Tool)
 	end
 end
 
---[[
-    ExtrairDadosDoMundo
-    Extrai os dados de um item dropado no mundo (Tool ou Model com folder "Dados").
-    
-    @param itemInstance (Tool|Model): Tool ou Model do item no mundo
-    @return (table|nil): Tabela com os dados ou nil se falhar
-]]
 function ToolBuilder.ExtrairDadosDoMundo(itemInstance)
 	if not itemInstance then
 		warn("[ToolBuilder] ERRO: Instância inválida fornecida para ExtrairDadosDoMundo!")
 		return nil
 	end
 
-	-- Aceitar tanto Tool quanto Model
 	if not (itemInstance:IsA("Tool") or itemInstance:IsA("Model")) then
 		warn("[ToolBuilder] ERRO: ExtrairDadosDoMundo espera Tool ou Model, recebeu:", itemInstance.ClassName)
 		return nil
@@ -581,7 +458,6 @@ function ToolBuilder.ExtrairDadosDoMundo(itemInstance)
 
 	local dados = {}
 
-	-- Ler todos os ValueObjects
 	for _, valueObject in ipairs(dadosFolder:GetChildren()) do
 		if
 			valueObject:IsA("StringValue")
@@ -597,26 +473,16 @@ function ToolBuilder.ExtrairDadosDoMundo(itemInstance)
 	return dados
 end
 
---[[
-    PodeEmpilhar
-    Verifica se dois itens podem ser empilhados juntos.
-    
-    @param itemA (table): Dados do primeiro item
-    @param itemB (table): Dados do segundo item
-    @return (boolean): true se podem empilhar, false caso contrário
-]]
 function ToolBuilder.PodeEmpilhar(itemA, itemB)
-	-- Tipos diferentes não empilham
+
 	if itemA.Tipo ~= itemB.Tipo then
 		return false
 	end
 
-	-- IDs diferentes não empilham
 	if itemA.Id ~= itemB.Id then
 		return false
 	end
 
-	-- Materiais, Comidas, Bebidas, Pocoes e Ingredientes empilham livremente por ID
 	if
 		itemA.Tipo == "Materiais"
 		or itemA.Tipo == "Comidas"
@@ -627,7 +493,6 @@ function ToolBuilder.PodeEmpilhar(itemA, itemB)
 		return true
 	end
 
-	-- Armas, Armaduras e Ferramentas empilham apenas se todos atributos forem idênticos
 	if itemA.Tipo == "Armas" or itemA.Tipo == "Armaduras" or itemA.Tipo == "Ferramentas" then
 		local atributosParaComparar = { "MaterialBase", "Upgrade", "Dano", "Resistencia", "Eficiencia", "Slot" }
 
@@ -640,23 +505,13 @@ function ToolBuilder.PodeEmpilhar(itemA, itemB)
 		return true
 	end
 
-	-- ArmasEquipadas não empilham
 	if itemA.Tipo == "ArmasEquipadas" then
 		return false
 	end
 
-	-- Padrão: não empilhar
 	return false
 end
 
---[[
-    AtualizarQuantidade
-    Atualiza a quantidade de um Tool existente.
-    
-    @param tool (Tool): Tool para atualizar
-    @param novaQuantidade (number): Nova quantidade
-    @return (boolean): true se sucesso, false se falhar
-]]
 function ToolBuilder.AtualizarQuantidade(tool, novaQuantidade)
 	if not tool or not tool:IsA("Tool") then
 		warn("[ToolBuilder] ERRO: Tool inválido fornecido para AtualizarQuantidade!")
@@ -681,35 +536,12 @@ function ToolBuilder.AtualizarQuantidade(tool, novaQuantidade)
 	return true
 end
 
---[[
-    CalcularPesoTotal
-    Calcula o peso total de um item considerando quantidade.
-    
-    @param itemData (table): Dados do item
-    @return (number): Peso total
-]]
 function ToolBuilder.CalcularPesoTotal(itemData)
 	local pesoUnitario = itemData.Peso or 0
 	local quantidade = itemData.Quantidade or 1
 	return pesoUnitario * quantidade
 end
 
---[[
-    CriarArmaEquipada
-    Cria um Tool do tipo ArmaEquipada a partir dos dados de uma arma original.
-
-    Fluxo:
-    1. Converte o Id da arma para o Id do template equipada (ex: "espada_ferro" â†’ "espada_ferro-equipada")
-    2. Clona o template de ArmasEquipadas correspondente
-    3. Sobrescreve os Dados com os valores da arma original (Dano, Alcance, Peso, etc.)
-    4. NÃO altera Dados.modoAnimacao (mantém o valor do template)
-    5. Define CanBeDropped = false
-    6. Coloca no parent
-
-    @param dadosArma (table): Dados extraídos da arma original via ExtrairDados()
-    @param parent (Instance): Onde colocar a ArmaEquipada (tipicamente player.Backpack)
-    @return (Tool|nil): ArmaEquipada criada ou nil se falhar
-]]
 function ToolBuilder.CriarArmaEquipada(dadosArma, parent)
 	warn("[ToolBuilder] ========================================")
 	warn("[ToolBuilder] Criando ArmaEquipada a partir de:", dadosArma.Id)
@@ -724,11 +556,9 @@ function ToolBuilder.CriarArmaEquipada(dadosArma, parent)
 		return nil
 	end
 
-	-- Resolver o Id do template equipada
 	local idEquipada = dadosArma.Id .. "-equipada"
 	warn("[ToolBuilder] Template equipada ID:", idEquipada)
 
-	-- Buscar o template na pasta ArmasEquipadas
 	local pastaEquipadas = TemplatesFolder:FindFirstChild("ArmasEquipadas")
 	if not pastaEquipadas then
 		warn("[ToolBuilder] ERRO: Pasta 'ArmasEquipadas' não encontrada em ToolsTemplates!")
@@ -746,14 +576,12 @@ function ToolBuilder.CriarArmaEquipada(dadosArma, parent)
 		return nil
 	end
 
-	-- Clonar o template
 	local armaEquipada = template:Clone()
 	warn("[ToolBuilder] Template equipada clonado com sucesso")
 
-	-- Sobrescrever dados com valores da arma original
 	local dadosFolder = armaEquipada:FindFirstChild("Dados")
 	if dadosFolder then
-		-- Campos a sobrescrever da arma original
+
 		local camposSobrescrever = {
 			"Dano",
 			"Alcance",
@@ -768,7 +596,7 @@ function ToolBuilder.CriarArmaEquipada(dadosArma, parent)
 			if valor ~= nil then
 				local valueObject = dadosFolder:FindFirstChild(campo)
 				if valueObject then
-					-- Atualizar existente
+
 					if valueObject:IsA("StringValue") then
 						valueObject.Value = tostring(valor)
 					elseif valueObject:IsA("NumberValue") then
@@ -779,7 +607,7 @@ function ToolBuilder.CriarArmaEquipada(dadosArma, parent)
 						valueObject.Value = math.floor(tonumber(valor) or 0)
 					end
 				else
-					-- Criar novo se não existir
+
 					local tipoValor = type(valor)
 					local novoValue = nil
 
@@ -803,23 +631,19 @@ function ToolBuilder.CriarArmaEquipada(dadosArma, parent)
 			end
 		end
 
-		-- Garantir que Tipo está correto (sempre ArmasEquipadas)
 		local tipoValue = dadosFolder:FindFirstChild("Tipo")
 		if tipoValue and tipoValue:IsA("StringValue") then
 			tipoValue.Value = "ArmasEquipadas"
 		end
 
-		-- Quantidade sempre 1 para ArmaEquipada
 		local qtdValue = dadosFolder:FindFirstChild("Quantidade")
 		if qtdValue then
 			qtdValue.Value = 1
 		end
 	end
 
-	-- Configurar ArmaEquipada
 	armaEquipada.CanBeDropped = false
 
-	-- Remover ProximityPrompt se existir
 	local handle = armaEquipada:FindFirstChild("Handle")
 	if handle then
 		for _, child in ipairs(handle:GetChildren()) do
@@ -829,11 +653,9 @@ function ToolBuilder.CriarArmaEquipada(dadosArma, parent)
 		end
 	end
 
-	-- Ocultar componentes visuais internos do Tool
-	-- (só os clones no Character serão visíveis)
 	for _, desc in ipairs(armaEquipada:GetDescendants()) do
 		if desc:IsA("BasePart") then
-			-- Se for parte de um Acessório ou Model (WeaponModel), ocultar e ancorar
+
 			local ehComponenteVisual = desc:FindFirstAncestorOfClass("Accessory")
 				or desc:FindFirstAncestorOfClass("Model")
 			if ehComponenteVisual then
@@ -844,8 +666,7 @@ function ToolBuilder.CriarArmaEquipada(dadosArma, parent)
 				desc.Massless = true
 				desc.Anchored = true
 			else
-				-- Se for parte da arma (Handle), deve ficar invisível mas NÃO ancorado
-				-- para poder ser usado pelo sistema de armas do Roblox
+
 				desc.Transparency = 1
 				desc.CanCollide = false
 				desc.CanTouch = false
@@ -861,9 +682,8 @@ function ToolBuilder.CriarArmaEquipada(dadosArma, parent)
 	end
 	warn("[ToolBuilder]   Componentes visuais internos ocultados (Handle desancorado)")
 
-	-- Parentar
 	armaEquipada.Parent = parent
-	warn("[ToolBuilder] ArmaEquipada criada:", armaEquipada.Name, "â†’", parent:GetFullName())
+	warn("[ToolBuilder] ArmaEquipada criada:", armaEquipada.Name, "->", parent:GetFullName())
 	warn("[ToolBuilder] ========================================")
 
 	return armaEquipada

@@ -1,8 +1,15 @@
+--[[
+    Script: Footsteps.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/RbxCharacterSounds
+    Responsabilidade: Mapeia materiais e estados para sons de passos do personagem.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao decide movimento, estado ou animacao; apenas reage a estados para tocar sons locais.
+]]
 local footsteps = {}
 
 footsteps.materialMap = {
 	[Enum.Material.Fabric] = 		"Carpet",
-	
+
 	[Enum.Material.Slate] = 		"Concrete",
 	[Enum.Material.Concrete] = 		"Concrete",
 	[Enum.Material.Brick] = 		"Concrete",
@@ -15,19 +22,19 @@ footsteps.materialMap = {
 	[Enum.Material.Limestone] = 	"Concrete",
 	[Enum.Material.Pavement] = 		"Concrete",
 	[Enum.Material.Pebble] = 		"Concrete",
-	
+
 	[Enum.Material.Ground] = 		"Dirt",
 	[Enum.Material.Mud] = 			"Dirt",
 
 	[Enum.Material.Grass] = 		"Grass",
 	[Enum.Material.LeafyGrass] = 	"Grass",
-	
+
 	[Enum.Material.Sand] = 			"Sand",
 	[Enum.Material.Salt] = 			"Sand",
-	
+
 	[Enum.Material.Snow] = 			"Snow",
 	[Enum.Material.Glacier] = 		"Snow",
-	
+
 	[Enum.Material.Plastic] = 		"Tile",
 	[Enum.Material.Marble] = 		"Tile",
 	[Enum.Material.Granite] = 		"Tile",
@@ -35,7 +42,7 @@ footsteps.materialMap = {
 
 	[Enum.Material.Wood] = 			"Wood",
 	[Enum.Material.WoodPlanks] = 	"WoodPlank",
-	
+
 	[Enum.Material.CorrodedMetal] = "Metal",
 	[Enum.Material.DiamondPlate] = 	"Metal",
 	[Enum.Material.Metal] = 		"Metal",

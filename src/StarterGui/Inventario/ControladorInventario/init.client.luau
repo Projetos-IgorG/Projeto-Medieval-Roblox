@@ -1,19 +1,24 @@
--- services
+--[[
+    Script: init.client.luau
+    Caminho: src/StarterGui/Inventario/ControladorInventario
+    Responsabilidade: Controla abertura, renderizacao e interacoes da interface de inventario.
+    Uso: LocalScript; roda automaticamente para o jogador local em src/StarterGui/Inventario/ControladorInventario.
+    Nao faz: Nao valida autoridade do servidor, nao salva dados persistentes e nao substitui regras server-side.
+    Funcoes principais: showSlots, removeEmptySlots, manageInventory, searchTool, newTool, reloadInventory
+]]
 local StarterGui = game:GetService("StarterGui")
 local ContextActionService = game:GetService("ContextActionService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- Ponte de comunicação entre scripts client-side (substitui _G)
 local ClientBridge =
 	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
--- references
+
 local player = game:GetService("Players").LocalPlayer
 local backpack = player:WaitForChild("Backpack")
 local camera = workspace.CurrentCamera
 
--- DISABLE BASIC ROBLOX HOTBAR
 StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
 
 local CustomInventoryGUI = script.Parent
@@ -23,13 +28,12 @@ local toolButton = script.BotaoFerramenta
 
 local inventoryHandler = require(script.Parent.ConfigInventario)
 
--- Drop state
 local isDropping = false
 local dropConn = nil
 local dropStart = 0
 local dropTool = nil
-local DROP_MAX = 2 -- segundos para completar 100%
-local DROP_MIN_THRESHOLD = 0.1 -- segundos mínimos para reconhecer um hold
+local DROP_MAX = 2
+local DROP_MIN_THRESHOLD = 0.1
 
 local function showSlots()
 	for index = 1, inventoryHandler.slotAmount do
@@ -164,14 +168,9 @@ local function getToolEquipped()
 	return character and character:FindFirstChildOfClass("Tool")
 end
 
--- ============================================
--- SISTEMA DE DROP CUSTOMIZADO
--- ============================================
 local Remotos = ReplicatedStorage:WaitForChild("Remotos")
 local DroparToolEvent = Remotos:WaitForChild("DroparTool")
 
--- Use ContextActionService to capture Backspace and block the default Roblox drop action.
--- This ensures the engine's drop won't race with our custom logic.
 local function finalizeDrop(tool, elapsed, dropFrame)
 	if not tool then
 		return
@@ -211,7 +210,6 @@ local function handlePartialDrop(_, inputState, _)
 			return Enum.ContextActionResult.Sink
 		end
 
-		-- Verificar se o Tool é do tipo 'ArmasEquipadas' (não pode dropar arma equipada)
 		local dadosFolder = tool:FindFirstChild("Dados")
 		if dadosFolder then
 			local tipoValue = dadosFolder:FindFirstChild("Tipo")
@@ -225,7 +223,6 @@ local function handlePartialDrop(_, inputState, _)
 			return Enum.ContextActionResult.Pass
 		end
 
-		-- localizar frame do slot no hotBar
 		local slotIndex = inventoryHandler:getToolPosition(tool)
 		local slotFrame = nil
 		if slotIndex then
@@ -257,7 +254,6 @@ local function handlePartialDrop(_, inputState, _)
 			dropFrame.Visible = true
 		end
 
-		-- iniciar o processo de hold
 		isDropping = true
 		dropStart = tick()
 		dropTool = tool
@@ -268,7 +264,7 @@ local function handlePartialDrop(_, inputState, _)
 			end
 			local elapsed = tick() - dropStart
 			if not dropTool or not dropTool.Parent then
-				-- ferramenta removida/cancelada
+
 				isDropping = false
 				if dropConn then
 					dropConn:Disconnect()
@@ -335,7 +331,6 @@ UserInputService.InputChanged:Connect(function(input)
 		local toolEquipped = getToolEquipped()
 		local toolPosition = inventoryHandler:getToolPosition(toolEquipped) or 0
 
-		-- Bloqueia troca por scroll se não pode alterar tool
 		if ClientBridge.PodeAlterarTool and not ClientBridge.PodeAlterarTool() then
 			return
 		end

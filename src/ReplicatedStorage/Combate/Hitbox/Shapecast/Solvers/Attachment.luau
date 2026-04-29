@@ -2,6 +2,14 @@
 --!native
 --!optimize 2
 
+--[[
+    Script: Attachment.luau
+    Caminho: src/ReplicatedStorage/Combate/Hitbox/Shapecast/Solvers
+    Responsabilidade: Resolve Shapecasts guiados por Attachments em partes ou modelos.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao decide regras de combate; apenas resolve a varredura fisica solicitada.
+    Funcoes principais: ToPosition, ToDirection, ToVisual
+]]
 local Settings = require(script.Parent.Parent.HitboxConfig)
 local Types = require(script.Parent.Parent.Types)
 

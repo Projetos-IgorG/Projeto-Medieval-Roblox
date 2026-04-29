@@ -1,3 +1,11 @@
+--[[
+    Script: Planice.luau
+    Caminho: src/ReplicatedStorage/Mundo/Ambiente/Climas
+    Responsabilidade: Define o perfil visual e atmosferico do clima de planice.
+    Uso: ModuleScript; use require(caminho) para ler as tabelas e valores exportados.
+    Nao faz: Nao executa comportamento sozinho; apenas fornece dados para outros scripts.
+    Funcoes principais: transicao
+]]
 local function transicao(duracao, pesoClima)
 	return {
 		duracao = duracao,

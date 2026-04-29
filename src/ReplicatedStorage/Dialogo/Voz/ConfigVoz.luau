@@ -1,48 +1,31 @@
 --[[
-	VozConfig — Configurações centralizadas do sistema de voz dos NPCs.
-	
-	Flags:
-	  SimpleVoice  → Tick por letra (sistema legado)
-	  CustomVoice  → Murmúrio em loop (sistema novo)
-	  Ambos podem ser true ao mesmo tempo.
+    Script: ConfigVoz.luau
+    Caminho: src/ReplicatedStorage/Dialogo/Voz
+    Responsabilidade: Centraliza parametros de voz sintetica e mapeamentos de som para dialogos.
+    Uso: ModuleScript; use require(caminho) para ler as tabelas e valores exportados.
+    Nao faz: Nao executa comportamento sozinho; apenas fornece dados para outros scripts.
+    Funcoes principais: ResolverSimpleVoice
 ]]
-
 local VozConfig = {}
 
--- ==========================================
--- Flags Globais
--- ==========================================
 VozConfig.SimpleVoice = true
 VozConfig.CustomVoice = false
 
--- ==========================================
--- SimpleVoice — Configurações por tipo
--- ==========================================
--- Apenas 4 variantes base. Qualquer TipoVoz que não
--- esteja aqui cairá no fallback por gênero (Male/Female).
-
 VozConfig.SimpleVoiceConfigs = {
-	-- ── Male ──
+
 	["Male"] = { Pitch = 1.0, Velocidade = 0.04, FrequenciaSom = 3 },
 	["StrongMale"] = { Pitch = 0.9, Velocidade = 0.05, FrequenciaSom = 4 },
 	["KidMale"] = { Pitch = 1.2, Velocidade = 0.04, FrequenciaSom = 2 },
 
-	-- ── Female ──
 	["Female"] = { Pitch = 1.5, Velocidade = 0.04, FrequenciaSom = 3 },
 	["StrongFemale"] = { Pitch = 1.2, Velocidade = 0.05, FrequenciaSom = 4 },
 	["KidFemale"] = { Pitch = 2, Velocidade = 0.04, FrequenciaSom = 2 },
 }
 
--- Som de tick para SimpleVoice
 VozConfig.SimpleVoiceTickSoundId = "rbxassetid://97441356620294"
 
--- ==========================================
--- CustomVoice — Configurações por tipo
--- ==========================================
--- 18 tipos de voz. Cada um com seu AudioId e Volume.
-
 VozConfig.CustomVoiceConfigs = {
-	-- ── Male ──
+
 	["FunnyMale"] = { AudioId = "rbxassetid://0", Volume = 0.5 },
 	["KidMale"] = { AudioId = "rbxassetid://0", Volume = 0.5 },
 	["MerchantMale"] = { AudioId = "rbxassetid://0", Volume = 0.5 },
@@ -53,7 +36,6 @@ VozConfig.CustomVoiceConfigs = {
 	["VillainMale"] = { AudioId = "rbxassetid://0", Volume = 0.5 },
 	["WiseMale"] = { AudioId = "rbxassetid://139997731227387", Volume = 0.6 },
 
-	-- ── Female ──
 	["FunnyFemale"] = { AudioId = "rbxassetid://0", Volume = 0.5 },
 	["KidFemale"] = { AudioId = "rbxassetid://0", Volume = 0.5 },
 	["MerchantFemale"] = { AudioId = "rbxassetid://0", Volume = 0.5 },
@@ -65,28 +47,17 @@ VozConfig.CustomVoiceConfigs = {
 	["WiseFemale"] = { AudioId = "rbxassetid://139153490291810", Volume = 0.3 },
 }
 
--- Pontos de início possíveis para o áudio (compartilhado por todas as vozes)
 VozConfig.CustomVoicePontosDeInicio = { 0, 0.39, 1.334, 2.54, 4.0, 6.6, 7.474, 8, 862, 11.21, 13.632, 14.503 }
 
--- Opções de pitch para CustomVoice (sorteio por frase)
 VozConfig.CustomVoicePitchOptions = { 0.94, 1.0, 1.06 }
 
--- Duração do fade-in e fade-out entre loops (segundos)
 VozConfig.CustomVoiceFadeDuration = 0.4
 
--- ==========================================
--- Fallback — Resolve qualquer TipoVoz para
--- uma chave válida no SimpleVoiceConfigs
--- ==========================================
-
---- Retorna a chave SimpleVoice válida para o TipoVoz dado.
---- Ex: "WiseFemale" → "Female", "StrongMale" → "StrongMale"
 function VozConfig.ResolverSimpleVoice(tipoVoz: string): string
 	if VozConfig.SimpleVoiceConfigs[tipoVoz] then
 		return tipoVoz
 	end
 
-	-- Fallback por gênero: pega o sufixo "Male" ou "Female"
 	if string.find(tipoVoz, "Kid") then
 		if string.find(tipoVoz, "Female") then
 			return "KidFemale"

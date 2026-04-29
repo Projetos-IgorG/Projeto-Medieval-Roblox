@@ -1,3 +1,11 @@
+--[[
+    Script: PerfisTempoDia.luau
+    Caminho: src/ReplicatedStorage/Mundo/Ambiente
+    Responsabilidade: Define perfis de luz e atmosfera para periodos do dia.
+    Uso: ModuleScript; use require(caminho) para ler as tabelas e valores exportados.
+    Nao faz: Nao executa comportamento sozinho; apenas fornece dados para outros scripts.
+    Funcoes principais: ObterPerfil, frame, copiar, interpolarValor, obterIntervalo
+]]
 local ConfiguracaoTempo = require(script.Parent:WaitForChild("ConfiguracaoTempo"))
 
 local PerfisTempoDia = {}

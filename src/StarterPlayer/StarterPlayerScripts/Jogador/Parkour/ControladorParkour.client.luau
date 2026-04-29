@@ -1,23 +1,11 @@
 --[[
-	Parkour - init.client.luau
-	Script principal do sistema de parkour.
-	Responsável APENAS por captura de input e gerenciamento de estado.
-	Toda lógica de verificação, análise e utilidades está nos módulos dedicados.
-
-	MUDAR A CADA VERSÃO:
-	VERSÃO: "Parkour 3.0v â€” Momentum System (sem cooldowns, velocidade progressiva"
-
-	Keybinds (baseado em intenção direcional, não teclas específicas):
-	- No chão/ar + Jump: VaultBaixo / VaultMédio / Agarrar
-	- Agarrado + Frente (W): Subir; entre SubirSalto e Escalar, prioriza SubirSalto
-	- Agarrado + Frente + Jump: SubirSalto
-	- Agarrado + Frente (W) segurando após timeout: Escalar automático (quando disponível)
-	- Agarrado + Jump: Escalar (se couber) ou Soltar
-	- Agarrado + Trás (S) + Jump: PuloTras
-	- Agarrado + Trás (S) segurar: confirma intenção, tenta Descer; se falhar, Soltar
-	- Momentum: ações consecutivas aumentam velocidade de animação e transição (1.0 â†’ 1.3x)
+    Script: ControladorParkour.client.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/Jogador/Parkour
+    Responsabilidade: Controla input, estado e execucao local das acoes de parkour.
+    Uso: LocalScript; roda automaticamente para o jogador local em src/StarterPlayer/StarterPlayerScripts/Jogador/Parkour.
+    Nao faz: Nao valida autoridade do servidor, nao salva dados persistentes e nao substitui regras server-side.
+    Funcoes principais: dbgPrint, limparConexoes, resetDescerState, isFailThrottled, setFailThrottle, registerMomentum
 ]]
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
@@ -32,10 +20,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ClientBridge = require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
 local AnimacaoParkour = require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Parkour"):WaitForChild("Animacoes"):WaitForChild("AnimacaoParkour"))
 
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Estado local (conexões, cache, timers)
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
 local connections: { RBXScriptConnection } = {}
 local JUMP_COOLDOWN = 0.1
 local lastJumpTime = 0
@@ -44,18 +28,12 @@ local failThrottles = {} :: { [string]: number }
 local lastIdleRecheckAt = 0
 local currentHrp: BasePart? = nil
 
--- Pendentes de confirmação (SubirSalto / LateralSalto)
-local subirSaltoPendente = nil -- { Result, ExpiresAt, SourceEdgePosition, EscalarFallbackResult?, SwitchToEscalarAt? }
-local lateralSaltoPendente = nil -- { Direcao, Target, CurveFallbackTarget, CreatedAt, SwitchToCurveAt }
+local subirSaltoPendente = nil
+local lateralSaltoPendente = nil
 
--- Intenção de descer (hold em S)
 local descerHoldStart = 0
 local descerHolding = false
 local descerSemOpcaoStart = 0
-
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Helpers locais (apenas state management)
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 local function dbgPrint(...)
 	Debug.Verbose(...)
@@ -123,10 +101,6 @@ local function resolveCurrentHrp(character: Model): BasePart?
 	currentHrp = nil
 	return nil
 end
-
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Pendentes: SubirSalto / LateralSalto
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 local function setSubirSaltoPendente(subirResult, escalarFallbackResult)
 	if subirSaltoPendente then
@@ -214,10 +188,6 @@ local function getSubirSaltoPendenteValido()
 	return subirSaltoPendente.Result
 end
 
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Debug draw helpers (delegates puros)
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
 local function drawClimbDebug(escalarResult, subirResult)
 	if not Configs.DebugEnabled then
 		return
@@ -241,10 +211,6 @@ local function drawDescerDebug(descerResult)
 	Analisador.ClearDebug()
 	Debug.DrawDescerDebug(descerResult)
 end
-
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Handler: Jump quando AGARRADO
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 local function onJumpAgarrado(humanoid, hrp)
 	local now = os.clock()
@@ -287,7 +253,6 @@ local function onJumpAgarrado(humanoid, hrp)
 		end
 	end
 
-	-- PuloTras: Trás + Pular
 	if direcao == "Tras" then
 		local grabData = Movimento.GetGrabData()
 		if grabData and grabData.IdleMode == "IdleSuspenso" then
@@ -307,7 +272,6 @@ local function onJumpAgarrado(humanoid, hrp)
 		end
 	end
 
-	-- Escalar: tenta subir em cima da plataforma
 	local escalou = Movimento.TentarEscalar()
 	if escalou then
 		clearSubirSaltoPendente(true)
@@ -316,21 +280,15 @@ local function onJumpAgarrado(humanoid, hrp)
 		return
 	end
 
-	-- Se pressionou frente mas não conseguiu escalar, continuar agarrado
 	if direcao == "Frente" then
 		return
 	end
 
-	-- Fallback: soltar
 	clearSubirSaltoPendente(true)
 	clearLateralSaltoPendente(true)
 	resetDescerState()
 	Movimento.Soltar()
 end
-
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Handler: Jump quando NÃO está agarrado
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 local function onJumpNormal(character, humanoid)
 	if Movimento.EstaEmAcao() then
@@ -353,7 +311,6 @@ local function onJumpNormal(character, humanoid)
 		return
 	end
 
-	-- Filtro: no chão é só Vault
 	if noChao and result.Acao == "Agarrar" then
 		dbgPrint("[Parkour] Ação bloqueada no chão | Acao:", result.Acao)
 		if Configs.DebugEnabled then
@@ -362,7 +319,6 @@ local function onJumpNormal(character, humanoid)
 		return
 	end
 
-	-- Vault só quando correndo
 	if
 		(result.Acao == "VaultBaixo" or result.Acao == "VaultMedio")
 		and not Analisador.IsRunningForVault(humanoid, ClientBridge)
@@ -393,7 +349,6 @@ local function onJumpNormal(character, humanoid)
 		end
 	end
 
-	-- Guarda final: nunca Agarrar quando pulo iniciou no chão
 	if noChao and result.Acao == "Agarrar" then
 		dbgPrint("[Parkour] Agarrar bloqueado: pulo iniciado no chão")
 		if Configs.DebugEnabled then
@@ -402,12 +357,10 @@ local function onJumpNormal(character, humanoid)
 		return
 	end
 
-	-- Debug visual
 	if Configs.DebugEnabled then
 		Analisador.DrawDebug(result)
 	end
 
-	-- Executar ação
 	local sucesso = Movimento.Executar(result)
 
 	if sucesso then
@@ -416,10 +369,6 @@ local function onJumpNormal(character, humanoid)
 		dbgPrint("[Parkour] Movimento.Executar falhou | Acao:", result.Acao)
 	end
 end
-
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Handler unificado de Jump
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 local function onJumpRequest(character: Model, humanoid: Humanoid)
 	local now = os.clock()
@@ -439,10 +388,6 @@ local function onJumpRequest(character: Model, humanoid: Humanoid)
 		onJumpNormal(character, humanoid)
 	end
 end
-
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Heartbeat: polling enquanto agarrado
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 local function onHeartbeat(character, humanoid)
 	local now = os.clock()
@@ -521,10 +466,10 @@ local function onHeartbeat(character, humanoid)
 					setFailThrottle("Subir", now)
 					if escalarFallback then
 						dbgPrint(
-							"[Parkour] SubirSalto disponível â€” aperte Pular para confirmar ou segure frente para escalar"
+							"[Parkour] SubirSalto disponível - aperte Pular para confirmar ou segure frente para escalar"
 						)
 					else
-						dbgPrint("[Parkour] SubirSalto disponível â€” aperte Pular para confirmar")
+						dbgPrint("[Parkour] SubirSalto disponível - aperte Pular para confirmar")
 					end
 				end
 			end
@@ -580,7 +525,7 @@ local function onHeartbeat(character, humanoid)
 			if target then
 				local iniciouPreview = setLateralSaltoPendente(direcao, target, curveFallbackTarget)
 				if iniciouPreview then
-					dbgPrint("[Parkour] LateralSalto disponível â€” aperte Pular para confirmar")
+					dbgPrint("[Parkour] LateralSalto disponível - aperte Pular para confirmar")
 				end
 			elseif lateralSaltoPendente then
 				clearLateralSaltoPendente(true)
@@ -653,15 +598,11 @@ local function onHeartbeat(character, humanoid)
 			Movimento.CancelarPreviewLateralAoSoltar(runtimeConfig)
 			clearLateralSaltoPendente(false)
 		end
-		-- Sem direção â†’ resetar
+
 		resetDescerState()
 		clearSubirSaltoPendente(true)
 	end
 end
-
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Setup por Character (com cleanup)
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 local function setupCharacter(character: Model)
 	limparConexoes()
@@ -682,12 +623,10 @@ local function setupCharacter(character: Model)
 	local humanoid = character:WaitForChild("Humanoid") :: Humanoid
 	currentHrp = character:WaitForChild("HumanoidRootPart") :: BasePart
 
-	-- Desabilita climbing padrão do Roblox (sistema de parkour substitui)
 	humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
 
 	AnimacaoParkour.Inicializar(character)
 
-	-- JumpRequest
 	local jumpConn = humanoid:GetPropertyChangedSignal("Jump"):Connect(function()
 		if humanoid.Jump then
 			onJumpRequest(character, humanoid)
@@ -695,13 +634,11 @@ local function setupCharacter(character: Model)
 	end)
 	table.insert(connections, jumpConn)
 
-	-- Heartbeat: polling enquanto agarrado
 	local heartbeatConn = RunService.Heartbeat:Connect(function()
 		onHeartbeat(character, humanoid)
 	end)
 	table.insert(connections, heartbeatConn)
 
-	-- Cleanup ao morrer
 	local diedConn = humanoid.Died:Once(function()
 		limparConexoes()
 		AnimacaoParkour.Destruir()
@@ -715,10 +652,6 @@ local function setupCharacter(character: Model)
 	end)
 	table.insert(connections, diedConn)
 end
-
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Inicialização
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 local function init()
 	player.CharacterAdded:Connect(setupCharacter)

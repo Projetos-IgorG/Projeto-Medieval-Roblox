@@ -1,25 +1,13 @@
---[[
-	Modulo_Dano.luau
-	
-	Processa e aplica dano no sistema de combate.
-	
-	Responsabilidades:
-	- Validar estrutura de dados da Tool (pasta "Dados", propriedade "Dano")
-	- Obter dano base da Tool equipada
-	- Calcular dano final baseado no tipo de ataque
-	- Aplicar dano ao alvo com validações
-	
-	Tipos de ataque:
-	- AtaqueLeve: Multiplicador 1.0x
-	- AtaqueLeveFinal: Multiplicador 1.15x (+15%)
-	- AtaquePesado: Multiplicador 1.5x (+50%)
-]]
-
 --!strict
 
--- ==========
--- CONSTANTES
--- ==========
+--[[
+    Script: DanoCombate.luau
+    Caminho: src/ReplicatedStorage/Combate/Dominio
+    Responsabilidade: Calcula regras de dano e modificadores antes da aplicacao final pelo servidor.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao dispara acoes por conta propria; apenas calcula regras para o script chamador.
+    Funcoes principais: ValidarEstruturaTool, ValidarAtacante, ValidarAlvo, ObterDanoBase, ObterMultiplicador, CalcularDano
+]]
 local PASTA_DADOS = "Dados"
 local PROP_DANO = "Dano"
 
@@ -29,27 +17,14 @@ local MULTIPLICADORES_DANO: { [string]: number } = {
 	AtaquePesado = 1.5,
 }
 
--- ==========
--- TYPES
--- ==========
 export type ResultadoDano = {
 	sucesso: boolean,
 	danoAplicado: number?,
 	erro: string?,
 }
 
--- ==========
--- MÓDULO
--- ==========
 local Modulo_Dano = {}
 
--- ==========
--- FUNÇÕES DE VALIDAÇÃO
--- ==========
---- Valida se a Tool tem a estrutura de dados correta
----@param tool Tool
----@return boolean sucesso
----@return string? erro
 function Modulo_Dano.ValidarEstruturaTool(tool: Tool): (boolean, string?)
 	if not tool then
 		return false, "Tool é nil"
@@ -69,7 +44,6 @@ function Modulo_Dano.ValidarEstruturaTool(tool: Tool): (boolean, string?)
 		return false, "Pasta Dados sem propriedade '" .. PROP_DANO .. "'"
 	end
 
-	-- Verifica se é um NumberValue ou IntValue
 	if not (danoValue:IsA("NumberValue") or danoValue:IsA("IntValue")) then
 		return false, "Propriedade Dano não é numérica (NumberValue ou IntValue)"
 	end
@@ -77,16 +51,11 @@ function Modulo_Dano.ValidarEstruturaTool(tool: Tool): (boolean, string?)
 	return true, nil
 end
 
---- Valida se um atacante é válido para aplicar dano
----@param atacante Player | Model
----@return boolean sucesso
----@return string? erro
 function Modulo_Dano.ValidarAtacante(atacante: Player | Model): (boolean, string?)
 	if not atacante then
 		return false, "Atacante é nil"
 	end
 
-	-- Se for Player, pega o Character
 	local character: Model?
 	if typeof(atacante) == "Instance" and atacante:IsA("Player") then
 		character = (atacante :: Player).Character
@@ -112,10 +81,6 @@ function Modulo_Dano.ValidarAtacante(atacante: Player | Model): (boolean, string
 	return true, nil
 end
 
---- Valida se um alvo é válido para receber dano
----@param alvo Model
----@return boolean sucesso
----@return string? erro
 function Modulo_Dano.ValidarAlvo(alvo: Model): (boolean, string?)
 	if not alvo then
 		return false, "Alvo é nil"
@@ -137,12 +102,6 @@ function Modulo_Dano.ValidarAlvo(alvo: Model): (boolean, string?)
 	return true, nil
 end
 
--- ==========
--- FUNÇÕES DE ACESSO
--- ==========
---- Obtém o valor de dano base da Tool
----@param tool Tool
----@return number?
 function Modulo_Dano.ObterDanoBase(tool: Tool): number?
 	local valido, erro = Modulo_Dano.ValidarEstruturaTool(tool)
 	if not valido then
@@ -160,33 +119,17 @@ function Modulo_Dano.ObterDanoBase(tool: Tool): number?
 	return nil
 end
 
---- Obtém o multiplicador de dano para um tipo de ataque
----@param tipoAtaque string
----@return number
 function Modulo_Dano.ObterMultiplicador(tipoAtaque: string): number
 	return MULTIPLICADORES_DANO[tipoAtaque] or 1.0
 end
 
---- Calcula o dano final
----@param danoBase number
----@param tipoAtaque string
----@return number
 function Modulo_Dano.CalcularDano(danoBase: number, tipoAtaque: string): number
 	local multiplicador = Modulo_Dano.ObterMultiplicador(tipoAtaque)
 	return danoBase * multiplicador
 end
 
--- ==========
--- FUNÇÃO PRINCIPAL
--- ==========
---- Aplica dano a um alvo
----@param tool Tool Ferramenta equipada
----@param atacante Player | Model Jogador ou Character atacante
----@param alvo Model Character ou NPC alvo
----@param tipoAtaque string Tipo de ataque (AtaqueLeve, AtaqueLeveFinal, AtaquePesado)
----@return ResultadoDano
 function Modulo_Dano.AplicarDano(tool: Tool, atacante: Player | Model, alvo: Model, tipoAtaque: string): ResultadoDano
-	-- Validação de Tool
+
 	local toolValido, toolErro = Modulo_Dano.ValidarEstruturaTool(tool)
 	if not toolValido then
 		return {
@@ -196,7 +139,6 @@ function Modulo_Dano.AplicarDano(tool: Tool, atacante: Player | Model, alvo: Mod
 		}
 	end
 
-	-- Validação de atacante
 	local atacanteValido, atacanteErro = Modulo_Dano.ValidarAtacante(atacante)
 	if not atacanteValido then
 		return {
@@ -206,7 +148,6 @@ function Modulo_Dano.AplicarDano(tool: Tool, atacante: Player | Model, alvo: Mod
 		}
 	end
 
-	-- Validação de alvo
 	local alvoValido, alvoErro = Modulo_Dano.ValidarAlvo(alvo)
 	if not alvoValido then
 		return {
@@ -216,7 +157,6 @@ function Modulo_Dano.AplicarDano(tool: Tool, atacante: Player | Model, alvo: Mod
 		}
 	end
 
-	-- Obtém dano base
 	local danoBase = Modulo_Dano.ObterDanoBase(tool)
 	if not danoBase then
 		return {
@@ -226,10 +166,8 @@ function Modulo_Dano.AplicarDano(tool: Tool, atacante: Player | Model, alvo: Mod
 		}
 	end
 
-	-- Calcula dano final
 	local danoFinal = Modulo_Dano.CalcularDano(danoBase, tipoAtaque)
 
-	-- Aplica dano com pcall para segurança
 	local sucesso, erro = pcall(function()
 		local humanoid = alvo:FindFirstChildOfClass("Humanoid")
 		if humanoid then
@@ -252,23 +190,13 @@ function Modulo_Dano.AplicarDano(tool: Tool, atacante: Player | Model, alvo: Mod
 	}
 end
 
--- ==========
--- FUNÇÃO COM DANO EXPLÍCITO (DUAL-WIELD)
--- ==========
---- Aplica dano com um valor explícito (sem ler da Tool).
---- Útil para dual-wield onde cada mão aplica metade do dano da sua arma.
----@param atacante Player | Model Jogador ou Character atacante
----@param alvo Model Character ou NPC alvo
----@param tipoAtaque string Tipo de ataque (AtaqueLeve, AtaqueLeveFinal, AtaquePesado)
----@param danoBase number Dano base já calculado (ex: metade do dano da arma)
----@return ResultadoDano
 function Modulo_Dano.AplicarDanoComValor(
 	atacante: Player | Model,
 	alvo: Model,
 	tipoAtaque: string,
 	danoBase: number
 ): ResultadoDano
-	-- Validação de atacante
+
 	local atacanteValido, atacanteErro = Modulo_Dano.ValidarAtacante(atacante)
 	if not atacanteValido then
 		return {
@@ -278,7 +206,6 @@ function Modulo_Dano.AplicarDanoComValor(
 		}
 	end
 
-	-- Validação de alvo
 	local alvoValido, alvoErro = Modulo_Dano.ValidarAlvo(alvo)
 	if not alvoValido then
 		return {
@@ -288,10 +215,8 @@ function Modulo_Dano.AplicarDanoComValor(
 		}
 	end
 
-	-- Calcula dano final com multiplicador de tipo
 	local danoFinal = Modulo_Dano.CalcularDano(danoBase, tipoAtaque)
 
-	-- Aplica dano com pcall para segurança
 	local sucesso, erro = pcall(function()
 		local humanoid = alvo:FindFirstChildOfClass("Humanoid")
 		if humanoid then

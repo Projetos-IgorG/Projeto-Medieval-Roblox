@@ -1,13 +1,16 @@
 --[[
-	Módulo de Diálogo: Genérico (Generic)
-	Contém a árvore de falas e escolhas para NPCs sem profissão específica ou "NPCs de Fundo".
+    Script: Generic.luau
+    Caminho: src/ReplicatedStorage/Dialogo/Conversas/Genericos
+    Responsabilidade: Define uma conversa generica reutilizavel por NPCs simples.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao concede recompensas nem altera estado do jogador; isso fica nos servicos do servidor.
 ]]
 local DialogoGenerico = {}
 
 DialogoGenerico.Dialogos = {
 
 	Inicio = {
-		-- Fala inicial para NPCs que o jogador ainda não interagiu muito
+
 		{
 			IdFala = "SaudacaoPadrao",
 			FalaNPC = "Olá, viajante! Belo dia para estar na vila, não acha?",

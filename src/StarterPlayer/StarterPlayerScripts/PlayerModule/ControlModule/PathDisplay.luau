@@ -1,5 +1,13 @@
 --!nonstrict
 
+--[[
+    Script: PathDisplay.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/ControlModule
+    Responsabilidade: Renderiza caminho e marcadores usados pelo ClickToMove.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: setCurrentPoints, clearRenderedPath, renderPath, retrieveFromPool, returnToPool, renderPoint
+]]
 local CommonUtils = script.Parent.Parent:WaitForChild("CommonUtils")
 local FlagUtil = require(CommonUtils:WaitForChild("FlagUtil"))
 FlagUtil.getUserFlag("UserRaycastUpdateAPI")

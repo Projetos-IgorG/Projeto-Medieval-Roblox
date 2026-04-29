@@ -1,9 +1,13 @@
 --!strict
---[[
-    Utility for handing LocalPlayer, Character and instances under Character (including Humanoid)
-    This is a static class.
---]]
 
+--[[
+    Script: CharacterUtil.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/CommonUtils
+    Responsabilidade: Fornece utilitarios para localizar e acompanhar Character, Humanoid e partes.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: getLocalPlayer, onLocalPlayer, getCharacter, onCharacter, getChild, onChild
+]]
 local Players = game:GetService("Players")
 
 local CommonUtils = script.Parent
@@ -17,31 +21,23 @@ local CONNECTIONS = {
     CHARACTER_CHILD_ADDED = "CHARACTER_CHILD_ADDED",
 }
 export type CharacterUtilClass = {
-    -- Returns the LocalPlayer if it exists
+
     getLocalPlayer: () -> Player?,
 
-    -- Runs the function with the LocalPlayer when it is available (which may be immediately)
     onLocalPlayer: (func: (Player) -> ()) -> RBXScriptConnection,
 
-    -- Returns the Character if it exists
     getCharacter: () -> Model?,
 
-    -- Runs the function with the Character when it is available
-    -- and anytime it changes
-    onCharacter: (func: (Model) -> ()) -> RBXScriptConnection, 
+    onCharacter: (func: (Model) -> ()) -> RBXScriptConnection,
 
-    -- Returns the Instance under the Character with the given name if it exists
     getChild: (name: string, className: string) -> Instance?,
 
-    -- Runs the function with the Instance under the Character with the given name when it is available
-    -- and anytime it changes
-    onChild: (name: string, className: string, func: (Instance) -> ()) -> RBXScriptConnection, 
+    onChild: (name: string, className: string, func: (Instance) -> ()) -> RBXScriptConnection,
 
-    -- stores connections to engine APIs which may change LocalPlayer, Character or instances under Character
     _connectionUtil: ConnectionUtil.ConnectionUtil,
-    -- stores BindableEvents to tell interested parties when LocalPlayer, Character or instances under Character become valid
+
     _boundEvents: {[string]: BindableEvent},
-    -- gets the BindableEvent for the given name, creating it if it doesn't exist
+
     _getOrCreateBoundEvent: (name: string) -> BindableEvent,
 }
 
@@ -60,13 +56,12 @@ function CharacterUtil.onLocalPlayer(func)
         func(localPlayer)
     end
 
-	-- connect to potential local player changes
 	CharacterUtil._connectionUtil:trackConnection(
 		CONNECTIONS.LOCAL_PLAYER,
 		Players:GetPropertyChangedSignal("LocalPlayer"):Connect(function()
             local updatedLocalPlayer = CharacterUtil.getLocalPlayer()
             assert(updatedLocalPlayer, "LocalPlayer should exist when LocalPlayer property changes")
-            CharacterUtil._getOrCreateBoundEvent(CONNECTIONS.LOCAL_PLAYER):Fire(updatedLocalPlayer) -- reuse connnection key for boundEvents
+            CharacterUtil._getOrCreateBoundEvent(CONNECTIONS.LOCAL_PLAYER):Fire(updatedLocalPlayer)
 		end)
 	)
 
@@ -85,7 +80,7 @@ end
 function CharacterUtil.onCharacter(func)
 	CharacterUtil._connectionUtil:trackConnection(
 		CONNECTIONS.ON_LOCAL_PLAYER,
-        -- check the character every time the local player changes
+
 		CharacterUtil.onLocalPlayer(function(localPlayer)
 			local character = CharacterUtil.getCharacter()
 			if character then
@@ -94,15 +89,15 @@ function CharacterUtil.onCharacter(func)
 
 			CharacterUtil._connectionUtil:trackConnection(
 				CONNECTIONS.CHARACTER_ADDED,
-                -- alert character connections on CharacterAdded
+
 				localPlayer.CharacterAdded:Connect(function(newCharacter)
                     assert(newCharacter, "CharacterAdded must provide a character")
-					CharacterUtil._getOrCreateBoundEvent(CONNECTIONS.CHARACTER_ADDED):Fire(newCharacter) -- reuse connnection key for boundEvents
+					CharacterUtil._getOrCreateBoundEvent(CONNECTIONS.CHARACTER_ADDED):Fire(newCharacter)
 				end)
 			)
 		end)
 	)
-    
+
     local boundEvent = CharacterUtil._getOrCreateBoundEvent(CONNECTIONS.CHARACTER_ADDED)
     return boundEvent.Event:Connect(func)
 end
@@ -122,14 +117,13 @@ end
 function CharacterUtil.onChild(name: string, className: string, func)
 	CharacterUtil._connectionUtil:trackConnection(
 		CONNECTIONS.ON_CHARACTER,
-		-- check character children on character changes
+
 		CharacterUtil.onCharacter(function(character)
 			local child = CharacterUtil.getChild(name, className)
 			if child then
 				func(child)
 			end
 
-			-- alert connected functions if the new child matches
 			CharacterUtil._connectionUtil:trackConnection(
 				CONNECTIONS.CHARACTER_CHILD_ADDED,
 				character.ChildAdded:Connect(function(newChild)

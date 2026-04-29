@@ -1,3 +1,11 @@
+--[[
+    Script: ChatIAServidor.luau
+    Caminho: src/ServerScriptService/Dialogo/ChatIA
+    Responsabilidade: Processa pedidos de chat com IA no servidor e devolve respostas ao cliente.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: Iniciar, ObterDadosNPC, ObterIdentificadorNPC, SanitizarTexto, PlayerEstaPertoDoNPC, ObterHistorico
+]]
 local ServicoIAChat = {}
 
 local HttpService = game:GetService("HttpService")

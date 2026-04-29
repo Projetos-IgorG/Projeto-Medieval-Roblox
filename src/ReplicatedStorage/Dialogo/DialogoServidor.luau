@@ -1,6 +1,10 @@
 --[[
-	Módulo Server para o Sistema de Diálogo.
-	Gerencia as ações solicitadas pelo cliente e recompensa jogadores ou altera estados.
+    Script: DialogoServidor.luau
+    Caminho: src/ReplicatedStorage/Dialogo
+    Responsabilidade: Registra acoes de dialogo no servidor e executa respostas autorizadas.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: Init
 ]]
 local SistemaDialogoServer = {}
 
@@ -16,7 +20,6 @@ if not RemoteAcao then
 	RemoteAcao.Parent = FolderRemotes
 end
 
--- Dicionário de funções que o Servidor pode executar quando o Diálogo pede
 local AcoesRegistradas = {
 
 	["DarTag"] = function(player, valorDaTag)
@@ -36,8 +39,6 @@ local AcoesRegistradas = {
 		end
 	end,
 
-	-- Exemplos de expansão futura:
-	-- ["DarItem"] = function(player, nomeDoItem) ... end
 }
 
 function SistemaDialogoServer.Init()

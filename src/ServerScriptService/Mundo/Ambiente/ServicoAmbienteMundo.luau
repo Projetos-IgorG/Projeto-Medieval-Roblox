@@ -1,3 +1,11 @@
+--[[
+    Script: ServicoAmbienteMundo.luau
+    Caminho: src/ServerScriptService/Mundo/Ambiente
+    Responsabilidade: Controla o clima ativo do mundo e replica mudancas de ambiente.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: _garantirEstado, Iniciar, DefinirAmbienteClima, ObterEstado, DefinirPausa, AlternarPausa
+]]
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CatalogoAmbiente = require(ReplicatedStorage:WaitForChild("Mundo"):WaitForChild("Ambiente"):WaitForChild("CatalogoAmbiente"))

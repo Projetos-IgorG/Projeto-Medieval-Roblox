@@ -1,3 +1,10 @@
+--[[
+    Script: CameraToggleStateController.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/CameraModule
+    Responsabilidade: Controla estados alternados da camera, como travas e modos temporarios.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+]]
 local _GameSettings = UserSettings():GetService("UserGameSettings")
 
 local Input = require(script.Parent:WaitForChild("CameraInput"))

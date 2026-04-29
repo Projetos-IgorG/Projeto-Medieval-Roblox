@@ -1,16 +1,12 @@
 --[[
-	Nome: Requirements
-	Função: Centralizar a checagem de pré-requisitos de jogador.
-	Responsabilidade:
-		- Avaliar requisitos do tipo Tag, Level, Moedas e Item.
-		- Retornar true apenas quando todos os requisitos forem atendidos.
-	Comunicação: Consumido por sistemas de Diálogo, Quests, Interações e Lojas.
-	Uso: local Req = require(ReplicatedStorage.Dialogo.Requisitos.RequisitosDialogo)
+    Script: RequisitosDialogo.luau
+    Caminho: src/ReplicatedStorage/Dialogo/Requisitos
+    Responsabilidade: Avalia requisitos de dialogo antes de liberar falas ou escolhas.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: ChecarRequisitos
 ]]
-
 local GerenciadorRequisitos = {}
-
--- Tipos suportados em req.Tipo: "Tag", "Level", "Moedas", "Item".
 
 function GerenciadorRequisitos.ChecarRequisitos(player: Player, requisitos: { any }): boolean
 	if not requisitos or #requisitos == 0 then
@@ -50,7 +46,7 @@ function GerenciadorRequisitos.ChecarRequisitos(player: Player, requisitos: { an
 				return false
 			end
 		elseif tipoReq == "Item" then
-			-- Item considerado presente se estiver no Backpack ou já equipado no Character.
+
 			local backpack = player:FindFirstChild("Backpack")
 			if not backpack or not backpack:FindFirstChild(nomeReq) then
 				local char = player.Character

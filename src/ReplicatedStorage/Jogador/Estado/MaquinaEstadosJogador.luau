@@ -1,28 +1,12 @@
 --[[
-    StateMachine.luau
-    
-    Máquina de Estados compartilhada para Player e NPC.
-    Gerencia transições de estado com validação de condições.
-    
-    Estados de Movimento (estadoMov):
-    - Parado, Andando, Correndo, Pulando, Caindo, Escalando, Nadando, Agachado
-    
-    Estados de Ação (estadoAcao):
-    - Nenhuma, AtacandoLeve, CarregandoPesado, SoltandoPesado, AtaquePesado, Defendendo,
-      DefesaQuebrada, Aparando, Aparado, Stunado, Equipando, Desequipando, Morto
-    
-    Fluxo Ataque Pesado:
-    - CarregandoPesado: M1 sendo segurado, animação pausada no AttackRelease
-    - SoltandoPesado: M1 solto, animação continua até marcador HeavyAttack
-    - AtaquePesado: Marcador HeavyAttack atingido, hitbox criada
-    
-    Funções seguem o padrão "Tente[Ação]" retornando sucesso/falha.
+    Script: MaquinaEstadosJogador.luau
+    Caminho: src/ReplicatedStorage/Jogador/Estado
+    Responsabilidade: Mantem a maquina de estados que coordena transicoes de comportamento do jogador.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: Novo, _EstaBloqueado, _MovimentoPermiteAtaque, _PararCorrida, _AlterarEstadoMov, _AlterarEstadoAcao
 ]]
-
--- ----------------------------------------------------------------------------
--- CONFIGURAÇÃO DE DEBUG
--- ----------------------------------------------------------------------------
-local DEBUG_ENABLED = false -- Altere para true para habilitar prints de debug
+local DEBUG_ENABLED = false
 
 local function DebugPrint(...)
 	if DEBUG_ENABLED then
@@ -36,10 +20,6 @@ local Modulo_Configuracoes =
 
 local MaquinaDeEstados = {}
 MaquinaDeEstados.__index = MaquinaDeEstados
-
--- ----------------------------------------------------------------------------
--- ENUMS DE ESTADO
--- ----------------------------------------------------------------------------
 
 MaquinaDeEstados.EstadoMov = {
 	Parado = "Parado",
@@ -56,8 +36,8 @@ MaquinaDeEstados.EstadoAcao = {
 	Nenhuma = "Nenhuma",
 	AtacandoLeve = "AtacandoLeve",
 	CarregandoPesado = "CarregandoPesado",
-	SoltandoPesado = "SoltandoPesado", -- M1 solto, animação continua até marcador HeavyAttack
-	AtaquePesado = "AtaquePesado", -- Marcador HeavyAttack atingido, hitbox criada
+	SoltandoPesado = "SoltandoPesado",
+	AtaquePesado = "AtaquePesado",
 	Defendendo = "Defendendo",
 	DefesaQuebrada = "DefesaQuebrada",
 	Aparando = "Aparando",
@@ -69,7 +49,6 @@ MaquinaDeEstados.EstadoAcao = {
 	Morto = "Morto",
 }
 
--- Estados que bloqueiam ações
 local ESTADOS_BLOQUEANTES = {
 	[MaquinaDeEstados.EstadoAcao.Stunado] = true,
 	[MaquinaDeEstados.EstadoAcao.Aparado] = true,
@@ -79,29 +58,22 @@ local ESTADOS_BLOQUEANTES = {
 	[MaquinaDeEstados.EstadoAcao.Dashando] = true,
 }
 
--- Estados que permitem cancelar para ataque (riposte)
 local ESTADOS_PERMITE_RIPOSTE = {
 	[MaquinaDeEstados.EstadoAcao.Aparando] = true,
 }
 
--- Estados que permitem iniciar bloqueio
 local ESTADOS_PERMITE_BLOQUEIO = {
 	[MaquinaDeEstados.EstadoAcao.Nenhuma] = true,
 }
 
--- Estados de movimento que permitem ataque
 local MOVIMENTO_PERMITE_ATAQUE = {
 	[MaquinaDeEstados.EstadoMov.Parado] = true,
 	[MaquinaDeEstados.EstadoMov.Andando] = true,
 	[MaquinaDeEstados.EstadoMov.Correndo] = true,
 	[MaquinaDeEstados.EstadoMov.Agachado] = true,
-	[MaquinaDeEstados.EstadoMov.Pulando] = true, -- Permite atacar no ar
-	[MaquinaDeEstados.EstadoMov.Caindo] = true, -- Permite atacar no ar
+	[MaquinaDeEstados.EstadoMov.Pulando] = true,
+	[MaquinaDeEstados.EstadoMov.Caindo] = true,
 }
-
--- ----------------------------------------------------------------------------
--- CONSTRUTOR
--- ----------------------------------------------------------------------------
 
 export type DadosEstado = {
 	estadoMov: string,
@@ -116,26 +88,22 @@ export type DadosEstado = {
 	indiceCombo: number,
 	ultimoAtaque: number,
 	ultimoParry: number,
-	-- Novos campos para sistema de combo por marcadores
-	janelaComboAtiva: boolean, -- Se está na janela de input do combo
-	continuarCombo: boolean, -- Se o player clicou M1 durante a janela
-	-- Campos para sistema de Dash
+
+	janelaComboAtiva: boolean,
+	continuarCombo: boolean,
+
 	dashando: boolean,
 	ultimoDash: number,
 	direcaoDash: string,
 	correndoIntent: boolean?,
 }
 
---- Cria nova instância da máquina de estados
----@param entidade Model Character ou NPC
----@return table
 function MaquinaDeEstados.Novo(entidade: Model)
 	local self = setmetatable({}, MaquinaDeEstados)
 
 	self.entidade = entidade
 	self.humanoid = entidade:FindFirstChildOfClass("Humanoid")
 
-	-- Estado atual
 	self.dados = {
 		estadoMov = MaquinaDeEstados.EstadoMov.Parado,
 		estadoAcao = MaquinaDeEstados.EstadoAcao.Nenhuma,
@@ -147,22 +115,21 @@ function MaquinaDeEstados.Novo(entidade: Model)
 		shiftLock = false,
 		correndo = false,
 		indiceCombo = 0,
-		-- Map of last attack timestamps per attack type (e.g. AtaqueLeve, AtaquePesado)
+
 		ultimoAtaqueTipos = {},
-		-- legacy field (kept for compatibility but not used for cooldown checks)
+
 		ultimoAtaque = 0,
 		ultimoParry = 0,
 		parryToken = 0,
-		-- Sistema de combo por marcadores
+
 		janelaComboAtiva = false,
 		continuarCombo = false,
-		-- Sistema de Dash
+
 		dashando = false,
 		ultimoDash = 0,
 		direcaoDash = "Frente",
 	} :: DadosEstado
 
-	-- Callbacks para notificar mudanças
 	self.callbacks = {
 		aoMudarEstadoMov = nil,
 		aoMudarEstadoAcao = nil,
@@ -172,30 +139,21 @@ function MaquinaDeEstados.Novo(entidade: Model)
 	return self
 end
 
--- ----------------------------------------------------------------------------
--- FUNÇÃ•ES INTERNAS
--- ----------------------------------------------------------------------------
-
---- Verifica se está em estado bloqueante
 function MaquinaDeEstados:_EstaBloqueado(): boolean
 	return ESTADOS_BLOQUEANTES[self.dados.estadoAcao] == true
 end
 
---- Verifica se pode atacar baseado no movimento
 function MaquinaDeEstados:_MovimentoPermiteAtaque(): boolean
 	return MOVIMENTO_PERMITE_ATAQUE[self.dados.estadoMov] == true
 end
 
---- Para de correr e muda para andando (se estava correndo no chão)
---- Usado ao iniciar ações de combate
 function MaquinaDeEstados:_PararCorrida()
 	if self.dados.correndo then
 		self.dados.correndo = false
 	end
 
-	-- Se está correndo no chão, muda para andando ou parado
 	if self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Correndo then
-		-- Verifica se o humanoid está se movendo
+
 		if self.humanoid and self.humanoid.MoveDirection.Magnitude > 0.1 then
 			self:_AlterarEstadoMov(MaquinaDeEstados.EstadoMov.Andando)
 		else
@@ -204,7 +162,6 @@ function MaquinaDeEstados:_PararCorrida()
 	end
 end
 
---- Altera estado de movimento e notifica
 function MaquinaDeEstados:_AlterarEstadoMov(novoEstado: string)
 	if self.dados.estadoMov == novoEstado then
 		return
@@ -213,7 +170,6 @@ function MaquinaDeEstados:_AlterarEstadoMov(novoEstado: string)
 	local estadoAnterior = self.dados.estadoMov
 	self.dados.estadoMov = novoEstado
 
-	-- Debug log
 	DebugPrint(
 		string.format("[MaquinaDeEstados] %s: estadoMov %s -> %s", self.entidade.Name, estadoAnterior, novoEstado)
 	)
@@ -223,7 +179,6 @@ function MaquinaDeEstados:_AlterarEstadoMov(novoEstado: string)
 	end
 end
 
---- Altera estado de ação e notifica
 function MaquinaDeEstados:_AlterarEstadoAcao(novoEstado: string)
 	if self.dados.estadoAcao == novoEstado then
 		return
@@ -232,7 +187,6 @@ function MaquinaDeEstados:_AlterarEstadoAcao(novoEstado: string)
 	local estadoAnterior = self.dados.estadoAcao
 	self.dados.estadoAcao = novoEstado
 
-	-- Debug log
 	DebugPrint(
 		string.format("[MaquinaDeEstados] %s: estadoAcao %s -> %s", self.entidade.Name, estadoAnterior, novoEstado)
 	)
@@ -242,20 +196,12 @@ function MaquinaDeEstados:_AlterarEstadoAcao(novoEstado: string)
 	end
 end
 
--- ----------------------------------------------------------------------------
--- FUNÇÃ•ES PÃšBLICAS - TENTATIVAS DE AÇÃO
--- ----------------------------------------------------------------------------
-
---- Tenta pular
----@return boolean sucesso
----@return string? motivo
 function MaquinaDeEstados:TentePular(): (boolean, string?)
-	-- Não pode pular se bloqueado
+
 	if self:_EstaBloqueado() then
 		return false, "EstadoBloqueante"
 	end
 
-	-- Não pode pular se já pulando ou caindo
 	if
 		self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Pulando
 		or self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Caindo
@@ -263,17 +209,14 @@ function MaquinaDeEstados:TentePular(): (boolean, string?)
 		return false, "JaPulando"
 	end
 
-	-- Não pode pular agachado
 	if self.dados.agachado then
 		return false, "Agachado"
 	end
 
-	-- Não pode pular bloqueando
 	if self.dados.bloqueando then
 		return false, "Bloqueando"
 	end
 
-	-- Não pode pular enquanto ataca (leve, pesado, carregando, soltando)
 	if
 		self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.AtacandoLeve
 		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.CarregandoPesado
@@ -288,10 +231,8 @@ function MaquinaDeEstados:TentePular(): (boolean, string?)
 	return true, nil
 end
 
---- Tenta aterrissar (chamado quando jogador toca o chão)
----@return boolean sucesso
 function MaquinaDeEstados:TenteAterrissar(): boolean
-	-- Só aterrissa se estava no ar
+
 	if
 		self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Pulando
 		or self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Caindo
@@ -302,11 +243,8 @@ function MaquinaDeEstados:TenteAterrissar(): boolean
 	return false
 end
 
---- Define estado de movimento diretamente (para sincronizar com cliente)
----@param novoEstado string
----@return boolean sucesso
 function MaquinaDeEstados:DefinirEstadoMov(novoEstado: string): boolean
-	-- Valida se é um estado válido
+
 	local estadoValido = false
 	for _, estado in pairs(MaquinaDeEstados.EstadoMov) do
 		if estado == novoEstado then
@@ -323,19 +261,12 @@ function MaquinaDeEstados:DefinirEstadoMov(novoEstado: string): boolean
 	return true
 end
 
---- Tenta atacar leve em pé
---- No novo sistema, esta função é chamada tanto para iniciar combo quanto para continuar
---- O controle real do combo é feito via marcadores de animação no cliente
----@return boolean sucesso
----@return string? tipoAtaque ("AtaqueLeve" ou nil se já está atacando)
----@return string? motivo
 function MaquinaDeEstados:TenteAtacarLeveEmPe(): (boolean, string?, string?)
-	-- Não pode atacar se bloqueado (exceto riposte)
+
 	if self:_EstaBloqueado() then
 		return false, nil, "EstadoBloqueante"
 	end
 
-	-- Permite riposte de Aparando
 	if ESTADOS_PERMITE_RIPOSTE[self.dados.estadoAcao] then
 		self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.AtacandoLeve)
 		self.dados.indiceCombo = 1
@@ -344,22 +275,18 @@ function MaquinaDeEstados:TenteAtacarLeveEmPe(): (boolean, string?, string?)
 		return true, "AtaqueLeve", "Riposte"
 	end
 
-	-- Não pode atacar agachado (usar TenteAtacarLeveAgachado)
 	if self.dados.agachado then
 		return false, nil, "Agachado"
 	end
 
-	-- Verifica movimento
 	if not self:_MovimentoPermiteAtaque() then
 		return false, nil, "MovimentoInvalido"
 	end
 
-	-- Verifica se está defendendo
 	if self.dados.bloqueando then
 		return false, nil, "Bloqueando"
 	end
 
-	-- Carrega Configuração do Modo para verificar permissão
 	local configModo = Modulo_Configuracoes.ObterModoAnimacao(self.dados.modoAnimacao)
 
 	if not configModo or configModo.tipo ~= "Combate" then
@@ -368,20 +295,18 @@ function MaquinaDeEstados:TenteAtacarLeveEmPe(): (boolean, string?, string?)
 
 	local agora = tick()
 
-	-- Se já está atacando e está na janela de combo
 	if self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.AtacandoLeve then
 		if self.dados.janelaComboAtiva then
-			-- Marca que deve continuar o combo
+
 			self.dados.continuarCombo = true
 			DebugPrint(string.format("[MaquinaDeEstados] %s: Combo continuado na janela!", self.entidade.Name))
 			return false, nil, "ComboContinuado"
 		else
-			-- Não está na janela, ignora input
+
 			return false, nil, "ForaDaJanela"
 		end
 	end
 
-	-- Se está em qualquer OUTRO estado que não seja Nenhuma, não pode iniciar ataque leve
 	if self.dados.estadoAcao ~= MaquinaDeEstados.EstadoAcao.Nenhuma then
 		DebugPrint(
 			string.format(
@@ -393,7 +318,6 @@ function MaquinaDeEstados:TenteAtacarLeveEmPe(): (boolean, string?, string?)
 		return false, nil, "AcaoEmAndamento"
 	end
 
-	-- Novo ataque - verifica cooldown (por tipo: AtaqueLeve e AtaquePesado)
 	local cooldown = Modulo_Configuracoes.ObterConfiguracao("CooldownComboLeve") or 0.5
 	local dadosAtaque = self.dados.ultimoAtaqueTipos
 	local ultimoLeve = dadosAtaque and dadosAtaque["AtaqueLeve"] or 0
@@ -405,15 +329,13 @@ function MaquinaDeEstados:TenteAtacarLeveEmPe(): (boolean, string?, string?)
 		return false, nil, "Cooldown"
 	end
 
-	-- Inicia novo combo
 	self.dados.ultimoAtaqueTipos["AtaqueLeve"] = agora
-	-- For backward compatibility
+
 	self.dados.ultimoAtaque = agora
 	self.dados.indiceCombo = 1
 	self.dados.janelaComboAtiva = false
 	self.dados.continuarCombo = false
 
-	-- Para de correr ao atacar (se estava correndo no chão)
 	self:_PararCorrida()
 
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.AtacandoLeve)
@@ -421,10 +343,6 @@ function MaquinaDeEstados:TenteAtacarLeveEmPe(): (boolean, string?, string?)
 	return true, "AtaqueLeve", nil
 end
 
---- Tenta atacar leve agachado
----@return boolean sucesso
----@return string? tipoAtaque
----@return string? motivo
 function MaquinaDeEstados:TenteAtacarLeveAgachado(): (boolean, string?, string?)
 	if self:_EstaBloqueado() then
 		return false, nil, "EstadoBloqueante"
@@ -444,12 +362,10 @@ function MaquinaDeEstados:TenteAtacarLeveAgachado(): (boolean, string?, string?)
 		return false, nil, "SemCombate"
 	end
 
-	-- Se está em qualquer estado que não seja Nenhuma, não pode iniciar ataque leve agachado
 	if self.dados.estadoAcao ~= MaquinaDeEstados.EstadoAcao.Nenhuma then
 		return false, nil, "AcaoEmAndamento"
 	end
 
-	-- Verifica cooldown
 	local agora = tick()
 	local cooldown = Modulo_Configuracoes.ObterConfiguracao("CooldownComboLeve") or 0.5
 	local dadosAtaque = self.dados.ultimoAtaqueTipos
@@ -462,7 +378,6 @@ function MaquinaDeEstados:TenteAtacarLeveAgachado(): (boolean, string?, string?)
 		return false, nil, "Cooldown"
 	end
 
-	-- Ataque agachado não tem combo
 	self.dados.ultimoAtaqueTipos["AtaqueLeve"] = agora
 	self.dados.ultimoAtaque = agora
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.AtacandoLeve)
@@ -471,9 +386,6 @@ function MaquinaDeEstados:TenteAtacarLeveAgachado(): (boolean, string?, string?)
 	return true, "AtaqueLeve", nil
 end
 
---- Tenta carregar ataque pesado
----@return boolean sucesso
----@return string? motivo
 function MaquinaDeEstados:TenteCarregarPesado(): (boolean, string?)
 	if self:_EstaBloqueado() then
 		return false, "EstadoBloqueante"
@@ -497,12 +409,10 @@ function MaquinaDeEstados:TenteCarregarPesado(): (boolean, string?)
 		return false, "SemCombate"
 	end
 
-	-- Se está em qualquer estado que não seja Nenhuma, não pode carregar pesado
 	if self.dados.estadoAcao ~= MaquinaDeEstados.EstadoAcao.Nenhuma then
 		return false, "AcaoEmAndamento"
 	end
 
-	-- Verifica cooldown do ataque pesado (por tipo: AtaquePesado)
 	local cooldown = Modulo_Configuracoes.ObterConfiguracao("CooldownAtaquePesado") or 2.0
 	local agora = tick()
 	local ultimoPesado = self.dados.ultimoAtaqueTipos and self.dados.ultimoAtaqueTipos["AtaquePesado"] or 0
@@ -510,59 +420,43 @@ function MaquinaDeEstados:TenteCarregarPesado(): (boolean, string?)
 		return false, "Cooldown"
 	end
 
-	-- Para de correr ao carregar ataque pesado (se estava correndo no chão)
 	self:_PararCorrida()
 
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.CarregandoPesado)
 	return true, nil
 end
 
---- Tenta soltar ataque pesado (após carregar)
----@return boolean sucesso
----@return string? motivo
 function MaquinaDeEstados:TenteSoltarPesado(): (boolean, string?)
 	if self.dados.estadoAcao ~= MaquinaDeEstados.EstadoAcao.CarregandoPesado then
 		return false, "NaoCarregando"
 	end
 
-	-- NÃO marca cooldown aqui - será marcado quando o ataque realmente acontecer (TenteExecutarPesado)
-	-- Muda para SoltandoPesado (estado intermediário até o marcador HeavyAttack)
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.SoltandoPesado)
 	return true, nil
 end
 
---- Tenta executar o ataque pesado (chamado quando o marcador HeavyAttack é atingido)
---- Muda de SoltandoPesado para AtaquePesado e marca o cooldown
----@return boolean sucesso
----@return string? motivo
 function MaquinaDeEstados:TenteExecutarPesado(): (boolean, string?)
 	if self.dados.estadoAcao ~= MaquinaDeEstados.EstadoAcao.SoltandoPesado then
 		return false, "NaoSoltando"
 	end
 
 	local agora = tick()
-	-- Marca cooldown específico para ataque pesado AGORA (quando o ataque realmente acontece)
+
 	self.dados.ultimoAtaqueTipos["AtaquePesado"] = agora
-	-- Backwards compatibility
+
 	self.dados.ultimoAtaque = agora
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.AtaquePesado)
 	return true, nil
 end
 
---- Tenta bloquear
----@param shiftLockAtivo boolean? Estado do ShiftLock passado pelo cliente (obrigatório no servidor)
----@return boolean sucesso
----@return string? motivo
 function MaquinaDeEstados:TenteBloquear(shiftLockAtivo: boolean?): (boolean, string?)
 	if self:_EstaBloqueado() then
 		return false, "EstadoBloqueante"
 	end
 
-	-- ShiftLock agora é passado pelo client como parâmetro
-	-- Fallback: tenta ler de StatusLocal (client-side) se não foi fornecido
 	local estaComShiftLock = shiftLockAtivo
 	if estaComShiftLock == nil then
-		-- Tenta ler de StatusLocal (pasta client-side)
+
 		local statusLocal = self.entidade:FindFirstChild("StatusLocal")
 		if statusLocal then
 			local shiftLockValue = statusLocal:FindFirstChild("ShiftLockOn")
@@ -577,7 +471,7 @@ function MaquinaDeEstados:TenteBloquear(shiftLockAtivo: boolean?): (boolean, str
 				)
 			end
 		end
-		-- Fallback final: usa o valor interno
+
 		if estaComShiftLock == nil then
 			estaComShiftLock = self.dados.shiftLock
 		end
@@ -615,11 +509,9 @@ function MaquinaDeEstados:TenteBloquear(shiftLockAtivo: boolean?): (boolean, str
 		return false, "SemCombate"
 	end
 
-	-- Reset parry readiness on block start
 	self.dados.prontoParaAparar = false
 	self.dados.parryToken += 1
 
-	-- Para de correr ao bloquear (se estava correndo no chão)
 	self:_PararCorrida()
 
 	self.dados.bloqueando = true
@@ -628,9 +520,6 @@ function MaquinaDeEstados:TenteBloquear(shiftLockAtivo: boolean?): (boolean, str
 	return true, nil
 end
 
---- Tenta parar de bloquear
----@return boolean sucesso
----@return string? motivo
 function MaquinaDeEstados:TentePararBloqueio(): (boolean, string?)
 	if not self.dados.bloqueando then
 		return false, "NaoBloqueando"
@@ -638,15 +527,12 @@ function MaquinaDeEstados:TentePararBloqueio(): (boolean, string?)
 
 	self.dados.bloqueando = false
 	self.dados.prontoParaAparar = false
-	self.dados.parryToken += 1 -- invalida timers de parry
+	self.dados.parryToken += 1
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Nenhuma)
 
 	return true, nil
 end
 
---- Tenta quebrar própria defesa
----@return boolean sucesso
----@return string? motivo
 function MaquinaDeEstados:TenteQuebrarDefesa(): (boolean, string?)
 	if not self.dados.bloqueando then
 		return false, "NaoBloqueando"
@@ -659,9 +545,6 @@ function MaquinaDeEstados:TenteQuebrarDefesa(): (boolean, string?)
 	return true, nil
 end
 
---- Tenta agachar
----@return boolean sucesso
----@return string? motivo
 function MaquinaDeEstados:TenteAgachar(): (boolean, string?)
 	if self:_EstaBloqueado() then
 		return false, "EstadoBloqueante"
@@ -684,9 +567,6 @@ function MaquinaDeEstados:TenteAgachar(): (boolean, string?)
 	return true, nil
 end
 
---- Tenta levantar (parar de agachar)
----@return boolean sucesso
----@return string? motivo
 function MaquinaDeEstados:TenteLevantar(): (boolean, string?)
 	if not self.dados.agachado then
 		return false, "NaoAgachado"
@@ -698,9 +578,6 @@ function MaquinaDeEstados:TenteLevantar(): (boolean, string?)
 	return true, nil
 end
 
---- Tenta correr
----@return boolean sucesso
----@return string? motivo
 function MaquinaDeEstados:TenteCorrer(): (boolean, string?)
 	if self:_EstaBloqueado() then
 		return false, "EstadoBloqueante"
@@ -714,7 +591,6 @@ function MaquinaDeEstados:TenteCorrer(): (boolean, string?)
 		return false, "Bloqueando"
 	end
 
-	-- Não pode correr enquanto ataca ou defende
 	if
 		self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.AtacandoLeve
 		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.CarregandoPesado
@@ -737,17 +613,11 @@ function MaquinaDeEstados:TenteCorrer(): (boolean, string?)
 	return true, nil
 end
 
---- Tenta parar de correr
----@return boolean sucesso
 function MaquinaDeEstados:TentePararCorrer(): boolean
 	self.dados.correndo = false
 	return true
 end
 
---- Tenta equipar modo de combate
----@param modo string Nome do modo/arma
----@return boolean sucesso
----@return string? motivo
 function MaquinaDeEstados:TenteEquipar(modo: string): (boolean, string?)
 	if self:_EstaBloqueado() then
 		return false, "EstadoBloqueante"
@@ -768,9 +638,6 @@ function MaquinaDeEstados:TenteEquipar(modo: string): (boolean, string?)
 	return true, nil
 end
 
---- Tenta desequipar modo de combate
----@return boolean sucesso
----@return string? motivo
 function MaquinaDeEstados:TenteDesequipar(): (boolean, string?)
 	if self:_EstaBloqueado() then
 		return false, "EstadoBloqueante"
@@ -789,32 +656,24 @@ function MaquinaDeEstados:TenteDesequipar(): (boolean, string?)
 	return true, nil
 end
 
---- Tenta fazer dash
----@param direcao string "Frente", "Tras", "Esquerda", "Direita"
----@return boolean sucesso
----@return string? motivo
 function MaquinaDeEstados:TenteDash(direcao: string): (boolean, string?)
-	-- Não pode dar dash em estado bloqueante
+
 	if self:_EstaBloqueado() then
 		return false, "EstadoBloqueante"
 	end
 
-	-- Não pode dar dash enquanto outra ação está em andamento
 	if self.dados.estadoAcao ~= MaquinaDeEstados.EstadoAcao.Nenhuma then
 		return false, "AcaoEmAndamento"
 	end
 
-	-- Não pode dar dash enquanto bloqueia
 	if self.dados.bloqueando then
 		return false, "Bloqueando"
 	end
 
-	-- Não pode dar dash enquanto agachado
 	if self.dados.agachado then
 		return false, "Agachado"
 	end
 
-	-- Não pode dar dash no ar (verifica estado E material do chão para robustez)
 	if
 		self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Pulando
 		or self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Caindo
@@ -822,14 +681,11 @@ function MaquinaDeEstados:TenteDash(direcao: string): (boolean, string?)
 		return false, "NoAr"
 	end
 
-	-- FIX: Verificação adicional via FloorMaterial para capturar edge cases
-	-- onde estadoMov pode estar dessincronizado
 	if self.humanoid and self.humanoid.FloorMaterial == Enum.Material.Air then
 		DebugPrint(string.format("[MaquinaDeEstados] %s: Dash bloqueado - FloorMaterial é Air", self.entidade.Name))
 		return false, "NoAr"
 	end
 
-	-- Verifica cooldown
 	local agora = tick()
 	local cooldown = Modulo_Configuracoes.ObterConfiguracao("CooldownDash") or 1.5
 
@@ -837,7 +693,6 @@ function MaquinaDeEstados:TenteDash(direcao: string): (boolean, string?)
 		return false, "Cooldown"
 	end
 
-	-- Aplica estado de dash
 	self.dados.dashando = true
 	self.dados.direcaoDash = direcao or "Frente"
 	self.dados.ultimoDash = agora
@@ -847,7 +702,6 @@ function MaquinaDeEstados:TenteDash(direcao: string): (boolean, string?)
 	return true, nil
 end
 
---- Completa o dash (chamado quando a animação termina)
 function MaquinaDeEstados:CompletarDash()
 	if self.dados.estadoAcao ~= MaquinaDeEstados.EstadoAcao.Dashando then
 		return false
@@ -860,12 +714,6 @@ function MaquinaDeEstados:CompletarDash()
 	return true
 end
 
--- ----------------------------------------------------------------------------
--- FUNÇÃ•ES DE APLICAÇÃO FORÇADA (SERVIDOR)
--- ----------------------------------------------------------------------------
-
---- Aplica stun (ignorando condições)
----@param duracao number
 function MaquinaDeEstados:AplicarStun(duracao: number)
 	self.dados.stunado = true
 	self.dados.bloqueando = false
@@ -873,7 +721,6 @@ function MaquinaDeEstados:AplicarStun(duracao: number)
 	self.dados.indiceCombo = 0
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Stunado)
 
-	-- Agendar remoção do stun
 	task.delay(duracao, function()
 		if self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Stunado then
 			self.dados.stunado = false
@@ -882,16 +729,12 @@ function MaquinaDeEstados:AplicarStun(duracao: number)
 	end)
 end
 
---- Alias para AplicarStun (manter compatibilidade)
----@param duracao number
 function MaquinaDeEstados:EntrarStun(duracao: number)
 	self:AplicarStun(duracao)
 end
 
---- Aplica estado de defesa quebrada
----@param duracao number
 function MaquinaDeEstados:QuebrarDefesa(duracao: number)
-	self.dados.stunado = true -- Considera stunado para inputs
+	self.dados.stunado = true
 	self.dados.bloqueando = false
 	self.dados.prontoParaAparar = false
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.DefesaQuebrada)
@@ -904,8 +747,6 @@ function MaquinaDeEstados:QuebrarDefesa(duracao: number)
 	end)
 end
 
---- Aplica estado de aparado (foi parried)
----@param duracao number
 function MaquinaDeEstados:AplicarAparado(duracao: number)
 	self.dados.stunado = true
 	self.dados.bloqueando = false
@@ -920,33 +761,29 @@ function MaquinaDeEstados:AplicarAparado(duracao: number)
 	end)
 end
 
---- Aplica estado de aparando (executou parry com sucesso)
 function MaquinaDeEstados:AplicarAparando()
 	self.dados.prontoParaAparar = false
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Aparando)
 end
 
---- Aplica morte
 function MaquinaDeEstados:AplicarMorte()
 	self.dados.stunado = true
 	self.dados.bloqueando = false
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Morto)
 end
 
---- Completa ação atual (chamado quando animação termina)
 function MaquinaDeEstados:CompletarAcao()
 	if self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Morto then
-		return -- Morte é permanente
+		return
 	end
 
 	if
 		self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Stunado
 		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Aparado
 	then
-		return -- Gerenciado por timer
+		return
 	end
 
-	-- Reseta dados de combo ao completar ação
 	self.dados.indiceCombo = 0
 	self.dados.janelaComboAtiva = false
 	self.dados.continuarCombo = false
@@ -954,20 +791,13 @@ function MaquinaDeEstados:CompletarAcao()
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Nenhuma)
 end
 
--- ----------------------------------------------------------------------------
--- FUNÇÃ•ES DO SISTEMA DE COMBO POR MARCADORES
--- ----------------------------------------------------------------------------
-
---- Ativa a janela de input do combo
---- Chamado quando o marcador "ComboTentaAcabar" é atingido na animação
----@param indiceGolpe number Índice do golpe atual (1, 2, 3)
 function MaquinaDeEstados:AtivarJanelaCombo(indiceGolpe: number)
 	if self.dados.estadoAcao ~= MaquinaDeEstados.EstadoAcao.AtacandoLeve then
-		return -- Não está atacando, ignora
+		return
 	end
 
 	self.dados.janelaComboAtiva = true
-	self.dados.continuarCombo = false -- Reseta flag de continuar
+	self.dados.continuarCombo = false
 	self.dados.indiceCombo = indiceGolpe
 
 	DebugPrint(
@@ -975,24 +805,16 @@ function MaquinaDeEstados:AtivarJanelaCombo(indiceGolpe: number)
 	)
 end
 
---- Desativa a janela de input do combo
---- Chamado quando o tempo da janela expira
 function MaquinaDeEstados:DesativarJanelaCombo()
 	self.dados.janelaComboAtiva = false
 end
 
---- Verifica se o jogador quer continuar o combo
---- Chamado para decidir se deve continuar a animação ou parar
----@return boolean True se deve continuar o combo
 function MaquinaDeEstados:DeveContinuarCombo(): boolean
 	local resultado = self.dados.continuarCombo
-	self.dados.continuarCombo = false -- Consome o input
+	self.dados.continuarCombo = false
 	return resultado
 end
 
---- Avança para o próximo golpe do combo
---- Chamado quando o marcador "Ataque" é atingido na animação
----@param indiceGolpe number Índice do golpe que acabou de conectar (1, 2, 3, 4)
 function MaquinaDeEstados:AvancarGolpeCombo(indiceGolpe: number)
 	if self.dados.estadoAcao ~= MaquinaDeEstados.EstadoAcao.AtacandoLeve then
 		return
@@ -1000,21 +822,18 @@ function MaquinaDeEstados:AvancarGolpeCombo(indiceGolpe: number)
 
 	self.dados.indiceCombo = indiceGolpe
 	local agora = tick()
-	-- Atualiza timestamp apenas para AtaqueLeve (combo)
+
 	self.dados.ultimoAtaqueTipos["AtaqueLeve"] = agora
-	-- Backwards compatibility
-	self.dados.ultimoAtaque = agora -- Atualiza valor legado para código externo que ainda o utiliza
+
+	self.dados.ultimoAtaque = agora
 
 	DebugPrint(string.format("[MaquinaDeEstados] %s: Golpe %d executado", self.entidade.Name, indiceGolpe))
 end
 
---- Verifica se a janela de combo está ativa
----@return boolean
 function MaquinaDeEstados:EstaJanelaComboAtiva(): boolean
 	return self.dados.janelaComboAtiva
 end
 
---- Define modo de animação/combate
 function MaquinaDeEstados:DefinirModo(modo: string)
 	if self.dados.modoAnimacao == modo then
 		return
@@ -1028,38 +847,27 @@ function MaquinaDeEstados:DefinirModo(modo: string)
 	end
 end
 
---- Atualiza shift lock
 function MaquinaDeEstados:DefinirShiftLock(ativo: boolean)
 	self.dados.shiftLock = ativo
 end
 
---- Desativa janela de parry
 function MaquinaDeEstados:DesativarParry()
 	self.dados.prontoParaAparar = false
 end
 
--- ----------------------------------------------------------------------------
--- FUNÇÃ•ES DE MOVIMENTO (AUTOMÁTICAS)
--- ----------------------------------------------------------------------------
-
---- Atualiza estado de movimento baseado no Humanoid
----@param velocidade number
----@param noChao boolean
----@param velocidadeY number
 function MaquinaDeEstados:AtualizarMovimento(velocidade: number, noChao: boolean, velocidadeY: number)
-	-- Prioridade: estados especiais
+
 	if
 		self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Escalando
 		or self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Nadando
 	then
-		return -- Gerenciado externamente
+		return
 	end
 
 	if self.dados.agachado then
-		return -- Mantém agachado
+		return
 	end
 
-	-- No ar
 	if not noChao then
 		if velocidadeY > 1 then
 			self:_AlterarEstadoMov(MaquinaDeEstados.EstadoMov.Pulando)
@@ -1069,7 +877,6 @@ function MaquinaDeEstados:AtualizarMovimento(velocidade: number, noChao: boolean
 		return
 	end
 
-	-- No chão
 	if velocidade < 0.5 then
 		self:_AlterarEstadoMov(MaquinaDeEstados.EstadoMov.Parado)
 	elseif velocidade > 12 then
@@ -1079,28 +886,17 @@ function MaquinaDeEstados:AtualizarMovimento(velocidade: number, noChao: boolean
 	end
 end
 
--- ----------------------------------------------------------------------------
--- CALLBACKS
--- ----------------------------------------------------------------------------
-
---- Registra callback para mudança de estado de movimento
 function MaquinaDeEstados:AoMudarEstadoMov(callback: (string, string) -> ())
 	self.callbacks.aoMudarEstadoMov = callback
 end
 
---- Registra callback para mudança de estado de ação
 function MaquinaDeEstados:AoMudarEstadoAcao(callback: (string, string) -> ())
 	self.callbacks.aoMudarEstadoAcao = callback
 end
 
---- Registra callback para mudança de modo
 function MaquinaDeEstados:AoMudarModo(callback: (string, string) -> ())
 	self.callbacks.aoMudarModo = callback
 end
-
--- ----------------------------------------------------------------------------
--- GETTERS
--- ----------------------------------------------------------------------------
 
 function MaquinaDeEstados:ObterEstadoMov(): string
 	return self.dados.estadoMov

@@ -1,3 +1,11 @@
+--[[
+    Script: ConfiguracaoTempo.luau
+    Caminho: src/ReplicatedStorage/Mundo/Ambiente
+    Responsabilidade: Define parametros do ciclo de tempo usado pelo mundo.
+    Uso: ModuleScript; use require(caminho) para ler as tabelas e valores exportados.
+    Nao faz: Nao executa comportamento sozinho; apenas fornece dados para outros scripts.
+    Funcoes principais: NormalizarMinutos, ObterFase, FormatarHora, ConverterHorario, estaNoIntervalo
+]]
 local ConfiguracaoTempo = {}
 
 ConfiguracaoTempo.SegundosPorHoraJogo = 60

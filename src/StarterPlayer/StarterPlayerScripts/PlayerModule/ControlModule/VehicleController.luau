@@ -1,26 +1,22 @@
 --!nonstrict
---[[
-	// FileName: VehicleControl
-	// Version 1.0
-	// Written by: jmargh
-	// Description: Implements in-game vehicle controls for all input devices
 
-	// NOTE: This works for basic vehicles (single vehicle seat). If you use custom VehicleSeat code,
-	// multiple VehicleSeats or your own implementation of a VehicleSeat this will not work.
---]]
+--[[
+    Script: VehicleController.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/ControlModule
+    Responsabilidade: Controla movimento do jogador quando esta sentado em veiculos.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, BindContextActions, Enable, OnThrottleAccel, OnThrottleDeccel, OnSteerRight
+]]
 local ContextActionService = game:GetService("ContextActionService")
 
---[[ Constants ]]--
--- Set this to true if you want to instead use the triggers for the throttle
 local useTriggersForThrottle = true
--- Also set this to true if you want the thumbstick to not affect throttle, only triggers when a gamepad is conected
+
 local onlyTriggersForThrottle = false
 local ZERO_VECTOR3 = Vector3.new(0,0,0)
 
 local AUTO_PILOT_DEFAULT_MAX_STEERING_ANGLE = 35
 
-
--- Note that VehicleController does not derive from BaseCharacterController, it is a special case
 local VehicleController = {}
 VehicleController.__index = VehicleController
 
@@ -131,11 +127,10 @@ function VehicleController:OnSteerLeft(_actionName, inputState, _inputObject)
 	self.steer = self.turningRight + self.turningLeft
 end
 
--- Call this from a function bound to Renderstep with Input Priority
 function VehicleController:Update(moveVector: Vector3, cameraRelative: boolean, usingGamepad: boolean)
 	if self.vehicleSeat then
 		if cameraRelative then
-			-- This is the default steering mode
+
 			moveVector = moveVector + Vector3.new(self.steer, 0, self.throttle)
 			if usingGamepad and onlyTriggersForThrottle and useTriggersForThrottle then
 				self.vehicleSeat.ThrottleFloat = -self.throttle
@@ -146,7 +141,7 @@ function VehicleController:Update(moveVector: Vector3, cameraRelative: boolean, 
 
 			return moveVector, true
 		else
-			-- This is the path following mode
+
 			local localMoveVector = self.vehicleSeat.Occupant.RootPart.CFrame:VectorToObjectSpace(moveVector)
 
 			self.vehicleSeat.ThrottleFloat = self:ComputeThrottle(localMoveVector)
@@ -177,13 +172,10 @@ function VehicleController:ComputeSteer(localMoveVector)
 end
 
 function VehicleController:SetupAutoPilot()
-	-- Setup default
+
 	self.autoPilot.MaxSpeed = self.vehicleSeat.MaxSpeed
 	self.autoPilot.MaxSteeringAngle = AUTO_PILOT_DEFAULT_MAX_STEERING_ANGLE
 
-	-- VehicleSeat should have a MaxSteeringAngle as well.
-	-- Or we could look for a child "AutoPilotConfigModule" to find these values
-	-- Or allow developer to set them through the API as like the CLickToMove customization API
 end
 
 return VehicleController

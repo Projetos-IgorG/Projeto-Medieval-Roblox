@@ -1,11 +1,13 @@
 --!nonstrict
---[[
-	-- Original By Kip Turner, Copyright Roblox 2014
-	-- Updated by Garnold to utilize the new PathfindingService API, 2017
-	-- 2018 PlayerScripts Update - AllYourBlox
---]]
 
---[[ Flags ]]
+--[[
+    Script: ClickToMoveController.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/ControlModule
+    Responsabilidade: Controla navegacao por clique/toque ate um ponto no mundo.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: Cleanup, Cancel, IsActive, OnPathInterrupted, ComputePath, IsValidPath
+]]
 local FFlagUserExcludeNonCollidableForPathfindingSuccess, FFlagUserExcludeNonCollidableForPathfindingResult =
 	pcall(function()
 		return UserSettings():IsUserFeatureEnabled("UserExcludeNonCollidableForPathfinding")
@@ -18,7 +20,6 @@ local FFlagUserClickToMoveSupportAgentCanClimbSuccess, FFlagUserClickToMoveSuppo
 	end)
 local FFlagUserClickToMoveSupportAgentCanClimb = FFlagUserClickToMoveSupportAgentCanClimbSuccess and FFlagUserClickToMoveSupportAgentCanClimbResult
 
---[[ Roblox Services ]]--
 local UserInputService = game:GetService("UserInputService")
 local PathfindingService = game:GetService("PathfindingService")
 local Players = game:GetService("Players")
@@ -33,7 +34,6 @@ local FlagUtil = require(CommonUtils:WaitForChild("FlagUtil"))
 
 local FFlagUserRaycastUpdateAPI = FlagUtil.getUserFlag("UserRaycastUpdateAPI")
 
---[[ Configuration ]]
 local ShowPath = true
 local PlayFailureAnimation = true
 local UseDirectPath = false
@@ -41,7 +41,6 @@ local UseDirectPathForVehicle = true
 local AgentSizeIncreaseFactor = 1.0
 local UnreachableWaypointTimeout = 8
 
---[[ Constants ]]--
 local movementKeys = {
 	[Enum.KeyCode.W] = true;
 	[Enum.KeyCode.A] = true;
@@ -61,8 +60,6 @@ local ALMOST_ZERO = 0.000001
 local raycastParams = RaycastParams.new()
 raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 
-
---------------------------UTIL LIBRARY-------------------------------
 local Utility = {}
 if not FFlagUserRaycastUpdateAPI then
 	do
@@ -84,8 +81,7 @@ if not FFlagUserRaycastUpdateAPI then
 			local hitPart, hitPos, hitNorm, hitMat = Workspace:FindPartOnRayWithIgnoreList(ray, ignoreList)
 			if hitPart then
 				if ignoreNonCollidable and hitPart.CanCollide == false then
-					-- We always include character parts so a user can click on another character
-					-- to walk to them.
+
 					local _, humanoid = FindCharacterAncestor(hitPart)
 					if humanoid == nil then
 						table.insert(ignoreList, hitPart)
@@ -108,7 +104,7 @@ local function findPlayerHumanoid(player: Player)
 		if resultHumanoid and resultHumanoid.Parent == character then
 			return resultHumanoid
 		else
-			humanoidCache[player] = nil -- Bust Old Cache
+			humanoidCache[player] = nil
 			local humanoid = character:FindFirstChildOfClass("Humanoid")
 			if humanoid then
 				humanoidCache[player] = humanoid
@@ -119,7 +115,6 @@ local function findPlayerHumanoid(player: Player)
 	return nil
 end
 
---------------------------CHARACTER CONTROL-------------------------------
 local CurrentIgnoreList: {Model}
 local CurrentIgnoreTag = nil
 
@@ -215,8 +210,6 @@ local function getCollidableExtentsSize(character: Model?)
 	return r
 end
 
------------------------------------PATHER--------------------------------------
-
 local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 	local this = {}
 
@@ -277,24 +270,22 @@ local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 
 	local rootPart: BasePart = this.Humanoid and this.Humanoid.RootPart
 	if rootPart then
-		-- Setup origin
+
 		this.OriginPoint = rootPart.CFrame.Position
 
-		-- Setup agent
 		local agentRadius = 2
 		local agentHeight = 5
 		local agentCanJump = true
 
 		local seat = this.Humanoid.SeatPart
 		if seat and seat:IsA("VehicleSeat") then
-			-- Humanoid is seated on a vehicle
+
 			local vehicle = seat:FindFirstAncestorOfClass("Model")
 			if vehicle then
-				-- Make sure the PrimaryPart is set to the vehicle seat while we compute the extends.
+
 				local tempPrimaryPart = vehicle.PrimaryPart
 				vehicle.PrimaryPart = seat
 
-				-- For now, only direct path
 				if directPathForVehicle then
 					local extents: Vector3 = vehicle:GetExtentsSize()
 					agentRadius = AgentSizeIncreaseFactor * 0.5 * math.sqrt(extents.X * extents.X + extents.Z * extents.Z)
@@ -304,7 +295,6 @@ local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 					this.DirectPath = directPathForVehicle
 				end
 
-				-- Reset PrimaryPart
 				vehicle.PrimaryPart = tempPrimaryPart
 			end
 		else
@@ -327,7 +317,6 @@ local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 			this.DirectPathRiseFirst = this.Humanoid.Sit
 		end
 
-		-- Build path object
 		if FFlagUserClickToMoveSupportAgentCanClimb then
 			this.pathResult = PathfindingService:CreatePath({AgentRadius = agentRadius, AgentHeight = agentHeight, AgentCanJump = agentCanJump, AgentCanClimb = true})
 		else
@@ -374,7 +363,7 @@ local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 	end
 
 	function this:OnPathInterrupted()
-		-- Stop moving
+
 		this.Cancelled = true
 		this:OnPointReached(false)
 	end
@@ -435,8 +424,8 @@ local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 			this.stopTraverseFunc, this.setPointFunc = ClickToMoveDisplay.CreatePathDisplay(this.pointList)
 		end
 		if this.PathComputed then
-			this.CurrentPoint = 1 -- The first waypoint is always the start location. Skip it.
-			this:OnPointReached(true) -- Move to first point
+			this.CurrentPoint = 1
+			this:OnPointReached(true)
 		else
 			this.PathFailed:Fire()
 			this:Cleanup()
@@ -447,35 +436,32 @@ local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 
 	function this:OnRenderStepped(dt: number)
 		if this.Started and not this.Cancelled then
-			-- Check for Timeout (if a waypoint is not reached within the delay, we fail)
+
 			this.Timeout = this.Timeout + dt
 			if this.Timeout > UnreachableWaypointTimeout then
 				this:OnPointReached(false)
 				return
 			end
 
-			-- Get Humanoid position and velocity
 			this.CurrentHumanoidPosition = this.Humanoid.RootPart.Position + this.HumanoidOffsetFromPath
 			this.CurrentHumanoidVelocity = this.Humanoid.RootPart.Velocity
 
-			-- Check if it has reached some waypoints
 			while this.Started and this:IsCurrentWaypointReached() do
 				this:OnPointReached(true)
 			end
 
-			-- If still started, update actions
 			if this.Started then
-				-- Move action
+
 				this.NextActionMoveDirection = this.CurrentWaypointPosition - this.CurrentHumanoidPosition
 				if this.NextActionMoveDirection.Magnitude > ALMOST_ZERO then
 					this.NextActionMoveDirection = this.NextActionMoveDirection.Unit
 				else
 					this.NextActionMoveDirection = ZERO_VECTOR3
 				end
-				-- Jump action
+
 				if this.CurrentWaypointNeedsJump then
 					this.NextActionJump = true
-					this.CurrentWaypointNeedsJump = false	-- Request jump only once
+					this.CurrentWaypointNeedsJump = false
 				else
 					this.NextActionJump = false
 				end
@@ -486,15 +472,14 @@ local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 	function this:IsCurrentWaypointReached()
 		local reached = false
 
-		-- Check we do have a plane, if not, we consider the waypoint reached
 		if this.CurrentWaypointPlaneNormal ~= ZERO_VECTOR3 then
-			-- Compute distance of Humanoid from destination plane
+
 			local dist = this.CurrentWaypointPlaneNormal:Dot(this.CurrentHumanoidPosition) - this.CurrentWaypointPlaneDistance
-			-- Compute the component of the Humanoid velocity that is towards the plane
+
 			local velocity = -this.CurrentWaypointPlaneNormal:Dot(this.CurrentHumanoidVelocity)
-			-- Compute the threshold from the destination plane based on Humanoid velocity
+
 			local threshold = math.max(1.0, 0.0625 * velocity)
-			-- If we are less then threshold in front of the plane (between 0 and threshold) or if we are behing the plane (less then 0), we consider we reached it
+
 			reached = dist < threshold
 		else
 			reached = true
@@ -512,7 +497,7 @@ local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 	function this:OnPointReached(reached)
 
 		if reached and not this.Cancelled then
-			-- First, destroyed the current displayed waypoint
+
 			if this.setPointFunc then
 				this.setPointFunc(this.CurrentPoint)
 			end
@@ -520,7 +505,7 @@ local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 			local nextWaypointIdx = this.CurrentPoint + 1
 
 			if nextWaypointIdx > #this.pointList then
-				-- End of path reached
+
 				if this.stopTraverseFunc then
 					this.stopTraverseFunc()
 				end
@@ -530,9 +515,6 @@ local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 				local currentWaypoint = this.pointList[this.CurrentPoint]
 				local nextWaypoint = this.pointList[nextWaypointIdx]
 
-				-- If airborne, only allow to keep moving
-				-- if nextWaypoint.Action ~= Jump, or path mantains a direction
-				-- Otherwise, wait until the humanoid gets to the ground
 				local currentState = this.Humanoid:GetState()
 				local isInAir = currentState == Enum.HumanoidStateType.FallingDown
 					or currentState == Enum.HumanoidStateType.Freefall
@@ -549,21 +531,17 @@ local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 						local prevDirXZ = Vector2.new(prevDir.x, prevDir.z).Unit
 						local currDirXZ = Vector2.new(currDir.x, currDir.z).Unit
 
-						local THRESHOLD_COS = 0.996 -- ~cos(5 degrees)
+						local THRESHOLD_COS = 0.996
 						shouldWaitForGround = prevDirXZ:Dot(currDirXZ) < THRESHOLD_COS
 					end
 
 					if shouldWaitForGround then
 						this.Humanoid.FreeFalling:Wait()
 
-						-- Give time to the humanoid's state to change
-						-- Otherwise, the jump flag in Humanoid
-						-- will be reset by the state change
 						task.wait(0.1)
 					end
 				end
 
-				-- Move to the next point
 				this:MoveToNextWayPoint(currentWaypoint, nextWaypoint, nextWaypointIdx)
 			end
 		else
@@ -573,12 +551,9 @@ local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 	end
 
 	function this:MoveToNextWayPoint(currentWaypoint: PathWaypoint, nextWaypoint: PathWaypoint, nextWaypointIdx: number)
-		-- Build next destination plane
-		-- (plane normal is perpendicular to the y plane and is from next waypoint towards current one (provided the two waypoints are not at the same location))
-		-- (plane location is at next waypoint)
+
 		this.CurrentWaypointPlaneNormal = currentWaypoint.Position - nextWaypoint.Position
-		
-		-- plane normal isn't perpendicular to the y plane when climbing up
+
 		if not FFlagUserClickToMoveSupportAgentCanClimb or (nextWaypoint.Label ~= "Climb") then
 			this.CurrentWaypointPlaneNormal = Vector3.new(this.CurrentWaypointPlaneNormal.X, 0, this.CurrentWaypointPlaneNormal.Z)
 		end
@@ -586,21 +561,17 @@ local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 			this.CurrentWaypointPlaneNormal	= this.CurrentWaypointPlaneNormal.Unit
 			this.CurrentWaypointPlaneDistance = this.CurrentWaypointPlaneNormal:Dot(nextWaypoint.Position)
 		else
-			-- Next waypoint is the same as current waypoint so no plane
+
 			this.CurrentWaypointPlaneNormal	= ZERO_VECTOR3
 			this.CurrentWaypointPlaneDistance = 0
 		end
 
-		-- Should we jump
 		this.CurrentWaypointNeedsJump = nextWaypoint.Action == Enum.PathWaypointAction.Jump;
 
-		-- Remember next waypoint position
 		this.CurrentWaypointPosition = nextWaypoint.Position
 
-		-- Move to next point
 		this.CurrentPoint = nextWaypointIdx
 
-		-- Finally reset Timeout
 		this.Timeout = 0
 	end
 
@@ -622,15 +593,12 @@ local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 		end
 
 		if #this.pointList > 0 then
-			-- Determine the humanoid offset from the path's first point
-			-- Offset of the first waypoint from the path's origin point
+
 			this.HumanoidOffsetFromPath = Vector3.new(0, this.pointList[1].Position.Y - this.OriginPoint.Y, 0)
 
-			-- As well as its current position and velocity
 			this.CurrentHumanoidPosition = this.Humanoid.RootPart.Position + this.HumanoidOffsetFromPath
 			this.CurrentHumanoidVelocity = this.Humanoid.RootPart.Velocity
 
-			-- Connect to events
 			this.SeatedConn = this.Humanoid.Seated:Connect(function(_isSeated, _seat)
 				this:OnPathInterrupted()
 			end)
@@ -641,9 +609,8 @@ local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 				this:OnPathInterrupted()
 			end)
 
-			-- Actually start
-			this.CurrentPoint = 1 -- The first waypoint is always the start location. Skip it.
-			this:OnPointReached(true) -- Move to first point
+			this.CurrentPoint = 1
+			this:OnPointReached(true)
 		else
 			this.PathFailed:Fire()
 			if this.stopTraverseFunc then
@@ -652,12 +619,11 @@ local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 		end
 	end
 
-	--We always raycast to the ground in the case that the user clicked a wall.
 	local offsetPoint = this.TargetPoint + this.TargetSurfaceNormal*1.5
 	if FFlagUserRaycastUpdateAPI then
 		raycastParams.FilterDescendantsInstances = getIgnoreList()
 		local raycastResult = Workspace:Raycast(offsetPoint, -Vector3.yAxis * 50, raycastParams)
-	
+
 		if raycastResult then
 			this.TargetPoint = raycastResult.Position
 		end
@@ -672,8 +638,6 @@ local function Pather(endPoint, surfaceNormal, overrideUseDirectPath: boolean?)
 
 	return this
 end
-
--------------------------------------------------------------------------
 
 local function CheckAlive()
 	local humanoid = findPlayerHumanoid(Player)
@@ -753,17 +717,16 @@ local function ShowPathFailedFeedback(hitPt)
 end
 
 function OnTap(tapPositions: {Vector3}, goToPoint: Vector3?, wasTouchTap: boolean?)
-	-- Good to remember if this is the latest tap event
+
 	local camera = Workspace.CurrentCamera
 	local character = Player.Character
 
 	if not CheckAlive() then return end
 
-	-- This is a path tap position
 	if #tapPositions == 1 or goToPoint then
 		if camera then
 			local unitRay = camera:ScreenPointToRay(tapPositions[1].X, tapPositions[1].Y)
-			
+
 			if FFlagUserRaycastUpdateAPI then
 				local humanoidResult, characterResult, raycastResult
 				local ignoreList = getIgnoreList() or {}
@@ -805,19 +768,19 @@ function OnTap(tapPositions: {Vector3}, goToPoint: Vector3?, wasTouchTap: boolea
 				end
 
 				local position = raycastResult.Position
-				if goToPoint then 
+				if goToPoint then
 					position = goToPoint
 					characterResult = nil
 				end
-					-- Clean up current path
+
 				CleanupPath()
 				local thisPather = Pather(position, raycastResult.Normal)
 				if thisPather:IsValidPath() then
 					HandleMoveTo(thisPather, position, characterResult, character)
 				else
-					-- Clean up
+
 					thisPather:Cleanup()
-					-- Feedback here for when we don't have a good path
+
 					ShowPathFailedFeedback(position)
 				end
 			else
@@ -837,15 +800,15 @@ function OnTap(tapPositions: {Vector3}, goToPoint: Vector3?, wasTouchTap: boolea
 					hitChar = nil
 				end
 				if hitPt and character then
-					-- Clean up current path
+
 					CleanupPath()
 					local thisPather = Pather(hitPt, hitNormal)
 					if thisPather:IsValidPath() then
 						HandleMoveTo(thisPather, hitPt, hitChar, character)
 					else
-						-- Clean up
+
 						thisPather:Cleanup()
-						-- Feedback here for when we don't have a good path
+
 						ShowPathFailedFeedback(hitPt)
 					end
 				end
@@ -853,7 +816,7 @@ function OnTap(tapPositions: {Vector3}, goToPoint: Vector3?, wasTouchTap: boolea
 		end
 	elseif #tapPositions >= 2 then
 		if camera then
-			-- Do shoot
+
 			local currentWeapon = GetEquippedTool(character)
 			if currentWeapon then
 				currentWeapon:Activate()
@@ -868,7 +831,6 @@ local function DisconnectEvent(event)
 	end
 end
 
---[[ The ClickToMove Controller Class ]]--
 local KeyboardController = require(script.Parent:WaitForChild("Keyboard"))
 local ClickToMove = setmetatable({}, KeyboardController)
 ClickToMove.__index = ClickToMove
@@ -878,7 +840,7 @@ function ClickToMove.new(CONTROL_ACTION_PRIORITY)
 
 	self.fingerTouches = {}
 	self.numUnsunkTouches = 0
-	-- PC simulation
+
 	self.mouse2DownTime = tick()
 	self.mouse2DownPos = Vector2.new()
 	self.mouse2UpTime = tick()
@@ -961,7 +923,6 @@ function ClickToMove:OnCharacterAdded(character)
 			self:OnTouchBegan(input, processed)
 		end
 
-		-- Cancel path when you use the keyboard controls if wasd is enabled.
 		if self.wasdEnabled and processed == false and input.UserInputType == Enum.UserInputType.Keyboard
 			and movementKeys[input.KeyCode] then
 			CleanupPath()
@@ -987,7 +948,7 @@ function ClickToMove:OnCharacterAdded(character)
 		if input.UserInputType == Enum.UserInputType.MouseButton2 then
 			self.mouse2UpTime = tick()
 			local currPos: Vector3 = input.Position
-			-- We allow click to move during path following or if there is no keyboard movement
+
 			local allowed = ExistingPather or self.keyboardMoveVector.Magnitude <= 0
 			if self.mouse2UpTime - self.mouse2DownTime < 0.25 and (currPos - self.mouse2DownPos).magnitude < 5 and allowed then
 				local positions = {currPos}
@@ -1056,7 +1017,7 @@ end
 function ClickToMove:Enable(enable: boolean, enableWASD: boolean, touchJumpController)
 	if enable then
 		if not self.running then
-			if Player.Character then -- retro-listen
+			if Player.Character then
 				self:OnCharacterAdded(Player.Character)
 			end
 			self.onCharacterAddedConn = Player.CharacterAdded:Connect(function(char)
@@ -1072,7 +1033,7 @@ function ClickToMove:Enable(enable: boolean, enableWASD: boolean, touchJumpContr
 		if self.running then
 			self:DisconnectEvents()
 			CleanupPath()
-			-- Restore tool activation on shutdown
+
 			if UserInputService.PreferredInput == Enum.PreferredInput.Touch then
 				local character = Player.Character
 				if character then
@@ -1091,7 +1052,6 @@ function ClickToMove:Enable(enable: boolean, enableWASD: boolean, touchJumpContr
 		self.touchJumpController = nil
 	end
 
-	-- Extension for initializing Keyboard input as this class now derives from Keyboard
 	KeyboardController.Enable(self, enable)
 
 	self.wasdEnabled = enable and enableWASD or false
@@ -1099,21 +1059,18 @@ function ClickToMove:Enable(enable: boolean, enableWASD: boolean, touchJumpContr
 end
 
 function ClickToMove:OnRenderStepped(dt)
-	-- Reset jump
+
 	self.isJumping = false
 
-	-- Handle Pather
 	if ExistingPather then
-		-- Let the Pather update
+
 		ExistingPather:OnRenderStepped(dt)
 
-		-- If we still have a Pather, set the resulting actions
 		if ExistingPather then
-			-- Setup move (NOT relative to camera)
+
 			self.moveVector = ExistingPather.NextActionMoveDirection
 			self.moveVectorIsCameraRelative = false
 
-			-- Setup jump (but do NOT prevent the base Keayboard class from requesting jumps as well)
 			if ExistingPather.NextActionJump then
 				self.isJumping = true
 			end
@@ -1126,13 +1083,11 @@ function ClickToMove:OnRenderStepped(dt)
 		self.moveVectorIsCameraRelative = true
 	end
 
-	-- Handle Keyboard's jump
 	if self.jumpRequested then
 		self.isJumping = true
 	end
 end
 
--- Overrides Keyboard:UpdateMovement(inputState) to conditionally consider self.wasdEnabled and let OnRenderStepped handle the movement
 function ClickToMove:UpdateMovement(inputState)
 	if inputState == Enum.UserInputState.Cancel then
 		self.keyboardMoveVector = ZERO_VECTOR3
@@ -1141,12 +1096,10 @@ function ClickToMove:UpdateMovement(inputState)
 	end
 end
 
--- Overrides Keyboard:UpdateJump() because jump is handled in OnRenderStepped
 function ClickToMove:UpdateJump()
-	-- Nothing to do (handled in OnRenderStepped)
+
 end
 
---Public developer facing functions
 function ClickToMove:SetShowPath(value)
 	ShowPath = value
 end

@@ -1,3 +1,11 @@
+--[[
+    Script: AplicadorAmbiente.luau
+    Caminho: src/ReplicatedStorage/Mundo/Ambiente
+    Responsabilidade: Aplica propriedades visuais de ambiente em Lighting, atmosfera e efeitos do mundo.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: Aplicar, obterDesligamentosInstancia, cancelarDesligamentoPendente, agendarDesligamento, cancelarTweens, ehTweenavel
+]]
 local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
 
@@ -115,8 +123,7 @@ local function aplicarPropriedades(instancia: Instance, propriedades, tweenInfo:
 
 	local tweenProps = {}
 	for propriedade, valor in propriedades do
-		-- ClockTime tem dono unico (ControladorAmbiente per-frame). Nunca deixar
-		-- o Tween disputar com a extrapolacao continua, senao o sol pula.
+
 		if propriedade == "ClockTime" then
 			continue
 		end

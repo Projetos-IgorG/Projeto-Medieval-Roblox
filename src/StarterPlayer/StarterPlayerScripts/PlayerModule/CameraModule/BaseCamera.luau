@@ -1,7 +1,14 @@
 --!nonstrict
 --!nolint DeprecatedApi
--- BaseCamera - Abstract base class for camera control modules
 
+--[[
+    Script: BaseCamera.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/CameraModule
+    Responsabilidade: Define a classe base compartilhada pelos controladores de camera.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, GetModuleName, _setUpConfigurations, OnCharacterAdded, GetHumanoidRootPart, GetBodyPartToFollow
+]]
 local Players = game:GetService("Players")
 local VRService = game:GetService("VRService")
 local UserGameSettings = UserSettings():GetService("UserGameSettings")
@@ -26,12 +33,10 @@ do
 end
 
 local UNIT_Z = Vector3.new(0, 0, 1)
-local X1_Y0_Z1 = Vector3.new(1, 0, 1) --Note: not a unit vector, used for projecting onto XZ plane
+local X1_Y0_Z1 = Vector3.new(1, 0, 1)
 
-local DEFAULT_DISTANCE = 12.5 -- Studs
+local DEFAULT_DISTANCE = 12.5
 
--- Note: DotProduct check in CoordinateFrame::lookAt() prevents using values within about
--- 8.11 degrees of the +/- Y axis, that's why these limits are currently 80 degrees
 local MIN_Y = math.rad(-80)
 local MAX_Y = math.rad(80)
 
@@ -58,8 +63,6 @@ type BaseCameraClass = {
 	__index: BaseCameraClass,
 	new: () -> BaseCamera,
 
-	-- Initializes the module based on any relevant data and sets up connections
-	-- to check for changes
 	_setUpConfigurations: (self: BaseCamera) -> (),
 }
 
@@ -78,7 +81,7 @@ function BaseCamera.new()
 
 	self._connections = ConnectionUtil.new()
 
-	self.gamepadZoomLevels = { 0, 10, 20 } -- zoom levels that are cycled through on a gamepad R3 press
+	self.gamepadZoomLevels = { 0, 10, 20 }
 
 	self.cameraType = nil
 	self.cameraMovementMode = nil
@@ -89,7 +92,6 @@ function BaseCamera.new()
 	self.humanoidRootPart = nil
 	self.humanoidCache = {}
 
-	-- Subject and position on last update call
 	self.lastSubject = nil
 	self.lastSubjectPosition = Vector3.new(0, 5, 0)
 	self.lastSubjectCFrame = CFrame.new(self.lastSubjectPosition)
@@ -100,14 +102,12 @@ function BaseCamera.new()
 	self.inFirstPerson = false
 	self.inMouseLockedMode = false
 
-	-- Used by modules which want to reset the camera angle on respawn.
 	self.resetCameraAngle = true
 
 	self.enabled = false
 
 	self.cameraChangedConn = nil
 
-	-- VR Support
 	self.shouldUseVRRotation = false
 	self.VRRotationIntensityAvailable = false
 	self.lastVRRotationIntensityCheckTime = 0
@@ -121,7 +121,6 @@ function BaseCamera.new()
 
 	self.gamepadZoomPressConnection = nil
 
-	-- Mouse locked formerly known as shift lock mode
 	self.mouseLockOffset = ZERO_VECTOR3
 
 	UserGameSettings:SetCameraYInvertVisible()
@@ -165,8 +164,7 @@ function BaseCamera:_setUpConfigurations()
 end
 
 function BaseCamera:OnCharacterAdded(_char)
-	-- the camera should only reset when the character dies and respawns
-	-- not when the camera disables and reenables
+
 	self.resetCameraAngle = self.resetCameraAngle or self:GetEnabled()
 	self.humanoidRootPart = nil
 end
@@ -183,8 +181,8 @@ function BaseCamera:GetHumanoidRootPart(): BasePart
 	return self.humanoidRootPart
 end
 
-function BaseCamera:GetBodyPartToFollow(humanoid: Humanoid, _isDead: boolean) -- BasePart
-	-- If the humanoid is dead, prefer the head part if one still exists as a sibling of the humanoid
+function BaseCamera:GetBodyPartToFollow(humanoid: Humanoid, _isDead: boolean)
+
 	if humanoid:GetState() == Enum.HumanoidStateType.Dead then
 		local character = humanoid.Parent
 		if character and character:IsA("Model") then
@@ -209,15 +207,13 @@ function BaseCamera:GetSubjectCFrame(): CFrame
 		local humanoidIsDead = humanoid:GetState() == Enum.HumanoidStateType.Dead
 
 		local cameraOffset = humanoid.CameraOffset
-		-- when in mouse lock mode, the character's rotation follows the camera instead of vice versa.
-		-- Allow the mouse lock calculation to be camera based instead of subject based to prevent jitter
+
 		if self:GetIsMouseLocked() then
 			cameraOffset = Vector3.new()
 		end
 
 		local bodyPartToFollow = humanoid.RootPart
 
-		-- If the humanoid is dead, prefer their head part as a follow target, if it exists
 		if humanoidIsDead then
 			if humanoid.Parent and humanoid.Parent:IsA("Model") then
 				bodyPartToFollow = humanoid.Parent:FindFirstChild("Head") or bodyPartToFollow
@@ -251,7 +247,7 @@ function BaseCamera:GetSubjectCFrame(): CFrame
 	elseif cameraSubject:IsA("BasePart") then
 		result = cameraSubject.CFrame
 	elseif cameraSubject:IsA("Model") then
-		-- Model subjects are expected to have a PrimaryPart to determine orientation
+
 		if cameraSubject.PrimaryPart then
 			result = cameraSubject.PrimaryPart.CFrame
 		else
@@ -350,15 +346,13 @@ function BaseCamera:GetSubjectPosition(): Vector3?
 			local humanoidIsDead = humanoid:GetState() == Enum.HumanoidStateType.Dead
 
 			local cameraOffset = humanoid.CameraOffset
-			-- when in mouse lock mode, the character's rotation follows the camera instead of vice versa.
-			-- Allow the mouse lock calculation to be camera based instead of subject based to prevent jitter
+
 			if self:GetIsMouseLocked() then
 				cameraOffset = Vector3.new()
 			end
 
 			local bodyPartToFollow = humanoid.RootPart
 
-			-- If the humanoid is dead, prefer their head part as a follow target, if it exists
 			if humanoidIsDead then
 				if humanoid.Parent and humanoid.Parent:IsA("Model") then
 					bodyPartToFollow = humanoid.Parent:FindFirstChild("Head") or bodyPartToFollow
@@ -403,10 +397,7 @@ function BaseCamera:GetSubjectPosition(): Vector3?
 			end
 		end
 	else
-		-- cameraSubject is nil
-		-- Note: Previous RootCamera did not have this else case and let self.lastSubject and self.lastSubjectPosition
-		-- both get set to nil in the case of cameraSubject being nil. This function now exits here to preserve the
-		-- last set valid values for these, as nil values are not handled cases
+
 		return nil
 	end
 
@@ -416,9 +407,8 @@ function BaseCamera:GetSubjectPosition(): Vector3?
 	return result
 end
 
--- Listener for changes to workspace.CurrentCamera
 function BaseCamera:OnCurrentCameraChanged()
-	-- VR support additions
+
 	if self.cameraSubjectChangedConn then
 		self.cameraSubjectChangedConn:Disconnect()
 		self.cameraSubjectChangedConn = nil
@@ -434,7 +424,7 @@ function BaseCamera:OnCurrentCameraChanged()
 end
 
 function BaseCamera:OnPlayerCameraPropertyChange()
-	-- This call forces re-evaluation of player.CameraMode and clamping to min/max distance which may have changed
+
 	self:SetCameraToSubjectDistance(self.currentSubjectDistance)
 end
 
@@ -442,16 +432,12 @@ function BaseCamera:InputTranslationToCameraAngleChange(translationVector, sensi
 	return translationVector * sensitivity
 end
 
--- cycles between zoom levels in self.gamepadZoomLevels, setting CameraToSubjectDistance. gamepadZoomLevels may
--- be out of range of Min/Max camera zoom
 function BaseCamera:GamepadZoomPress()
-	-- this code relies on the fact that SetCameraToSubjectDistance will clamp the min and max
+
 	local dist = self:GetCameraToSubjectDistance()
 
 	local max = player.CameraMaxZoomDistance
 
-	-- check from largest to smallest, set the first zoom level which is
-	-- below the threshold
 	for i = #self.gamepadZoomLevels, 1, -1 do
 		local zoom = self.gamepadZoomLevels[i]
 
@@ -462,8 +448,7 @@ function BaseCamera:GamepadZoomPress()
 		if zoom < player.CameraMinZoomDistance then
 			zoom = player.CameraMinZoomDistance
 			if FFlagUserFixGamepadMaxZoom then
-				-- no more zoom levels to check, all the remaining ones
-				-- are < min
+
 				if max == zoom then
 					break
 				end
@@ -476,7 +461,6 @@ function BaseCamera:GamepadZoomPress()
 			end
 		end
 
-		-- theshold is set at halfway between zoom levels
 		if dist > zoom + (max - zoom) / 2 then
 			self:SetCameraToSubjectDistance(zoom)
 			return
@@ -485,7 +469,6 @@ function BaseCamera:GamepadZoomPress()
 		max = zoom
 	end
 
-	-- cycle back to the largest, relies on the fact that SetCameraToSubjectDistance will clamp max and min
 	self:SetCameraToSubjectDistance(self.gamepadZoomLevels[#self.gamepadZoomLevels])
 end
 
@@ -531,7 +514,7 @@ function BaseCamera:OnEnabledChanged()
 			self.gamepadZoomPressConnection:Disconnect()
 			self.gamepadZoomPressConnection = nil
 		end
-		-- Clean up additional event listeners and reset a bunch of properties
+
 		self:Cleanup()
 	end
 end
@@ -553,7 +536,6 @@ function BaseCamera:Cleanup()
 	self.lastCameraTransform = nil
 	self.lastSubjectCFrame = nil
 
-	-- Unlock mouse for example if right mouse button was being held down
 	CameraUtils.restoreMouseBehavior()
 end
 
@@ -568,7 +550,6 @@ function BaseCamera:UpdateMouseBehavior()
 		CameraUI.setCameraModeToastEnabled(false)
 		CameraInput.disableCameraToggleInput()
 
-		-- first time transition to first person mode or mouse-locked third person
 		if self.inFirstPerson or self.inMouseLockedMode then
 			CameraUtils.setRotationTypeOverride(Enum.RotationType.CameraRelative)
 			CameraUtils.setMouseBehaviorOverride(Enum.MouseBehavior.LockCenter)
@@ -586,8 +567,7 @@ function BaseCamera:UpdateMouseBehavior()
 end
 
 function BaseCamera:UpdateForDistancePropertyChange()
-	-- Calling this setter with the current value will force checking that it is still
-	-- in range after a change to the min/max distance limits
+
 	self:SetCameraToSubjectDistance(self.currentSubjectDistance)
 end
 
@@ -605,7 +585,6 @@ function BaseCamera:SetCameraToSubjectDistance(desiredSubjectDistance: number): 
 		self.currentSubjectDistance = newSubjectDistance
 	end
 
-	-- Pass target distance and zoom direction to the zoom controller
 	ZoomController.SetZoomParameters(
 		self.currentSubjectDistance,
 		math.sign(desiredSubjectDistance - lastSubjectDistance)
@@ -615,7 +594,7 @@ function BaseCamera:SetCameraToSubjectDistance(desiredSubjectDistance: number): 
 end
 
 function BaseCamera:SetCameraType(cameraType)
-	--Used by derived classes
+
 	self.cameraType = cameraType
 end
 
@@ -623,7 +602,6 @@ function BaseCamera:GetCameraType()
 	return self.cameraType
 end
 
--- Movement mode standardized to Enum.ComputerCameraMovementMode values
 function BaseCamera:SetCameraMovementMode(cameraMovementMode)
 	self.cameraMovementMode = cameraMovementMode
 end
@@ -653,7 +631,7 @@ function BaseCamera:InFirstPerson(): boolean
 end
 
 function BaseCamera:SetPrimeiraPessoa(_ativo: boolean)
-	-- Override in subclasses (ClassicCamera)
+
 end
 
 function BaseCamera:EnterFirstPerson()
@@ -666,14 +644,10 @@ function BaseCamera:LeaveFirstPerson()
 	self:UpdateMouseBehavior()
 end
 
--- Nominal distance, set by dollying in and out with the mouse wheel or equivalent, not measured distance
 function BaseCamera:GetCameraToSubjectDistance(): number
 	return self.currentSubjectDistance
 end
 
--- Actual measured distance to the camera Focus point, which may be needed in special circumstances, but should
--- never be used as the starting point for updating the nominal camera-to-subject distance (self.currentSubjectDistance)
--- since that is a desired target value set only by mouse wheel (or equivalent) input, PopperCam, and clamped to min max camera distance
 function BaseCamera:GetMeasuredDistanceToFocus(): number?
 	local camera = workspace.CurrentCamera
 	if camera then
@@ -724,7 +698,7 @@ function BaseCamera:GetHumanoid(): Humanoid?
 		if resultHumanoid and resultHumanoid.Parent == character then
 			return resultHumanoid
 		else
-			self.humanoidCache[player] = nil -- Bust Old Cache
+			self.humanoidCache[player] = nil
 			local humanoid = character:FindFirstChildOfClass("Humanoid")
 			if humanoid then
 				self.humanoidCache[player] = humanoid
@@ -735,7 +709,7 @@ function BaseCamera:GetHumanoid(): Humanoid?
 	return nil
 end
 
-function BaseCamera:GetHumanoidPartToFollow(humanoid: Humanoid, humanoidStateType: Enum.HumanoidStateType) -- BasePart
+function BaseCamera:GetHumanoidPartToFollow(humanoid: Humanoid, humanoidStateType: Enum.HumanoidStateType)
 	if humanoidStateType == Enum.HumanoidStateType.Dead then
 		local character = humanoid.Parent
 		if character then

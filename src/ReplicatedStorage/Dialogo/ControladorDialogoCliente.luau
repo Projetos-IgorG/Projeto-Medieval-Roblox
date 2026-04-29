@@ -1,12 +1,10 @@
 --[[
-	Módulo Client para o Sistema de Diálogo.
-	Gerencia a UI, Efeitos, Câmera e Restrições do Jogador durante a conversa.
-	
-	UI: Usa dois BillboardGuis dentro de um ScreenGui "Dialogues" no StarterGui:
-	  - DialogoGui (Adornee = NPC Model) ââ€ â€™ fala do NPC (FrameDialogo + FrameNome)
-	  - DialogoGuiRespostas (Adornee = NPC Model) ââ€ â€™ opções do jogador
-	      - RespostasTemplates (Folder com 'template' original)
-	      - FrameRespostas (container onde os clones são colocados)
+    Script: ControladorDialogoCliente.luau
+    Caminho: src/ReplicatedStorage/Dialogo
+    Responsabilidade: Controla a interface, escolhas, voz e fluxo de dialogo no cliente.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: MostrarFalaEOpcoes, Init, EmDialogo, RotacionarCameraParaNPC, IniciarCameraZoom, AlterarRestricoesJogador
 ]]
 local SistemaDialogoClient = {}
 
@@ -17,13 +15,11 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
--- Ponte de comunicação entre scripts client-side (substitui _G)
 local ClientBridge =
 	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
 
 local LocalPlayer = Players.LocalPlayer
 
--- Pastas e Referências
 local Modulos = ReplicatedStorage
 local SistemaDialogoFolder = Modulos:WaitForChild("Dialogo")
 local GerenciadorRequisitos = require(SistemaDialogoFolder:WaitForChild("Requisitos"):WaitForChild("RequisitosDialogo"))
@@ -33,10 +29,8 @@ local FolderDialogosProfissoes = FolderDialogos:WaitForChild("Profissoes")
 local FolderDialogosGenericos = FolderDialogos:WaitForChild("Genericos")
 local FolderRemotes = SistemaDialogoFolder:WaitForChild("DialogoRemotes")
 
--- Sistema de Voz
 local GerenciadorVoz = require(SistemaDialogoFolder:WaitForChild("Voz"):WaitForChild("GerenciadorVoz"))
 
--- Remote de Ações
 local RemoteAcao = FolderRemotes:FindFirstChild("AcaoDialogo")
 if not RemoteAcao then
 	RemoteAcao = Instance.new("RemoteEvent")
@@ -58,58 +52,45 @@ if not RemoteRespostaChatIA then
 	RemoteRespostaChatIA.Parent = FolderRemotes
 end
 
--- UI (ScreenGui com os dois BillboardGuis)
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local PastaDialogoGui = PlayerGui:WaitForChild("Dialogo", 10)
 local ScreenGuiDialogos = if PastaDialogoGui then PastaDialogoGui:WaitForChild("Dialogos") else PlayerGui:WaitForChild("Dialogos", 10)
 if not ScreenGuiDialogos then
 	error("[DialogoClient] UI de dialogo nao encontrada em PlayerGui/Dialogo/Dialogos")
 end
-local DialogoGui = ScreenGuiDialogos:WaitForChild("DialogoGui") -- BillboardGui de fala
-local DialogoGuiRespostas = ScreenGuiDialogos:WaitForChild("DialogoGuiRespostas") -- BillboardGui de respostas
-local FrameRespostas = DialogoGuiRespostas:WaitForChild("FrameRespostas") -- Container dos botões clonados
-local RespostasTemplates = DialogoGuiRespostas:WaitForChild("RespostasTemplates") -- Folder com template original
+local DialogoGui = ScreenGuiDialogos:WaitForChild("DialogoGui")
+local DialogoGuiRespostas = ScreenGuiDialogos:WaitForChild("DialogoGuiRespostas")
+local FrameRespostas = DialogoGuiRespostas:WaitForChild("FrameRespostas")
+local RespostasTemplates = DialogoGuiRespostas:WaitForChild("RespostasTemplates")
 
--- Estado Local
 local ConversaAtiva = false
 local NPCAtual = nil
 local TabelaDialogoAtual = nil
 local DadosNPCAtual = nil
-local HandleVozAtual = nil -- Handle do GerenciadorVoz ativo
+local HandleVozAtual = nil
 
 local OpcoesAtuais = {}
 local PodeEscolher = false
 local EntradaChatIAEmFoco = false
 local RequisicaoChatIAPendente = nil
 
--- ==========================================
--- Configurações
--- ==========================================
--- Velocidade do efeito typewriter (agora configurado em ConfigVoz)
--- Quanto a câmera corrige horizontalmente para centralizar o NPC (0 = nenhuma, 1 = total)
 local CAMERA_CORRECAO_HORIZONTAL = 0.05
--- Quanto a câmera corrige verticalmente para olhar na altura do NPC (0 = nenhuma, 1 = total)
+
 local CAMERA_CORRECAO_VERTICAL = 0.0
--- Duração da correção da câmera (segundos)
+
 local CAMERA_CORRECAO_DURACAO = 0.25
 
--- Configurações de botão
 local BOTAO_Y_PADRAO = 0.15
 local BOTAO_Y_GRANDE = 0.3
-local BOTAO_LIMIAR_LETRAS = 40 -- Acima disso, botão cresce em Y
+local BOTAO_LIMIAR_LETRAS = 40
 local LIMITE_CARACTERES_CHAT_IA = 180
 
--- Expõe flag para outros sistemas via ClientBridge (ex: ControladorEstado bloquear equip)
 ClientBridge.EmDialogo = function()
 	return ConversaAtiva
 end
 
--- Voz: toda a lógica foi movida para os módulos em Voz/
-
--- Conexão ativa da rotação da câmera (para poder cancelar)
 local cameraRotacaoConexao = nil
 
---- Rotaciona a câmera suavemente em direção ao HumanoidRootPart do NPC.
 local function RotacionarCameraParaNPC(npc)
 	if cameraRotacaoConexao then
 		cameraRotacaoConexao:Disconnect()
@@ -198,7 +179,6 @@ local function AlterarRestricoesJogador(travado)
 	end
 end
 
--- Limpa os botões de resposta clonados do FrameRespostas
 local function LimparOpcoes()
 	for _, child in FrameRespostas:GetChildren() do
 		if child.Name ~= "UIListLayout" then
@@ -233,7 +213,6 @@ local function ObterDadosNPC(npc)
 	}
 end
 
--- Fim do diálogo
 local function EncerrarDialogo()
 	ConversaAtiva = false
 	NPCAtual = nil
@@ -241,7 +220,6 @@ local function EncerrarDialogo()
 	DadosNPCAtual = nil
 	RequisicaoChatIAPendente = nil
 
-	-- Parar qualquer voz ativa
 	if HandleVozAtual then
 		HandleVozAtual:Parar()
 		HandleVozAtual = nil
@@ -250,14 +228,12 @@ local function EncerrarDialogo()
 	LimparOpcoes()
 	AlterarRestricoesJogador(false)
 
-	-- Esconder os BillboardGuis e limpar Adornee
 	DialogoGui.Enabled = false
 	DialogoGui.Adornee = nil
 	DialogoGuiRespostas.Enabled = false
 	DialogoGuiRespostas.Adornee = nil
 end
 
--- Hover animation settings
 local HOVER_TWEEN_INFO = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local MostrarFalaEOpcoes
 
@@ -306,7 +282,6 @@ local function CriarOpcaoPeloTemplate(index, texto, acaoCallback)
 
 	PreencherIndiceOpcao(btn, index)
 
-	-- Se o texto for longo demais, aumenta o botão em Y para caber
 	if #texto > BOTAO_LIMIAR_LETRAS then
 		btn.Size = UDim2.new(btn.Size.X.Scale, btn.Size.X.Offset, BOTAO_Y_GRANDE, btn.Size.Y.Offset)
 	else
@@ -441,9 +416,6 @@ local function ExecutarEscolha(escolha, dadosNPC)
 	EncerrarDialogo()
 end
 
--- ==========================================
--- Máquina de Conversa
--- ==========================================
 function MostrarFalaEOpcoes(tabelaFala, dadosNPC)
 	if not ConversaAtiva then
 		return
@@ -452,12 +424,9 @@ function MostrarFalaEOpcoes(tabelaFala, dadosNPC)
 	LimparOpcoes()
 	PodeEscolher = false
 
-	-- Ativar BillboardGui de fala e apontar pro NPC
 	DialogoGui.Adornee = NPCAtual
 	DialogoGui.Enabled = true
 
-	-- Fixar tamanho do Billboard para evitar reflow de texto ao mudar distância
-	-- (AlwaysOnTop + tamanho fixo impede que o Billboard mude de escala com a distância)
 	DialogoGui.AlwaysOnTop = true
 
 	local frameDialogo = DialogoGui:FindFirstChild("FrameDialogo")
@@ -481,28 +450,23 @@ function MostrarFalaEOpcoes(tabelaFala, dadosNPC)
 		end
 	end
 
-	-- Exibe o frame da fala
 	frameDialogo.Visible = true
 	local head = NPCAtual:FindFirstChild("Head")
 
-	-- Parar voz anterior, se houver
 	if HandleVozAtual then
 		HandleVozAtual:Parar()
 		HandleVozAtual = nil
 	end
 
-	-- Criar novo handle de voz via GerenciadorVoz
 	local handleVoz = GerenciadorVoz.IniciarVoz(head, dadosNPC.TipoVoz)
 	HandleVozAtual = handleVoz
 
 	local velocidade = handleVoz:ObterVelocidade()
 	local frequenciaSom = handleVoz:ObterFrequenciaSom()
 
-	-- Efeito Typewriter
 	labelDialogo.Text = ""
 	local textoCompleto = tabelaFala.FalaNPC
 
-	-- Iniciar o loop de murmúrio (CustomVoice, se ativo)
 	handleVoz:IniciarLoop()
 
 	for i = 1, #textoCompleto do
@@ -512,7 +476,6 @@ function MostrarFalaEOpcoes(tabelaFala, dadosNPC)
 		end
 		labelDialogo.Text = string.sub(textoCompleto, 1, i)
 
-		-- Toca o tick (SimpleVoice, se ativo)
 		if (i - 1) % frequenciaSom == 0 then
 			handleVoz:TocarTick()
 		end
@@ -520,7 +483,6 @@ function MostrarFalaEOpcoes(tabelaFala, dadosNPC)
 		task.wait(velocidade)
 	end
 
-	-- Typewriter terminou ââ‚¬â€ parar a voz
 	handleVoz:Parar()
 	HandleVozAtual = nil
 
@@ -543,12 +505,10 @@ function MostrarFalaEOpcoes(tabelaFala, dadosNPC)
 		return
 	end
 
-	-- Ativar BillboardGui de respostas e apontar pro NPC
 	DialogoGuiRespostas.Adornee = NPCAtual
 	DialogoGuiRespostas.Enabled = true
 	DialogoGuiRespostas.AlwaysOnTop = true
 
-	-- Montar Opções baseadas nos requisitos
 	local opcoesValidas = {}
 	if tabelaFala.Escolhas then
 		for _, escolha in ipairs(tabelaFala.Escolhas) do
@@ -561,7 +521,6 @@ function MostrarFalaEOpcoes(tabelaFala, dadosNPC)
 		end
 	end
 
-	-- Renderiza Botões
 	for i, escolha in ipairs(opcoesValidas) do
 		if escolha.Tipo == "AIChatInput" then
 			CriarEntradaChatIAPeloTemplate(i, escolha, dadosNPC)
@@ -611,11 +570,6 @@ local function IniciarDialogo(npc)
 		return
 	end
 
-	-- Tentar carregar a tabela com Fallback:
-	-- 1. Nome próprio do NPC ââ€ â€™ pasta Unicos
-	-- 2. Profissão do NPC ââ€ â€™ pasta Profissoes
-	-- 3. Fallback genérico ââ€ â€™ pasta Genericos
-	-- 4. Fallback de criatura ââ€ â€™ pasta Criaturas (se o NPC for uma criatura)
 	local moduloTabela = FolderDialogosUnicos:FindFirstChild(dadosNPC.Nome)
 	if not moduloTabela then
 		moduloTabela = FolderDialogosProfissoes:FindFirstChild(dadosNPC.Profissao)
@@ -637,7 +591,6 @@ local function IniciarDialogo(npc)
 	local moduloExigido = require(moduloTabela)
 	TabelaDialogoAtual = moduloExigido.Dialogos or moduloExigido
 
-	-- Se estado for ocupado, soltar reposta genérica e sair
 	if dadosNPC.Estado == "Dormindo" or dadosNPC.Estado == "EmCombate" or dadosNPC.Estado == "Ocupado" then
 		ConversaAtiva = true
 		NPCAtual = npc
@@ -654,7 +607,6 @@ local function IniciarDialogo(npc)
 	AlterarRestricoesJogador(true)
 	IniciarCameraZoom(npc)
 
-	-- Monitorar distância: se o jogador se afastar demais, encerra diálogo
 	task.spawn(function()
 		while ConversaAtiva and NPCAtual == npc do
 			local char = LocalPlayer.Character
@@ -680,11 +632,8 @@ local function IniciarDialogo(npc)
 	end
 end
 
--- ==========================================
--- Inicialização
--- ==========================================
 function SistemaDialogoClient.Init()
-	-- Garantir que os BillboardGuis comecem desativados
+
 	DialogoGui.Enabled = false
 	DialogoGuiRespostas.Enabled = false
 
@@ -693,7 +642,7 @@ function SistemaDialogoClient.Init()
 			return
 		end
 		if prompt.ActionText == "Falar" then
-			-- ProximityPrompt é filho direto do Model do NPC
+
 			local npcModel = prompt.Parent
 			if npcModel and npcModel:FindFirstChild("Humanoid") and npcModel:FindFirstChild("Dados") then
 				IniciarDialogo(npcModel)
@@ -701,7 +650,6 @@ function SistemaDialogoClient.Init()
 		end
 	end)
 
-	-- Configura o ObjectText dos ProximityPrompts de NPCs com "Nome, the Profissao"
 	for _, desc in ipairs(workspace:GetDescendants()) do
 		if desc:IsA("ProximityPrompt") and desc.ActionText == "Falar" then
 			local model = desc.Parent
@@ -718,7 +666,6 @@ function SistemaDialogoClient.Init()
 		end
 	end
 
-	-- Impede o uso de Tools durante o diálogo
 	LocalPlayer.CharacterAdded:Connect(function(char)
 		char.ChildAdded:Connect(function(child)
 			if ConversaAtiva and child:IsA("Tool") then
@@ -745,7 +692,6 @@ function SistemaDialogoClient.Init()
 		end)
 	end
 
-	-- Listeners de Input para números 1-9
 	UserInputService.InputBegan:Connect(function(input, _gp)
 		if not ConversaAtiva or not PodeEscolher or EntradaChatIAEmFoco then
 			return

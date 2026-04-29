@@ -2,9 +2,13 @@
 --!nolint GlobalUsedAsLocal
 
 --[[
-		VRNavigation
---]]
-
+    Script: VRNavigation.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/ControlModule
+    Responsabilidade: Converte entrada e conforto de VR em movimento do personagem.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, SetLaserPointerMode, GetLocalHumanoid, HasBothHandControllers, HasAnyHandControllers, IsMobileVR
+]]
 local VRService = game:GetService("VRService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -16,11 +20,9 @@ local StarterGui = game:GetService("StarterGui")
 local CommonUtils = script.Parent.Parent:WaitForChild("CommonUtils")
 local FlagUtil = require(CommonUtils:WaitForChild("FlagUtil"))
 
---local MasterControl = require(script.Parent)
 local PathDisplay = nil
 local LocalPlayer = Players.LocalPlayer
 
---[[ Constants ]]--
 local RECALCULATE_PATH_THRESHOLD = 4
 local NO_PATH_THRESHOLD = 12
 local MAX_PATHING_DISTANCE = 200
@@ -35,10 +37,8 @@ local HEIGHT_OFFSET = Vector3.new(0, 100, 0)
 local raycastParams = RaycastParams.new()
 raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 
---[[ Flags ]]--
 local FFlagUserRaycastUpdateAPI = FlagUtil.getUserFlag("UserRaycastUpdateAPI")
 
---[[ Utility Functions ]]--
 local function IsFinite(num: number)
 	return num == num and num ~= math.huge and num ~= -math.huge
 end
@@ -58,8 +58,6 @@ coroutine.wrap(function()
 	end
 end)()
 
-
---[[ The Class ]]--
 local BaseCharacterController = require(script.Parent:WaitForChild("BaseCharacterController"))
 local VRNavigation = setmetatable({}, BaseCharacterController)
 VRNavigation.__index = VRNavigation
@@ -126,12 +124,7 @@ function VRNavigation:HasGamepad()
 end
 
 function VRNavigation:ShouldUseNavigationLaser()
-	--Places where we use the navigation laser:
-	-- mobile VR with any number of hands tracked
-	-- desktop VR with only one hand tracked
-	-- desktop VR with no hands and no gamepad (i.e. with Oculus remote?)
-	--using an Xbox controller with a desktop VR headset means no laser since the user has a thumbstick.
-	--in the future, we should query thumbstick presence with a features API
+
 	if self:IsMobileVR() then
 		return true
 	else
@@ -144,8 +137,6 @@ function VRNavigation:ShouldUseNavigationLaser()
 		return true
 	end
 end
-
-
 
 function VRNavigation:StartFollowingPath(newPath)
 	self.currentPath = newPath
@@ -374,7 +365,7 @@ function VRNavigation:OnHeartbeat(dt)
 			if FFlagUserRaycastUpdateAPI then
 				raycastParams.FilterDescendantsInstances = { (game.Players.LocalPlayer :: Player).Character, workspace.CurrentCamera}
 				local raycastResult = workspace:Raycast(currentPosition - Vector3.yAxis, moveDir * 3, raycastParams)
-			
+
 				if raycastResult then
 					raycastResult = workspace:Raycast(raycastResult.Position + moveDir * 0.5 + HEIGHT_OFFSET, -HEIGHT_OFFSET, raycastParams)
 
@@ -421,7 +412,6 @@ function VRNavigation:OnHeartbeat(dt)
 	end
 end
 
-
 function VRNavigation:OnUserCFrameEnabled()
 	if self:ShouldUseNavigationLaser() then
 		self:BindJumpAction(false)
@@ -459,7 +449,7 @@ function VRNavigation:Enable(enable)
 
 		self.enabled = true
 	else
-		-- Disable
+
 		self:StopFollowingPath()
 
 		ContextActionService:UnbindAction("MoveThumbstick")

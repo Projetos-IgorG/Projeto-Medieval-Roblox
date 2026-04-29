@@ -1,31 +1,17 @@
--- StarterPlayer > StarterPlayerScripts > Core > DevSettingsPanel (LocalScript)
 --[[
-	DevSettingsPanel
-	ââ€â‚¬ââ€â‚¬ââ€â‚¬ââ€â‚¬ââ€â‚¬ââ€â‚¬ââ€â‚¬ââ€â‚¬ââ€â‚¬ââ€â‚¬ââ€â‚¬ââ€â‚¬ââ€â‚¬ââ€â‚¬ââ€â‚¬ââ€â‚¬
-	Painel de desenvolvedor escalável para inspecionar e modificar configurações
-	em tempo real. Gera controles automaticamente baseado no typeof() de cada
-	valor: boolean ââ€ â€™ toggle, number ââ€ â€™ input Ã‚Â±, Vector3 ââ€ â€™ 3 inputs, Color3 ââ€ â€™ RGB,
-	string ââ€ â€™ label.
-
-	Toggle: X  (ignorado quando um TextBox está focado)
-	Nenhum módulo de configuração é modificado ââ‚¬â€ todo registro acontece aqui.
-	Zero memory leak: conexões rastreadas e limpas; instâncias destruídas ao trocar categoria.
+    Script: PainelConfiguracoesDesenvolvedor.client.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/Depuracao
+    Responsabilidade: Renderiza painel local de configuracoes e comandos de desenvolvimento.
+    Uso: LocalScript; roda automaticamente para o jogador local em src/StarterPlayer/StarterPlayerScripts/Depuracao.
+    Nao faz: Nao valida autoridade do servidor, nao salva dados persistentes e nao substitui regras server-side.
+    Funcoes principais: renderInicio, renderConfiguracoes, renderToolbuilder, renderNPCs, renderClimas, renderJogadorMundo
 ]]
-
---==============================================================================
--- Serviços
---==============================================================================
-
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
-
---==============================================================================
--- Módulos de configuração (require cacheado = write-through)
---==============================================================================
 
 local Modulos = ReplicatedStorage
 
@@ -48,10 +34,6 @@ local ConfiguracaoTempo = require(AmbienteReplicado:WaitForChild("ConfiguracaoTe
 local EquipamentosModelos = Modulos:WaitForChild("Equipamentos"):WaitForChild("Modelos")
 
 local AdminDevRemote = nil
-
---==============================================================================
--- Constantes de estilo
---==============================================================================
 
 local TOGGLE_KEY = Enum.KeyCode.X
 
@@ -82,11 +64,6 @@ local CORNER_RADIUS = UDim.new(0, 6)
 local ROW_HEIGHT = 34
 local CATEGORY_BTN_HEIGHT = 32
 local SECTION_HEADER_HEIGHT = 26
-
---==============================================================================
--- Agrupamento por seções (prefixo ââ€ â€™ nome da seção)
--- Ordem importa: primeiro match ganha. Chaves sem match vão para "Outros".
---==============================================================================
 
 type SectionRule = { prefix: string, section: string }
 
@@ -156,7 +133,6 @@ local SECTION_RULES: { [string]: { SectionRule } } = {
 	},
 }
 
---- Determina a seção de uma chave com base nas regras da categoria
 local function getSectionForKey(categoryName: string, key: string): string
 	local rules = SECTION_RULES[categoryName]
 	if not rules then
@@ -170,17 +146,13 @@ local function getSectionForKey(categoryName: string, key: string): string
 	return "Outros"
 end
 
---==============================================================================
--- Registry: categorias de configuração
---==============================================================================
-
 export type CategoryEntry = {
 	nome: string,
 	tipo: string?,
 	config: { [string]: any },
 	defaults: { [string]: any },
 	onChange: ((key: string, value: any) -> ())?,
-	setter: ((key: string, value: any) -> ())?, -- setter customizado (ex: Modulo_ConfiguracoesJogador)
+	setter: ((key: string, value: any) -> ())?,
 }
 
 local categories: { CategoryEntry } = {}
@@ -327,11 +299,6 @@ local function registrar(
 	})
 end
 
---==============================================================================
--- Registro de categorias
---==============================================================================
-
--- 1) Parkour Debug (top-level flags)
 local parkourDebug = {
 	DebugEnabled = ParkourConfigs.DebugEnabled,
 	DebugVerbose = ParkourConfigs.DebugVerbose,
@@ -345,7 +312,7 @@ local parkourDebug = {
 local parkourDebugDefaults = table.clone(parkourDebug)
 
 registrar("Parkour Debug", parkourDebug, parkourDebugDefaults, function(key, value)
-	-- Sync top-level fields back to module
+
 	if ParkourConfigs[key] ~= nil then
 		ParkourConfigs[key] = value
 	end
@@ -354,7 +321,6 @@ registrar("Parkour Debug", parkourDebug, parkourDebugDefaults, function(key, val
 	end
 end)
 
--- 2) Parkour Config (DefaultConfig table, excluding debug keys already shown)
 local PARKOUR_DEBUG_KEYS = {
 	IdleDebugVerbose = true,
 	IdleDebugVisualEnabled = true,
@@ -367,7 +333,6 @@ registrar("Parkour Config", ParkourConfigs.DefaultConfig, nil, nil, function(key
 	ParkourConfigs.invalidateCache()
 end)
 
--- 3) Combate
 local MOVEMENT_CONFIG_KEYS = {
 	VelocidadeAndando = true,
 	VelocidadeCorrendo = true,
@@ -432,14 +397,12 @@ registrar("Combate", ModConfCombate.ConfiguracaoGlobal, nil, function(key, _valu
 	refreshLocalCombatMovementSpeed(key)
 end)
 
--- 4) Camera / Jogador (usa setter existente)
 local cameraConfig = ModConfJogador.ObterTodasConfiguracoes()
 local cameraDefaults = table.clone(cameraConfig)
 registrar("Camera / Jogador", cameraConfig, cameraDefaults, nil, function(key, value)
 	ModConfJogador.DefinirConfiguracao(key, value)
 end)
 
--- 5) Voz
 local vozFlatConfig = {
 	SimpleVoice = VozConfig.SimpleVoice,
 	CustomVoice = VozConfig.CustomVoice,
@@ -450,10 +413,8 @@ registrar("Voz", vozFlatConfig, vozDefaults, function(key, value)
 	VozConfig[key] = value
 end)
 
--- 6) Hitbox Debug
 registrar("Hitbox Debug", HitboxConfig)
 
--- 7) Runtime (valores especiais lidos/escritos direto no engine)
 local runtimeConfig = {
 	WalkSpeed = 16,
 	JumpPower = 50,
@@ -488,10 +449,6 @@ registrar("Runtime", runtimeConfig, runtimeDefaults, nil, function(key, value)
 	end
 end)
 
---==============================================================================
--- Estado interno
---==============================================================================
-
 local connections: { RBXScriptConnection } = {}
 local controlConnections: { RBXScriptConnection } = {}
 local leftConnections: { RBXScriptConnection } = {}
@@ -499,10 +456,6 @@ local activeCategory: CategoryEntry? = nil
 local categoryButtons: { [string]: TextButton } = {}
 local isOpen = false
 local telaAtual = "Inicio"
-
---==============================================================================
--- Helpers de UI
---==============================================================================
 
 local function addCorner(parent: GuiObject, radius: UDim?)
 	local c = Instance.new("UICorner")
@@ -708,10 +661,6 @@ local function extrairAmbienteAtual()
 	setAdminStatus("Ambiente atual impresso no console", true)
 end
 
---==============================================================================
--- Criar GUI
---==============================================================================
-
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "DevSettingsPanel"
 screenGui.ResetOnSpawn = false
@@ -720,7 +669,6 @@ screenGui.DisplayOrder = 100
 screenGui.Enabled = false
 screenGui.Parent = playerGui
 
--- Main frame
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "Main"
 mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -733,7 +681,6 @@ mainFrame.Parent = screenGui
 addCorner(mainFrame, UDim.new(0, 10))
 addStroke(mainFrame, COLORS.separator, 1)
 
--- Title bar
 local titleBar = Instance.new("Frame")
 titleBar.Name = "TitleBar"
 titleBar.Size = UDim2.new(1, 0, 0, 38)
@@ -742,7 +689,6 @@ titleBar.BorderSizePixel = 0
 titleBar.Parent = mainFrame
 addCorner(titleBar, UDim.new(0, 10))
 
--- Fix bottom corners of title bar (overlap with a small rect)
 local titleBarFix = Instance.new("Frame")
 titleBarFix.Name = "BottomFix"
 titleBarFix.Size = UDim2.new(1, 0, 0, 12)
@@ -774,7 +720,6 @@ closeBtn.Font = FONT_LABEL
 closeBtn.TextSize = 18
 closeBtn.Parent = titleBar
 
--- Body container (below title bar)
 local body = Instance.new("Frame")
 body.Name = "Body"
 body.Size = UDim2.new(1, 0, 1, -38)
@@ -782,10 +727,6 @@ body.Position = UDim2.fromOffset(0, 38)
 body.BackgroundTransparency = 1
 body.BorderSizePixel = 0
 body.Parent = mainFrame
-
---==============================================================================
--- Left panel (categories)
---==============================================================================
 
 local leftPanel = Instance.new("Frame")
 leftPanel.Name = "LeftPanel"
@@ -814,10 +755,6 @@ leftLayout.Parent = leftScroll
 
 addPadding(leftScroll, 6, 6, 4, 4)
 
---==============================================================================
--- Right panel (settings)
---==============================================================================
-
 local rightPanel = Instance.new("Frame")
 rightPanel.Name = "RightPanel"
 rightPanel.Size = UDim2.fromScale(0.78, 1)
@@ -826,7 +763,6 @@ rightPanel.BackgroundTransparency = 1
 rightPanel.BorderSizePixel = 0
 rightPanel.Parent = body
 
--- Search bar
 local searchFrame = Instance.new("Frame")
 searchFrame.Name = "SearchFrame"
 searchFrame.Size = UDim2.new(1, -16, 0, 30)
@@ -861,7 +797,6 @@ searchBox.ClearTextOnFocus = false
 searchBox.Text = ""
 searchBox.Parent = searchFrame
 
--- Reset button area
 local resetBar = Instance.new("Frame")
 resetBar.Name = "ResetBar"
 resetBar.Size = UDim2.new(1, -16, 0, 30)
@@ -884,7 +819,6 @@ resetBtn.AutoButtonColor = true
 resetBtn.Parent = resetBar
 addCorner(resetBtn)
 
--- Counter label
 local counterLabel = Instance.new("TextLabel")
 counterLabel.Name = "Counter"
 counterLabel.Size = UDim2.fromOffset(200, 28)
@@ -897,7 +831,6 @@ counterLabel.TextXAlignment = Enum.TextXAlignment.Left
 counterLabel.Text = ""
 counterLabel.Parent = resetBar
 
--- Settings scroll area
 local settingsScroll = Instance.new("ScrollingFrame")
 settingsScroll.Name = "SettingsScroll"
 settingsScroll.Size = UDim2.new(1, -16, 1, -78)
@@ -916,10 +849,6 @@ settingsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 settingsLayout.Parent = settingsScroll
 
 addPadding(settingsScroll, 4, 4, 2, 2)
-
---==============================================================================
--- Fábricas de controle
---==============================================================================
 
 local function createRow(key: string, layoutOrder: number)
 	local row = Instance.new("Frame")
@@ -947,7 +876,6 @@ local function createRow(key: string, layoutOrder: number)
 	return row
 end
 
--- Boolean toggle
 local function createBooleanControl(
 	parent: ScrollingFrame,
 	key: string,
@@ -984,7 +912,6 @@ local function createBooleanControl(
 	return row
 end
 
--- Number input
 local function createNumberControl(
 	parent: ScrollingFrame,
 	key: string,
@@ -1070,7 +997,7 @@ local function createNumberControl(
 
 	trackConn(btnMinus.MouseButton1Click:Connect(function()
 		current = current - getStep(current)
-		-- Round to avoid floating-point drift
+
 		current = math.round(current * 1000) / 1000
 		inputBox.Text = tostring(current)
 		onChanged(current)
@@ -1086,7 +1013,6 @@ local function createNumberControl(
 	return row
 end
 
--- Vector3 input
 local function createVector3Control(
 	parent: ScrollingFrame,
 	key: string,
@@ -1153,7 +1079,6 @@ local function createVector3Control(
 	return row
 end
 
--- Color3 display
 local function createColor3Control(
 	parent: ScrollingFrame,
 	key: string,
@@ -1173,7 +1098,6 @@ local function createColor3Control(
 	container.BackgroundTransparency = 1
 	container.Parent = row
 
-	-- Preview swatch
 	local swatch = Instance.new("Frame")
 	swatch.Name = "Swatch"
 	swatch.Size = UDim2.fromOffset(22, 22)
@@ -1238,7 +1162,6 @@ local function createColor3Control(
 	return row
 end
 
--- String (read-only display)
 local function createStringControl(
 	parent: ScrollingFrame,
 	key: string,
@@ -1265,7 +1188,6 @@ local function createStringControl(
 	return row
 end
 
--- Section header (visual separator between groups)
 local function createSectionHeader(parent: ScrollingFrame, title: string, layoutOrder: number)
 	local header = Instance.new("Frame")
 	header.Name = "Section_" .. title
@@ -1275,7 +1197,6 @@ local function createSectionHeader(parent: ScrollingFrame, title: string, layout
 	header.LayoutOrder = layoutOrder
 	header.Parent = parent
 
-	-- Left line
 	local lineLeft = Instance.new("Frame")
 	lineLeft.Name = "LineL"
 	lineLeft.Size = UDim2.fromOffset(12, 1)
@@ -1857,10 +1778,6 @@ local function renderAdminActions()
 	settingsScroll.CanvasPosition = Vector2.zero
 end
 
---==============================================================================
--- Renderizar categoria
---==============================================================================
-
 local function clearSettings()
 	clearControlConnections()
 	adminStatusLabel = nil
@@ -1875,12 +1792,10 @@ local function renderCategory(category: CategoryEntry, filter: string?)
 	clearSettings()
 	activeCategory = category
 
-	-- Sync runtime values
 	if category.nome == "Runtime" then
 		syncRuntimeFromEngine()
 	end
 
-	-- Highlight active button
 	for nome, btn in categoryButtons do
 		if nome == category.nome then
 			btn.BackgroundColor3 = COLORS.categoryActive
@@ -1901,21 +1816,20 @@ local function renderCategory(category: CategoryEntry, filter: string?)
 	settingsScroll.Position = UDim2.fromOffset(8, 42)
 	settingsScroll.Size = UDim2.new(1, -16, 1, -78)
 
-	-- Collect and sort keys
 	local keys: { string } = {}
 	for k, v in category.config do
 		local t = typeof(v)
-		-- Skip internal sentinels, functions, and unsupported tables
+
 		if
 			k ~= "__ParkourMergedConfig"
 			and t ~= "function"
 			and (t == "boolean" or t == "number" or t == "string" or t == "Vector3" or t == "Color3")
 		then
-			-- Skip parkour debug keys already registered in debug category
+
 			if category.nome == "Parkour Config" and PARKOUR_DEBUG_KEYS[k] then
 				continue
 			end
-			-- Apply filter
+
 			if filter and filter ~= "" then
 				if not string.find(string.lower(k), string.lower(filter), 1, true) then
 					continue
@@ -1928,7 +1842,6 @@ local function renderCategory(category: CategoryEntry, filter: string?)
 
 	counterLabel.Text = tostring(#keys) .. " configurações"
 
-	-- Group keys by section (preserves section order by first appearance)
 	local hasRules = SECTION_RULES[category.nome] ~= nil
 	local sectionOrder: { string } = {}
 	local sectionKeys: { [string]: { string } } = {}
@@ -1943,12 +1856,11 @@ local function renderCategory(category: CategoryEntry, filter: string?)
 			table.insert(sectionKeys[section], key)
 		end
 	else
-		-- No rules: single unnamed group
+
 		sectionOrder = { "" }
 		sectionKeys[""] = keys
 	end
 
-	-- Build controls with section headers
 	local layoutOrder = 0
 
 	local function buildControl(key: string, value: any)
@@ -1989,13 +1901,8 @@ local function renderCategory(category: CategoryEntry, filter: string?)
 		end
 	end
 
-	-- Reset scroll position
 	settingsScroll.CanvasPosition = Vector2.zero
 end
-
---==============================================================================
--- Navegacao de telas
---==============================================================================
 
 local renderInicio
 local renderConfiguracoes
@@ -2444,19 +2351,11 @@ function renderJogadorMundo()
 	createAdminButton(settingsScroll, "Limpar tools soltas", "LimparToolsSoltas", nextOrder())
 end
 
---==============================================================================
--- Search filtering
---==============================================================================
-
 table.insert(connections, searchBox:GetPropertyChangedSignal("Text"):Connect(function()
 	if telaAtual == "Configuracoes" and activeCategory then
 		renderCategory(activeCategory, searchBox.Text)
 	end
 end))
-
---==============================================================================
--- Reset button
---==============================================================================
 
 table.insert(connections, resetBtn.MouseButton1Click:Connect(function()
 	if telaAtual ~= "Configuracoes" then return end
@@ -2476,23 +2375,15 @@ table.insert(connections, resetBtn.MouseButton1Click:Connect(function()
 	renderCategory(cat, searchBox.Text)
 end))
 
---==============================================================================
--- Close button
---==============================================================================
-
 table.insert(connections, closeBtn.MouseButton1Click:Connect(function()
 	isOpen = false
 	screenGui.Enabled = false
 end))
 
---==============================================================================
--- Toggle keybind (X)
---==============================================================================
-
 table.insert(connections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	if input.KeyCode ~= TOGGLE_KEY then return end
-	-- Don't toggle if typing in a TextBox
+
 	if UserInputService:GetFocusedTextBox() then return end
 
 	isOpen = not isOpen
@@ -2503,10 +2394,6 @@ table.insert(connections, UserInputService.InputBegan:Connect(function(input, ga
 	end
 end))
 
---==============================================================================
--- Cleanup seguro
---==============================================================================
-
 table.insert(connections, screenGui.Destroying:Connect(function()
 	clearControlConnections()
 	clearLeftConnections()
@@ -2515,5 +2402,3 @@ table.insert(connections, screenGui.Destroying:Connect(function()
 	end
 	table.clear(connections)
 end))
-
--- Categories are rendered on first open via the toggle keybind

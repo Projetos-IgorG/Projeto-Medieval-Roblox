@@ -1,8 +1,13 @@
--- ReplicatedStorage > Modulos > Cliente > Fisica > FisicaHelpers.luau
-
+--[[
+    Script: FisicaAuxiliarArrastar.luau
+    Caminho: src/ReplicatedStorage/Interacao/Arrastar
+    Responsabilidade: Calcula auxiliares fisicos usados pelo sistema de arrastar objetos.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: ObterPartePrincipal, EhArrastavel, ObterPeso, EncontrarObjetoArrastavel
+]]
 local FisicaHelpers = {}
 
--- Obtém a parte principal de um objeto
 function FisicaHelpers.ObterPartePrincipal(objeto: Instance): BasePart?
 	if objeto:IsA("BasePart") then
 		return objeto
@@ -14,7 +19,6 @@ function FisicaHelpers.ObterPartePrincipal(objeto: Instance): BasePart?
 	return nil
 end
 
--- Verifica se o objeto é arrastável
 function FisicaHelpers.EhArrastavel(objeto: Instance): boolean
 	if objeto:IsA("Tool") then
 		local dados = objeto:FindFirstChild("Dados")
@@ -30,7 +34,6 @@ function FisicaHelpers.EhArrastavel(objeto: Instance): boolean
 	return objeto:GetAttribute("Draggable") == true
 end
 
--- Obtém o peso do objeto
 function FisicaHelpers.ObterPeso(objeto: Instance): number
 	if objeto:IsA("Tool") then
 		local dados = objeto:FindFirstChild("Dados")
@@ -59,7 +62,6 @@ function FisicaHelpers.ObterPeso(objeto: Instance): number
 	return 1.0
 end
 
--- Encontra o objeto arrastável pai (subindo na hierarquia)
 function FisicaHelpers.EncontrarObjetoArrastavel(instancia: Instance): Instance?
 	local atual = instancia
 

@@ -1,19 +1,20 @@
 --[[
-	Módulo de Diálogo de Exemplo: Guarda
-	Contém a árvore de falas e escolhas do NPC Guarda, totalmente estruturada através de dicionários.
+    Script: Leonard.luau
+    Caminho: src/ReplicatedStorage/Dialogo/Conversas/Unicos
+    Responsabilidade: Define a conversa unica do NPC Leonard.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao concede recompensas nem altera estado do jogador; isso fica nos servicos do servidor.
 ]]
 local DialogoGuarda = {}
 
--- Chaves principais usadas pelas referências no script
 DialogoGuarda.Dialogos = {
 
-	-- Falas iniciais dependendo do estado global ou lembranças (Requisitos)
 	Inicio = {
 		{
 			IdFala = "Apresentacao",
 			FalaNPC = "Alto lá! Quem é você e o que faz na cidade?",
-			Requisitos = {}, -- Sem requisitos, é o fallback caso não caia nos outros
-			-- Se o jogador tiver essa tag, essa fala será ignorada (pulada) na triagem
+			Requisitos = {},
+
 			IgnorarSe = { { Tipo = "Tag", Valor = "ConheceuGuarda" } },
 			Escolhas = {
 				{
@@ -31,7 +32,7 @@ DialogoGuarda.Dialogos = {
 		{
 			IdFala = "BoasVindasFrequente",
 			FalaNPC = "Ah, você de novo! Mantenha a espada embainhada e não teremos problemas.",
-			Requisitos = { { Tipo = "Tag", Valor = "ConheceuGuarda" } }, -- Só diz isso se já o conheceu
+			Requisitos = { { Tipo = "Tag", Valor = "ConheceuGuarda" } },
 			Escolhas = {
 				{
 					TextoMencionado = "Tudo tranquilo pela cidade?",
@@ -45,7 +46,6 @@ DialogoGuarda.Dialogos = {
 		},
 	},
 
-	-- Ramificações de conversas
 	Ramificacoes = {
 		["Acolhimento"] = {
 			FalaNPC = "Muito bem, viajante. Bem-vindo. Procure o Ferreiro se precisar de equipamentos.",

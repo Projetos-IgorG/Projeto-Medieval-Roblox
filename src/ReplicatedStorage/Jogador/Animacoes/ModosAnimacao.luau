@@ -1,7 +1,12 @@
 --!strict
 
--- Animations.Modes: une os modos gerais com os modos de ação numa única tabela.
-
+--[[
+    Script: ModosAnimacao.luau
+    Caminho: src/ReplicatedStorage/Jogador/Animacoes
+    Responsabilidade: Define nomes e modos de animacao usados pelos controladores do jogador.
+    Uso: ModuleScript; use require(caminho) para ler as tabelas e valores exportados.
+    Nao faz: Nao executa comportamento sozinho; apenas fornece dados para outros scripts.
+]]
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local GeneralAnimations = require(script.Parent:WaitForChild("IdsAnimacoesGerais"))

@@ -1,12 +1,13 @@
 --!nonstrict
+
 --[[
-	MouseLockController - Replacement for ShiftLockController, manages use of mouse-locked mode
-	2018 Camera Update - AllYourBlox
---]]
-
---[[ Constants ]]
---
-
+    Script: MouseLockController.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/CameraModule
+    Responsabilidade: Gerencia o modo MouseLock e suas teclas, cursor e estado visual.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, GetIsMouseLocked, SetIsMouseLocked, GetBindableToggleEvent, GetMouseLockOffset, UpdateMouseLockAvailability
+]]
 local CommonUtils = script.Parent.Parent:WaitForChild("CommonUtils")
 local FlagUtil = require(CommonUtils:WaitForChild("FlagUtil"))
 local DEFAULT_MOUSE_LOCK_CURSOR = "rbxasset://textures/MouseLockedCursor.png"
@@ -14,30 +15,23 @@ local DEFAULT_MOUSE_LOCK_CURSOR = "rbxasset://textures/MouseLockedCursor.png"
 local CONTEXT_ACTION_NAME = "MouseLockSwitchAction"
 local MOUSELOCK_ACTION_PRIORITY = Enum.ContextActionPriority.Medium.Value
 
--- Importa configurações centralizadas do jogador
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ConfigJogador = require(
 	ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Camera"):WaitForChild("Configuracoes"):WaitForChild("ConfigCamera")
 )
 
--- Offset de câmera customizado (fallback padrão)
 local CAMERA_OFFSET_FALLBACK = Vector3.new(2, 0, 1)
 
---[[ Services ]]
---
 local PlayersService = game:GetService("Players")
 local ContextActionService = game:GetService("ContextActionService")
 local UserInputService = game:GetService("UserInputService")
-local Settings = UserSettings() -- ignore warning
+local Settings = UserSettings()
 local GameSettings = Settings.GameSettings
 
---[[ Imports ]]
 local CameraUtils = require(script.Parent:WaitForChild("CameraUtils"))
 
 local FFlagUserFixStuckShiftLock = FlagUtil.getUserFlag("UserFixStuckShiftLock")
 
---[[ The Module ]]
---
 local MouseLockController = {}
 MouseLockController.__index = MouseLockController
 
@@ -47,7 +41,6 @@ function MouseLockController.new()
 	self.isMouseLocked = false
 	self.savedMouseCursor = nil
 
-	-- MODIFICAÇÃO: Usa LeftControl como tecla padrão (do módulo de configurações)
 	local toggleKey = ConfigJogador.ObterConfiguracao("ToggleKey") or Enum.KeyCode.LeftControl
 	self.boundKeys = { toggleKey }
 
@@ -55,16 +48,16 @@ function MouseLockController.new()
 
 	local boundKeysObj = script:FindFirstChild("BoundKeys")
 	if (not boundKeysObj) or (not boundKeysObj:IsA("StringValue")) then
-		-- If object with correct name was found, but it's not a StringValue, destroy and replace
+
 		if boundKeysObj then
 			boundKeysObj:Destroy()
 		end
 
 		boundKeysObj = Instance.new("StringValue")
-		-- Luau FIXME: should be able to infer from assignment above that boundKeysObj is not nil
+
 		assert(boundKeysObj, "")
 		boundKeysObj.Name = "BoundKeys"
-		-- MODIFICAÇÃO: Valor padrão agora é LeftControl
+
 		boundKeysObj.Value = "LeftControl"
 		boundKeysObj.Parent = script
 	end
@@ -73,22 +66,19 @@ function MouseLockController.new()
 		boundKeysObj.Changed:Connect(function(value)
 			self:OnBoundKeysObjectChanged(value)
 		end)
-		self:OnBoundKeysObjectChanged(boundKeysObj.Value) -- Initial setup call
+		self:OnBoundKeysObjectChanged(boundKeysObj.Value)
 	end
 
-	-- Watch for changes to user's ControlMode and ComputerMovementMode settings and update the feature availability accordingly
 	GameSettings.Changed:Connect(function(property)
 		if property == "ControlMode" or property == "ComputerMovementMode" then
 			self:UpdateMouseLockAvailability()
 		end
 	end)
 
-	-- Watch for changes to DevEnableMouseLock and update the feature availability accordingly
 	PlayersService.LocalPlayer:GetPropertyChangedSignal("DevEnableMouseLock"):Connect(function()
 		self:UpdateMouseLockAvailability()
 	end)
 
-	-- Watch for changes to DevEnableMouseLock and update the feature availability accordingly
 	PlayersService.LocalPlayer:GetPropertyChangedSignal("DevComputerMovementMode"):Connect(function()
 		self:UpdateMouseLockAvailability()
 	end)
@@ -144,12 +134,10 @@ function MouseLockController:GetMouseLockOffset()
 end
 
 function MouseLockController:UpdateMouseLockAvailability()
-	-- MODIFICAÇÃO: Simplificado para sempre permitir MouseLock quando usando teclado/mouse
-	-- Isso ignora as configurações restritivas do StarterPlayer e UserGameSettings
+
 	local userUsingKeyboardAndMouse = UserInputService.PreferredInput == Enum.PreferredInput.KeyboardAndMouse
 		or UserInputService.KeyboardEnabled
 
-	-- MouseLock sempre disponível para teclado/mouse
 	local MouseLockAvailable = userUsingKeyboardAndMouse
 
 	if MouseLockAvailable ~= self.enabled then
@@ -158,7 +146,7 @@ function MouseLockController:UpdateMouseLockAvailability()
 end
 
 function MouseLockController:OnBoundKeysObjectChanged(newValue: string)
-	self.boundKeys = {} -- Overriding defaults, note: possibly with nothing at all if boundKeysObj.Value is "" or contains invalid values
+	self.boundKeys = {}
 	for token in string.gmatch(newValue, "[^%s,]+") do
 		for _, keyEnum in pairs(Enum.KeyCode:GetEnumItems()) do
 			if token == keyEnum.Name then
@@ -171,8 +159,6 @@ function MouseLockController:OnBoundKeysObjectChanged(newValue: string)
 	self:BindContextActions()
 end
 
---[[ Local Functions ]]
---
 function MouseLockController:OnMouseLockToggled()
 	self:SetIsMouseLocked(not self.isMouseLocked)
 end
@@ -204,23 +190,22 @@ function MouseLockController:EnableMouseLock(enable: boolean)
 		self.enabled = enable
 
 		if self.enabled then
-			-- Enabling the mode
+
 			self:BindContextActions()
 		else
-			-- Disabling
-			-- Restore mouse cursor
+
 			CameraUtils.restoreMouseIcon()
 
 			self:UnbindContextActions()
 
 			if FFlagUserFixStuckShiftLock then
-				-- If the mode is disabled while being used, fire the event to toggle it off
+
 				if self.isMouseLocked then
 					self.isMouseLocked = false
 					self.mouseLockToggledEvent:Fire()
 				end
 			else
-				-- If the mode is disabled while being used, fire the event to toggle it off
+
 				if self.isMouseLocked then
 					self.mouseLockToggledEvent:Fire()
 				end

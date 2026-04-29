@@ -2,6 +2,14 @@
 --!native
 --!optimize 2
 
+--[[
+    Script: Raycast.luau
+    Caminho: src/ReplicatedStorage/Combate/Hitbox/Shapecast/Solvers
+    Responsabilidade: Executa varreduras lineares para hitboxes baseadas em Raycast.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao decide regras de combate; apenas resolve a varredura fisica solicitada.
+    Funcoes principais: Cast
+]]
 local Types = require(script.Parent.Parent.Types)
 local Solver = { Solvers = {} }
 

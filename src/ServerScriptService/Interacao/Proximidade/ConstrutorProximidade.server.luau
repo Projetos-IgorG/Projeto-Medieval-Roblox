@@ -1,11 +1,13 @@
--- ServerScriptService/BuildCustomProximity.server.luau
--- Script que reconstrói o CustomProximity EXATAMENTE como o original
-
+--[[
+    Script: ConstrutorProximidade.server.luau
+    Caminho: src/ServerScriptService/Interacao/Proximidade
+    Responsabilidade: Cria ProximityPrompts e conecta interacoes de mundo aos sistemas corretos.
+    Uso: Script de servidor; roda automaticamente em src/ServerScriptService/Interacao/Proximidade quando a instancia existe no jogo.
+    Nao faz: Nao controla UI local nem le inputs diretamente; recebe sinais ja autorizados pelo fluxo do jogo.
+    Funcoes principais: buildCustomProximity
+]]
 local function buildCustomProximity(parent)
-	-- ============================================
-	-- CustomProximity (BillboardGui)
-	-- Pai: ReplicatedStorage ou Part
-	-- ============================================
+
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "CustomProximity"
 	billboard.Active = false
@@ -35,9 +37,6 @@ local function buildCustomProximity(parent)
 	billboard.ZIndexBehavior = Enum.ZIndexBehavior.Global
 	billboard.Parent = parent
 
-	-- ============================================
-	-- UIPadding (filho de CustomProximity)
-	-- ============================================
 	local uiPadding = Instance.new("UIPadding")
 	uiPadding.Name = "UIPadding"
 	uiPadding.Archivable = true
@@ -47,9 +46,6 @@ local function buildCustomProximity(parent)
 	uiPadding.PaddingTop = UDim.new(0, 0)
 	uiPadding.Parent = billboard
 
-	-- ============================================
-	-- Container (Frame) - filho de CustomProximity
-	-- ============================================
 	local container = Instance.new("Frame")
 	container.Name = "Container"
 	container.Active = false
@@ -82,9 +78,6 @@ local function buildCustomProximity(parent)
 	container.ZIndex = 1
 	container.Parent = billboard
 
-	-- ============================================
-	-- KeyText (Frame) - filho de Container
-	-- ============================================
 	local keyText = Instance.new("Frame")
 	keyText.Name = "KeyText"
 	keyText.Active = false
@@ -117,18 +110,12 @@ local function buildCustomProximity(parent)
 	keyText.ZIndex = 1
 	keyText.Parent = container
 
-	-- ============================================
-	-- UICorner (filho de KeyText)
-	-- ============================================
 	local keyTextCorner = Instance.new("UICorner")
 	keyTextCorner.Name = "UICorner"
 	keyTextCorner.Archivable = true
 	keyTextCorner.CornerRadius = UDim.new(1, 0)
 	keyTextCorner.Parent = keyText
 
-	-- ============================================
-	-- UIStroke [1] Outer/Preto (filho de KeyText)
-	-- ============================================
 	local keyTextStroke1 = Instance.new("UIStroke")
 	keyTextStroke1.Name = "UIStroke"
 	keyTextStroke1.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
@@ -144,9 +131,6 @@ local function buildCustomProximity(parent)
 	keyTextStroke1.ZIndex = 1
 	keyTextStroke1.Parent = keyText
 
-	-- ============================================
-	-- UIStroke [2] Inner/Branco (filho de KeyText)
-	-- ============================================
 	local keyTextStroke2 = Instance.new("UIStroke")
 	keyTextStroke2.Name = "UIStroke"
 	keyTextStroke2.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
@@ -162,9 +146,6 @@ local function buildCustomProximity(parent)
 	keyTextStroke2.ZIndex = 2
 	keyTextStroke2.Parent = keyText
 
-	-- ============================================
-	-- Progress (Frame) - filho de KeyText
-	-- ============================================
 	local progress = Instance.new("Frame")
 	progress.Name = "Progress"
 	progress.Active = false
@@ -197,18 +178,12 @@ local function buildCustomProximity(parent)
 	progress.ZIndex = 2
 	progress.Parent = keyText
 
-	-- ============================================
-	-- UICorner (filho de Progress)
-	-- ============================================
 	local progressCorner = Instance.new("UICorner")
 	progressCorner.Name = "UICorner"
 	progressCorner.Archivable = true
 	progressCorner.CornerRadius = UDim.new(1, 0)
 	progressCorner.Parent = progress
 
-	-- ============================================
-	-- KeyLabel (TextLabel) - filho de KeyText
-	-- ============================================
 	local keyLabel = Instance.new("TextLabel")
 	keyLabel.Name = "KeyLabel"
 	keyLabel.Active = false
@@ -257,9 +232,6 @@ local function buildCustomProximity(parent)
 	keyLabel.ZIndex = 3
 	keyLabel.Parent = keyText
 
-	-- ============================================
-	-- UIStroke (filho de KeyLabel)
-	-- ============================================
 	local keyLabelStroke = Instance.new("UIStroke")
 	keyLabelStroke.Name = "UIStroke"
 	keyLabelStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
@@ -275,9 +247,6 @@ local function buildCustomProximity(parent)
 	keyLabelStroke.ZIndex = 1
 	keyLabelStroke.Parent = keyLabel
 
-	-- ============================================
-	-- ProgressHoldBg (Frame) - filho de KeyText
-	-- ============================================
 	local progressHoldBg = Instance.new("Frame")
 	progressHoldBg.Name = "ProgressHoldBg"
 	progressHoldBg.Active = false
@@ -310,18 +279,12 @@ local function buildCustomProximity(parent)
 	progressHoldBg.ZIndex = 2
 	progressHoldBg.Parent = keyText
 
-	-- ============================================
-	-- UICorner (filho de ProgressHoldBg)
-	-- ============================================
 	local progressHoldBgCorner = Instance.new("UICorner")
 	progressHoldBgCorner.Name = "UICorner"
 	progressHoldBgCorner.Archivable = true
 	progressHoldBgCorner.CornerRadius = UDim.new(1, 0)
 	progressHoldBgCorner.Parent = progressHoldBg
 
-	-- ============================================
-	-- ActionText (TextLabel) - filho de Container
-	-- ============================================
 	local actionText = Instance.new("TextLabel")
 	actionText.Name = "ActionText"
 	actionText.Active = false
@@ -370,9 +333,6 @@ local function buildCustomProximity(parent)
 	actionText.ZIndex = 1
 	actionText.Parent = container
 
-	-- ============================================
-	-- UIStroke (filho de ActionText)
-	-- ============================================
 	local actionTextStroke = Instance.new("UIStroke")
 	actionTextStroke.Name = "UIStroke"
 	actionTextStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
@@ -388,9 +348,6 @@ local function buildCustomProximity(parent)
 	actionTextStroke.ZIndex = 1
 	actionTextStroke.Parent = actionText
 
-	-- ============================================
-	-- ObjectText (TextLabel) - filho de Container
-	-- ============================================
 	local objectText = Instance.new("TextLabel")
 	objectText.Name = "ObjectText"
 	objectText.Active = false
@@ -439,9 +396,6 @@ local function buildCustomProximity(parent)
 	objectText.ZIndex = 1
 	objectText.Parent = container
 
-	-- ============================================
-	-- UIStroke (filho de ObjectText)
-	-- ============================================
 	local objectTextStroke = Instance.new("UIStroke")
 	objectTextStroke.Name = "UIStroke"
 	objectTextStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
@@ -457,10 +411,6 @@ local function buildCustomProximity(parent)
 	objectTextStroke.ZIndex = 1
 	objectTextStroke.Parent = objectText
 
-	-- ============================================
-	-- ClickDetector (TextButton) - filho de CustomProximity (BillboardGui)
-	-- IMPORTANTE: Está diretamente no BillboardGui, não no Container!
-	-- ============================================
 	local clickDetector = Instance.new("TextButton")
 	clickDetector.Name = "ClickDetector"
 	clickDetector.Active = true
@@ -516,32 +466,6 @@ local function buildCustomProximity(parent)
 	return billboard
 end
 
---[[
-============================================
-ESTRUTURA COMPLETA DO CustomProximity:
-============================================
-
-CustomProximity (BillboardGui)
-├── UIPadding
-├── Container (Frame)
-│   ├── KeyText (Frame)
-│   │   ├── UICorner
-│   │   ├── UIStroke (Outer/Preto)
-│   │   ├── UIStroke (Inner/Branco)
-│   │   ├── Progress (Frame)
-│   │   │   └── UICorner
-│   │   ├── KeyLabel (TextLabel)
-│   │   │   └── UIStroke
-│   │   └── ProgressHoldBg (Frame)
-│   │       └── UICorner
-│   ├── ActionText (TextLabel)
-│   │   └── UIStroke
-│   └── ObjectText (TextLabel)
-│       └── UIStroke
-└── ClickDetector (TextButton)
-]]
-
--- Teste: criar em uma part chamada "PartUITeste" no workspace
 local partUITeste = workspace:FindFirstChild("PartUITeste")
 if partUITeste then
 	buildCustomProximity(partUITeste)

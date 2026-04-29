@@ -1,3 +1,11 @@
+--[[
+    Script: CatalogoAmbiente.luau
+    Caminho: src/ReplicatedStorage/Mundo/Ambiente
+    Responsabilidade: Mantem catalogo de climas e perfis de ambiente disponiveis.
+    Uso: ModuleScript; use require(caminho) para ler as tabelas e valores exportados.
+    Nao faz: Nao executa comportamento sozinho; apenas fornece dados para outros scripts.
+    Funcoes principais: ObterAmbiente, ObterClima, Resolver, ListarAmbientes, ListarClimas, ListarPeriodos
+]]
 local Lighting = game:GetService("Lighting")
 
 local TiposAmbiente = require(script.Parent:WaitForChild("TiposAmbiente"))

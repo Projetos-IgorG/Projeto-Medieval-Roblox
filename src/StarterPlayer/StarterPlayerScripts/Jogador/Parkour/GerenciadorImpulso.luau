@@ -1,3 +1,11 @@
+--[[
+    Script: GerenciadorImpulso.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/Jogador/Parkour
+    Responsabilidade: Aplica e acompanha impulsos fisicos usados pelas acoes de parkour.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: Configure, RegisterSuccess, GetSpeedMultiplier, Reset
+]]
 local MomentumManager = {}
 
 local baseSpeed = 1.0

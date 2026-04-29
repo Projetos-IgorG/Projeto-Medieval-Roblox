@@ -1,3 +1,11 @@
+--[[
+    Script: MovimentoCameraCabeca.client.luau
+    Caminho: src/StarterPlayer/StarterCharacterScripts/Jogador/Camera
+    Responsabilidade: Aplica movimento de camera ligado a cabeca e movimento do personagem local.
+    Uso: LocalScript; roda automaticamente para o jogador local em src/StarterPlayer/StarterCharacterScripts/Jogador/Camera.
+    Nao faz: Nao valida autoridade do servidor, nao salva dados persistentes e nao substitui regras server-side.
+    Funcoes principais: setup
+]]
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -9,7 +17,7 @@ local player = Players.LocalPlayer
 local connection: RBXScriptConnection? = nil
 
 local function setup(character: Model)
-	-- Limpa conexão anterior (respawn)
+
 	if connection then
 		connection:Disconnect()
 		connection = nil
@@ -37,7 +45,6 @@ local function setup(character: Model)
 		neck.C0 = targetC0
 	end)
 
-	-- Limpa ao morrer
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		humanoid.Died:Once(function()

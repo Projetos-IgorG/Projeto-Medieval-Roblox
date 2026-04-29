@@ -1,3 +1,11 @@
+--[[
+    Script: ServicoTempoMundo.luau
+    Caminho: src/ServerScriptService/Mundo/Ambiente
+    Responsabilidade: Controla ciclo de tempo do mundo e sincroniza hora para os clientes.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: _garantirEstado, _replicar, _avancar, Iniciar, DefinirPausa, AlternarPausa
+]]
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 

@@ -1,11 +1,11 @@
 --[[
-	GerenciadorVoz ââ‚¬â€ Orquestrador do sistema de voz.
-	
-	Lê as flags SimpleVoice / CustomVoice de VozConfig e despacha
-	para os módulos corretos. Retorna um handle unificado que
-	o DialogoClient usa sem se preocupar com qual sistema está ativo.
+    Script: GerenciadorVoz.luau
+    Caminho: src/ReplicatedStorage/Dialogo/Voz
+    Responsabilidade: Orquestra reproducao de voz, fallback e limpeza de audio dos dialogos.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: IniciarVoz, TocarTick, IniciarLoop, Parar, ObterVelocidade, ObterFrequenciaSom
 ]]
-
 local GerenciadorVoz = {}
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -15,10 +15,6 @@ local VozConfig = require(PastaVoz:WaitForChild("ConfigVoz"))
 local VozSimples = require(PastaVoz:WaitForChild("VozSimples"))
 local VozCustom = require(PastaVoz:WaitForChild("VozCustomizada"))
 
--- ==========================================
--- Handle Unificado
--- ==========================================
-
 export type HandleVoz = {
 	TocarTick: (self: HandleVoz) -> (),
 	IniciarLoop: (self: HandleVoz) -> (),
@@ -27,14 +23,10 @@ export type HandleVoz = {
 	ObterFrequenciaSom: (self: HandleVoz) -> number,
 }
 
---- Cria um handle de voz unificado para uma frase.
---- @param head ââ‚¬â€ Part "Head" do NPC
---- @param tipoVoz ââ‚¬â€ Tipo de voz do NPC (ex: "NeutralMale", "StrongFemale")
 function GerenciadorVoz.IniciarVoz(head: BasePart, tipoVoz: string): HandleVoz
 	local handleSimples = nil
 	local handleCustom = nil
 
-	-- Inicializa os sistemas conforme as flags
 	if VozConfig.SimpleVoice then
 		handleSimples = VozSimples.Iniciar(head, tipoVoz)
 	end
@@ -43,24 +35,20 @@ function GerenciadorVoz.IniciarVoz(head: BasePart, tipoVoz: string): HandleVoz
 		handleCustom = VozCustom.Iniciar(head, tipoVoz)
 	end
 
-	-- Handle unificado
 	local handle = {} :: HandleVoz
 
-	--- Toca um tick de voz simples (chamado pelo typewriter a cada N letras).
 	function handle:TocarTick()
 		if handleSimples then
 			handleSimples:TocarTick()
 		end
 	end
 
-	--- Inicia o loop de murmúrio do CustomVoice.
 	function handle:IniciarLoop()
 		if handleCustom then
 			handleCustom:IniciarLoop()
 		end
 	end
 
-	--- Para todos os sistemas de voz ativos.
 	function handle:Parar()
 		if handleSimples then
 			handleSimples:Parar()
@@ -72,21 +60,19 @@ function GerenciadorVoz.IniciarVoz(head: BasePart, tipoVoz: string): HandleVoz
 		end
 	end
 
-	--- Retorna a velocidade do typewriter (vem do SimpleVoice, ou padrão).
 	function handle:ObterVelocidade(): number
 		if handleSimples then
 			return handleSimples:ObterVelocidade()
 		end
-		-- Fallback se só CustomVoice estiver ativo
+
 		return 0.04
 	end
 
-	--- Retorna a frequência do som (vem do SimpleVoice, ou padrão).
 	function handle:ObterFrequenciaSom(): number
 		if handleSimples then
 			return handleSimples:ObterFrequenciaSom()
 		end
-		-- Fallback se só CustomVoice estiver ativo
+
 		return 2
 	end
 

@@ -1,5 +1,11 @@
--- ReplicatedStorage > Modulos > Cliente > Visual > ProjetorSombra.luau
-
+--[[
+    Script: ProjetorSombra.luau
+    Caminho: src/ReplicatedStorage/Jogador/Camera/Sombra
+    Responsabilidade: Projeta e atualiza sombra visual ligada ao personagem local.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: IsHeadAccessory, CreateShadowClone
+]]
 local ProjetorSombra = {}
 
 local HEAD_ATTACHMENTS = {

@@ -1,6 +1,11 @@
--- Zoom
--- Controls the distance between the focus and the camera.
-
+--[[
+    Script: init.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/CameraModule/ZoomController
+    Responsabilidade: Gerencia zoom da camera e limites de distancia do jogador.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, Step, Update, GetZoomRadius, SetZoomParameters, ReleaseSpring
+]]
 local ZOOM_STIFFNESS = 4.5
 local ZOOM_DEFAULT = 12.5
 local ZOOM_ACCELERATION = 0.0375
@@ -39,27 +44,22 @@ do
 	function ConstrainedSpring.new(freq: number, x: number, minValue: number, maxValue: number)
 		x = clamp(x, minValue, maxValue)
 		return setmetatable({
-			freq = freq, -- Undamped frequency (Hz)
-			x = x, -- Current position
-			v = 0, -- Current velocity
-			minValue = minValue, -- Minimum bound
-			maxValue = maxValue, -- Maximum bound
-			goal = x, -- Goal position
+			freq = freq,
+			x = x,
+			v = 0,
+			minValue = minValue,
+			maxValue = maxValue,
+			goal = x,
 		}, ConstrainedSpring)
 	end
 
 	function ConstrainedSpring:Step(dt: number)
-		local freq = self.freq :: number * 2 * pi -- Convert from Hz to rad/s
+		local freq = self.freq :: number * 2 * pi
 		local x: number = self.x
 		local v: number = self.v
 		local minValue: number = self.minValue
 		local maxValue: number = self.maxValue
 		local goal: number = self.goal
-
-		-- Solve the spring ODE for position and velocity after time t, assuming critical damping:
-		--   2*f*x'[t] + x''[t] = f^2*(g - x[t])
-		-- Knowns are x[0] and x'[0].
-		-- Solve for x[t] and x'[t].
 
 		local offset = goal - x
 		local step = freq * dt
@@ -68,7 +68,6 @@ do
 		local x1 = goal + (v * dt - offset * (step + 1)) * decay
 		local v1 = ((offset * freq - v) * step + v) * decay
 
-		-- Constrain
 		if x1 < minValue then
 			x1 = minValue
 			v1 = 0
@@ -102,13 +101,12 @@ do
 		local poppedZoom = math.huge
 
 		if zoomSpring.goal > DIST_OPAQUE then
-			-- Make a pessimistic estimate of zoom distance for this step without accounting for poppercam
+
 			local maxPossibleZoom = max(
 				zoomSpring.x,
 				stepTargetZoom(zoomSpring.goal, zoomDelta, cameraMinZoomDistance, cameraMaxZoomDistance)
 			)
 
-			-- Run the Popper algorithm on the feasible zoom range, [MIN_FOCUS_DIST, maxPossibleZoom]
 			poppedZoom = Popper(
 				focus * CFrame.new(0, 0, MIN_FOCUS_DIST),
 				maxPossibleZoom - MIN_FOCUS_DIST,

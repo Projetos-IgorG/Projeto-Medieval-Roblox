@@ -1,4 +1,13 @@
 --!nonstrict
+
+--[[
+    Script: VehicleCameraCore.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/CameraModule/VehicleCamera
+    Responsabilidade: Executa o comportamento principal da camera de veiculos.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, step, setGoal, getCFrame, setTransform, getYaw
+]]
 local CameraUtils = require(script.Parent.Parent.CameraUtils)
 local VehicleCameraConfig = require(script.Parent.VehicleCameraConfig)
 
@@ -6,19 +15,16 @@ local map = CameraUtils.map
 local mapClamp = CameraUtils.mapClamp
 local sanitizeAngle = CameraUtils.sanitizeAngle
 
--- extract sanitized yaw from a CFrame rotation
 local function getYaw(cf)
 	local _, yaw = cf:toEulerAnglesYXZ()
 	return sanitizeAngle(yaw)
 end
 
--- extract sanitized pitch from a CFrame rotation
 local function getPitch(cf)
 	local pitch = cf:toEulerAnglesYXZ()
 	return sanitizeAngle(pitch)
 end
 
--- step a damped angular spring axis
 local function stepSpringAxis(dt, f, g, p, v)
 	local offset = sanitizeAngle(p - g)
 	local decay = math.exp(-f * dt)
@@ -29,7 +35,6 @@ local function stepSpringAxis(dt, f, g, p, v)
 	return p1, v1
 end
 
--- value damper with separate response frequencies for rising and falling values
 local VariableEdgeSpring = {}
 do
 	VariableEdgeSpring.__index = VariableEdgeSpring
@@ -66,7 +71,6 @@ do
 	end
 end
 
--- damps a 3D rotation in Tait-Bryan YXZ space, filtering out Z
 local YawPitchSpring = {}
 do
 	YawPitchSpring.__index = YawPitchSpring
@@ -75,15 +79,14 @@ do
 		assert(typeof(cf) == "CFrame", "YawPitchSpring requires a CFrame")
 
 		return setmetatable({
-			yawG = getYaw(cf), -- yaw goal
-			yawP = getYaw(cf), -- yaw position
-			yawV = 0, -- yaw velocity
+			yawG = getYaw(cf),
+			yawP = getYaw(cf),
+			yawV = 0,
 
-			pitchG = getPitch(cf), -- pitch goal
-			pitchP = getPitch(cf), -- pitch position
-			pitchV = 0, -- pitch velocity
+			pitchG = getPitch(cf),
+			pitchP = getPitch(cf),
+			pitchV = 0,
 
-			-- yaw/pitch response springs
 			fSpringYaw = VariableEdgeSpring.new(
 				VehicleCameraConfig.yawReponseDampingRising,
 				VehicleCameraConfig.yawResponseDampingFalling,
@@ -97,7 +100,6 @@ do
 		}, YawPitchSpring)
 	end
 
-	-- Extract Tait-Bryan angles from a CFrame rotation
 	function YawPitchSpring:setGoal(goalCFrame)
 		assert(typeof(goalCFrame) == "CFrame", "setGoal requires a CFrame")
 
@@ -118,7 +120,6 @@ do
 		local fSpringYaw = self.fSpringYaw
 		local fSpringPitch = self.fSpringPitch
 
-		-- calculate the frequency spring
 		fSpringYaw.g = mapClamp(
 			map(firstPerson, 0, 1, yawVel, 0),
 			math.rad(VehicleCameraConfig.cutoffMinAngularVelYaw),
@@ -135,18 +136,14 @@ do
 			0
 		)
 
-		-- calculate final frequencies
 		local fYaw = 2 * math.pi * VehicleCameraConfig.yawStiffness * fSpringYaw:step(dt)
 		local fPitch = 2 * math.pi * VehicleCameraConfig.pitchStiffness * fSpringPitch:step(dt)
 
-		-- adjust response for first person
 		fPitch *= map(firstPerson, 0, 1, 1, VehicleCameraConfig.firstPersonResponseMul)
 		fYaw *= map(firstPerson, 0, 1, 1, VehicleCameraConfig.firstPersonResponseMul)
 
-		-- step yaw
 		self.yawP, self.yawV = stepSpringAxis(dt, fYaw, self.yawG, self.yawP, self.yawV)
 
-		-- step pitch
 		self.pitchP, self.pitchV = stepSpringAxis(dt, fPitch, self.pitchG, self.pitchP, self.pitchV)
 
 		return self:getCFrame()

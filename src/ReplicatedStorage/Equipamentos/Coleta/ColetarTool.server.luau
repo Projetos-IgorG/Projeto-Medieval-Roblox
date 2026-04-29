@@ -1,3 +1,10 @@
+--[[
+    Script: ColetarTool.server.luau
+    Caminho: src/ReplicatedStorage/Equipamentos/Coleta
+    Responsabilidade: Prepara coleta de Tools no mundo e entrega o item ao jogador pelo servidor.
+    Uso: Script de servidor; roda automaticamente em src/ReplicatedStorage/Equipamentos/Coleta quando a instancia existe no jogo.
+    Nao faz: Nao controla UI local nem le inputs diretamente; recebe sinais ja autorizados pelo fluxo do jogo.
+]]
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ToolBuilder = require(ReplicatedStorage:WaitForChild("Equipamentos"):WaitForChild("ConstrutorFerramentas"))

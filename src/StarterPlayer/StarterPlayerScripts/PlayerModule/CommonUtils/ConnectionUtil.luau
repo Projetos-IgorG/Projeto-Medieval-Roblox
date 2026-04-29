@@ -1,21 +1,28 @@
 --!strict
--- Utility module for handling RBXScriptConnections. This module is used to track connections and disconnect them when needed.
 
+--[[
+    Script: ConnectionUtil.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/CommonUtils
+    Responsabilidade: Ajuda a criar, substituir e limpar conexoes RBXScriptConnection.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, trackConnection, trackBoundFunction, disconnect, disconnectAll
+]]
 type ConnectionUtilClass = {
 	__index: ConnectionUtilClass,
 	new: () -> ConnectionUtil,
-	-- Connect with an RBXScripConnection
+
 	trackConnection: (self: ConnectionUtil, string, RBXScriptConnection) -> (),
-	-- Adds a manual disconnect function
+
 	trackBoundFunction: (self: ConnectionUtil, string, () -> ()) -> (),
-	-- Disconnects the key
+
 	disconnect: (self: ConnectionUtil, string) -> (),
-	-- Disconnects all connections on this util
+
 	disconnectAll: (self: ConnectionUtil) -> (),
 }
 
 export type ConnectionUtil = typeof(setmetatable({} :: {
-	-- Mapping from a unique key to a disconnect function
+
 	_connections: {[string]: () -> ()},
 }, {} :: ConnectionUtilClass))
 
@@ -32,9 +39,9 @@ end
 
 function ConnectionUtil:trackConnection(key, connection)
 	if self._connections[key] then
-		self._connections[key]() -- Disconnect existing connection
+		self._connections[key]()
 	end
-	-- store the disconnect function
+
 	self._connections[key] = function()
 		connection:Disconnect()
 	end
@@ -58,7 +65,7 @@ function ConnectionUtil:disconnectAll()
 	for _, disconnectFunc in pairs(self._connections) do
 		disconnectFunc()
 	end
-	self._connections = {} -- Clear all connections
+	self._connections = {}
 end
 
 return ConnectionUtil

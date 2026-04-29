@@ -1,22 +1,13 @@
 --[[
-    DragService.luau
-    
-    Sistema de arrastar itens com física estilo Skyrim (servidor):
-    - Gerencia NetworkOwnership dos itens arrastáveis
-    - Valida permissões e distância (anti-exploit)
-    - Libera itens quando jogador desconecta
-    - Configura DragDetector com física realista
-    
-    Configuração de itens:
-    - Atributo "Draggable" (boolean) = true para permitir arrastar
-    - Atributo "Peso" (number) = multiplicador de dificuldade (padrão: 1.0)
+    Script: ArrastarServidor.luau
+    Caminho: src/ServerScriptService/Interacao/Arrastar
+    Responsabilidade: Valida e replica o estado de objetos arrastados pelos jogadores.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: Iniciar, InicializarCollisionGroups, ConfigurarCollisionCharacter, OnCharacterAdded, ObterHRP, ObterPartePrincipal
 ]]
-
 local ServicoArrastar = {}
 
--- ==========
--- CONFIGURAÇÃO DE DEBUG
--- ==========
 local DEBUG_ENABLED = false
 
 local function DebugPrint(...)
@@ -25,16 +16,10 @@ local function DebugPrint(...)
 	end
 end
 
--- ==========
--- SERVIÇOS
--- ==========
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local PhysicsService = game:GetService("PhysicsService")
 
--- ==========
--- CONFIGURAÇÕES
--- ==========
 local CONFIG = {
 	DISTANCIA_MAXIMA = 12,
 	FORCA_BASE = 4000,
@@ -44,12 +29,8 @@ local CONFIG = {
 	GRUPO_ITENS_ARRASTANDO = "ItensArrastando",
 }
 
--- Mapa de jogadores arrastando itens
 local jogadoresArrastando = {}
 
--- ==========
--- FUNÇÕES AUXILIARES (mesmas do original)
--- ==========
 local function InicializarCollisionGroups()
 	local gruposExistentes = PhysicsService:GetRegisteredCollisionGroups()
 	local grupoPlayersExiste = false
@@ -353,9 +334,6 @@ local function IniciarArrasto(player, objeto)
 	DebugPrint("Arrasto iniciado:", player.Name, "->", objeto.Name)
 end
 
--- ==========
--- INICIALIZAÇÃO DO SERVIÇO
--- ==========
 function ServicoArrastar:Iniciar()
 	DebugPrint("Inicializando ServicoArrastar...")
 

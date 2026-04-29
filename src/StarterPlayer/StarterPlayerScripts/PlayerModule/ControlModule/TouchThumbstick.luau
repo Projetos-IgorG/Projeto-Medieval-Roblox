@@ -1,16 +1,19 @@
 --!nonstrict
+
 --[[
-
-	TouchThumbstick
-
---]]
+    Script: TouchThumbstick.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/ControlModule
+    Responsabilidade: Implementa thumbstick virtual fixo para controles de toque.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, Enable, OnInputEnded, Create, ResizeThumbstick, DoMove
+]]
 local GuiService = game:GetService("GuiService")
 local UserInputService = game:GetService("UserInputService")
 
---[[ Constants ]]--
 local ZERO_VECTOR3 = Vector3.new(0,0,0)
 local TOUCH_CONTROL_SHEET = "rbxasset://textures/ui/TouchControlsSheet.png"
---[[ The Module ]]--
+
 local BaseCharacterController = require(script.Parent:WaitForChild("BaseCharacterController"))
 local TouchThumbstick = setmetatable({}, BaseCharacterController)
 TouchThumbstick.__index = TouchThumbstick
@@ -25,26 +28,26 @@ function TouchThumbstick.new()
 	self.onTouchEndedConn = nil
 	self.screenPos = nil
 	self.stickImage = nil
-	self.thumbstickSize = nil -- Float
+	self.thumbstickSize = nil
 
 	return self
 end
 function TouchThumbstick:Enable(enable: boolean?, uiParentFrame)
-	if enable == nil then return false end			-- If nil, return false (invalid argument)
-	enable = enable and true or false				-- Force anything non-nil to boolean before comparison
-	if self.enabled == enable then return true end	-- If no state change, return true indicating already in requested state
+	if enable == nil then return false end
+	enable = enable and true or false
+	if self.enabled == enable then return true end
 
 	self.moveVector = ZERO_VECTOR3
 	self.isJumping = false
 
 	if enable then
-		-- Enable
+
 		if not self.thumbstickFrame then
 			self:Create(uiParentFrame)
 		end
 		self.thumbstickFrame.Visible = true
 	else
-		-- Disable
+
 		self.thumbstickFrame.Visible = false
 		self:OnInputEnded()
 	end
@@ -121,7 +124,7 @@ function TouchThumbstick:Create(parentFrame)
 
 	ResizeThumbstick()
 	self.absoluteSizeChangedConn = parentFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(ResizeThumbstick)
-	
+
 	outerImage.Parent = self.thumbstickFrame
 	self.stickImage.Parent = self.thumbstickFrame
 
@@ -132,14 +135,12 @@ function TouchThumbstick:Create(parentFrame)
 
 		local currentMoveVector = direction / (self.thumbstickSize/2)
 
-		-- Scaled Radial Dead Zone
 		local inputAxisMagnitude = currentMoveVector.magnitude
 		if inputAxisMagnitude < deadZone then
 			currentMoveVector = Vector3.new()
 		else
 			currentMoveVector = currentMoveVector.unit * math.min(1, (inputAxisMagnitude - deadZone) / (1 - deadZone))
-			-- NOTE: Making currentMoveVector a unit vector will cause the player to instantly go max speed
-			-- must check for zero length vector is using unit
+
 			currentMoveVector = Vector3.new(currentMoveVector.X, 0, currentMoveVector.Y)
 		end
 
@@ -165,10 +166,8 @@ function TouchThumbstick:Create(parentFrame)
 		)
 	end
 
-	-- input connections
 	self.thumbstickFrame.InputBegan:Connect(function(inputObject: InputObject)
-		--A touch that starts elsewhere on the screen will be sent to a frame's InputBegan event
-		--if it moves over the frame. So we check that this is actually a new touch (inputObject.UserInputState ~= Enum.UserInputState.Begin)
+
 		if self.moveTouchObject or inputObject.UserInputType ~= Enum.UserInputType.Touch
 			or inputObject.UserInputState ~= Enum.UserInputState.Begin then
 			return

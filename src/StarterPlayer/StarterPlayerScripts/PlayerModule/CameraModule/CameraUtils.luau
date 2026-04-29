@@ -1,8 +1,11 @@
 --[[
-	CameraUtils - Math utility functions shared by multiple camera scripts
-	2018 Camera Update - AllYourBlox
---]]
-
+    Script: CameraUtils.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/CameraModule
+    Responsabilidade: Fornece funcoes matematicas e auxiliares usadas pelos controladores de camera.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, step, map, mapClamp, getLooseBoundingSphere, sanitizeAngle
+]]
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local UserGameSettings = UserSettings():GetService("UserGameSettings")
@@ -13,12 +16,10 @@ local function round(num: number)
 	return math.floor(num + 0.5)
 end
 
--- Critically damped spring class for fluid motion effects
 local Spring = {}
 do
 	Spring.__index = Spring
 
-	-- Initialize to a given undamped frequency and default position
 	function Spring.new(freq, pos)
 		return setmetatable({
 			freq = freq,
@@ -28,7 +29,6 @@ do
 		}, Spring)
 	end
 
-	-- Advance the spring simulation by `dt` seconds
 	function Spring:step(dt: number)
 		local f: number = self.freq :: number * 2.0 * math.pi
 		local g: Vector3 = self.goal
@@ -50,12 +50,10 @@ end
 
 CameraUtils.Spring = Spring
 
--- map a value from one range to another
 function CameraUtils.map(x: number, inMin: number, inMax: number, outMin: number, outMax: number): number
 	return (x - inMin) * (outMax - outMin) / (inMax - inMin) + outMin
 end
 
--- maps a value from one range to another, clamping to the output range. order does not matter
 function CameraUtils.mapClamp(x: number, inMin: number, inMax: number, outMin: number, outMax: number): number
 	return math.clamp(
 		(x - inMin) * (outMax - outMin) / (inMax - inMin) + outMin,
@@ -64,17 +62,14 @@ function CameraUtils.mapClamp(x: number, inMin: number, inMax: number, outMin: n
 	)
 end
 
--- Ritter's loose bounding sphere algorithm
 function CameraUtils.getLooseBoundingSphere(parts: { BasePart })
 	local points = table.create(#parts)
 	for idx, part in pairs(parts) do
 		points[idx] = part.Position
 	end
 
-	-- pick an arbitrary starting point
 	local x = points[1]
 
-	-- get y, the point furthest from x
 	local y = x
 	local yDist = 0
 
@@ -87,7 +82,6 @@ function CameraUtils.getLooseBoundingSphere(parts: { BasePart })
 		end
 	end
 
-	-- get z, the point furthest from y
 	local z = y
 	local zDist = 0
 
@@ -100,19 +94,16 @@ function CameraUtils.getLooseBoundingSphere(parts: { BasePart })
 		end
 	end
 
-	-- use (y, z) as the initial bounding sphere
 	local sc = (y + z) * 0.5
 	local sr = (y - z).Magnitude * 0.5
 
-	-- expand sphere to fit any outlying points
 	for _, p in ipairs(points) do
 		local pDist = (p - sc).Magnitude
 
 		if pDist > sr then
-			-- shift to midpoint
+
 			sc = sc + (pDist - sr) * 0.5 * (p - sc).Unit
 
-			-- expand
 			sr = (pDist + sr) * 0.5
 		end
 	end
@@ -120,12 +111,10 @@ function CameraUtils.getLooseBoundingSphere(parts: { BasePart })
 	return sc, sr
 end
 
--- canonicalize an angle to +-180 degrees
 function CameraUtils.sanitizeAngle(a: number): number
 	return (a + math.pi) % (2 * math.pi) - math.pi
 end
 
--- From TransparencyController
 function CameraUtils.Round(num: number, places: number): number
 	local decimalPivot = 10 ^ places
 	return math.floor(num * decimalPivot + 0.5) / decimalPivot
@@ -139,7 +128,6 @@ function CameraUtils.IsFiniteVector3(vec3: Vector3): boolean
 	return CameraUtils.IsFinite(vec3.X) and CameraUtils.IsFinite(vec3.Y) and CameraUtils.IsFinite(vec3.Z)
 end
 
--- Legacy implementation renamed
 function CameraUtils.GetAngleBetweenXZVectors(v1: Vector3, v2: Vector3): number
 	return math.atan2(v2.X * v1.Z - v2.Z * v1.X, v2.X * v1.X + v2.Z * v1.Z)
 end
@@ -154,8 +142,6 @@ function CameraUtils.RotateVectorByAngleAndRound(camLook: Vector3, rotateAngle: 
 	return 0
 end
 
--- K is a tunable parameter that changes the shape of the S-curve
--- the larger K is the more straight/linear the curve gets
 local k = 0.35
 local lowerK = 0.8
 local function SCurveTranform(t: number)
@@ -188,7 +174,6 @@ function CameraUtils.GamepadLinearToCurve(thumbstickPosition: Vector2)
 	return Vector2.new(onAxis(thumbstickPosition.X), onAxis(thumbstickPosition.Y))
 end
 
--- This function converts 4 different, redundant enumeration types to one standard so the values can be compared
 function CameraUtils.ConvertCameraModeEnumToStandard(
 	enumValue: Enum.TouchCameraMovementMode | Enum.ComputerCameraMovementMode | Enum.DevTouchCameraMovementMode | Enum.DevComputerCameraMovementMode
 ): Enum.ComputerCameraMovementMode | Enum.DevComputerCameraMovementMode
@@ -234,7 +219,6 @@ function CameraUtils.ConvertCameraModeEnumToStandard(
 		return Enum.ComputerCameraMovementMode.CameraToggle
 	end
 
-	-- Note: Only the Dev versions of the Enums have UserChoice as an option
 	if
 		enumValue == Enum.DevTouchCameraMovementMode.UserChoice
 		or enumValue == Enum.DevComputerCameraMovementMode.UserChoice
@@ -242,7 +226,6 @@ function CameraUtils.ConvertCameraModeEnumToStandard(
 		return Enum.DevComputerCameraMovementMode.UserChoice
 	end
 
-	-- For any unmapped options return Classic camera
 	return Enum.ComputerCameraMovementMode.Classic
 end
 
@@ -260,7 +243,7 @@ local savedMouseIcon: string = ""
 local lastMouseIconOverride: string? = nil
 function CameraUtils.setMouseIconOverride(icon: string)
 	local mouse = getMouse()
-	-- Only save the icon if it was written by another script.
+
 	if mouse.Icon ~= lastMouseIconOverride then
 		savedMouseIcon = mouse.Icon
 	end
@@ -271,7 +254,7 @@ end
 
 function CameraUtils.restoreMouseIcon()
 	local mouse = getMouse()
-	-- Only restore if it wasn't overwritten by another script.
+
 	if mouse.Icon == lastMouseIconOverride then
 		mouse.Icon = savedMouseIcon
 	end

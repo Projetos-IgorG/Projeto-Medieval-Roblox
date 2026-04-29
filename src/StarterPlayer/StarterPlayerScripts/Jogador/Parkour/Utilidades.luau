@@ -1,12 +1,17 @@
+--[[
+    Script: Utilidades.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/Jogador/Parkour
+    Responsabilidade: Fornece funcoes auxiliares compartilhadas pelos modulos de parkour.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
+    Funcoes principais: getAxisValue, vectorFromTable, dominantAxis, getFaceAxes, hasTagDeep, getCharacterParts
+]]
 local Workspace = game:GetService("Workspace")
 local CollectionService = game:GetService("CollectionService")
 local EMPTY_ARRAY = table.freeze({})
 
 local Utilidades = {}
 
--- ==========
--- Funções de Vetores / Eixos
--- ==========
 function Utilidades.getAxisValue(v, axis)
 	if axis == "X" then
 		return v.X
@@ -45,9 +50,6 @@ function Utilidades.getFaceAxes(normalLocal)
 	end
 end
 
--- ==========
--- Tags / Hierarquia
--- ==========
 function Utilidades.hasTagDeep(instance, tag)
 	local current = instance
 
@@ -61,9 +63,6 @@ function Utilidades.hasTagDeep(instance, tag)
 	return false
 end
 
--- ==========
--- Character
--- ==========
 function Utilidades.getCharacterParts(character)
 	if not character then
 		return nil, nil
@@ -78,9 +77,6 @@ function Utilidades.getCharacterParts(character)
 	return hrp, head
 end
 
--- ==========
--- Raycast / Overlap Params (cached)
--- ==========
 local _excludeRayParams = RaycastParams.new()
 _excludeRayParams.FilterType = Enum.RaycastFilterType.Exclude
 
@@ -93,7 +89,6 @@ function Utilidades.createRaycastParams(ignoreList)
 	return _excludeRayParams
 end
 
--- Buffer reutilizável para createRaycastParamsForCharacter (evita table.create por chamada)
 local _charRayIgnoreBuffer = table.create(4)
 
 function Utilidades.createRaycastParamsForCharacter(character, extraIgnore)
@@ -102,7 +97,7 @@ function Utilidades.createRaycastParamsForCharacter(character, extraIgnore)
 	for i = 1, ignoreCount do
 		_charRayIgnoreBuffer[i + 1] = extraIgnore[i]
 	end
-	-- Limpar entradas antigas
+
 	for i = ignoreCount + 2, #_charRayIgnoreBuffer do
 		_charRayIgnoreBuffer[i] = nil
 	end
@@ -116,9 +111,6 @@ function Utilidades.createOverlapParams(ignoreList, maxParts)
 	return _overlapParamsCache
 end
 
--- ==========
--- Geometria de Superfície
--- ==========
 function Utilidades.getSurfaceFrame(position, normal)
 	local lookAtPos = position - normal
 	local cf = CFrame.lookAt(position, lookAtPos, Vector3.yAxis)
@@ -151,7 +143,6 @@ function Utilidades.isIgnorablePart(part, minHeight)
 		return false
 	end
 
-	-- Peças muito pequenas em altura (decoração, grama, detalhes)
 	if part.Size.Y < (minHeight or 0.5) and part.Material == Enum.Material.Grass then
 		return true
 	end
@@ -179,10 +170,6 @@ function Utilidades.isParkourIgnoredPart(part, minHeight)
 	return Utilidades.isIgnorablePart(part, minHeight) or Utilidades.isPartOfHumanoidModel(part)
 end
 
--- ==========
--- Intenção Direcional (Input XZ)
--- Extraído de init.client
--- ==========
 function Utilidades.GetIntencaoDirecional(humanoid, hrp, config)
 	local moveDir = humanoid.MoveDirection
 	local deadzone = config.DirectionInputDeadzone or 0.2
@@ -253,7 +240,7 @@ function Utilidades.GetIntencaoDirecional(humanoid, hrp, config)
 		return "Esquerda"
 	end
 
-	return nil -- ambíguo
+	return nil
 end
 
 return Utilidades

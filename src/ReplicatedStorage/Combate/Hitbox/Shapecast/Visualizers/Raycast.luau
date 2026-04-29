@@ -2,10 +2,14 @@
 --!strict
 --!optimize 2
 
---- While using Trails as debugging lines would be nice (and more performant!), they are susceptible to frame drops and are inaccurate
---- at low graphic settings which can create false results
--- @author Phin
-
+--[[
+    Script: Raycast.luau
+    Caminho: src/ReplicatedStorage/Combate/Hitbox/Shapecast/Visualizers
+    Responsabilidade: Desenha visualizacoes de depuracao para Raycasts.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao detecta dano nem aplica hits; apenas mostra formas para depuracao visual.
+    Funcoes principais: _CreateAdornment, GetAdornment, ToRender, ReturnAdornment, Clear
+]]
 local Types = require(script.Parent.Parent.Types)
 local Settings = require(script.Parent.Parent.HitboxConfig)
 
@@ -15,10 +19,6 @@ cache.__type = `ShapecastHitbox_{script.Name}`
 cache._AdornmentInUse = {}
 cache._AdornmentInReserve = {}
 
---- AdornmentData type
-
---- Internal function to create an AdornmentData type
---- Creates a LineHandleAdornment and a timer value
 function cache:_CreateAdornment(): Types.AdornmentData
 	local line: LineHandleAdornment = Instance.new("LineHandleAdornment")
 	line.Name = "_ShapecastHitboxDebugger"
@@ -38,10 +38,9 @@ function cache:_CreateAdornment(): Types.AdornmentData
 	}
 end
 
---- Gets an AdornmentData type. Creates one if there isn't one currently available.
 function cache:GetAdornment(): Types.AdornmentData?
 	if #cache._AdornmentInReserve <= 0 then
-		--- Create a new LineAdornmentHandle if none are in reserve
+
 		local adornment: Types.AdornmentData = cache:_CreateAdornment()
 		table.insert(cache._AdornmentInReserve, adornment)
 	end
@@ -70,8 +69,6 @@ function cache:ToRender(
 	adornment.Adornment.ZIndex = raycastResult and 999 or -1
 end
 
---- Returns an AdornmentData back into the cache.
--- @param AdornmentData
 function cache:ReturnAdornment(adornment: Types.AdornmentData)
 	adornment.Adornment.Length = 0
 	adornment.Adornment.Visible = false
@@ -79,9 +76,6 @@ function cache:ReturnAdornment(adornment: Types.AdornmentData)
 	table.insert(cache._AdornmentInReserve, adornment)
 end
 
---- Clears the cache in reserve. Should only be used if you want to free up some memory.
---- If you end up turning on the visualizer again for this session, the cache will fill up again.
---- Does not clear adornments that are currently in use.
 function cache:Clear()
 	for i: number = #cache._AdornmentInReserve, 1, -1 do
 		if cache._AdornmentInReserve[i].Adornment then

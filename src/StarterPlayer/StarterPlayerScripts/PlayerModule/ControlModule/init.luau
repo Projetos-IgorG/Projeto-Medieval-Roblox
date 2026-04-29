@@ -1,27 +1,16 @@
 --!nonstrict
+
 --[[
-	ControlModule - This ModuleScript implements a singleton class to manage the
-	selection, activation, and deactivation of the current character movement controller.
-	This script binds to RenderStepped at Input priority and calls the Update() methods
-	on the active controller instances.
-
-	The character controller ModuleScripts implement classes which are instantiated and
-	activated as-needed, they are no longer all instantiated up front as they were in
-	the previous generation of PlayerScripts.
-
-	2018 PlayerScripts Update - AllYourBlox
-
-
-	Release notes:
-		7/14/2025 - Use PreferredInput instead of LastInputType for enabling/disabling virtual thumbstick
-		7/24/2025 - Use PreferredInput instead of TouchEnabled for setting movement modes, camera modes, and shift lock
-
-]]--
-
+    Script: init.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/PlayerModule/ControlModule
+    Responsabilidade: Seleciona, ativa e atualiza o controlador de movimento apropriado.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
+    Funcoes principais: new, GetMoveVector, GetEstimatedVRTorsoFrame, GetActiveController, UpdateActiveControlModuleEnabled, Enable
+]]
 local ControlModule = {}
 ControlModule.__index = ControlModule
 
---[[ Roblox Services ]]--
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -43,8 +32,6 @@ end
 
 local TouchThumbstick = require(script:WaitForChild("TouchThumbstick"))
 
--- These controllers handle only walk/run movement, jumping is handled by the
--- TouchJump controller if any of these are active
 local ClickToMove = require(script:WaitForChild("ClickToMoveController"))
 local TouchJump = require(script:WaitForChild("TouchJump"))
 
@@ -54,7 +41,6 @@ local CONTROL_ACTION_PRIORITY = Enum.ContextActionPriority.Medium.Value
 local NECK_OFFSET = -0.7
 local FIRST_PERSON_THRESHOLD_DISTANCE = 5
 
--- Mapping from movement mode enum values to control modules to avoid huge if elseif switching
 local movementEnumToModuleMap = {
 	[Enum.TouchMovementMode.DPad] = DynamicThumbstick,
 	[Enum.DevTouchMovementMode.DPad] = DynamicThumbstick,
@@ -67,7 +53,6 @@ local movementEnumToModuleMap = {
 	[Enum.TouchMovementMode.ClickToMove] = ClickToMove,
 	[Enum.DevTouchMovementMode.ClickToMove] = ClickToMove,
 
-	-- Current default
 	[Enum.TouchMovementMode.Default] = DynamicThumbstick,
 
 	[Enum.ComputerMovementMode.Default] = Keyboard,
@@ -81,18 +66,15 @@ local movementEnumToModuleMap = {
 function ControlModule.new()
 	local self = setmetatable({},ControlModule)
 
-	-- The Modules above are used to construct controller instances as-needed, and this
-	-- table is a map from Module to the instance created from it
 	self.controllers = {}
 
-	self.activeControlModule = nil	-- Used to prevent unnecessarily expensive checks on each input event
+	self.activeControlModule = nil
 	self.activeController = nil
 	self.touchJumpController = nil
 	self.moveFunction = Players.LocalPlayer.Move
 	self.humanoid = nil
 	self.controlsEnabled = true
 
-	-- For Roblox self.vehicleController
 	self.humanoidSeatedConn = nil
 	self.vehicleController = nil
 
@@ -131,7 +113,6 @@ function ControlModule.new()
 		self:UpdateMovementMode()
 	end)
 
-	--[[ Touch Device UI ]]--
 	self.playerGui = nil
 	self.touchGui = nil
 	self.playerGuiAddedConn = nil
@@ -162,9 +143,6 @@ function ControlModule.new()
 	return self
 end
 
--- Convenience function so that calling code does not have to first get the activeController
--- and then call GetMoveVector on it. When there is no active controller, this function returns the
--- zero vector
 function ControlModule:GetMoveVector(): Vector3
 	if self.activeController then
 		return self.activeController:GetMoveVector()
@@ -189,10 +167,10 @@ function ControlModule:GetEstimatedVRTorsoFrame(): CFrame
 	local headFrame = VRService:GetUserCFrame(Enum.UserCFrame.Head)
 	local _, headAngle, _ = headFrame:ToEulerAnglesYXZ()
 	headAngle = -headAngle
-	if not VRService:GetUserCFrameEnabled(Enum.UserCFrame.RightHand) or 
+	if not VRService:GetUserCFrameEnabled(Enum.UserCFrame.RightHand) or
 		not VRService:GetUserCFrameEnabled(Enum.UserCFrame.LeftHand) then
 		self.currentTorsoAngle = headAngle;
-	else	
+	else
 		local leftHandPos = VRService:GetUserCFrame(Enum.UserCFrame.LeftHand)
 		local rightHandPos = VRService:GetUserCFrame(Enum.UserCFrame.RightHand)
 
@@ -208,11 +186,11 @@ function ControlModule:GetEstimatedVRTorsoFrame(): CFrame
 		local averageHandAngleValid =
 			averageHandAngleRelativeToCurrentAngle > -math.pi/2 and
 			averageHandAngleRelativeToCurrentAngle < math.pi/2
-		
+
 		if not averageHandAngleValid then
 			averageHandAngleRelativeToCurrentAngle = headAngleRelativeToCurrentAngle
 		end
-		
+
 		local minimumValidAngle = math.min(averageHandAngleRelativeToCurrentAngle, headAngleRelativeToCurrentAngle)
 		local maximumValidAngle = math.max(averageHandAngleRelativeToCurrentAngle, headAngleRelativeToCurrentAngle)
 
@@ -233,12 +211,11 @@ function ControlModule:GetActiveController()
 	return self.activeController
 end
 
--- Checks for conditions for enabling/disabling the active controller and updates whether the active controller is enabled/disabled
 function ControlModule:UpdateActiveControlModuleEnabled()
-	-- helpers for disable/enable
+
 	local disable = function()
 		self.activeController:Enable(false)
-		if self.touchJumpController then 
+		if self.touchJumpController then
 			self.touchJumpController:Enable(false)
 		end
 
@@ -267,8 +244,7 @@ function ControlModule:UpdateActiveControlModuleEnabled()
 		end
 
 		if self.activeControlModule == ClickToMove then
-			-- For ClickToMove, when it is the player's choice, we also enable the full keyboard controls.
-			-- When the developer is forcing click to move, the most keyboard controls (WASD) are not available, only jump.
+
 			self.activeController:Enable(
 				true,
 				Players.LocalPlayer.DevComputerMovementMode == Enum.DevComputerMovementMode.UserChoice,
@@ -281,19 +257,15 @@ function ControlModule:UpdateActiveControlModuleEnabled()
 		end
 	end
 
-	-- there is no active controller
 	if not self.activeController then
 		return
 	end
 
-	-- developer called ControlModule:Disable(), don't turn back on
 	if not self.controlsEnabled then
 		disable()
 		return
 	end
 
-	-- GuiService.TouchControlsEnabled == false and the active controller is a touch controller,
-	-- disable controls
 	if not GuiService.TouchControlsEnabled and UserInputService.PreferredInput == Enum.PreferredInput.Touch and
 		(self.activeControlModule == ClickToMove or self.activeControlModule == TouchThumbstick or
 			self.activeControlModule == DynamicThumbstick) then
@@ -301,7 +273,6 @@ function ControlModule:UpdateActiveControlModuleEnabled()
 		return
 	end
 
-	-- no settings prevent enabling controls
 	enable()
 end
 
@@ -319,13 +290,10 @@ function ControlModule:Enable(enable: boolean?)
 	self:UpdateActiveControlModuleEnabled()
 end
 
--- For those who prefer distinct functions
 function ControlModule:Disable()
 	self:Enable(false)
 end
 
-
--- Returns module (possibly nil) and success code to differentiate returning nil due to error vs Scriptable
 function ControlModule:SelectComputerMovementModule(): ({}?, boolean)
 	if not (UserInputService.KeyboardEnabled or UserInputService.GamepadEnabled) then
 		return nil, false
@@ -342,14 +310,13 @@ function ControlModule:SelectComputerMovementModule(): ({}?, boolean)
 		end
 
 		if UserGameSettings.ComputerMovementMode == Enum.ComputerMovementMode.ClickToMove and computerModule == Keyboard then
-			-- User has ClickToMove set in Settings, prefer ClickToMove controller when using keyboard and mouse
+
 			computerModule = ClickToMove
 		end
 	else
-		-- Developer has selected a mode that must be used.
+
 		computerModule = movementEnumToModuleMap[DevMovementMode]
 
-		-- computerModule is expected to be nil here only when developer has selected Scriptable
 		if (not computerModule) and DevMovementMode ~= Enum.DevComputerMovementMode.Scriptable then
 			warn("No character control module is associated with DevComputerMovementMode ", DevMovementMode)
 		end
@@ -358,17 +325,14 @@ function ControlModule:SelectComputerMovementModule(): ({}?, boolean)
 	if computerModule then
 		return computerModule, true
 	elseif DevMovementMode == Enum.DevComputerMovementMode.Scriptable then
-		-- Special case where nil is returned and we actually want to set self.activeController to nil for Scriptable
+
 		return nil, true
 	else
-		-- This case is for when computerModule is nil because of an error and no suitable control module could
-		-- be found.
+
 		return nil, false
 	end
 end
 
--- Choose current Touch control module based on settings (user, dev)
--- Returns module (possibly nil) and success code to differentiate returning nil due to error vs Scriptable
 function ControlModule:SelectTouchModule(): ({}?, boolean)
 	local touchModule
 	local DevMovementMode = Players.LocalPlayer.DevTouchMovementMode
@@ -401,19 +365,18 @@ function ControlModule:calculateRawMoveVector(humanoid: Humanoid, cameraRelative
 
 	if VRService.VREnabled and humanoid.RootPart then
 		local vrFrame = VRService:GetUserCFrame(Enum.UserCFrame.Head)
-		
+
 		vrFrame = self:GetEstimatedVRTorsoFrame()
-					
-		-- movement relative to VR frustum
+
 		local cameraDelta = camera.Focus.Position - cameraCFrame.Position
-		if cameraDelta.Magnitude < 3 then -- "nearly" first person
+		if cameraDelta.Magnitude < 3 then
 			cameraCFrame = cameraCFrame * vrFrame
 		else
 			cameraCFrame = camera.CFrame * (vrFrame.Rotation + vrFrame.Position * camera.HeadScale)
 		end
 	end
 
-	if humanoid:GetState() == Enum.HumanoidStateType.Swimming then	
+	if humanoid:GetState() == Enum.HumanoidStateType.Swimming then
 		if VRService.VREnabled then
 			cameraRelativeMoveVector = Vector3.new(cameraRelativeMoveVector.X, 0, cameraRelativeMoveVector.Z)
 			if cameraRelativeMoveVector.Magnitude < 0.01 then
@@ -434,12 +397,11 @@ function ControlModule:calculateRawMoveVector(humanoid: Humanoid, cameraRelative
 	local c, s
 	local _, _, _, R00, R01, R02, _, _, R12, _, _, R22 = cameraCFrame:GetComponents()
 	if R12 < 1 and R12 > -1 then
-		-- X and Z components from back vector.
+
 		c = R22
 		s = R02
 	else
-		-- In this case the camera is looking straight up or straight down.
-		-- Use X components from right and up vectors.
+
 		c = R00
 		s = -R01*math.sign(R12)
 	end
@@ -454,7 +416,6 @@ end
 function ControlModule:OnRenderStepped(dt)
 	if self.activeController and self.activeController.enabled and self.humanoid then
 
-		-- Now retrieve info from the controller
 		local moveVector = self.activeController:GetMoveVector()
 		local cameraRelative = self.activeController:IsMoveVectorCameraRelative()
 
@@ -463,26 +424,21 @@ function ControlModule:OnRenderStepped(dt)
 			clickToMoveController:OnRenderStepped(dt)
 		else
 			if moveVector.magnitude > 0 then
-				-- Clean up any developer started MoveTo path
+
 				clickToMoveController:CleanupPath()
 			else
-				-- Get move vector for developer started MoveTo
+
 				clickToMoveController:OnRenderStepped(dt)
 				moveVector = clickToMoveController:GetMoveVector()
 				cameraRelative = clickToMoveController:IsMoveVectorCameraRelative()
 			end
 		end
 
-		-- Are we driving a vehicle ?
 		local _vehicleConsumedInput = false
 		if self.vehicleController then
 			moveVector, _vehicleConsumedInput = self.vehicleController:Update(moveVector, cameraRelative, self.activeControlModule==Gamepad)
 		end
 
-		-- If not, move the player
-		-- Verification of vehicleConsumedInput is commented out to preserve legacy behavior,
-		-- in case some game relies on Humanoid.MoveDirection still being set while in a VehicleSeat
-		--if not vehicleConsumedInput then
 		if cameraRelative then
 			moveVector = self:calculateRawMoveVector(self.humanoid, moveVector)
 		end
@@ -493,9 +449,7 @@ function ControlModule:OnRenderStepped(dt)
 		end
 
 		self.moveFunction(Players.LocalPlayer, moveVector, false)
-		--end
 
-		-- And make them jump if needed
 		self.humanoid.Jump = self.activeController:GetIsJumping() or (self.touchJumpController and self.touchJumpController:GetIsJumping())
 	end
 end
@@ -503,21 +457,18 @@ end
 function ControlModule:updateVRMoveVector(moveVector)
 	local curCamera = workspace.CurrentCamera :: Camera
 
-	-- movement relative to VR frustum
 	local cameraDelta = curCamera.Focus.Position - curCamera.CFrame	.Position
 	local firstPerson = cameraDelta.Magnitude < FIRST_PERSON_THRESHOLD_DISTANCE and true
-	
-	-- if the player is not moving via input in first person, follow the VRHead
-	if moveVector.Magnitude == 0 and firstPerson and VRService.AvatarGestures and self.humanoid 
+
+	if moveVector.Magnitude == 0 and firstPerson and VRService.AvatarGestures and self.humanoid
 		and not self.humanoid.Sit then
 
 		local vrHeadOffset = VRService:GetUserCFrame(Enum.UserCFrame.Head)
 		vrHeadOffset = vrHeadOffset.Rotation + vrHeadOffset.Position * curCamera.HeadScale
 
-		-- get the position in world space and offset at the neck
 		local neck_offset = NECK_OFFSET * self.humanoid.RootPart.Size.Y / 2
 		local vrHeadWorld = curCamera.CFrame * vrHeadOffset * CFrame.new(0, neck_offset, 0)
-		
+
 		local moveOffset = vrHeadWorld.Position - self.humanoid.RootPart.CFrame.Position
 		return Vector3.new(moveOffset.x, 0, moveOffset.z)
 	end
@@ -567,24 +518,17 @@ end
 function ControlModule:UpdateTouchGuiVisibility()
 	local doShow = self.humanoid and GuiService.TouchControlsEnabled and UserInputService.PreferredInput == Enum.PreferredInput.Touch
 	if doShow and not self.touchGui then
-		-- lazy load the UI
+
 		self:CreateTouchGuiContainer()
 	end
 
 	if self.touchGui then
-		self.touchGui.Enabled = not not doShow -- convert to bool
+		self.touchGui.Enabled = not not doShow
 	end
 end
 
--- Helper function to lazily instantiate a controller if it does not yet exist,
--- disable the active controller if it is different from the on being switched to,
--- and then enable the requested controller. The argument to this function must be
--- a reference to one of the control modules, i.e. Keyboard, Gamepad, etc.
-
--- This function should handle all controller enabling and disabling without relying on
--- ControlModule:Enable() and Disable()
 function ControlModule:SwitchToController(controlModule)
-	-- controlModule is invalid, just disable current controller
+
 	if not controlModule then
 		if self.activeController then
 			self.activeController:Enable(false)
@@ -594,34 +538,21 @@ function ControlModule:SwitchToController(controlModule)
 		return
 	end
 
-	-- first time switching to this control module, should instantiate it
 	if not self.controllers[controlModule] then
 		self.controllers[controlModule] = controlModule.new(CONTROL_ACTION_PRIORITY)
 	end
 
-	-- switch to the new controlModule
 	if self.activeController ~= self.controllers[controlModule] then
 		if self.activeController then
 			self.activeController:Enable(false)
 		end
 		self.activeController = self.controllers[controlModule]
-		self.activeControlModule = controlModule -- Only used to check if controller switch is necessary
+		self.activeControlModule = controlModule
 
 		self:UpdateActiveControlModuleEnabled()
 	end
 end
 
---[[
-When any of the following values change, we need to recalculate which movement mode should be active and switch to it, as well as create the touch GUI if appropriate:
-		PreferredInput
-		TouchMovementMode
-		ComputerMovementMode
-		DevTouchMovementMode
-		DevComputerMovementMode
-		TouchControlsEnabled
-		self.playerGui			- the touch gui is attached here
-		self.humanoid			- this affects if the touch gui is enabled
-]]--
 function ControlModule:UpdateMovementMode()
 	self:UpdateTouchGuiVisibility()
 
@@ -647,7 +578,6 @@ function ControlModule:CreateTouchGuiContainer()
 		self.touchGui:Destroy()
 	end
 
-	-- Container for all touch device guis
 	self.touchGui = Instance.new("ScreenGui")
 	self.touchGui.Name = "TouchGui"
 	self.touchGui.ResetOnSpawn = false

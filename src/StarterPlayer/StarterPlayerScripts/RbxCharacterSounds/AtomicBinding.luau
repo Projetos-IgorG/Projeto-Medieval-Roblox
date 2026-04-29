@@ -1,4 +1,13 @@
 --!nonstrict
+
+--[[
+    Script: AtomicBinding.luau
+    Caminho: src/StarterPlayer/StarterPlayerScripts/RbxCharacterSounds
+    Responsabilidade: Gerencia bindings atomicos entre instancias, conexoes e funcoes de limpeza.
+    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
+    Nao faz: Nao decide movimento, estado ou animacao; apenas reage a estados para tocar sons locais.
+    Funcoes principais: new, _startBoundFn, _stopBoundFn, bindRoot, unbindRoot, destroy
+]]
 local ROOT_ALIAS = "root"
 
 local function parsePath(pathStr)
@@ -23,7 +32,7 @@ end
 
 local function unbindNodeDescend(node, resolvedManifest)
 	if node.instance == nil then
-		return -- Do not try to unbind nodes that are already unbound
+		return
 	end
 
 	node.instance = nil
@@ -52,14 +61,14 @@ local AtomicBinding = {}
 AtomicBinding.__index = AtomicBinding
 
 function AtomicBinding.new(manifest, boundFn)
-	local dtorMap = {} -- { [root] -> dtor }
-	local connections = {} -- { Connection, ... }
-	local rootInstToRootNode = {} -- { [root] -> rootNode }
-	local rootInstToManifest = {} -- { [root] -> { [alias] -> instance } }
+	local dtorMap = {}
+	local connections = {}
+	local rootInstToRootNode = {}
+	local rootInstToManifest = {}
 
-	local parsedManifest = {} -- { [alias] = {Name, ...} }
-	local manifestSizeTarget = 1 -- Add 1 because root isn't explicitly on the manifest	
-	
+	local parsedManifest = {}
+	local manifestSizeTarget = 1
+
 	for alias, rawPath in pairs(manifest) do
 		parsedManifest[alias] = parsePath(rawPath)
 		manifestSizeTarget += 1
@@ -69,7 +78,7 @@ function AtomicBinding.new(manifest, boundFn)
 		_boundFn = boundFn,
 		_parsedManifest = parsedManifest,
 		_manifestSizeTarget = manifestSizeTarget,
-		
+
 		_dtorMap = dtorMap,
 		_connections = connections,
 		_rootInstToRootNode = rootInstToRootNode,
@@ -80,7 +89,7 @@ end
 function AtomicBinding:_startBoundFn(root, resolvedManifest)
 	local boundFn = self._boundFn
 	local dtorMap = self._dtorMap
-	
+
 	local oldDtor = dtorMap[root]
 	if oldDtor then
 		oldDtor()
@@ -95,7 +104,7 @@ end
 
 function AtomicBinding:_stopBoundFn(root)
 	local dtorMap = self._dtorMap
-	
+
 	local dtor = dtorMap[root]
 	if dtor then
 		dtor()
@@ -105,12 +114,12 @@ end
 
 function AtomicBinding:bindRoot(root)
 	debug.profilebegin("AtomicBinding:BindRoot")
-	
+
 	local parsedManifest = self._parsedManifest
 	local rootInstToRootNode = self._rootInstToRootNode
 	local rootInstToManifest = self._rootInstToManifest
 	local manifestSizeTarget = self._manifestSizeTarget
-	
+
 	assert(rootInstToManifest[root] == nil, "Root manifest already exists")
 
 	local resolvedManifest = {}
@@ -122,7 +131,7 @@ function AtomicBinding:bindRoot(root)
 	rootNode.alias = ROOT_ALIAS
 	rootNode.instance = root
 	if next(parsedManifest) then
-		-- No need to assign child data if there are no children
+
 		rootNode.children = {}
 		rootNode.connections = {}
 	end
@@ -153,10 +162,8 @@ function AtomicBinding:bindRoot(root)
 		end
 	end
 
-	debug.profileend() -- BuildTree
+	debug.profileend()
 
-	-- Recursively descend into the tree, resolving each node.
-	-- Nodes start out as empty and instance-less; the resolving process discovers instances to map to nodes.
 	local function processNode(node)
 		local instance = assert(node.instance, "Node instance is nil")
 
@@ -181,32 +188,23 @@ function AtomicBinding:bindRoot(root)
 			end
 
 			local function processDeleteChild(childInstance)
-				-- Instance deletion - Parent A detects that child B is being removed
-				--    1. A removes B from `children`
-				--    2. A traverses down from B,
-				--       i.  Disconnecting inputs
-				--       ii. Removing nodes from the resolved manifest
-				--    3. stopBoundFn is called because we know the tree is no longer complete, or at least has to be refreshed
-				-- 	  4. We search A for a replacement for B, and attempt to re-resolve using that replacement if it exists.
-				-- To support the above sanely, processAddChild needs to avoid resolving nodes that are already resolved.
 
 				local childName = childInstance.Name
 				local childNode = children[childName]
 
 				if not childNode then
-					return -- There's no child node corresponding to the deleted instance, ignore
+					return
 				end
 
 				if childNode.instance ~= childInstance then
-					return -- A child was removed with the same name as a node instance, ignore
+					return
 				end
 
-				self:_stopBoundFn(root) -- Happens before the tree is unbound so the manifest is still valid in the destructor.
-				unbindNodeDescend(childNode, resolvedManifest) -- Unbind the tree
+				self:_stopBoundFn(root)
+				unbindNodeDescend(childNode, resolvedManifest)
 
-				assert(childNode.instance == nil, "Child node instance must be nil") -- If this triggers, unbindNodeDescend failed
+				assert(childNode.instance == nil, "Child node instance must be nil")
 
-				-- Search for a replacement
 				local replacementChild = instance:FindFirstChild(childName)
 				if replacementChild then
 					processAddChild(replacementChild)
@@ -228,15 +226,15 @@ function AtomicBinding:bindRoot(root)
 
 	debug.profilebegin("ResolveTree")
 	processNode(rootNode)
-	debug.profileend() -- ResolveTree
-	
-	debug.profileend() -- AtomicBinding:BindRoot
+	debug.profileend()
+
+	debug.profileend()
 end
 
 function AtomicBinding:unbindRoot(root)
 	local rootInstToRootNode = self._rootInstToRootNode
 	local rootInstToManifest = self._rootInstToManifest
-	
+
 	self:_stopBoundFn(root)
 
 	local rootNode = rootInstToRootNode[root]
