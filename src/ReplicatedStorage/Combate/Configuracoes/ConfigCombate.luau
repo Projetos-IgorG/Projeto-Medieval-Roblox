@@ -61,6 +61,11 @@ export type ConfiguracaoGlobal = {
 	VelocidadeAparando: number,
 	VelocidadeEscalando: number,
 
+	VelocidadeInicialMovimento: number,
+	AceleracaoAndando: number,
+	AceleracaoCorrendo: number,
+	DesaceleracaoMovimento: number,
+
 	VelocidadeBaseAnimAndando: number,
 	VelocidadeBaseAnimCorrendo: number,
 	VelocidadeBaseAnimAgachando: number,
@@ -125,6 +130,13 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	VelocidadeAgachando = 7,
 	VelocidadeAparando = 3,
 	VelocidadeEscalando = 12,
+
+	-- Aceleracao do ramp de movimento (unidades de WalkSpeed por segundo).
+	-- Quanto maior, mais rapido atinge a velocidade alvo.
+	VelocidadeInicialMovimento = 5,
+	AceleracaoAndando = 20,
+	AceleracaoCorrendo = 20,
+	DesaceleracaoMovimento = 35,
 
 	VelocidadeBaseAnimAndando = 15,
 	VelocidadeBaseAnimCorrendo = 21,

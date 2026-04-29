@@ -100,10 +100,16 @@ local heavyAttackState = {
 	conexaoMonitorReversao = nil :: RBXScriptConnection?,
 }
 
-local RAMP_UP_TIME = 0.3
-local RAMP_DOWN_TIME = 0.5
-local velocidadeRampAlvo = 0
-local velocidadeRampAtual = 0
+local function ObterVelocidadeInicial()
+	return Modulo_Configuracoes.ObterConfiguracao("VelocidadeInicialMovimento") or 5
+end
+
+local velocidadeRampAlvo = ObterVelocidadeInicial()
+local velocidadeRampAtual = ObterVelocidadeInicial()
+local rampAtivo = true
+local rampSnap = false -- forca aplicar alvo sem interpolar (estados nao-locomocao)
+
+humanoid.WalkSpeed = velocidadeRampAtual
 
 local AtualizarVelocidadeLocal
 
@@ -123,29 +129,85 @@ AtualizarVelocidadeLocal = function()
 	if emCombate then
 		local velBloq = VelBloq or 8
 		velocidadeRampAlvo = velBloq * 1.5
-		humanoid.WalkSpeed = velocidadeRampAlvo
-		velocidadeRampAtual = velocidadeRampAlvo
+		rampAtivo = false
+		rampSnap = true
 		return
 	end
 
 	if estadoAtual.estadoAcao == "Defendendo" or estadoAtual.bloqueando then
 		velocidadeRampAlvo = VelBloq or 8
-		humanoid.WalkSpeed = velocidadeRampAlvo
-		velocidadeRampAtual = velocidadeRampAlvo
+		rampAtivo = false
+		rampSnap = true
 		return
 	end
 
 	if estadoAtual.agachado then
 		velocidadeRampAlvo = VelAgachando or 12
-		humanoid.WalkSpeed = velocidadeRampAlvo
-		velocidadeRampAtual = velocidadeRampAlvo
+		rampAtivo = false
+		rampSnap = true
 	elseif movementFlags.isRunning then
-
-		velocidadeRampAlvo = VelCorrendo or 25
+		velocidadeRampAlvo = VelCorrendo or 20
+		rampAtivo = true
 	else
-		velocidadeRampAlvo = VelAndando or 16
+		velocidadeRampAlvo = VelAndando or 12
+		rampAtivo = true
 	end
 end
+
+RunService.Heartbeat:Connect(function(dt)
+	if not humanoid or not humanoid.Parent then
+		return
+	end
+
+	-- Reavalia o alvo todo frame para captar inicio de movimento sem precisar
+	-- de evento (caso contrario, andar do zero deixaria a velocidade travada).
+	AtualizarVelocidadeLocal()
+
+	if rampSnap then
+		velocidadeRampAtual = velocidadeRampAlvo
+		humanoid.WalkSpeed = velocidadeRampAtual
+		rampSnap = false
+		return
+	end
+
+	if not rampAtivo then
+		return
+	end
+
+	local velocidadeInicial = ObterVelocidadeInicial()
+
+	-- Se nao ha input de movimento, volta para a velocidade inicial para que
+	-- o proximo passo comece rampando do zero novamente.
+	if humanoid.MoveDirection.Magnitude < 0.01 then
+		local desaceleracao = Modulo_Configuracoes.ObterConfiguracao("DesaceleracaoMovimento") or 40
+		if velocidadeRampAtual > velocidadeInicial then
+			velocidadeRampAtual = math.max(velocidadeInicial, velocidadeRampAtual - desaceleracao * dt)
+		else
+			velocidadeRampAtual = velocidadeInicial
+		end
+		humanoid.WalkSpeed = velocidadeRampAtual
+		return
+	end
+
+	local aceleracao
+	if movementFlags.isRunning then
+		aceleracao = Modulo_Configuracoes.ObterConfiguracao("AceleracaoCorrendo") or 25
+	else
+		aceleracao = Modulo_Configuracoes.ObterConfiguracao("AceleracaoAndando") or 30
+	end
+
+	local diff = velocidadeRampAlvo - velocidadeRampAtual
+	if math.abs(diff) < 0.05 then
+		velocidadeRampAtual = velocidadeRampAlvo
+	else
+		local sinal = (diff > 0) and 1 or -1
+		local taxa = (diff > 0) and aceleracao
+			or (Modulo_Configuracoes.ObterConfiguracao("DesaceleracaoMovimento") or 40)
+		local passo = sinal * math.min(math.abs(diff), taxa * dt)
+		velocidadeRampAtual = velocidadeRampAtual + passo
+	end
+	humanoid.WalkSpeed = velocidadeRampAtual
+end)
 
 local function SincronizarStatusLocal()
 	local statusLocal = character:FindFirstChild("StatusLocal")
@@ -2684,30 +2746,6 @@ SincronizarEstado.OnClientEvent:Connect(ProcessarSincronizacao)
 TocarAnimacao.OnClientEvent:Connect(ProcessarTocarAnimacao)
 
 RunService.Heartbeat:Connect(AtualizarEstadoMovimento)
-
-velocidadeRampAtual = humanoid.WalkSpeed
-velocidadeRampAlvo = humanoid.WalkSpeed
-
-RunService.Heartbeat:Connect(function(dt)
-
-	local realSpeed = humanoid.WalkSpeed
-	if math.abs(realSpeed - velocidadeRampAtual) > 1 then
-		velocidadeRampAtual = realSpeed
-	end
-
-	if velocidadeRampAtual == velocidadeRampAlvo then return end
-
-	local rampTime = if velocidadeRampAtual < velocidadeRampAlvo then RAMP_UP_TIME else RAMP_DOWN_TIME
-	local rampSpeed = 1 / math.max(rampTime, 0.01)
-	local alpha = math.clamp(rampSpeed * dt, 0, 1)
-	velocidadeRampAtual = velocidadeRampAtual + (velocidadeRampAlvo - velocidadeRampAtual) * alpha
-
-	if math.abs(velocidadeRampAtual - velocidadeRampAlvo) < 0.1 then
-		velocidadeRampAtual = velocidadeRampAlvo
-	end
-
-	humanoid.WalkSpeed = velocidadeRampAtual
-end)
 
 local function AtualizarDirecaoAnimacao(deltaTime: number)
 
