@@ -1,0 +1,10 @@
+{
+  "properties": {
+    "SourceAssetId": 10730972856.0,
+    "TabKeyboardNavigation": {
+      "Bool": false
+    },
+    "ResetOnSpawn": false
+  },
+  "className": "ScreenGui"
+}

@@ -32,7 +32,7 @@ local Util = require(script.Parent:WaitForChild("CameraUtils"))
 -- Importa configurações centralizadas do jogador para offsets dinâmicos
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ConfigJogador = require(
-	ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Jogador"):WaitForChild("Modulo_ConfiguracoesJogador")
+	ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Camera"):WaitForChild("Configuracoes"):WaitForChild("ConfigCamera")
 )
 
 --[[ The Module ]]

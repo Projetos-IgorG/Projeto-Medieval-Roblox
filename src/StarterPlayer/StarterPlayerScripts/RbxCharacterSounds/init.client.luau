@@ -9,7 +9,7 @@ local Debris = game:GetService("Debris")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Footsteps = require(script:WaitForChild("Footsteps"))
-local ClientBridge = require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Core"):WaitForChild("ClientBridge"))
+local ClientBridge = require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
 
 local FOOTSTEP_MARKER = "Footstep"
 
@@ -142,7 +142,7 @@ local function playFootstep(humanoid: Humanoid, rootPart: BasePart, statusState)
 
 	local materialKey = getMaterialKey(humanoid)
 
-	-- Revalida logo antes do play para cobrir race no início do dash.
+	-- Revalida logo antes do play para cobrir race no iní­cio do dash.
 	if not canEmitStep(humanoid, statusState) then
 		return
 	end

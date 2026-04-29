@@ -8,7 +8,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CameraBypass = require(
-	ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Cliente"):WaitForChild("Core"):WaitForChild("CameraBypass")
+	ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Camera"):WaitForChild("Estado"):WaitForChild("BypassCamera")
 )
 
 local CommonUtils = script.Parent.Parent.Parent:WaitForChild("CommonUtils")

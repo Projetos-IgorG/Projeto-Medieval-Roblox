@@ -17,7 +17,7 @@ local MOUSELOCK_ACTION_PRIORITY = Enum.ContextActionPriority.Medium.Value
 -- Importa configurações centralizadas do jogador
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ConfigJogador = require(
-	ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Jogador"):WaitForChild("Modulo_ConfiguracoesJogador")
+	ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Camera"):WaitForChild("Configuracoes"):WaitForChild("ConfigCamera")
 )
 
 -- Offset de câmera customizado (fallback padrão)

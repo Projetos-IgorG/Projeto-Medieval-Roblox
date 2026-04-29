@@ -82,16 +82,16 @@ local ZoomController = require(script:WaitForChild("ZoomController"))
 
 -- Carrega configurações centralizadas do jogador
 local ConfigJogador = require(
-	ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Jogador"):WaitForChild("Modulo_ConfiguracoesJogador")
+	ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Camera"):WaitForChild("Configuracoes"):WaitForChild("ConfigCamera")
 )
 
 -- ClientBridge para acessar estados client-side (dash, etc.)
 local ClientBridge =
-	require(ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Core"):WaitForChild("ClientBridge"))
+	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
 
 -- Configurações de combate (para DashCameraFixarY)
 local Modulo_Configuracoes = require(
-	ReplicatedStorage:WaitForChild("Modulos"):WaitForChild("Combate"):WaitForChild("Modulo_Configuracoes")
+	ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Configuracoes"):WaitForChild("ConfigCombate")
 )
 
 -- Estado de Y fixo durante dash (offset relativo ao HRP)
