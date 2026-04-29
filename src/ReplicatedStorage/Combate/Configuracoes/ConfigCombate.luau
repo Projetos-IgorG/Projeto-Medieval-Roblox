@@ -131,8 +131,6 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	VelocidadeAparando = 3,
 	VelocidadeEscalando = 12,
 
-	-- Aceleracao do ramp de movimento (unidades de WalkSpeed por segundo).
-	-- Quanto maior, mais rapido atinge a velocidade alvo.
 	VelocidadeInicialMovimento = 5,
 	AceleracaoAndando = 20,
 	AceleracaoCorrendo = 20,
