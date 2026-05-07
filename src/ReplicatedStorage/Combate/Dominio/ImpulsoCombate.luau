@@ -91,9 +91,15 @@ function Modulo_Impulso.AplicarImpulso(atacante: Model, modoAnimacao: string, ti
 	local elevacao = Vector3.new(0, 5, 0)
 
 	local sucesso, resultado = pcall(function()
-		local impulsoVetor = (direcao * magnitude) + elevacao
-		local massa = humanoidRoot.AssemblyMass or 1
-		humanoidRoot:ApplyImpulse(impulsoVetor * massa)
+		if humanoidRoot.Anchored then
+			local deslocamento = math.clamp(magnitude * 0.035, 0.5, 4)
+			local novaPosicao = humanoidRoot.Position + Vector3.new(direcao.X, 0, direcao.Z).Unit * deslocamento
+			humanoidRoot.CFrame = CFrame.lookAt(novaPosicao, novaPosicao + Vector3.new(direcao.X, 0, direcao.Z).Unit)
+		else
+			local impulsoVetor = (direcao * magnitude) + elevacao
+			local massa = humanoidRoot.AssemblyMass or 1
+			humanoidRoot:ApplyImpulse(impulsoVetor * massa)
+		end
 	end)
 
 	if not sucesso then

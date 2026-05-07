@@ -152,12 +152,18 @@ function Modulo_Knockback.AplicarKnockback(
 		local alvoRoot = alvo:FindFirstChild("HumanoidRootPart") :: BasePart
 
 		local sucesso, resultado = pcall(function()
-			local velocidadeAtual = alvoRoot.AssemblyLinearVelocity
-			alvoRoot.AssemblyLinearVelocity = Vector3.new(
-				direcao.X * magnitude,
-				velocidadeAtual.Y + 5,
-				direcao.Z * magnitude
-			)
+			if alvoRoot.Anchored then
+				local deslocamento = math.clamp(magnitude * 0.05, 1.5, 8)
+				local novaPosicao = alvoRoot.Position + direcao * deslocamento
+				alvoRoot.CFrame = CFrame.lookAt(novaPosicao, novaPosicao + direcao)
+			else
+				local velocidadeAtual = alvoRoot.AssemblyLinearVelocity
+				alvoRoot.AssemblyLinearVelocity = Vector3.new(
+					direcao.X * magnitude,
+					velocidadeAtual.Y + 5,
+					direcao.Z * magnitude
+				)
+			end
 		end)
 
 		if not sucesso then

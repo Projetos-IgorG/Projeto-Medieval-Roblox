@@ -19,7 +19,6 @@ local COLOR_MAP = {
 	Pocoes = Color3.fromRGB(162, 104, 186),
 	Ingredientes = Color3.fromRGB(111, 186, 104),
 	Interagir = Color3.fromRGB(218, 218, 218),
-	NPC = Color3.fromRGB(218, 218, 218),
 }
 
 local DEFAULT_COLOR = Color3.fromRGB(218, 218, 218)

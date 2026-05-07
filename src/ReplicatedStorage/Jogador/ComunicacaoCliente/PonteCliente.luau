@@ -7,8 +7,6 @@
 ]]
 local ClientBridge = {}
 
-ClientBridge.EmDialogo = nil :: (() -> boolean)?
-
 ClientBridge.MarcarContinuarCombo = nil :: (() -> boolean)?
 
 ClientBridge.EstaJanelaComboAtiva = nil :: (() -> boolean)?

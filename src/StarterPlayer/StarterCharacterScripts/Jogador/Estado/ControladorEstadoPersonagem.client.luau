@@ -1233,10 +1233,6 @@ end
 
 function ClientBridge.PodeAlterarTool()
 
-	if ClientBridge.EmDialogo and ClientBridge.EmDialogo() then
-		return false
-	end
-
 	if estadoAtual.estadoAcao ~= "Nenhuma" then
 		return false
 	end
@@ -2938,7 +2934,6 @@ PreCarregarAnimacoes()
 
 GerenciadorHitboxCliente.DefinirCharacter(character)
 GerenciadorHitboxCliente.DefinirCallbackHit(function(alvo, mao)
-
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	TentarAcao:FireServer("HitboxAcerto", {
 		mao = mao,

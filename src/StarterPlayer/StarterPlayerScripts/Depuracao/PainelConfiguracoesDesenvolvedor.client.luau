@@ -4,11 +4,12 @@
     Responsabilidade: Renderiza painel local de configuracoes e comandos de desenvolvimento.
     Uso: LocalScript; roda automaticamente para o jogador local em src/StarterPlayer/StarterPlayerScripts/Depuracao.
     Nao faz: Nao valida autoridade do servidor, nao salva dados persistentes e nao substitui regras server-side.
-    Funcoes principais: renderInicio, renderConfiguracoes, renderToolbuilder, renderNPCs, renderClimas, renderJogadorMundo
+	Funcoes principais: renderInicio, renderConfiguracoes, renderToolbuilder, renderClimas, renderJogadorMundo, renderStatusJogador
 ]]
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -18,7 +19,6 @@ local Modulos = ReplicatedStorage
 local ParkourConfigs = require(script.Parent.Parent:WaitForChild("Jogador"):WaitForChild("Parkour"):WaitForChild("Configuracoes"):WaitForChild("ConfigParkour"))
 local ModConfCombate = require(Modulos:WaitForChild("Combate"):WaitForChild("Configuracoes"):WaitForChild("ConfigCombate"))
 local ModConfJogador = require(Modulos:WaitForChild("Jogador"):WaitForChild("Camera"):WaitForChild("Configuracoes"):WaitForChild("ConfigCamera"))
-local VozConfig = require(Modulos:WaitForChild("Dialogo"):WaitForChild("Voz"):WaitForChild("ConfigVoz"))
 local HitboxConfig = require(
 	Modulos:WaitForChild("Combate")
 		:WaitForChild("Hitbox")
@@ -32,6 +32,9 @@ local AplicadorAmbiente = require(AmbienteReplicado:WaitForChild("AplicadorAmbie
 local ExtratorAmbiente = require(AmbienteReplicado:WaitForChild("ExtratorAmbiente"))
 local ConfiguracaoTempo = require(AmbienteReplicado:WaitForChild("ConfiguracaoTempo"))
 local EquipamentosModelos = Modulos:WaitForChild("Equipamentos"):WaitForChild("Modelos")
+
+local EntidadesPasta = Modulos:WaitForChild("Entidades")
+local LeitorEntidade = require(EntidadesPasta:WaitForChild("LeitorEntidade"))
 
 local AdminDevRemote = nil
 
@@ -150,7 +153,6 @@ export type CategoryEntry = {
 	nome: string,
 	tipo: string?,
 	config: { [string]: any },
-	defaults: { [string]: any },
 	onChange: ((key: string, value: any) -> ())?,
 	setter: ((key: string, value: any) -> ())?,
 }
@@ -159,8 +161,6 @@ local categories: { CategoryEntry } = {}
 
 local adminState = {
 	alvo = player.Name,
-	npc = "NPC_Ferreiro",
-	nomeNPC = "",
 	tipoTool = "Armas",
 	tool = "espada_ferro",
 	quantidade = "1",
@@ -403,16 +403,6 @@ registrar("Camera / Jogador", cameraConfig, cameraDefaults, nil, function(key, v
 	ModConfJogador.DefinirConfiguracao(key, value)
 end)
 
-local vozFlatConfig = {
-	SimpleVoice = VozConfig.SimpleVoice,
-	CustomVoice = VozConfig.CustomVoice,
-	CustomVoiceFadeDuration = VozConfig.CustomVoiceFadeDuration,
-}
-local vozDefaults = table.clone(vozFlatConfig)
-registrar("Voz", vozFlatConfig, vozDefaults, function(key, value)
-	VozConfig[key] = value
-end)
-
 registrar("Hitbox Debug", HitboxConfig)
 
 local runtimeConfig = {
@@ -556,8 +546,6 @@ end
 local function criarAdminPayload(overrides: { [string]: any }?)
 	local payload = {
 		alvo = adminState.alvo,
-		npc = adminState.npc,
-		nomeFinal = adminState.nomeNPC,
 		tipoTool = adminState.tipoTool,
 		tool = adminState.tool,
 		quantidade = tonumber(adminState.quantidade) or 1,
@@ -1728,15 +1716,12 @@ local function renderAdminActions()
 
 	createSectionHeader(settingsScroll, "Contexto", nextOrder())
 	createAdminInput(settingsScroll, "Jogador alvo", "alvo", nextOrder())
-	createAdminInput(settingsScroll, "Template NPC", "npc", nextOrder())
-	createAdminInput(settingsScroll, "Nome NPC", "nomeNPC", nextOrder())
 	createAdminInput(settingsScroll, "Tipo tool", "tipoTool", nextOrder())
 	createAdminInput(settingsScroll, "Tool", "tool", nextOrder())
 	createAdminInput(settingsScroll, "Quantidade", "quantidade", nextOrder())
 	createAdminInput(settingsScroll, "Distancia", "distancia", nextOrder())
 
 	createSectionHeader(settingsScroll, "Criacao", nextOrder())
-	createAdminButton(settingsScroll, "Criar NPC perto do alvo", "CriarNPC", nextOrder())
 	createAdminButton(settingsScroll, "Criar tool no mundo", "CriarToolMundo", nextOrder())
 	createAdminButton(settingsScroll, "Dar tool ao alvo", "DarTool", nextOrder())
 
@@ -1907,9 +1892,9 @@ end
 local renderInicio
 local renderConfiguracoes
 local renderToolbuilder
-local renderNPCs
 local renderClimas
 local renderJogadorMundo
+local renderStatusJogador
 
 local function clearLeftButtons()
 	clearLeftConnections()
@@ -1973,14 +1958,14 @@ local function criarNavegacaoPrincipal(ativo: string)
 	createLeftButton("Toolbuilder", 3, ativo == "Toolbuilder", function()
 		renderToolbuilder()
 	end)
-	createLeftButton("NPCs", 4, ativo == "NPCs", function()
-		renderNPCs()
-	end)
-	createLeftButton("Climas", 5, ativo == "Climas", function()
+	createLeftButton("Climas", 4, ativo == "Climas", function()
 		renderClimas()
 	end)
-	createLeftButton("Jogador / Mundo", 6, ativo == "Jogador / Mundo", function()
+	createLeftButton("Jogador / Mundo", 5, ativo == "Jogador / Mundo", function()
 		renderJogadorMundo()
+	end)
+	createLeftButton("Status", 6, ativo == "Status", function()
+		renderStatusJogador()
 	end)
 end
 
@@ -2001,9 +1986,9 @@ function renderInicio()
 	createHomeTileGrid(settingsScroll, nextOrder(), {
 		{ emoji = "⚙️", texto = "Configs", onClick = renderConfiguracoes },
 		{ emoji = "🛠️", texto = "Tools", onClick = renderToolbuilder },
-		{ emoji = "🧍", texto = "NPCs", onClick = renderNPCs },
 		{ emoji = "🌦️", texto = "Climas", onClick = renderClimas },
 		{ emoji = "🌍", texto = "Mundo", onClick = renderJogadorMundo },
+		{ emoji = "📊", texto = "Status", onClick = function() renderStatusJogador() end },
 	})
 end
 
@@ -2073,30 +2058,6 @@ function renderToolbuilder()
 
 	createSectionHeader(settingsScroll, "Status", nextOrder())
 	createStatusRow(settingsScroll, nextOrder())
-end
-
-function renderNPCs()
-	telaAtual = "NPCs"
-	activeCategory = nil
-	clearSettings()
-	criarNavegacaoPrincipal("NPCs")
-	configurarAreaConteudo("Dev Panel / NPCs", "Criar NPCs de template")
-	ensureAdminRemoteConnection()
-
-	local ordem = 0
-	local function nextOrder()
-		ordem += 1
-		return ordem
-	end
-
-	createSectionHeader(settingsScroll, "Contexto", nextOrder())
-	createAdminInput(settingsScroll, "Jogador referencia", "alvo", nextOrder())
-	createAdminInput(settingsScroll, "Template NPC", "npc", nextOrder())
-	createAdminInput(settingsScroll, "Nome NPC", "nomeNPC", nextOrder())
-	createAdminInput(settingsScroll, "Distancia", "distancia", nextOrder())
-
-	createSectionHeader(settingsScroll, "Acoes", nextOrder())
-	createAdminButton(settingsScroll, "Criar NPC perto do alvo", "CriarNPC", nextOrder())
 end
 
 function renderClimas()
@@ -2349,6 +2310,312 @@ function renderJogadorMundo()
 
 	createSectionHeader(settingsScroll, "Mundo", nextOrder())
 	createAdminButton(settingsScroll, "Limpar tools soltas", "LimparToolsSoltas", nextOrder())
+end
+
+-- =============================================================================
+-- Tela: Status do Jogador (Entidade)
+-- Mostra atributos vitais (Vida, Fome, Sede, Energia, ...), estado de movimento,
+-- estado de combate e configuracoes derivadas. Atualiza ~10x/s via Heartbeat.
+-- Todas as conexoes usam trackConn() para serem limpas em clearSettings().
+-- =============================================================================
+
+local STATUS_INTERVALO_ATUALIZACAO = 0.1 -- segundos
+
+local function criarLinhaInfo(parent: Instance, layoutOrder: number, rotulo: string): TextLabel
+	local row = Instance.new("Frame")
+	row.Name = "Info_" .. rotulo
+	row.Size = UDim2.new(1, 0, 0, 26)
+	row.BackgroundColor3 = COLORS.row
+	row.BackgroundTransparency = 0.4
+	row.BorderSizePixel = 0
+	row.LayoutOrder = layoutOrder
+	row.Parent = parent
+	addCorner(row, UDim.new(0, 4))
+
+	local lbl = Instance.new("TextLabel")
+	lbl.Name = "Rotulo"
+	lbl.Size = UDim2.new(0.45, -8, 1, 0)
+	lbl.Position = UDim2.fromOffset(8, 0)
+	lbl.BackgroundTransparency = 1
+	lbl.Font = FONT_LABEL
+	lbl.TextSize = 12
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.TextColor3 = COLORS.textDim
+	lbl.Text = rotulo
+	lbl.Parent = row
+
+	local val = Instance.new("TextLabel")
+	val.Name = "Valor"
+	val.Size = UDim2.new(0.55, -8, 1, 0)
+	val.Position = UDim2.fromScale(0.45, 0)
+	val.BackgroundTransparency = 1
+	val.Font = FONT_VALUE
+	val.TextSize = 12
+	val.TextXAlignment = Enum.TextXAlignment.Right
+	val.TextColor3 = COLORS.text
+	val.Text = "-"
+	val.Parent = row
+
+	return val
+end
+
+type LinhaAtributoUI = {
+	frame: Frame,
+	valor: TextLabel,
+	preenchimento: Frame,
+}
+
+local function criarLinhaAtributo(parent: Instance, layoutOrder: number, atributo): LinhaAtributoUI
+	local row = Instance.new("Frame")
+	row.Name = "Atrib_" .. atributo.id
+	row.Size = UDim2.new(1, 0, 0, 38)
+	row.BackgroundColor3 = COLORS.row
+	row.BackgroundTransparency = 0.3
+	row.BorderSizePixel = 0
+	row.LayoutOrder = layoutOrder
+	row.Parent = parent
+	addCorner(row, UDim.new(0, 4))
+
+	local rotulo = Instance.new("TextLabel")
+	rotulo.Name = "Nome"
+	rotulo.Size = UDim2.new(0.5, -8, 0, 16)
+	rotulo.Position = UDim2.fromOffset(8, 2)
+	rotulo.BackgroundTransparency = 1
+	rotulo.Font = FONT_LABEL
+	rotulo.TextSize = 12
+	rotulo.TextXAlignment = Enum.TextXAlignment.Left
+	rotulo.TextColor3 = COLORS.text
+	rotulo.Text = atributo.nome
+	rotulo.Parent = row
+
+	local valor = Instance.new("TextLabel")
+	valor.Name = "Valor"
+	valor.Size = UDim2.new(0.5, -8, 0, 16)
+	valor.Position = UDim2.new(0.5, 0, 0, 2)
+	valor.BackgroundTransparency = 1
+	valor.Font = FONT_VALUE
+	valor.TextSize = 12
+	valor.TextXAlignment = Enum.TextXAlignment.Right
+	valor.TextColor3 = COLORS.textDim
+	valor.Text = "-"
+	valor.Parent = row
+
+	local barraFundo = Instance.new("Frame")
+	barraFundo.Name = "BarraFundo"
+	barraFundo.Size = UDim2.new(1, -16, 0, 8)
+	barraFundo.Position = UDim2.fromOffset(8, 22)
+	barraFundo.BackgroundColor3 = COLORS.input
+	barraFundo.BorderSizePixel = 0
+	barraFundo.Parent = row
+	addCorner(barraFundo, UDim.new(0, 3))
+
+	local preenchimento = Instance.new("Frame")
+	preenchimento.Name = "Preenchimento"
+	preenchimento.Size = UDim2.fromScale(0, 1)
+	preenchimento.BackgroundColor3 = atributo.cor
+	preenchimento.BorderSizePixel = 0
+	preenchimento.Parent = barraFundo
+	addCorner(preenchimento, UDim.new(0, 3))
+
+	return { frame = row, valor = valor, preenchimento = preenchimento }
+end
+
+local function formatarValorAtributo(atributo, valor: number): string
+	if atributo.formato == "porcentagem" then
+		return string.format("%.0f / %.0f", valor, atributo.max)
+	end
+	-- numero (idade, temperatura, ...)
+	if math.abs(valor - math.floor(valor)) < 0.01 then
+		return string.format("%.0f", valor)
+	end
+	return string.format("%.1f", valor)
+end
+
+function renderStatusJogador()
+	telaAtual = "Status"
+	activeCategory = nil
+	clearSettings()
+	criarNavegacaoPrincipal("Status")
+	configurarAreaConteudo("Dev Panel / Status do Jogador", "Tempo real")
+
+	local ordem = 0
+	local function nextOrder()
+		ordem += 1
+		return ordem
+	end
+
+	-- ========== Cabecalho: Especie ==========
+	createSectionHeader(settingsScroll, "Entidade", nextOrder())
+	local lblEspecie = criarLinhaInfo(settingsScroll, nextOrder(), "Especie")
+	local lblViva = criarLinhaInfo(settingsScroll, nextOrder(), "Viva?")
+
+	-- ========== Atributos da entidade (dinamico) ==========
+	createSectionHeader(settingsScroll, "Atributos", nextOrder())
+	local atributosCabecalho = nextOrder()
+	local atributosContainer = Instance.new("Frame")
+	atributosContainer.Name = "AtributosContainer"
+	atributosContainer.Size = UDim2.fromScale(1, 0)
+	atributosContainer.AutomaticSize = Enum.AutomaticSize.Y
+	atributosContainer.BackgroundTransparency = 1
+	atributosContainer.BorderSizePixel = 0
+	atributosContainer.LayoutOrder = atributosCabecalho
+	atributosContainer.Parent = settingsScroll
+
+	local atributosLayout = Instance.new("UIListLayout")
+	atributosLayout.Padding = UDim.new(0, 4)
+	atributosLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	atributosLayout.Parent = atributosContainer
+
+	local linhasAtributos: { [string]: LinhaAtributoUI } = {}
+	local atributosRenderizadosPara: Model? = nil
+
+	local function reconstruirAtributos(charModel: Model?)
+		atributosRenderizadosPara = charModel
+		for _, ui in linhasAtributos do
+			ui.frame:Destroy()
+		end
+		table.clear(linhasAtributos)
+		if not charModel then
+			return
+		end
+		local lista = LeitorEntidade.ListarAtributos(charModel)
+		for i, attr in lista do
+			linhasAtributos[attr.id] = criarLinhaAtributo(atributosContainer, i, attr)
+		end
+	end
+
+	-- ========== Movimento ==========
+	createSectionHeader(settingsScroll, "Movimento", nextOrder())
+	local lblWalkSpeed = criarLinhaInfo(settingsScroll, nextOrder(), "WalkSpeed (atual)")
+	local lblWalkSpeedConfig = criarLinhaInfo(settingsScroll, nextOrder(), "Andar / Correr (config)")
+	local lblAceleracao = criarLinhaInfo(settingsScroll, nextOrder(), "Aceleracao (and/cor)")
+	local lblJumpHeight = criarLinhaInfo(settingsScroll, nextOrder(), "JumpHeight")
+	local lblVelocidadeAtual = criarLinhaInfo(settingsScroll, nextOrder(), "Velocidade XZ")
+	local lblFloorMaterial = criarLinhaInfo(settingsScroll, nextOrder(), "Solo / No ar")
+
+	-- ========== Estado ==========
+	createSectionHeader(settingsScroll, "Estado", nextOrder())
+	local lblEstadoMov = criarLinhaInfo(settingsScroll, nextOrder(), "Estado movimento")
+	local lblModoAnim = criarLinhaInfo(settingsScroll, nextOrder(), "Modo animacao")
+	local lblShiftLock = criarLinhaInfo(settingsScroll, nextOrder(), "ShiftLock")
+	local lblAgachado = criarLinhaInfo(settingsScroll, nextOrder(), "Agachado")
+	local lblCorrendo = criarLinhaInfo(settingsScroll, nextOrder(), "Correndo")
+
+	-- Helpers de leitura.
+	local function lerStatusLocal(char: Model?, nome: string)
+		if not char then return nil end
+		local pasta = char:FindFirstChild("StatusLocal")
+		if not pasta then return nil end
+		local valor = pasta:FindFirstChild(nome)
+		if valor and (valor:IsA("StringValue") or valor:IsA("BoolValue") or valor:IsA("NumberValue")) then
+			return (valor :: any).Value
+		end
+		return nil
+	end
+
+	local function texto(valor: any): string
+		if valor == nil then return "-" end
+		if typeof(valor) == "boolean" then
+			return if valor then "Sim" else "Nao"
+		end
+		return tostring(valor)
+	end
+
+	-- Re-renderiza a lista de atributos quando o personagem trocar (respawn).
+	trackConn(player.CharacterAdded:Connect(function(_)
+		if telaAtual == "Status" then
+			task.defer(function()
+				if telaAtual == "Status" then
+					renderStatusJogador()
+				end
+			end)
+		end
+	end))
+
+	-- Atualizacao periodica.
+	local acumulador = 0
+	trackConn(RunService.Heartbeat:Connect(function(dt)
+		acumulador += dt
+		if acumulador < STATUS_INTERVALO_ATUALIZACAO then
+			return
+		end
+		acumulador = 0
+
+		local char = player.Character
+		local humanoid = if char then char:FindFirstChildOfClass("Humanoid") :: Humanoid? else nil
+		local hrp = if char then char:FindFirstChild("HumanoidRootPart") :: BasePart? else nil
+
+		-- Entidade.
+		local especie = LeitorEntidade.ObterEspecie(char)
+		lblEspecie.Text = if especie then especie.nome else "-"
+		local vida = LeitorEntidade.ObterAtributo(char, "Vida")
+		if vida ~= nil then
+			lblViva.Text = if vida > 0 then "Viva" else "Morta"
+			lblViva.TextColor3 = if vida > 0 then Color3.fromRGB(120, 220, 140) else Color3.fromRGB(220, 100, 100)
+		else
+			lblViva.Text = "-"
+			lblViva.TextColor3 = COLORS.text
+		end
+
+		-- Atributos: reconstruir se mudou de char.
+		if char ~= atributosRenderizadosPara then
+			reconstruirAtributos(char)
+		end
+		if char then
+			local lista = LeitorEntidade.ListarAtributos(char)
+			for _, attr in lista do
+				local ui = linhasAtributos[attr.id]
+				if not ui then continue end
+				ui.valor.Text = formatarValorAtributo(attr, attr.valor)
+				local fracao = 0
+				if attr.max > attr.min then
+					fracao = math.clamp((attr.valor - attr.min) / (attr.max - attr.min), 0, 1)
+				end
+				ui.preenchimento.Size = UDim2.fromScale(fracao, 1)
+			end
+		end
+
+		-- Movimento.
+		if humanoid then
+			lblWalkSpeed.Text = string.format("%.1f", humanoid.WalkSpeed)
+			lblJumpHeight.Text = string.format("%.1f", humanoid.JumpHeight)
+			lblFloorMaterial.Text = if humanoid.FloorMaterial == Enum.Material.Air
+				then "No ar"
+				else "Solo (" .. tostring(humanoid.FloorMaterial.Name) .. ")"
+		else
+			lblWalkSpeed.Text = "-"
+			lblJumpHeight.Text = "-"
+			lblFloorMaterial.Text = "-"
+		end
+
+		local velAndar = ModConfCombate.ObterConfiguracao("VelocidadeAndando") or 0
+		local velCorrer = ModConfCombate.ObterConfiguracao("VelocidadeCorrendo") or 0
+		lblWalkSpeedConfig.Text = string.format("%.1f / %.1f", velAndar, velCorrer)
+
+		local acelAndar = ModConfCombate.ObterConfiguracao("AceleracaoAndando") or 0
+		local acelCorrer = ModConfCombate.ObterConfiguracao("AceleracaoCorrendo") or 0
+		lblAceleracao.Text = string.format("%.1f / %.1f", acelAndar, acelCorrer)
+
+		if hrp then
+			local v = hrp.AssemblyLinearVelocity
+			local vXZ = math.sqrt(v.X * v.X + v.Z * v.Z)
+			lblVelocidadeAtual.Text = string.format("%.2f studs/s", vXZ)
+		else
+			lblVelocidadeAtual.Text = "-"
+		end
+
+		-- Estado (lido do StatusLocal replicado).
+		lblEstadoMov.Text = texto(lerStatusLocal(char, "estadoMov"))
+		lblModoAnim.Text = texto(lerStatusLocal(char, "modoAnimacao"))
+		lblShiftLock.Text = texto(lerStatusLocal(char, "ShiftLockOn"))
+		lblAgachado.Text = texto(lerStatusLocal(char, "AgachadoOn"))
+		lblCorrendo.Text = texto(lerStatusLocal(char, "CorrendoOn"))
+	end))
+
+	-- Render inicial.
+	reconstruirAtributos(player.Character)
+
+	settingsScroll.CanvasPosition = Vector2.zero
 end
 
 table.insert(connections, searchBox:GetPropertyChangedSignal("Text"):Connect(function()

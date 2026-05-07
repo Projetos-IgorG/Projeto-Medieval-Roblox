@@ -18,7 +18,6 @@ local ServicoAmbienteMundo = require(ServicosAmbiente:WaitForChild("ServicoAmbie
 local REMOTE_NAME = "AcaoAdminDev"
 local DEFAULT_TOOL_CATEGORY = "Armas"
 local DEFAULT_TOOL_NAME = "espada_ferro"
-local DEFAULT_NPC_NAME = "NPC_Ferreiro"
 
 local Remotos = ReplicatedStorage:FindFirstChild("Remotos")
 if not Remotos then
@@ -98,21 +97,6 @@ local function obterCFrameNaFrente(jogador, distancia)
 	return CFrame.lookAt(posicao, posicao + frente)
 end
 
-local function posicionarInstancia(instancia, cframe)
-	local ok = pcall(function()
-		instancia:PivotTo(cframe)
-	end)
-
-	if ok then
-		return
-	end
-
-	local handle = instancia:FindFirstChild("Handle", true)
-	if handle and handle:IsA("BasePart") then
-		handle.CFrame = cframe
-	end
-end
-
 local function procurarFilho(container, nome)
 	if not container then
 		return nil
@@ -164,46 +148,6 @@ local function encontrarTemplateTool(categoria, nomeTool)
 	end
 
 	return nil
-end
-
-local function encontrarTemplateNPC(nomeNPC)
-	local npcs = ReplicatedStorage:FindFirstChild("NPCs")
-	local modelos = npcs and npcs:FindFirstChild("Modelos")
-	if not modelos then
-		return nil
-	end
-
-	local nomeTemplate = tostring(nomeNPC or "")
-	if nomeTemplate == "" then
-		nomeTemplate = DEFAULT_NPC_NAME
-	end
-
-	return procurarFilho(modelos, nomeTemplate)
-end
-
-local function obterPastaNPCsWorkspace()
-	local pasta = workspace:FindFirstChild("NPCs")
-	if not pasta then
-		pasta = Instance.new("Folder")
-		pasta.Name = "NPCs"
-		pasta.Parent = workspace
-	end
-	return pasta
-end
-
-local function criarNPC(jogador, payload)
-	local alvo = encontrarJogador(payload.alvo, jogador) or jogador
-	local template = encontrarTemplateNPC(payload.npc)
-	if not template then
-		return false, "Template de NPC nao encontrado"
-	end
-
-	local npc = template:Clone()
-	local nomeFinal = tostring(payload.nomeFinal or "")
-	npc.Name = if nomeFinal ~= "" then nomeFinal else template.Name
-	npc.Parent = obterPastaNPCsWorkspace()
-	posicionarInstancia(npc, obterCFrameNaFrente(alvo, tonumber(payload.distancia) or 8))
-	return true, "NPC criado: " .. npc.Name
 end
 
 local function criarTool(jogador, payload, destino)
@@ -324,7 +268,6 @@ local function pausarMundo(_jogador, payload)
 end
 
 local handlers = {
-	CriarNPC = criarNPC,
 	CriarToolMundo = function(jogador, payload)
 		return criarTool(jogador, payload, "Mundo")
 	end,

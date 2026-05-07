@@ -10,6 +10,7 @@
 ]]
 local PASTA_DADOS = "Dados"
 local PROP_DANO = "Dano"
+local CHAVE_VIDA_ENTIDADE = "Ent_Vida"
 
 local MULTIPLICADORES_DANO: { [string]: number } = {
 	AtaqueLeve = 1.0,
@@ -24,6 +25,21 @@ export type ResultadoDano = {
 }
 
 local Modulo_Dano = {}
+
+local function AplicarDanoNoModelo(alvo: Model, danoFinal: number)
+	local humanoid = alvo:FindFirstChildOfClass("Humanoid")
+	local vidaEntidade = alvo:GetAttribute(CHAVE_VIDA_ENTIDADE)
+
+	if typeof(vidaEntidade) == "number" then
+		local novaVida = math.max(0, vidaEntidade - danoFinal)
+		alvo:SetAttribute(CHAVE_VIDA_ENTIDADE, novaVida)
+		if humanoid then
+			humanoid.Health = math.min(humanoid.MaxHealth, novaVida)
+		end
+	elseif humanoid then
+		humanoid:TakeDamage(danoFinal)
+	end
+end
 
 function Modulo_Dano.ValidarEstruturaTool(tool: Tool): (boolean, string?)
 	if not tool then
@@ -169,10 +185,7 @@ function Modulo_Dano.AplicarDano(tool: Tool, atacante: Player | Model, alvo: Mod
 	local danoFinal = Modulo_Dano.CalcularDano(danoBase, tipoAtaque)
 
 	local sucesso, erro = pcall(function()
-		local humanoid = alvo:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			humanoid:TakeDamage(danoFinal)
-		end
+		AplicarDanoNoModelo(alvo, danoFinal)
 	end)
 
 	if not sucesso then
@@ -218,10 +231,7 @@ function Modulo_Dano.AplicarDanoComValor(
 	local danoFinal = Modulo_Dano.CalcularDano(danoBase, tipoAtaque)
 
 	local sucesso, erro = pcall(function()
-		local humanoid = alvo:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			humanoid:TakeDamage(danoFinal)
-		end
+		AplicarDanoNoModelo(alvo, danoFinal)
 	end)
 
 	if not sucesso then
