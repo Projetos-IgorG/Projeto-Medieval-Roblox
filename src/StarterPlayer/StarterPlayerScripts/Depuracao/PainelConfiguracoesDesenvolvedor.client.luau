@@ -1895,6 +1895,7 @@ local renderToolbuilder
 local renderClimas
 local renderJogadorMundo
 local renderStatusJogador
+local renderNPCs
 
 local function clearLeftButtons()
 	clearLeftConnections()
@@ -1967,6 +1968,9 @@ local function criarNavegacaoPrincipal(ativo: string)
 	createLeftButton("Status", 6, ativo == "Status", function()
 		renderStatusJogador()
 	end)
+	createLeftButton("NPCs", 7, ativo == "NPCs", function()
+		renderNPCs()
+	end)
 end
 
 function renderInicio()
@@ -1989,6 +1993,7 @@ function renderInicio()
 		{ emoji = "🌦️", texto = "Climas", onClick = renderClimas },
 		{ emoji = "🌍", texto = "Mundo", onClick = renderJogadorMundo },
 		{ emoji = "📊", texto = "Status", onClick = function() renderStatusJogador() end },
+		{ emoji = "🧝", texto = "NPCs", onClick = function() renderNPCs() end },
 	})
 end
 
@@ -2310,6 +2315,170 @@ function renderJogadorMundo()
 
 	createSectionHeader(settingsScroll, "Mundo", nextOrder())
 	createAdminButton(settingsScroll, "Limpar tools soltas", "LimparToolsSoltas", nextOrder())
+end
+
+-- =============================================================================
+-- Tela: NPCs (spawn rapido pelo Dev). Usa o RemoteEvent dedicado
+-- ReplicatedStorage/NPC/Remotos/SpawnNPCDev. O painel apenas envia opcoes;
+-- o servidor decide posicao (a frente do jogador) e cria o NPC.
+-- =============================================================================
+
+-- Capacidades aplicadas ao proximo Combate Hostil que for spawnado.
+-- Persistem enquanto o painel estiver vivo (sao recriadas em cada renderNPCs).
+local capacidadesNPC = {
+	podeAndar = true,
+	podeAtacar = true,
+	podeDefender = false,
+	podeParry = false,
+}
+
+local function obterRemoteNPC(nome: string): RemoteEvent?
+	local raiz = ReplicatedStorage:FindFirstChild("NPC")
+	local pasta = raiz and raiz:FindFirstChild("Remotos")
+	local remoto = pasta and pasta:FindFirstChild(nome)
+	if remoto and remoto:IsA("RemoteEvent") then
+		return remoto
+	end
+	return nil
+end
+
+local function dispararSpawnNPC(payload: { [string]: any })
+	local remoto = obterRemoteNPC("SpawnNPCDev")
+	if not remoto then
+		warn("[DevPanel] RemoteEvent SpawnNPCDev nao encontrado em ReplicatedStorage.NPC.Remotos")
+		return
+	end
+	remoto:FireServer(payload)
+end
+
+local function dispararSpawnCombate(hostil: boolean)
+	local payload: { [string]: any } = {
+		archetype = "Combate",
+		hostil = hostil,
+		podeAndar = capacidadesNPC.podeAndar,
+		podeAtacar = capacidadesNPC.podeAtacar,
+		podeDefender = capacidadesNPC.podeDefender,
+		podeParry = capacidadesNPC.podeParry,
+	}
+	dispararSpawnNPC(payload)
+end
+
+-- Aplica as capacidades atuais em todos os NPCs hostis ja spawnados (real-time).
+local function dispararAtualizarFlags()
+	local remoto = obterRemoteNPC("AtualizarFlagsNPCDev")
+	if not remoto then
+		warn("[DevPanel] RemoteEvent AtualizarFlagsNPCDev nao encontrado")
+		return
+	end
+	remoto:FireServer({
+		podeAndar = capacidadesNPC.podeAndar,
+		podeAtacar = capacidadesNPC.podeAtacar,
+		podeDefender = capacidadesNPC.podeDefender,
+		podeParry = capacidadesNPC.podeParry,
+	})
+end
+
+local function dispararDespawnTodos()
+	local remoto = obterRemoteNPC("DespawnNPCDev")
+	if not remoto then
+		warn("[DevPanel] RemoteEvent DespawnNPCDev nao encontrado")
+		return
+	end
+	remoto:FireServer({ todos = true })
+end
+
+function renderNPCs()
+	telaAtual = "NPCs"
+	activeCategory = nil
+	clearSettings()
+	criarNavegacaoPrincipal("NPCs")
+	configurarAreaConteudo("Dev Panel / NPCs", "Spawn a frente do jogador")
+
+	local ordem = 0
+	local function nextOrder()
+		ordem += 1
+		return ordem
+	end
+
+	createSectionHeader(settingsScroll, "Capacidades (aplicadas em tempo real aos NPCs hostis)", nextOrder())
+	createBooleanControl(settingsScroll, "Pode andar", capacidadesNPC.podeAndar, nextOrder(), function(v)
+		capacidadesNPC.podeAndar = v
+		dispararAtualizarFlags()
+	end)
+	createBooleanControl(settingsScroll, "Pode atacar", capacidadesNPC.podeAtacar, nextOrder(), function(v)
+		capacidadesNPC.podeAtacar = v
+		dispararAtualizarFlags()
+	end)
+	createBooleanControl(settingsScroll, "Pode defender", capacidadesNPC.podeDefender, nextOrder(), function(v)
+		capacidadesNPC.podeDefender = v
+		-- Parry exige defender ativo.
+		if not v then
+			capacidadesNPC.podeParry = false
+		end
+		dispararAtualizarFlags()
+	end)
+	createBooleanControl(settingsScroll, "Pode dar parry", capacidadesNPC.podeParry, nextOrder(), function(v)
+		capacidadesNPC.podeParry = v and capacidadesNPC.podeDefender
+		dispararAtualizarFlags()
+	end)
+
+	createSectionHeader(settingsScroll, "Humanoides", nextOrder())
+	createTileGrid(settingsScroll, nextOrder(), {
+		{
+			titulo = "Dialogo",
+			subtitulo = "idle + head track",
+			emoji = "💬",
+			onClick = function()
+				dispararSpawnNPC({ archetype = "Dialogo" })
+			end,
+		},
+		{
+			titulo = "Combate",
+			subtitulo = "hostil",
+			emoji = "⚔️",
+			onClick = function()
+				dispararSpawnCombate(true)
+			end,
+		},
+	}, 3, 110)
+
+	createSectionHeader(settingsScroll, "Animais", nextOrder())
+	createTileGrid(settingsScroll, nextOrder(), {
+		{
+			titulo = "Galinha",
+			subtitulo = "vagar/fugir",
+			emoji = "🐔",
+			onClick = function()
+				dispararSpawnNPC({ archetype = "Animal", especie = "Galinha" })
+			end,
+		},
+		{
+			titulo = "Ovelha",
+			subtitulo = "vagar/fugir",
+			emoji = "🐑",
+			onClick = function()
+				dispararSpawnNPC({ archetype = "Animal", especie = "Ovelha" })
+			end,
+		},
+		{
+			titulo = "Vaca",
+			subtitulo = "vagar/fugir",
+			emoji = "🐄",
+			onClick = function()
+				dispararSpawnNPC({ archetype = "Animal", especie = "Vaca" })
+			end,
+		},
+	}, 3, 110)
+
+	createSectionHeader(settingsScroll, "Limpeza", nextOrder())
+	createTileGrid(settingsScroll, nextOrder(), {
+		{
+			titulo = "Despawn",
+			subtitulo = "todos",
+			emoji = "🗑️",
+			onClick = dispararDespawnTodos,
+		},
+	}, 3, 110)
 end
 
 -- =============================================================================

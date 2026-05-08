@@ -234,19 +234,40 @@ function ControladorCombate._ProcessarHit(atacante: Model, alvo: Model, tipoAtaq
 		return
 	end
 
+	-- ===== PARRY (defensor pronto para aparar) =====
 	if maquinaAlvo:EstaProntoParaAparar() and maquinaAlvo:EstaBloqueando() then
 
 		local tempoStun = Modulo_Configuracoes.ObterConfiguracao("TempoStunAparado") or 0.7
+		local tempoAparando = Modulo_Configuracoes.ObterConfiguracao("TempoAparando") or tempoStun
 
 		ControladorCombate._TocarAnimacao(alvo, "Aparar")
 		ControladorCombate._TocarAnimacao(atacante, "Aparado")
 
-		maquinaAtacante:EntrarStun(tempoStun)
+		-- Atacante entra em estado APARADO (anim correta) em vez de Stunado generico.
+		if maquinaAtacante.AplicarAparado then
+			maquinaAtacante:AplicarAparado(tempoStun)
+		else
+			maquinaAtacante:EntrarStun(tempoStun)
+		end
+		if maquinaAlvo.AplicarAparando then
+			maquinaAlvo:AplicarAparando(tempoAparando)
+		end
+
+		-- Reseta cooldown de parry do defensor: parry bem sucedido permite aparar
+		-- o proximo ataque imediatamente. (REQ: 'Aparar resetar o proprio cooldown')
+		maquinaAlvo.dados.ultimoParry = 0
+
+		-- Impulso especifico de parry: metade do impulso do final de combo.
+		local resultadoImpulso = Modulo_Impulso.AplicarImpulsoParry(alvo, atacante)
+		if not resultadoImpulso.sucesso then
+			DebugPrint("[Combate] Falha ao aplicar impulso de parry: " .. tostring(resultadoImpulso.erro))
+		end
 
 		DebugPrint(string.format("[Combate] %s APAROU ataque de %s!", alvo.Name, atacante.Name))
 		return
 	end
 
+	-- ===== BLOQUEIO (sem parry) =====
 	if maquinaAlvo:EstaBloqueando() then
 
 		if tipoAtaque == "AtaquePesado" or tipoAtaque == "AtaqueLeveFinal" then
@@ -256,15 +277,25 @@ function ControladorCombate._ProcessarHit(atacante: Model, alvo: Model, tipoAtaq
 			ControladorCombate._TocarAnimacao(alvo, "DefesaQuebrada")
 			ControladorCombate._TocarAnimacao(atacante, "AtaquePesado")
 
+			-- Knockback no defensor (defesa quebrada).
+			ControladorCombate._AplicarKnockback(alvo, atacante, tipoAtaque)
+
 			DebugPrint(string.format("[Combate] %s teve a defesa QUEBRADA por %s!", alvo.Name, atacante.Name))
+			return
 		else
 
-			local _tempoBlock = Modulo_Configuracoes.ObterConfiguracao("TempoStunLeve") or 0.3
+			-- Ataque leve absorvido: nao tira vida, mas cada lado sente um leve impacto.
+			-- Defensor recua um pouco, atacante recua um pouco (feedback de hit).
+			local modoAtacante = maquinaAtacante:ObterModo()
+			local modoAlvo = maquinaAlvo:ObterModo()
+			Modulo_Knockback.AplicarKnockback(atacante, alvo, modoAtacante, "AtaqueLeve")
+			Modulo_Knockback.AplicarKnockback(alvo, atacante, modoAlvo, "AtaqueLeve")
 			DebugPrint(string.format("[Combate] %s bloqueou ataque de %s", alvo.Name, atacante.Name))
 			return
 		end
 	end
 
+	-- ===== HIT NORMAL =====
 	local resultado
 	if danoOverride then
 

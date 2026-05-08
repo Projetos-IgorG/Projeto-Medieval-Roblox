@@ -117,4 +117,67 @@ function Modulo_Impulso.AplicarImpulso(atacante: Model, modoAnimacao: string, ti
 	}
 end
 
+function Modulo_Impulso.AplicarImpulsoParry(defensor: Model, atacante: Model): ResultadoImpulso
+	local defensorValido, defensorErro = Modulo_Impulso.ValidarEntidade(defensor)
+	if not defensorValido then
+		return {
+			sucesso = false,
+			magnitudeAplicada = nil,
+			erro = defensorErro,
+		}
+	end
+
+	local atacanteValido, atacanteErro = Modulo_Impulso.ValidarEntidade(atacante)
+	if not atacanteValido then
+		return {
+			sucesso = false,
+			magnitudeAplicada = nil,
+			erro = atacanteErro,
+		}
+	end
+
+	local config = Modulo_Configuracoes.ConfiguracaoGlobal
+	local magnitudeFinalCombo = Modulo_Impulso.ObterMagnitudeImpulso("AtaqueLeveFinal")
+	local magnitude = config.MagnitudeImpulsoParry or (magnitudeFinalCombo * 0.5)
+
+	local defensorRoot = defensor:FindFirstChild("HumanoidRootPart") :: BasePart
+	local atacanteRoot = atacante:FindFirstChild("HumanoidRootPart") :: BasePart
+	local direcao = atacanteRoot.Position - defensorRoot.Position
+	direcao = Vector3.new(direcao.X, 0, direcao.Z)
+	if direcao.Magnitude < 0.001 then
+		direcao = -defensorRoot.CFrame.LookVector
+	else
+		direcao = direcao.Unit
+	end
+
+	local sucesso, resultado = pcall(function()
+		if atacanteRoot.Anchored then
+			local deslocamento = math.clamp(magnitude * 0.035, 0.5, 4)
+			local novaPosicao = atacanteRoot.Position + direcao * deslocamento
+			atacanteRoot.CFrame = CFrame.lookAt(novaPosicao, novaPosicao + direcao)
+		else
+			local velocidadeAtual = atacanteRoot.AssemblyLinearVelocity
+			atacanteRoot.AssemblyLinearVelocity = Vector3.new(
+				direcao.X * magnitude,
+				velocidadeAtual.Y + 5,
+				direcao.Z * magnitude
+			)
+		end
+	end)
+
+	if not sucesso then
+		return {
+			sucesso = false,
+			magnitudeAplicada = nil,
+			erro = "Erro ao aplicar impulso de parry: " .. tostring(resultado),
+		}
+	end
+
+	return {
+		sucesso = true,
+		magnitudeAplicada = magnitude,
+		erro = nil,
+	}
+end
+
 return Modulo_Impulso

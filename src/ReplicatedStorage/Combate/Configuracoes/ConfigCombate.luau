@@ -28,6 +28,7 @@ export type ConfiguracaoGlobal = {
 	TempoStunLeve: number,
 	TempoStunPesado: number,
 	TempoStunAparado: number,
+	TempoAparando: number,
 
 	JanelaParry: number,
 	CooldownParry: number,
@@ -77,6 +78,7 @@ export type ConfiguracaoGlobal = {
 
 	MagnitudeImpulsoAtaqueLeve: number,
 	MagnitudeImpulsoAtaquePesado: number,
+	MagnitudeImpulsoParry: number,
 	DuracaoImpulsoAtaqueLeve: number,
 	DuracaoImpulsoAtaquePesado: number,
 
@@ -98,9 +100,10 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	TempoStunLeve = 0.3,
 	TempoStunPesado = 0.6,
 	TempoStunAparado = 0.7,
+	TempoAparando = 0.7,
 
 	JanelaParry = 0.2,
-	CooldownParry = 2.4,
+	CooldownParry = 1.0,
 
 	TempoCarregarPesado = 0.2,
 	JanelaCombo = 0.2,
@@ -149,6 +152,7 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 
 	MagnitudeImpulsoAtaqueLeve = 20,
 	MagnitudeImpulsoAtaquePesado = 50,
+	MagnitudeImpulsoParry = 25,
 	DuracaoImpulsoAtaqueLeve = 0.1,
 	DuracaoImpulsoAtaquePesado = 0.2,
 

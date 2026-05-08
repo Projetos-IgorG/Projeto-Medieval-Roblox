@@ -62,8 +62,14 @@ local ESTADOS_PERMITE_RIPOSTE = {
 	[MaquinaDeEstados.EstadoAcao.Aparando] = true,
 }
 
+-- Bloqueio pode ser iniciado mesmo a partir de estados de stun (Stunado/Aparado/
+-- DefesaQuebrada) para permitir que o jogador/NPC reaja defendendo-se. Equipando/
+-- Desequipando/Dashando/Morto continuam bloqueando.
 local ESTADOS_PERMITE_BLOQUEIO = {
 	[MaquinaDeEstados.EstadoAcao.Nenhuma] = true,
+	[MaquinaDeEstados.EstadoAcao.Stunado] = true,
+	[MaquinaDeEstados.EstadoAcao.Aparado] = true,
+	[MaquinaDeEstados.EstadoAcao.DefesaQuebrada] = true,
 }
 
 local MOVIMENTO_PERMITE_ATAQUE = {
@@ -130,10 +136,11 @@ function MaquinaDeEstados.Novo(entidade: Model)
 		direcaoDash = "Frente",
 	} :: DadosEstado
 
-	self.callbacks = {
-		aoMudarEstadoMov = nil,
-		aoMudarEstadoAcao = nil,
-		aoMudarModo = nil,
+	-- Listas de listeners (multiplos subscribers, retornam disconnect).
+	self.listeners = {
+		aoMudarEstadoMov = {} :: { (string, string) -> () },
+		aoMudarEstadoAcao = {} :: { (string, string) -> () },
+		aoMudarModo = {} :: { (string, string) -> () },
 	}
 
 	return self
@@ -174,8 +181,11 @@ function MaquinaDeEstados:_AlterarEstadoMov(novoEstado: string)
 		string.format("[MaquinaDeEstados] %s: estadoMov %s -> %s", self.entidade.Name, estadoAnterior, novoEstado)
 	)
 
-	if self.callbacks.aoMudarEstadoMov then
-		self.callbacks.aoMudarEstadoMov(novoEstado, estadoAnterior)
+	for _, cb in self.listeners.aoMudarEstadoMov do
+		local ok, err = pcall(cb, novoEstado, estadoAnterior)
+		if not ok then
+			warn("[MaquinaDeEstados] Listener aoMudarEstadoMov: " .. tostring(err))
+		end
 	end
 end
 
@@ -191,8 +201,11 @@ function MaquinaDeEstados:_AlterarEstadoAcao(novoEstado: string)
 		string.format("[MaquinaDeEstados] %s: estadoAcao %s -> %s", self.entidade.Name, estadoAnterior, novoEstado)
 	)
 
-	if self.callbacks.aoMudarEstadoAcao then
-		self.callbacks.aoMudarEstadoAcao(novoEstado, estadoAnterior)
+	for _, cb in self.listeners.aoMudarEstadoAcao do
+		local ok, err = pcall(cb, novoEstado, estadoAnterior)
+		if not ok then
+			warn("[MaquinaDeEstados] Listener aoMudarEstadoAcao: " .. tostring(err))
+		end
 	end
 end
 
@@ -450,7 +463,13 @@ function MaquinaDeEstados:TenteExecutarPesado(): (boolean, string?)
 end
 
 function MaquinaDeEstados:TenteBloquear(shiftLockAtivo: boolean?): (boolean, string?)
-	if self:_EstaBloqueado() then
+	-- Bloqueio pode ser iniciado mesmo durante Stunado/Aparado/DefesaQuebrada
+	-- (controlado por ESTADOS_PERMITE_BLOQUEIO mais abaixo). Apenas Morto/
+	-- Equipando/Desequipando/Dashando bloqueiam de fato.
+	if self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Morto
+		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Equipando
+		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Desequipando
+		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Dashando then
 		return false, "EstadoBloqueante"
 	end
 
@@ -513,6 +532,10 @@ function MaquinaDeEstados:TenteBloquear(shiftLockAtivo: boolean?): (boolean, str
 	self.dados.parryToken += 1
 
 	self:_PararCorrida()
+
+	-- Sair do stun para entrar em defesa: limpa flag para que outras checagens
+	-- (movimento, ataque seguinte) nao continuem tratando como stunned.
+	self.dados.stunado = false
 
 	self.dados.bloqueando = true
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Defendendo)
@@ -761,9 +784,17 @@ function MaquinaDeEstados:AplicarAparado(duracao: number)
 	end)
 end
 
-function MaquinaDeEstados:AplicarAparando()
+function MaquinaDeEstados:AplicarAparando(duracao: number?)
+	local tempo = duracao or 0.7
+	self.dados.bloqueando = false
 	self.dados.prontoParaAparar = false
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Aparando)
+
+	task.delay(tempo, function()
+		if self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Aparando then
+			self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Nenhuma)
+		end
+	end)
 end
 
 function MaquinaDeEstados:AplicarMorte()
@@ -780,6 +811,7 @@ function MaquinaDeEstados:CompletarAcao()
 	if
 		self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Stunado
 		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Aparado
+		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Aparando
 	then
 		return
 	end
@@ -842,8 +874,11 @@ function MaquinaDeEstados:DefinirModo(modo: string)
 	local modoAnterior = self.dados.modoAnimacao
 	self.dados.modoAnimacao = modo
 
-	if self.callbacks.aoMudarModo then
-		self.callbacks.aoMudarModo(modo, modoAnterior)
+	for _, cb in self.listeners.aoMudarModo do
+		local ok, err = pcall(cb, modo, modoAnterior)
+		if not ok then
+			warn("[MaquinaDeEstados] Listener aoMudarModo: " .. tostring(err))
+		end
 	end
 end
 
@@ -886,16 +921,26 @@ function MaquinaDeEstados:AtualizarMovimento(velocidade: number, noChao: boolean
 	end
 end
 
-function MaquinaDeEstados:AoMudarEstadoMov(callback: (string, string) -> ())
-	self.callbacks.aoMudarEstadoMov = callback
+local function _conectar(lista: { (string, string) -> () }, callback: (string, string) -> ()): () -> ()
+	table.insert(lista, callback)
+	return function()
+		local idx = table.find(lista, callback)
+		if idx then
+			table.remove(lista, idx)
+		end
+	end
 end
 
-function MaquinaDeEstados:AoMudarEstadoAcao(callback: (string, string) -> ())
-	self.callbacks.aoMudarEstadoAcao = callback
+function MaquinaDeEstados:AoMudarEstadoMov(callback: (string, string) -> ()): () -> ()
+	return _conectar(self.listeners.aoMudarEstadoMov, callback)
 end
 
-function MaquinaDeEstados:AoMudarModo(callback: (string, string) -> ())
-	self.callbacks.aoMudarModo = callback
+function MaquinaDeEstados:AoMudarEstadoAcao(callback: (string, string) -> ()): () -> ()
+	return _conectar(self.listeners.aoMudarEstadoAcao, callback)
+end
+
+function MaquinaDeEstados:AoMudarModo(callback: (string, string) -> ()): () -> ()
+	return _conectar(self.listeners.aoMudarModo, callback)
 end
 
 function MaquinaDeEstados:ObterEstadoMov(): string
