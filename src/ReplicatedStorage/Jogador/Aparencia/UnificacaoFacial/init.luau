@@ -9,6 +9,7 @@
 ]]
 
 local EXCLUDED_ACCESSORIES = {
+	Enum.AccessoryType.Face;
 	Enum.AccessoryType.Eyebrow;
 	Enum.AccessoryType.Eyelash;
 }
@@ -51,6 +52,19 @@ end
 
 local FacialU = {}
 
+local function RemoveFaceAccessories(humanoidDescription : HumanoidDescription)
+	local getAccessories = humanoidDescription:GetAccessories(true)
+	local setAccessories = {}
+	for _, v in pairs(getAccessories) do
+		local accType = v.AccessoryType or Enum.AccessoryType.Unknown
+		local isInTable = table.find(EXCLUDED_ACCESSORIES, accType) ~= nil
+		if not isInTable then
+			table.insert(setAccessories, v)
+		end
+	end
+	humanoidDescription:SetAccessories(setAccessories, true)
+end
+
 function FacialU:ConvertFromHumanoidDescription(humanoidDescription : HumanoidDescription, useDefaultHead : boolean?): (boolean, Accoutrement?)
 	assert(humanoidDescription, "Expected HumanoidDescription but got nil instead, please provide a humanoid description!")
 
@@ -71,17 +85,7 @@ function FacialU:ConvertFromHumanoidDescription(humanoidDescription : HumanoidDe
 	end
 
 	if removeFaceStuff then
-		local getAccessories = humanoidDescription:GetAccessories(true)
-		local setAccessories = {}
-		for _, v in pairs(getAccessories) do
-			local accType = v.AccessoryType or Enum.AccessoryType.Unknown
-			local isInTable = table.find(EXCLUDED_ACCESSORIES, accType) ~= nil
-			if not isInTable then
-				table.insert(setAccessories, v)
-			end
-		end
-
-		humanoidDescription:SetAccessories(setAccessories, true)
+		RemoveFaceAccessories(humanoidDescription)
 
 		if hatToCopy and hatToCopy:IsA("Accoutrement") then
 			local newHat = Instance.new("AccessoryDescription")
@@ -94,14 +98,25 @@ function FacialU:ConvertFromHumanoidDescription(humanoidDescription : HumanoidDe
 	return removeFaceStuff, hatToCopy
 end
 
-function FacialU:ConvertAnimatedHead(humanoid : Humanoid, useDefaultHead : boolean?) : boolean
+function FacialU:ConvertAnimatedHead(humanoid : Humanoid, useDefaultHead : boolean?, forceClassicFallback : boolean?) : boolean
 	assert(humanoid, "Expected Humanoid but got nil instead!")
 	useDefaultHead = useDefaultHead or false
+	forceClassicFallback = forceClassicFallback == true
 
 	humanoid:WaitForChild("HumanoidDescription", 1)
 	local desc = humanoid:GetAppliedDescription() :: HumanoidDescription
 	if desc then
 		local wasConverted = self:ConvertFromHumanoidDescription(desc, useDefaultHead)
+		if not wasConverted and forceClassicFallback then
+			-- Avatar sem entrada em ToHat/ToFace: ainda assim garantimos head
+			-- classico e nenhum acessorio facial; deixamos desc.Face como veio
+			-- (0 ou id do proprio avatar) para que ApplyDescriptionAsync use o
+			-- padrao do engine sem hardcode local.
+			RemoveFaceAccessories(desc)
+			desc.Head = 0
+			wasConverted = true
+		end
+
 		if wasConverted then
 			humanoid:ApplyDescriptionAsync(desc)
 			humanoid.ApplyDescriptionFinished:Wait()
