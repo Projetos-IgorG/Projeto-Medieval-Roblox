@@ -39,7 +39,6 @@ type Ctx = Comportamento.ContextoNPC
 local RAIO_AGGRO = 35
 local RAIO_DESAGGRO = 60
 local RAIO_DESEQUIPAR = 50
-local DISTANCIA_ANDAR = 20
 
 local VELOCIDADE_ANDANDO = ConfigCombate.ConfiguracaoGlobal.VelocidadeAndando or 12
 local VELOCIDADE_CORRENDO = ConfigCombate.ConfiguracaoGlobal.VelocidadeCorrendo or 16
@@ -51,27 +50,34 @@ local DURACAO_BLOQUEIO_MAX = 2.0
 local CHANCE_BLOQUEIO_POR_TICK = 0.18
 local COOLDOWN_BLOQUEIO_NPC = (ConfigCombate.ConfiguracaoGlobal.CooldownBloqueio or 0.5) + 1.5
 local JANELA_PARRY_NPC = ConfigCombate.ConfiguracaoGlobal.JanelaParry or 0.2
+local COOLDOWN_PARRY_NPC = ConfigCombate.ConfiguracaoGlobal.CooldownParry or 1.0
+local DISTANCIA_CORRER_PADRAO = 20
+local CHAVE_DISTANCIA_CORRER = "NPC_DistanciaCorrer"
 
--- Distancia unica que o NPC tenta manter do alvo. Sem "zona de conforto"
--- ampla: se esta mais longe, aproxima; se esta mais perto, recua.
-local DISTANCIA_ALVO_PADRAO = 4.4
-local TOLERANCIA_DISTANCIA_ALVO = 0.35
-local MARGEM_ATAQUE_EXTRA = 0.75
-local LIMITE_CANCELA_COMBO = 2.0
+-- Faixa unica de movimento: alcance da arma equipada, com tolerancia fixa.
+local TOLERANCIA_ALCANCE = 1
 
 -- REQ 7: predicao de ataque do alvo. Cooldown curto entre tentativas de
 -- bloqueio preditivo para nao spammar quando alvo encadeia varios ataques.
--- ATRASO_PARRY: aguarda 0.2s apos o alvo iniciar o ataque para sincronizar
+-- ATRASO_PARRY: aguarda Xs apos o alvo iniciar o ataque para sincronizar
 -- o bloqueio com a janela de parry (a hitbox do alvo ainda nao chegou).
-local CHANCE_PARRY_PREDITIVO = 0.7
+local CHANCE_PARRY_PREDITIVO = 0.9
 local COOLDOWN_PREDICAO_PARRY = 0.4
-local ATRASO_PARRY_PREDITIVO = 0.2
+local ATRASO_PARRY_PREDITIVO = 0.28
 
 -- Baiting: apos cada ataque proprio, NPC fica 1.0-2.5s sem iniciar novo ataque,
 -- esperando o alvo abrir guarda/atacar para conseguir parry. NPC continua
--- podendo bloquear/recuar/orbitar nesse intervalo.
+-- podendo bloquear/recuar nesse intervalo.
 local ESPERA_BAITING_MIN = 1.0
 local ESPERA_BAITING_MAX = 2.5
+
+local ATRASO_ATAQUE_APOS_PARRY = 0.2
+local JANELA_PREPARO_APOS_APARADO = 1.4
+
+local INTERVALO_ROLAGEM_ORBITA = 7
+local CHANCE_ORBITA_VERDADEIRO = 0.45
+local DURACAO_ORBITA = 2
+local VELOCIDADE_ORBITA = VELOCIDADE_ANDANDO
 
 -- =============================================================================
 -- Acesso lazy ao CombateServidor (para obter a maquina canonica).
@@ -102,6 +108,14 @@ end
 local function lerFlag(modelo: Model, chave: string, padrao: boolean): boolean
 	local v = modelo:GetAttribute(chave)
 	if typeof(v) == "boolean" then
+		return v
+	end
+	return padrao
+end
+
+local function lerNumero(modelo: Model, chave: string, padrao: number): number
+	local v = modelo:GetAttribute(chave)
+	if typeof(v) == "number" and v > 0 then
 		return v
 	end
 	return padrao
@@ -204,6 +218,12 @@ local function mapearEstadoMaquina(estadoAcao: string): string?
 	return nil
 end
 
+local iniciarBloqueio: (Ctx) -> ()
+local iniciarBloqueioCombo: (Ctx) -> ()
+local tentarBloqueioPreditivo: (Ctx, Model, boolean?) -> ()
+local tentarAtaqueRiposte: (Ctx) -> ()
+local colocarParryEmCooldown: (Ctx) -> ()
+
 local function instalarSincMaquina(ctx: Ctx, maq: any)
 	if not maq or not maq.AoMudarEstadoAcao then
 		return
@@ -232,6 +252,10 @@ local function instalarSincMaquina(ctx: Ctx, maq: any)
 			-- com a animacao de reacao tocada pela View no cliente.
 			if mapped == TiposNPC.Estado.Aparado then
 				ctx.estado.bloqueandoAte = 0
+				ctx.estado.bloqueioSeguraCombo = false
+				ctx.estado.prepararParryAte = os.clock() + JANELA_PREPARO_APOS_APARADO
+				ctx.estado.cooldownBloqueio = 0
+				ctx.estado.cooldownPredicaoParry = 0
 				ctx.humanoide.WalkSpeed = VELOCIDADE_APARANDO
 				ControladorCombateNPC.PararAtaque(ctx.modelo)
 			elseif mapped == TiposNPC.Estado.Stunado
@@ -245,8 +269,11 @@ local function instalarSincMaquina(ctx: Ctx, maq: any)
 			-- REQ 8: parry bem sucedido (estado Aparando) reseta o cooldown de
 			-- bloqueio para que NPC possa aparar o proximo ataque imediatamente.
 			if mapped == TiposNPC.Estado.Aparando then
+				ctx.estado.bloqueandoAte = 0
+				ctx.estado.bloqueioSeguraCombo = false
 				ctx.estado.cooldownBloqueio = 0
 				ctx.estado.cooldownPredicaoParry = 0
+				tentarAtaqueRiposte(ctx)
 			end
 		elseif novo == "Nenhuma" then
 			local atual = ctx.modelo:GetAttribute(TiposNPC.Chaves.Estado)
@@ -276,17 +303,62 @@ local function ehEstadoAtaque(estadoAcao: string): boolean
 		or estadoAcao == "AtaquePesado"
 end
 
-local iniciarBloqueio: (Ctx) -> ()
-
-local function instalarSincAlvo(ctx: Ctx, alvo: Model)
+local function obterMaquinaAlvo(alvo: Model): any?
 	local cs = obterCombateServidor()
 	if not cs or not cs.ObterMaquina then
+		return nil
+	end
+	local ok, maq = pcall(cs.ObterMaquina, alvo)
+	if ok then
+		return maq
+	end
+	return nil
+end
+
+local function dadosComboAlvo(ctx: Ctx): any?
+	local alvo = ctx.estado.alvoSubscrito or ctx.estado.alvoAtual
+	if not alvo then
+		return nil
+	end
+	local maq = ctx.estado.maquinaAlvoSubscrita
+	if not maq or ctx.estado.alvoSubscrito ~= alvo then
+		maq = obterMaquinaAlvo(alvo)
+	end
+	return maq and maq.dados or nil
+end
+
+local function alvoMantemComboLeve(ctx: Ctx): boolean
+	local dados = dadosComboAlvo(ctx)
+	if not dados then
+		return false
+	end
+	if dados.estadoAcao ~= "AtacandoLeve" then
+		return false
+	end
+	local indice = dados.indiceCombo or 0
+	return indice > 0 and indice < 4
+end
+
+local function registrarAtaqueAlvo(ctx: Ctx, alvo: Model, dados: any?)
+	if not dados then
 		return
 	end
-	local ok, maqAlvo = pcall(cs.ObterMaquina, alvo)
-	if not ok or not maqAlvo or not maqAlvo.AoMudarEstadoAcao then
+	local indice = dados.indiceCombo or 0
+	local ultimoAtaque = math.max(dados.ultimoAtaque or 0, dados.ultimaContinuacaoCombo or 0)
+	if indice == ctx.estado.ultimoIndiceComboAlvo and ultimoAtaque == ctx.estado.ultimoTempoAtaqueAlvo then
 		return
 	end
+	ctx.estado.ultimoIndiceComboAlvo = indice
+	ctx.estado.ultimoTempoAtaqueAlvo = ultimoAtaque
+	tentarBloqueioPreditivo(ctx, alvo, false)
+end
+
+local function instalarSincAlvo(ctx: Ctx, alvo: Model)
+	local maqAlvo = obterMaquinaAlvo(alvo)
+	if not maqAlvo or not maqAlvo.AoMudarEstadoAcao then
+		return
+	end
+	ctx.estado.maquinaAlvoSubscrita = maqAlvo
 	local disc = maqAlvo:AoMudarEstadoAcao(function(novo: string, _anterior: string)
 		if ctx.estado.destruido or ctx.humanoide.Health <= 0 then
 			return
@@ -300,26 +372,7 @@ local function instalarSincAlvo(ctx: Ctx, alvo: Model)
 		if not lerFlag(ctx.modelo, TiposNPC.Chaves.PodeDefender, false) then
 			return
 		end
-		local agora = os.clock()
-		if (ctx.estado.cooldownPredicaoParry or 0) > agora then
-			return
-		end
-		ctx.estado.cooldownPredicaoParry = agora + COOLDOWN_PREDICAO_PARRY
-		if math.random() > CHANCE_PARRY_PREDITIVO then
-			return
-		end
-		-- Atrasa o bloqueio em 0.15s para alinhar com a janela de parry: o alvo
-		-- ainda esta no windup quando bloqueamos, e a hitbox dele chega exatamente
-		-- enquanto prontoParaAparar=true.
-		task.delay(ATRASO_PARRY_PREDITIVO, function()
-			if ctx.estado.destruido or ctx.humanoide.Health <= 0 then
-				return
-			end
-			if ctx.estado.alvoSubscrito ~= alvo then
-				return
-			end
-			iniciarBloqueio(ctx)
-		end)
+		registrarAtaqueAlvo(ctx, alvo, maqAlvo.dados)
 	end)
 	if typeof(disc) == "function" then
 		ctx.estado.desconectarAlvo = disc
@@ -335,17 +388,16 @@ local function atualizarSubscricaoAlvo(ctx: Ctx, novoAlvo: Model?)
 		ctx.estado.desconectarAlvo = nil
 	end
 	ctx.estado.alvoSubscrito = novoAlvo
+	ctx.estado.maquinaAlvoSubscrita = nil
+	ctx.estado.ultimoIndiceComboAlvo = 0
+	ctx.estado.ultimoTempoAtaqueAlvo = 0
 	if novoAlvo then
 		instalarSincAlvo(ctx, novoAlvo)
 	end
 end
 
-local function obterDistanciaAlvo(ctx: Ctx): number
-	local v = ctx.modelo:GetAttribute("NPC_AlcanceArma")
-	if typeof(v) == "number" and v > 0 then
-		return v
-	end
-	return DISTANCIA_ALVO_PADRAO
+local function obterAlcanceArma(ctx: Ctx): number?
+	return ControladorCombateNPC.ObterAlcanceArmaEquipada(ctx.modelo)
 end
 
 -- =============================================================================
@@ -508,6 +560,119 @@ local function pararMovimento(ctx: Ctx)
 	ctx.humanoide.WalkSpeed = 0
 end
 
+local function moverParaFaixaDeAlcance(
+	ctx: Ctx,
+	pos: Vector3,
+	alvoPos: Vector3,
+	distanciaAtual: number,
+	alcance: number,
+	distanciaCorrer: number,
+	dt: number
+): (boolean, string?)
+	local distanciaMinima = math.max(0.5, alcance - TOLERANCIA_ALCANCE)
+	local distanciaMaxima = alcance + TOLERANCIA_ALCANCE
+	local erro = 0
+	local sentido = 0
+
+	if distanciaAtual > distanciaMaxima then
+		erro = distanciaAtual - distanciaMaxima
+		sentido = 1
+	elseif distanciaAtual < distanciaMinima then
+		erro = distanciaMinima - distanciaAtual
+		sentido = -1
+	else
+		pararMovimento(ctx)
+		return false, nil
+	end
+
+	local dirRadial = alvoPos - pos
+	dirRadial = Vector3.new(dirRadial.X, 0, dirRadial.Z)
+	if dirRadial.Magnitude < 0.001 then
+		pararMovimento(ctx)
+		return false, nil
+	end
+
+	local direcaoMundo = if sentido > 0 then dirRadial.Unit else -dirRadial.Unit
+	local correndo = sentido > 0 and distanciaAtual >= distanciaCorrer
+	local velocidadeMaxima = if correndo then VELOCIDADE_CORRENDO else VELOCIDADE_ANDANDO
+	local velocidade = math.min(velocidadeMaxima, (erro / math.max(dt, 0.05)) * 0.8)
+	if velocidade < 0.05 then
+		pararMovimento(ctx)
+		return false, nil
+	end
+	local animLoco = moverDirecaoMantendoOlhar(ctx, alvoPos, direcaoMundo, velocidade, correndo)
+	return true, animLoco
+end
+
+local function velocidadePlanaModelo(modelo: Model): number
+	local hrp = modelo:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not hrp then
+		return 0
+	end
+	local vel = hrp.AssemblyLinearVelocity
+	return Vector3.new(vel.X, 0, vel.Z).Magnitude
+end
+
+local function ambosParados(ctx: Ctx, alvo: Model): boolean
+	local humAlvo = alvo:FindFirstChildOfClass("Humanoid")
+	local alvoParado = velocidadePlanaModelo(alvo) < 0.8 and (not humAlvo or humAlvo.MoveDirection.Magnitude < 0.1)
+	local npcParado = velocidadePlanaModelo(ctx.modelo) < 0.8 and ctx.humanoide.MoveDirection.Magnitude < 0.1
+	return npcParado and alvoParado
+end
+
+local function tentarOrbitar(
+	ctx: Ctx,
+	alvo: Model,
+	pos: Vector3,
+	alvoPos: Vector3,
+	distanciaAtual: number,
+	alcance: number,
+	agora: number
+): (boolean, string?)
+	if (ctx.estado.orbitandoAte or 0) > agora then
+		local radial = pos - alvoPos
+		radial = Vector3.new(radial.X, 0, radial.Z)
+		if radial.Magnitude < 0.001 then
+			return false, nil
+		end
+
+		local dirRadial = radial.Unit
+		local sinal = ctx.estado.orbitaSinal or 1
+		local tangente = Vector3.new(-dirRadial.Z, 0, dirRadial.X) * sinal
+		local erroRadial = distanciaAtual - alcance
+		local correcaoRadial = -dirRadial * math.clamp(erroRadial / TOLERANCIA_ALCANCE, -0.65, 0.65)
+		local direcao = tangente + correcaoRadial
+		local animLoco = moverDirecaoMantendoOlhar(ctx, alvoPos, direcao, VELOCIDADE_ORBITA, false)
+		return true, animLoco
+	end
+
+	if (ctx.estado.proximaRolagemOrbita or 0) > agora then
+		return false, nil
+	end
+	ctx.estado.proximaRolagemOrbita = agora + INTERVALO_ROLAGEM_ORBITA
+
+	if not ambosParados(ctx, alvo) then
+		return false, nil
+	end
+	if math.abs(distanciaAtual - alcance) > TOLERANCIA_ALCANCE then
+		return false, nil
+	end
+	if math.random() > CHANCE_ORBITA_VERDADEIRO then
+		return false, nil
+	end
+
+	ctx.estado.orbitandoAte = agora + DURACAO_ORBITA
+	ctx.estado.orbitaSinal = if math.random() < 0.5 then -1 else 1
+	return tentarOrbitar(ctx, alvo, pos, alvoPos, distanciaAtual, alcance, agora)
+end
+
+local function estadoPorAnimacaoLocomocao(nomeAnimacao: string): string
+	if string.sub(nomeAnimacao, 1, 8) == "Correndo" then
+		return TiposNPC.Estado.Correndo
+	end
+	return TiposNPC.Estado.Andando
+end
+
 -- =============================================================================
 -- Bloqueio / Parry do NPC (espelhado na MaquinaDeEstados canonica).
 -- =============================================================================
@@ -519,13 +684,40 @@ local function definirEstadoBloqueioMaquina(ctx: Ctx, bloqueando: boolean, pront
 	end
 	maq.dados.bloqueando = bloqueando
 	maq.dados.prontoParaAparar = prontoParry
+	if bloqueando then
+		maq.dados.stunado = false
+	end
 end
 
-function iniciarBloqueio(ctx: Ctx)
-	if not lerFlag(ctx.modelo, TiposNPC.Chaves.PodeDefender, false) then
+local function pararBloqueio(ctx: Ctx)
+	if (ctx.estado.bloqueandoAte or 0) <= 0 then
 		return
 	end
-	if estaAparado(ctx) then
+	ctx.estado.bloqueioToken = (ctx.estado.bloqueioToken or 0) + 1
+	ctx.estado.bloqueandoAte = 0
+	ctx.estado.bloqueioSeguraCombo = false
+	ctx.estado.cooldownBloqueio = os.clock() + COOLDOWN_BLOQUEIO_NPC
+	definirEstadoBloqueioMaquina(ctx, false, false)
+	colocarParryEmCooldown(ctx)
+	if ctx.humanoide.Health > 0 then
+		setEstado(ctx, TiposNPC.Estado.Idle)
+	end
+end
+
+function colocarParryEmCooldown(ctx: Ctx)
+	local maq = ctx.estado.maquina
+	if not maq or not maq.dados then
+		return
+	end
+	maq.dados.ultimoParry = tick()
+	maq.dados.prontoParaAparar = false
+	if typeof(maq.dados.parryToken) == "number" then
+		maq.dados.parryToken += 1
+	end
+end
+
+local function iniciarBloqueioInterno(ctx: Ctx, segurarCombo: boolean)
+	if not lerFlag(ctx.modelo, TiposNPC.Chaves.PodeDefender, false) then
 		return
 	end
 	if estaAparando(ctx) then
@@ -541,9 +733,15 @@ function iniciarBloqueio(ctx: Ctx)
 	-- Nao gateamos por stunadoAte: REQ 1 permite bloquear durante o stun.
 
 	local duracao = DURACAO_BLOQUEIO_MIN + math.random() * (DURACAO_BLOQUEIO_MAX - DURACAO_BLOQUEIO_MIN)
+	local maq = ctx.estado.maquina
+	local ultimoParry = if maq and maq.dados then maq.dados.ultimoParry or 0 else 0
 	local podeParry = lerFlag(ctx.modelo, TiposNPC.Chaves.PodeParry, false)
+		and (tick() - ultimoParry) >= COOLDOWN_PARRY_NPC
 
+	ctx.estado.bloqueioToken = (ctx.estado.bloqueioToken or 0) + 1
+	local token = ctx.estado.bloqueioToken
 	ctx.estado.bloqueandoAte = agora + duracao
+	ctx.estado.bloqueioSeguraCombo = segurarCombo
 	ctx.estado.cooldownBloqueio = agora + duracao + COOLDOWN_BLOQUEIO_NPC
 	ctx.humanoide.WalkSpeed = VELOCIDADE_BLOQUEANDO
 	setEstado(ctx, TiposNPC.Estado.Defendendo)
@@ -553,6 +751,9 @@ function iniciarBloqueio(ctx: Ctx)
 		local fimJanela = agora + JANELA_PARRY_NPC
 		task.delay(JANELA_PARRY_NPC, function()
 			if ctx.estado.destruido then
+				return
+			end
+			if ctx.estado.bloqueioToken ~= token then
 				return
 			end
 			if (ctx.estado.bloqueandoAte or 0) >= fimJanela then
@@ -565,13 +766,83 @@ function iniciarBloqueio(ctx: Ctx)
 		if ctx.estado.destruido then
 			return
 		end
-		if (ctx.estado.bloqueandoAte or 0) <= os.clock() + 0.001 then
-			ctx.estado.bloqueandoAte = 0
-			definirEstadoBloqueioMaquina(ctx, false, false)
-			if ctx.humanoide.Health > 0 then
-				setEstado(ctx, TiposNPC.Estado.Idle)
-			end
+		if ctx.estado.bloqueioToken ~= token then
+			return
 		end
+		if (ctx.estado.bloqueandoAte or 0) <= os.clock() + 0.001 and not ctx.estado.bloqueioSeguraCombo then
+			pararBloqueio(ctx)
+		end
+	end)
+end
+
+function iniciarBloqueio(ctx: Ctx)
+	iniciarBloqueioInterno(ctx, false)
+end
+
+function iniciarBloqueioCombo(ctx: Ctx)
+	iniciarBloqueioInterno(ctx, true)
+end
+
+function tentarBloqueioPreditivo(ctx: Ctx, alvo: Model, forcar: boolean?)
+	if not lerFlag(ctx.modelo, TiposNPC.Chaves.PodeDefender, false) then
+		return
+	end
+	local agora = os.clock()
+	local emPreparoAposAparado = (ctx.estado.prepararParryAte or 0) > agora
+	if not forcar and not emPreparoAposAparado and (ctx.estado.cooldownPredicaoParry or 0) > agora then
+		return
+	end
+	if not forcar and not emPreparoAposAparado and math.random() > CHANCE_PARRY_PREDITIVO then
+		return
+	end
+	ctx.estado.cooldownPredicaoParry = agora + COOLDOWN_PREDICAO_PARRY
+	local token = (ctx.estado.predicaoToken or 0) + 1
+	ctx.estado.predicaoToken = token
+	task.delay(ATRASO_PARRY_PREDITIVO, function()
+		if ctx.estado.destruido or ctx.humanoide.Health <= 0 then
+			return
+		end
+		if ctx.estado.predicaoToken ~= token then
+			return
+		end
+		if ctx.estado.alvoSubscrito ~= alvo and ctx.estado.alvoAtual ~= alvo then
+			return
+		end
+		local dados = dadosComboAlvo(ctx)
+		if dados and dados.estadoAcao == "AtacandoLeve" then
+			iniciarBloqueioCombo(ctx)
+		else
+			iniciarBloqueio(ctx)
+		end
+	end)
+end
+
+function tentarAtaqueRiposte(ctx: Ctx)
+	local token = (ctx.estado.riposteToken or 0) + 1
+	ctx.estado.riposteToken = token
+	task.delay(ATRASO_ATAQUE_APOS_PARRY, function()
+		if ctx.estado.destruido or ctx.humanoide.Health <= 0 then
+			return
+		end
+		if ctx.estado.riposteToken ~= token then
+			return
+		end
+		if ControladorCombateNPC.EstaAtacando(ctx.modelo) or ControladorCombateNPC.EstaEquipando(ctx.modelo) then
+			return
+		end
+		local alvoRef = ctx.estado.alvoAtual
+		ControladorCombateNPC.AtacarLeve(ctx.modelo, function(): boolean
+			local vivo, hrp = alvoVivoComHRP(alvoRef)
+			if not vivo or not hrp then
+				return false
+			end
+			local alcance = obterAlcanceArma(ctx)
+			if not alcance then
+				return false
+			end
+			local d = (hrp.Position - ctx.modelo:GetPivot().Position).Magnitude
+			return math.abs(d - alcance) <= TOLERANCIA_ALCANCE
+		end)
 	end)
 end
 
@@ -610,9 +881,6 @@ local Combate: Comportamento.Comportamento = {
 		ctx.estado.alvoSubscrito = nil
 		ctx.estado.desconectarAlvo = nil
 		ctx.estado.cooldownPredicaoParry = 0
-		ctx.estado.orbitarAte = 0
-		ctx.estado.proximoOrbit = 0
-		ctx.estado.orbitSinal = 1
 		ctx.estado.velocidadeAnimacaoLocomocao = 1
 		ctx.estado.destruido = false
 		setEstado(ctx, TiposNPC.Estado.Idle)
@@ -637,7 +905,7 @@ local Combate: Comportamento.Comportamento = {
 		setModoCombateAttr(ctx, false)
 	end,
 
-	atualizar = function(ctx: Ctx, _dt: number)
+	atualizar = function(ctx: Ctx, dt: number)
 		if ctx.humanoide.Health <= 0 then
 			setEstado(ctx, TiposNPC.Estado.Morto)
 			return
@@ -682,6 +950,13 @@ local Combate: Comportamento.Comportamento = {
 			if hrpB then
 				orientarParaAlvo(ctx, hrpB.Position)
 			end
+			if alvoMantemComboLeve(ctx) then
+				ctx.estado.bloqueioSeguraCombo = true
+				ctx.estado.bloqueandoAte = math.max(ctx.estado.bloqueandoAte or 0, agora + 0.25)
+			elseif ctx.estado.bloqueioSeguraCombo then
+				pararBloqueio(ctx)
+				return
+			end
 			ctx.humanoide:Move(Vector3.zero, false)
 			ctx.humanoide.WalkSpeed = VELOCIDADE_BLOQUEANDO
 			return
@@ -706,6 +981,10 @@ local Combate: Comportamento.Comportamento = {
 
 		local pos = ctx.modelo:GetPivot().Position
 		local distancia = (alvoHRP.Position - pos).Magnitude
+		local maqAlvo = ctx.estado.maquinaAlvoSubscrita
+		if maqAlvo and maqAlvo.dados and ehEstadoAtaque(maqAlvo.dados.estadoAcao) then
+			registrarAtaqueAlvo(ctx, alvo, maqAlvo.dados)
+		end
 
 		-- Muito longe: desengaja.
 		if distancia > RAIO_DESEQUIPAR then
@@ -728,11 +1007,15 @@ local Combate: Comportamento.Comportamento = {
 		-- Sempre olha o alvo a partir daqui.
 		orientarParaAlvo(ctx, alvoHRP.Position)
 
-		-- Distancia unica alvo: manter X studs entre NPC e alvo.
-		local distanciaAlvo = obterDistanciaAlvo(ctx)
-		local distMin = math.max(0.5, distanciaAlvo - TOLERANCIA_DISTANCIA_ALVO)
-		local distMax = distanciaAlvo + TOLERANCIA_DISTANCIA_ALVO
-		local distAtaque = distanciaAlvo + MARGEM_ATAQUE_EXTRA
+		local alcance = obterAlcanceArma(ctx)
+		if not alcance then
+			pararMovimento(ctx)
+			ControladorCombateNPC.TocarLocomocao(ctx.modelo, "Idle")
+			setEstado(ctx, TiposNPC.Estado.Idle)
+			return
+		end
+		local dentroDoAlcance = math.abs(distancia - alcance) <= TOLERANCIA_ALCANCE
+		local distanciaCorrer = lerNumero(ctx.modelo, CHAVE_DISTANCIA_CORRER, DISTANCIA_CORRER_PADRAO)
 
 		if emAparado then
 			if podeAndar then
@@ -757,32 +1040,26 @@ local Combate: Comportamento.Comportamento = {
 			return
 		end
 
-		-- Atacando: NPC pode CONTINUAR atacando enquanto recua se estiver muito perto;
-		-- so para o ataque se sair claramente da zona de conforto (verificarAlvo no
-		-- AtacarLeve ja faz esse cancelamento via callback).
+		-- Atacando: continua ajustando somente ate a faixa do alcance da arma.
 		if ControladorCombateNPC.EstaAtacando(ctx.modelo) then
 			if podeAndar then
-				local dirMovimento: Vector3? = nil
-				if distancia < distMin then
-					dirMovimento = pos - alvoHRP.Position
-				elseif distancia > distMax then
-					dirMovimento = alvoHRP.Position - pos
-				end
-				if dirMovimento and dirMovimento.Magnitude > 0.001 then
-					local animLoco = moverDirecaoMantendoOlhar(
-						ctx,
-						alvoHRP.Position,
-						dirMovimento.Unit,
-						VELOCIDADE_BLOQUEANDO,
-						false
-					)
+				local moveu, animLoco = moverParaFaixaDeAlcance(
+					ctx,
+					pos,
+					alvoHRP.Position,
+					distancia,
+					alcance,
+					distanciaCorrer,
+					dt
+				)
+				if moveu and animLoco then
 					ControladorCombateNPC.TocarLocomocao(
 						ctx.modelo,
 						animLoco,
 						ctx.estado.velocidadeAnimacaoLocomocao or 1
 					)
 				else
-					pararMovimento(ctx)
+					ControladorCombateNPC.TocarLocomocao(ctx.modelo, "Idle")
 				end
 			else
 				pararMovimento(ctx)
@@ -790,62 +1067,47 @@ local Combate: Comportamento.Comportamento = {
 			return
 		end
 
-		-- Mantem exatamente a distancia alvo: aproxima ou recua.
-		if distancia > distMax then
-			if podeAndar then
-				local correndo = distancia > DISTANCIA_ANDAR
-				local velocidade = if correndo then VELOCIDADE_CORRENDO else VELOCIDADE_ANDANDO
-				local estadoLoco = if correndo then TiposNPC.Estado.Correndo else TiposNPC.Estado.Andando
-				local dirParaAlvo = (alvoHRP.Position - pos)
-				if dirParaAlvo.Magnitude > 0.001 then
-					local animLoco = moverDirecaoMantendoOlhar(
-						ctx,
-						alvoHRP.Position,
-						dirParaAlvo.Unit,
-						velocidade,
-						correndo
-					)
-					ControladorCombateNPC.TocarLocomocao(
-						ctx.modelo,
-						animLoco,
-						ctx.estado.velocidadeAnimacaoLocomocao or 1
-					)
-					setEstado(ctx, estadoLoco)
-				end
-			else
-				pararMovimento(ctx)
-				ControladorCombateNPC.TocarLocomocao(ctx.modelo, "Idle")
-				setEstado(ctx, TiposNPC.Estado.Idle)
+		if podeAndar then
+			local orbitando, animOrbita = tentarOrbitar(ctx, alvo, pos, alvoHRP.Position, distancia, alcance, agora)
+			if orbitando and animOrbita then
+				ControladorCombateNPC.TocarLocomocao(
+					ctx.modelo,
+					animOrbita,
+					ctx.estado.velocidadeAnimacaoLocomocao or 1
+				)
+				setEstado(ctx, estadoPorAnimacaoLocomocao(animOrbita))
+				return
 			end
-		elseif distancia < distMin then
-			if podeAndar then
-				local dirParaTras = pos - alvoHRP.Position
-				if dirParaTras.Magnitude > 0.001 then
-					local animLoco = moverDirecaoMantendoOlhar(
-						ctx,
-						alvoHRP.Position,
-						dirParaTras.Unit,
-						VELOCIDADE_ANDANDO,
-						false
-					)
-					ControladorCombateNPC.TocarLocomocao(
-						ctx.modelo,
-						animLoco,
-						ctx.estado.velocidadeAnimacaoLocomocao or 1
-					)
-					setEstado(ctx, TiposNPC.Estado.Andando)
-				end
+		end
+
+		if podeAndar then
+			local moveu, animLoco = moverParaFaixaDeAlcance(
+				ctx,
+				pos,
+				alvoHRP.Position,
+				distancia,
+				alcance,
+				distanciaCorrer,
+				dt
+			)
+			if moveu and animLoco then
+				ControladorCombateNPC.TocarLocomocao(
+					ctx.modelo,
+					animLoco,
+					ctx.estado.velocidadeAnimacaoLocomocao or 1
+				)
+				setEstado(ctx, estadoPorAnimacaoLocomocao(animLoco))
 			else
-				pararMovimento(ctx)
 				ControladorCombateNPC.TocarLocomocao(ctx.modelo, "Idle")
 				setEstado(ctx, TiposNPC.Estado.Idle)
 			end
 		else
-			-- Na distancia alvo: parado, pronto para atacar/bloquear.
 			pararMovimento(ctx)
 			ControladorCombateNPC.TocarLocomocao(ctx.modelo, "Idle")
 			setEstado(ctx, TiposNPC.Estado.Idle)
+		end
 
+		if dentroDoAlcance then
 			local podeAtacar = lerFlag(ctx.modelo, TiposNPC.Chaves.PodeAtacar, true)
 			local podeDefender = lerFlag(ctx.modelo, TiposNPC.Chaves.PodeDefender, false)
 			local cooldownBloqueioOK = (ctx.estado.cooldownBloqueio or 0) <= agora
@@ -857,9 +1119,8 @@ local Combate: Comportamento.Comportamento = {
 			end
 			if podeAtacar and cooldownAtaqueOK then
 				local alvoRef: Model = alvo
-				local limiteAtaque = distAtaque + LIMITE_CANCELA_COMBO
 				ControladorCombateNPC.AtacarLeve(ctx.modelo, function(): boolean
-					-- REQ 4: combo segue ate o final, mas aborta se alvo morreu/saiu de alcance.
+					-- Combo segue enquanto o alvo permanece na faixa do alcance da arma.
 					if not alvoRef or not alvoRef.Parent then
 						return false
 					end
@@ -872,7 +1133,7 @@ local Combate: Comportamento.Comportamento = {
 						return false
 					end
 					local d = (p.Position - ctx.modelo:GetPivot().Position).Magnitude
-					return d <= limiteAtaque
+					return math.abs(d - alcance) <= TOLERANCIA_ALCANCE
 				end)
 			end
 		end

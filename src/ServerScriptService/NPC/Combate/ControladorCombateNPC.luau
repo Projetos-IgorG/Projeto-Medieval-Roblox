@@ -6,7 +6,7 @@
 	Responsabilidade: Replica server-side o pipeline canonico de combate do player
 	    para NPCs - carrega/toca animacoes via Animator do servidor, escuta markers
 	    da animacao para ativar hitbox shapecast em WeaponModelRight/Left reais
-	    (clonados do template de Punhos), e delega a resolucao de hit ao
+	    (clonados da arma equipada), e delega a resolucao de hit ao
 	    CombateServidor (mesma maquina de estados, mesmo cooldown de combo,
 	    mesmo parry/bloqueio/dano/knockback que o player).
 	Uso: ModuleScript; require(ControladorCombateNPC) e use Iniciar/EquiparArma/
@@ -49,25 +49,14 @@ local function obterCS(): any?
 	return nil
 end
 
--- =============================================================================
--- Template do WeaponModel de Punhos (mesmo usado pelo player).
--- =============================================================================
+local ATRIBUTOS_ARMA_NPC = {
+	"NPC_ArmaEquipadaId",
+	"NPC_ArmaVisualId",
+	"NPC_ArmaDanoId",
+	"NPC_ArmaId",
+}
 
-local TEMPLATE_WM: Model? = nil
-local function obterTemplateWeaponModel(): Model?
-	if TEMPLATE_WM and TEMPLATE_WM.Parent then
-		return TEMPLATE_WM
-	end
-	local eq = ReplicatedStorage:FindFirstChild("Equipamentos")
-	local mod = eq and eq:FindFirstChild("Modelos")
-	local arm = mod and mod:FindFirstChild("ArmasEquipadas")
-	local pun = arm and arm:FindFirstChild("punhos")
-	local wm = pun and pun:FindFirstChild("WeaponModel")
-	if wm and wm:IsA("Model") then
-		TEMPLATE_WM = wm
-	end
-	return TEMPLATE_WM
-end
+local TEMPLATE_ARMA_PADRAO: Tool? = nil
 
 -- =============================================================================
 -- Estado por NPC.
@@ -88,6 +77,8 @@ type Estado = {
 	trackAtaqueAtual: AnimationTrack?,
 	trackEquipAtual: AnimationTrack?,
 	armaPronta: boolean,
+	armaEquipada: Tool?,
+	alcanceArma: number?,
 	danoLeve: number,
 	verificarAlvo: (() -> boolean)?,
 	destruido: boolean,
@@ -97,9 +88,156 @@ local estados: { [Model]: Estado } = {}
 
 local Mod = {}
 
+local FADE_LOCOMOCAO = 0.18
+local FADE_ENTRADA_ATAQUE = 0.16
+local FADE_SAIDA_ATAQUE = 0.22
+local FADE_CANCELAR_ATAQUE = 0.12
+
 -- =============================================================================
 -- Helpers internos.
 -- =============================================================================
+
+local function obterPastaArmasEquipadas(): Instance?
+	local equipamentos = ReplicatedStorage:FindFirstChild("Equipamentos")
+	local modelos = equipamentos and equipamentos:FindFirstChild("Modelos")
+	return modelos and modelos:FindFirstChild("ArmasEquipadas")
+end
+
+local function obterDadosTool(tool: Tool?): Folder?
+	local dados = tool and tool:FindFirstChild("Dados")
+	if dados and dados:IsA("Folder") then
+		return dados
+	end
+	return nil
+end
+
+local function lerStringDados(tool: Tool?, nome: string): string?
+	local dados = obterDadosTool(tool)
+	local value = dados and dados:FindFirstChild(nome)
+	if value and value:IsA("StringValue") and value.Value ~= "" then
+		return value.Value
+	end
+	return nil
+end
+
+local function lerNumberDados(tool: Tool?, nome: string): number?
+	local dados = obterDadosTool(tool)
+	local value = dados and dados:FindFirstChild(nome)
+	if value and value:IsA("NumberValue") and value.Value > 0 then
+		return value.Value
+	end
+	return nil
+end
+
+local function ehArmaEquipada(tool: Tool?): boolean
+	return lerStringDados(tool, "Tipo") == "ArmasEquipadas"
+end
+
+local function obterTemplateArmaPadrao(): Tool?
+	if TEMPLATE_ARMA_PADRAO and TEMPLATE_ARMA_PADRAO.Parent then
+		return TEMPLATE_ARMA_PADRAO
+	end
+
+	local pasta = obterPastaArmasEquipadas()
+	local tool = pasta and pasta:FindFirstChild("punhos")
+	if tool and tool:IsA("Tool") then
+		TEMPLATE_ARMA_PADRAO = tool
+		return tool
+	end
+	return nil
+end
+
+local function encontrarTemplateArmaPorId(id: string?): Tool?
+	if not id or id == "" then
+		return nil
+	end
+
+	local pasta = obterPastaArmasEquipadas()
+	if not pasta then
+		return nil
+	end
+
+	local direto = pasta:FindFirstChild(id)
+	if direto and direto:IsA("Tool") then
+		return direto
+	end
+
+	local equipada = pasta:FindFirstChild(id .. "-equipada")
+	if equipada and equipada:IsA("Tool") then
+		return equipada
+	end
+
+	for _, child in pasta:GetChildren() do
+		if child:IsA("Tool") then
+			local dadosId = lerStringDados(child, "Id")
+			if dadosId == id then
+				return child
+			end
+		end
+	end
+
+	return nil
+end
+
+local function encontrarToolArmaNoModelo(modelo: Model): Tool?
+	for _, child in modelo:GetChildren() do
+		if child:IsA("Tool") and ehArmaEquipada(child) then
+			return child
+		end
+	end
+	return nil
+end
+
+local function encontrarToolArmaPorAtributo(modelo: Model): Tool?
+	for _, nomeAtributo in ATRIBUTOS_ARMA_NPC do
+		local valor = modelo:GetAttribute(nomeAtributo)
+		if typeof(valor) == "string" then
+			local tool = encontrarTemplateArmaPorId(valor)
+			if tool then
+				return tool
+			end
+		end
+	end
+	return nil
+end
+
+local function registrarArmaEquipada(s: Estado, tool: Tool?): Tool?
+	if not tool then
+		return nil
+	end
+
+	s.armaEquipada = tool
+	s.alcanceArma = lerNumberDados(tool, "Alcance")
+	s.danoLeve = lerNumberDados(tool, "Dano") or s.danoLeve
+	return tool
+end
+
+local function resolverArmaEquipada(s: Estado): Tool?
+	local toolNoModelo = encontrarToolArmaNoModelo(s.modelo)
+	if toolNoModelo then
+		return registrarArmaEquipada(s, toolNoModelo)
+	end
+
+	local toolPorAtributo = encontrarToolArmaPorAtributo(s.modelo)
+	if toolPorAtributo then
+		return registrarArmaEquipada(s, toolPorAtributo)
+	end
+
+	if s.armaEquipada and s.armaEquipada.Parent then
+		return registrarArmaEquipada(s, s.armaEquipada)
+	end
+
+	return registrarArmaEquipada(s, obterTemplateArmaPadrao())
+end
+
+local function obterTemplateWeaponModel(s: Estado): Model?
+	local tool = resolverArmaEquipada(s)
+	local weaponModel = tool and tool:FindFirstChild("WeaponModel")
+	if weaponModel and weaponModel:IsA("Model") then
+		return weaponModel
+	end
+	return nil
+end
 
 local function carregarTrack(animator: Animator, id: string?): AnimationTrack?
 	if not id or id == "" then
@@ -123,7 +261,7 @@ end
 local function pararAnimsExceto(s: Estado, manter: AnimationTrack?, tempoFade: number?)
 	for _, t in s.tracksAnim do
 		if t ~= manter and t.IsPlaying then
-			t:Stop(tempoFade or 0.12)
+			t:Stop(tempoFade or FADE_LOCOMOCAO)
 		end
 	end
 end
@@ -144,7 +282,7 @@ local LOCOMOCAO_NAMES: { [string]: boolean } = {
 local function pararLocomocaoExceto(s: Estado, manter: AnimationTrack?)
 	for nome, t in s.tracksAnim do
 		if LOCOMOCAO_NAMES[nome] and t ~= manter and t.IsPlaying then
-			t:Stop(0.15)
+			t:Stop(FADE_LOCOMOCAO)
 		end
 	end
 end
@@ -157,7 +295,7 @@ local function tocarLoop(s: Estado, nome: string, velocidadeAnimacao: number?)
 	pararLocomocaoExceto(s, t)
 	t.Looped = true
 	if not t.IsPlaying then
-		t:Play(0.15)
+		t:Play(FADE_LOCOMOCAO)
 	end
 	t:AdjustSpeed(velocidadeAnimacao or 1)
 end
@@ -225,8 +363,8 @@ local function limparMarkersAtaque(s: Estado)
 	table.clear(s.conexoesAux)
 end
 
-local function finalizarCombo(s: Estado, restauraIdle: boolean)
-	pararHitboxes(s)
+local function finalizarCombo(s: Estado, restauraIdle: boolean, atrasoIdle: number?)
+	destruirHitboxes(s)
 	limparMarkersAtaque(s)
 	s.indiceCombo = 0
 	s.janelaAtiva = false
@@ -239,7 +377,16 @@ local function finalizarCombo(s: Estado, restauraIdle: boolean)
 	end
 
 	if restauraIdle and not s.destruido and s.armaPronta then
-		tocarLoop(s, "Idle")
+		local atraso = atrasoIdle or 0
+		if atraso > 0 then
+			task.delay(atraso, function()
+				if not s.destruido and s.armaPronta and not s.trackAtaqueAtual then
+					tocarLoop(s, "Idle")
+				end
+			end)
+		else
+			tocarLoop(s, "Idle")
+		end
 	end
 end
 
@@ -265,18 +412,15 @@ local function instalarMarkersAtaque(s: Estado, track: AnimationTrack)
 		onJanelaCombo = function(_ehFinal)
 			s.indiceCombo = s.indiceCombo + 1
 			s.janelaAtiva = true
-			-- Se o IA registrou um verificador de alvo, decide se interrompe o combo
-			-- agora (alvo morto/longe). Caso contrario, deixa a animacao seguir
-			-- ate o final natural do combo (Stopped -> finalizarCombo).
 			if s.verificarAlvo and not s.verificarAlvo() then
 				local t = s.trackAtaqueAtual
 				if t then
 					s.trackAtaqueAtual = nil
 					pcall(function()
-						t:Stop(0)
+						t:Stop(FADE_SAIDA_ATAQUE)
 					end)
 				end
-				finalizarCombo(s, true)
+				finalizarCombo(s, true, FADE_SAIDA_ATAQUE * 0.75)
 				return
 			end
 			local cs = obterCS()
@@ -295,7 +439,7 @@ local function instalarMarkersAtaque(s: Estado, track: AnimationTrack)
 end
 
 -- =============================================================================
--- WeaponModel: clona o template Punhos para os bracos do NPC com Motor6D.
+-- WeaponModel: clona o template da arma equipada para os bracos do NPC com Motor6D.
 -- =============================================================================
 
 local SUFIXO_PARA_BRACO = {
@@ -312,7 +456,7 @@ local function criarWeaponModelMao(s: Estado, mao: string): Model?
 	if not nomeBraco then
 		return nil
 	end
-	local template = obterTemplateWeaponModel()
+	local template = obterTemplateWeaponModel(s)
 	if not template then
 		return nil
 	end
@@ -434,6 +578,8 @@ function Mod.Iniciar(modelo: Model): Estado?
 		trackAtaqueAtual = nil,
 		trackEquipAtual = nil,
 		armaPronta = false,
+		armaEquipada = nil,
+		alcanceArma = nil,
 		danoLeve = (modelo:GetAttribute("DanoLeve") :: number?) or 8,
 		verificarAlvo = nil,
 		destruido = false,
@@ -469,6 +615,15 @@ end
 function Mod.EstaArmaPronta(modelo: Model): boolean
 	local s = estados[modelo]
 	return (s ~= nil and s.armaPronta) == true
+end
+
+function Mod.ObterAlcanceArmaEquipada(modelo: Model): number?
+	local s = estados[modelo]
+	if not s then
+		return nil
+	end
+	resolverArmaEquipada(s)
+	return s.alcanceArma
 end
 
 function Mod.EstaAtacando(modelo: Model): boolean
@@ -690,17 +845,17 @@ function Mod.AtacarLeve(modelo: Model, verificarAlvo: (() -> boolean)?): boolean
 		local e = s.trackEquipAtual
 		s.trackEquipAtual = nil
 		pcall(function()
-			e:Stop(0.05)
+			e:Stop(FADE_CANCELAR_ATAQUE)
 		end)
 	end
 	if s.trackAtaqueAtual and s.trackAtaqueAtual ~= track then
 		local anterior = s.trackAtaqueAtual
 		pcall(function()
-			anterior:Stop(0)
+			anterior:Stop(FADE_CANCELAR_ATAQUE)
 		end)
 	end
 	track.Looped = false
-	track:Play(0.1)
+	track:Play(FADE_ENTRADA_ATAQUE)
 	s.trackAtaqueAtual = track
 
 	instalarMarkersAtaque(s, track)
@@ -720,7 +875,7 @@ function Mod.PararAtaque(modelo: Model)
 		local t = s.trackAtaqueAtual
 		s.trackAtaqueAtual = nil
 		pcall(function()
-			t:Stop(0)
+			t:Stop(FADE_CANCELAR_ATAQUE)
 		end)
 	end
 	s.verificarAlvo = nil

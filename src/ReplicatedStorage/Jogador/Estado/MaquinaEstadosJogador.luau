@@ -97,6 +97,7 @@ export type DadosEstado = {
 
 	janelaComboAtiva: boolean,
 	continuarCombo: boolean,
+	ultimaContinuacaoCombo: number,
 
 	dashando: boolean,
 	ultimoDash: number,
@@ -130,6 +131,7 @@ function MaquinaDeEstados.Novo(entidade: Model)
 
 		janelaComboAtiva = false,
 		continuarCombo = false,
+		ultimaContinuacaoCombo = 0,
 
 		dashando = false,
 		ultimoDash = 0,
@@ -289,7 +291,10 @@ function MaquinaDeEstados:TenteAtacarLeveEmPe(): (boolean, string?, string?)
 	end
 
 	if self.dados.agachado then
-		return false, nil, "Agachado"
+		self.dados.agachado = false
+		if self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Agachado then
+			self:_AlterarEstadoMov(MaquinaDeEstados.EstadoMov.Parado)
+		end
 	end
 
 	if not self:_MovimentoPermiteAtaque() then
@@ -393,6 +398,13 @@ function MaquinaDeEstados:TenteAtacarLeveAgachado(): (boolean, string?, string?)
 
 	self.dados.ultimoAtaqueTipos["AtaqueLeve"] = agora
 	self.dados.ultimoAtaque = agora
+	self.dados.agachado = false
+	if self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Agachado then
+		self:_AlterarEstadoMov(MaquinaDeEstados.EstadoMov.Parado)
+	end
+	self:_PararCorrida()
+	self.dados.janelaComboAtiva = false
+	self.dados.continuarCombo = false
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.AtacandoLeve)
 	self.dados.indiceCombo = 1
 
@@ -550,6 +562,7 @@ function MaquinaDeEstados:TentePararBloqueio(): (boolean, string?)
 
 	self.dados.bloqueando = false
 	self.dados.prontoParaAparar = false
+	self.dados.ultimoParry = tick()
 	self.dados.parryToken += 1
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Nenhuma)
 

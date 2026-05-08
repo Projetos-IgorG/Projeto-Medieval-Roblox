@@ -27,6 +27,10 @@ type Ctx = ViewBase.ContextoView
 
 local Punhos = (IdsCombate :: any).Punhos and (IdsCombate :: any).Punhos.animacoes or {}
 
+local FADE_REACAO_IN = 0.14
+local FADE_REACAO_OUT = 0.18
+local FADE_REACAO_PARA_ATAQUE = 0.16
+
 type Entry = { nome: string, id: string, looped: boolean }
 
 -- Apenas reacoes cliente-side. Locomocao/equip/ataque vem do server Animator.
@@ -51,16 +55,15 @@ local function tocarEstado(ctx: Ctx)
 	if not entry then
 		local tocando = ctx.estado.estadoTocando
 		local trackAtual = tocando and ctx.tracks[tocando]
-		if trackAtual and trackAtual.IsPlaying and not trackAtual.Looped then
+		local indoAtacar = estado == TiposNPC.Estado.Atacando
+		if trackAtual and trackAtual.IsPlaying and not trackAtual.Looped and not indoAtacar then
 			return
 		end
-		-- Estado nao gerenciado pela view (Idle/Andando/...). Para o que estiver
-		-- tocando localmente para nao competir com a anim do server.
 		if ctx.estado.estadoTocando ~= nil then
 			ctx.estado.estadoTocando = nil
 			for _, t in ctx.tracks do
 				if t.IsPlaying then
-					t:Stop(0.15)
+					t:Stop(if indoAtacar then FADE_REACAO_PARA_ATAQUE else FADE_REACAO_OUT)
 				end
 			end
 		end
@@ -77,11 +80,11 @@ local function tocarEstado(ctx: Ctx)
 	end
 	for outro, t in ctx.tracks do
 		if outro ~= entry.nome and t.IsPlaying then
-			t:Stop(0.12)
+			t:Stop(FADE_REACAO_OUT)
 		end
 	end
 	track.Looped = entry.looped
-	track:Play(0.12)
+	track:Play(FADE_REACAO_IN)
 end
 
 local Combate: ViewBase.View = {
@@ -105,7 +108,7 @@ local Combate: ViewBase.View = {
 
 	aoLOD = function(ctx: Ctx, novo: string, _anterior: string)
 		if novo == TiposNPC.LOD.Distante then
-			ViewBase.PararTodasAsTracks(ctx, 0.15)
+			ViewBase.PararTodasAsTracks(ctx, FADE_REACAO_OUT)
 			ctx.estado.estadoTocando = nil
 		else
 			tocarEstado(ctx)

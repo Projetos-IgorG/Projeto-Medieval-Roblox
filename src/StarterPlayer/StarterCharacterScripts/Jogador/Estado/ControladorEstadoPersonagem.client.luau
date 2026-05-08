@@ -300,11 +300,39 @@ local jumpAnimState = {
 local AtualizarAnimacaoMovimento
 local AtualizarBaseIdle
 local ObterAnimacao
+local ObterToolEquipado
 local PararAnimacaoMov
+
+local function obterModoAnimacaoEfetivoParaIdle(): string
+	if estadoAtual.modoAnimacao ~= "Base" then
+		return estadoAtual.modoAnimacao
+	end
+	if estadoAtual.estadoAcao == "Desequipando" then
+		return estadoAtual.modoAnimacao
+	end
+	if not ObterToolEquipado then
+		return estadoAtual.modoAnimacao
+	end
+	local tool = ObterToolEquipado()
+	local dados = tool and tool:FindFirstChild("Dados")
+	if not dados then
+		return estadoAtual.modoAnimacao
+	end
+	local tipoValue = dados:FindFirstChild("Tipo")
+	if not tipoValue or not tipoValue:IsA("StringValue") or tipoValue.Value ~= "ArmasEquipadas" then
+		return estadoAtual.modoAnimacao
+	end
+	local modoValue = dados:FindFirstChild("modoAnimacao") or dados:FindFirstChild("Modo")
+	if modoValue and modoValue:IsA("StringValue") and modoValue.Value ~= "" then
+		return modoValue.Value
+	end
+	return estadoAtual.modoAnimacao
+end
 
 AtualizarBaseIdle = function()
 	local nomeIdle = estadoAtual.agachado and "IdleAgachado" or "Idle"
-	local animId = Modulo_Configuracoes.ObterIdAnimacao(estadoAtual.modoAnimacao, nomeIdle)
+	local modoIdle = obterModoAnimacaoEfetivoParaIdle()
+	local animId = Modulo_Configuracoes.ObterIdAnimacao(modoIdle, nomeIdle)
 
 	if not animId then
 
@@ -1081,7 +1109,7 @@ local equipAnimState = {
 	acessorioJaClonado = false,
 }
 
-local function ObterToolEquipado(): Tool?
+ObterToolEquipado = function(): Tool?
 	if not character then
 		return nil
 	end
@@ -1666,6 +1694,7 @@ PararAnimacaoMov = function(forcarParar: boolean?)
 end
 
 local function PararAnimacaoAcao()
+	GerenciadorHitboxCliente.PararTodas()
 
 	if comboState.animacaoAtiva then
 		LimparConexoesMarkers()

@@ -403,6 +403,7 @@ function ControladorCombate.ProcessarComboContinuado(entidade: Model, proximoInd
 	end
 
 	maquina:DesativarJanelaCombo()
+	maquina.dados.ultimaContinuacaoCombo = tick()
 
 	DebugPrint(string.format("[Combate] %s: Combo continuado para golpe %d", entidade.Name, proximoIndice))
 
@@ -514,14 +515,22 @@ end
 function ControladorCombate.ProcessarAtacarLeveAgachado(entidade: Model)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
-	local sucesso, _tipoAtaque, motivo = maquina:TenteAtacarLeveAgachado()
+	local sucesso, tipoAtaque, motivo = maquina:TenteAtacarLeveAgachado()
 
 	if not sucesso then
 		return false, motivo
 	end
 
-	ControladorCombate._TocarAnimacao(entidade, "AtaqueLeveAgachado")
-	ControladorCombate._AplicarImpulsoAtacante(entidade, "AtaqueLeve")
+	tipoAtaque = tipoAtaque or "AtaqueLeve"
+
+	ControladorCombate._TocarAnimacao(entidade, tipoAtaque)
+	ControladorCombate._AplicarImpulsoAtacante(entidade, tipoAtaque)
+
+	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		local velBloq = Modulo_Configuracoes.ObterConfiguracao("VelocidadeBloqueando") or 6
+		humanoid.WalkSpeed = velBloq * 1.5
+	end
 
 	return true, nil
 end
