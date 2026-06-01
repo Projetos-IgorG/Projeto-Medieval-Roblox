@@ -20,18 +20,10 @@ local MARCADORES = {
 	COMBO_END_FINAL = "ComboEndFinal",
 
 	ATTACK_RELEASE = "AttackRelease",
-	HEAVY_ATTACK = "HeavyAttack",
-
-	HEAVY_ATAQUE_DIREITA = "HeavyAttackRight",
-	HEAVY_ATAQUE_ESQUERDA = "HeavyAttackLeft",
-	HEAVY_ATAQUE_AMBOS = "HeavyAttackBoth",
-
-	HEAVY_ATAQUE_FIM = "HeavyAttackEnd",
 }
 
 export type MarcadoresDetectados = {
 	temAttackRelease: boolean,
-	temHeavyAttack: boolean,
 }
 
 export type CallbacksMarcadores = {
@@ -45,13 +37,6 @@ export type CallbacksMarcadores = {
 	onJanelaCombo: ((ehFinal: boolean) -> ())?,
 
 	onAttackRelease: (() -> ())?,
-	onHeavyAttack: (() -> ())?,
-
-	onHeavyAtaqueDireita: (() -> ())?,
-	onHeavyAtaqueEsquerda: (() -> ())?,
-	onHeavyAtaqueAmbos: (() -> ())?,
-
-	onHeavyAtaqueFim: (() -> ())?,
 }
 
 local Modulo_Combo = {}
@@ -59,7 +44,6 @@ local Modulo_Combo = {}
 function Modulo_Combo.DetectarMarcadores(animationTrack: AnimationTrack): MarcadoresDetectados
 	local resultado: MarcadoresDetectados = {
 		temAttackRelease = false,
-		temHeavyAttack = false,
 	}
 
 	if not animationTrack then
@@ -71,9 +55,6 @@ function Modulo_Combo.DetectarMarcadores(animationTrack: AnimationTrack): Marcad
 
 		local releaseSignal = animationTrack:GetMarkerReachedSignal(MARCADORES.ATTACK_RELEASE)
 		resultado.temAttackRelease = releaseSignal ~= nil
-
-		local heavySignal = animationTrack:GetMarkerReachedSignal(MARCADORES.HEAVY_ATTACK)
-		resultado.temHeavyAttack = heavySignal ~= nil
 	end)
 
 	if not sucesso then
@@ -150,36 +131,6 @@ function Modulo_Combo.ConfigurarListenersMarcadores(
 		end)
 	end
 
-	if callbacks.onHeavyAttack then
-		ConectarMarker(MARCADORES.HEAVY_ATTACK, function()
-			callbacks.onHeavyAttack()
-		end)
-	end
-
-	if callbacks.onHeavyAtaqueDireita then
-		ConectarMarker(MARCADORES.HEAVY_ATAQUE_DIREITA, function()
-			callbacks.onHeavyAtaqueDireita()
-		end)
-	end
-
-	if callbacks.onHeavyAtaqueEsquerda then
-		ConectarMarker(MARCADORES.HEAVY_ATAQUE_ESQUERDA, function()
-			callbacks.onHeavyAtaqueEsquerda()
-		end)
-	end
-
-	if callbacks.onHeavyAtaqueAmbos then
-		ConectarMarker(MARCADORES.HEAVY_ATAQUE_AMBOS, function()
-			callbacks.onHeavyAtaqueAmbos()
-		end)
-	end
-
-	if callbacks.onHeavyAtaqueFim then
-		ConectarMarker(MARCADORES.HEAVY_ATAQUE_FIM, function()
-			callbacks.onHeavyAtaqueFim()
-		end)
-	end
-
 	return function()
 		for _, conexao in ipairs(conexoes) do
 			pcall(function()
@@ -197,7 +148,6 @@ function Modulo_Combo.LogMarcadoresDetectados(marcadores: MarcadoresDetectados, 
 	print("[Modulo_Combo] Marcadores detectados para animação: " .. nome)
 	print("───────────────────────────────────────────────────────────")
 	print("  Tem AttackRelease: " .. tostring(marcadores.temAttackRelease))
-	print("  Tem HeavyAttack: " .. tostring(marcadores.temHeavyAttack))
 	print("═══════════════════════════════════════════════════════════")
 end
 

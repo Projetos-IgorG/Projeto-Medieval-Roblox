@@ -13,12 +13,6 @@ ClientBridge.EstaJanelaComboAtiva = nil :: (() -> boolean)?
 
 ClientBridge.EstaComboAtivo = nil :: (() -> boolean)?
 
-ClientBridge.ContinuarAtaquePesado = nil :: (() -> boolean)?
-
-ClientBridge.EstaAtaquePesadoAtivo = nil :: (() -> boolean)?
-
-ClientBridge.EstaAguardandoSoltarPesado = nil :: (() -> boolean)?
-
 ClientBridge.TentarCancelarAtaquePorDefesa = nil :: (() -> (boolean, string?))?
 
 ClientBridge.ResolverCancelPendente = nil :: (() -> ())?
@@ -45,7 +39,9 @@ ClientBridge.AplicarImpulsoAtaque = nil :: ((string) -> ())?
 
 ClientBridge.EstaSegurandoM1 = nil :: (() -> boolean)?
 
-ClientBridge.EstaCarregandoPesado = nil :: (() -> boolean)?
+ClientBridge.SoltouM1 = nil :: (() -> ())?
+
+ClientBridge.PodeAtacarLeve = nil :: (() -> boolean)?
 
 ClientBridge.ObterEquipamentoBraco = nil :: ((string) -> Tool?)?
 

@@ -71,11 +71,11 @@ end
 function Modulo_Knockback.ObterMagnitudeKnockback(tipoAtaque: string): number
 	local config = Modulo_Configuracoes.ConfiguracaoGlobal
 
-	if tipoAtaque == "AtaquePesado" or tipoAtaque == "AtaqueLeveFinal" then
-		return config.MagnitudeKnockbackPesado
+	if tipoAtaque == "AtaqueLeveFinal" then
+		return 25
 	end
 
-	return config.MagnitudeKnockbackLeve
+	return config.MagnitudeKnockbackLeve or 15
 end
 
 function Modulo_Knockback.ModoPermiteKnockback(modoAnimacao: string): boolean

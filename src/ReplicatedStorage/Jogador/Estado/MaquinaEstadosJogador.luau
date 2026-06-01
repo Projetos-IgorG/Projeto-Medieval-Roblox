@@ -35,9 +35,6 @@ MaquinaDeEstados.EstadoMov = {
 MaquinaDeEstados.EstadoAcao = {
 	Nenhuma = "Nenhuma",
 	AtacandoLeve = "AtacandoLeve",
-	CarregandoPesado = "CarregandoPesado",
-	SoltandoPesado = "SoltandoPesado",
-	AtaquePesado = "AtaquePesado",
 	Defendendo = "Defendendo",
 	DefesaQuebrada = "DefesaQuebrada",
 	Aparando = "Aparando",
@@ -103,6 +100,8 @@ export type DadosEstado = {
 	ultimoDash: number,
 	direcaoDash: string,
 	correndoIntent: boolean?,
+	ultimoComboTerminou: number?,
+	ultimoAtaqueTipos: { [string]: number },
 }
 
 function MaquinaDeEstados.Novo(entidade: Model)
@@ -136,6 +135,7 @@ function MaquinaDeEstados.Novo(entidade: Model)
 		dashando = false,
 		ultimoDash = 0,
 		direcaoDash = "Frente",
+		ultimoComboTerminou = 0,
 	} :: DadosEstado
 
 	-- Listas de listeners (multiplos subscribers, retornam disconnect).
@@ -234,9 +234,6 @@ function MaquinaDeEstados:TentePular(): (boolean, string?)
 
 	if
 		self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.AtacandoLeve
-		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.CarregandoPesado
-		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.SoltandoPesado
-		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.AtaquePesado
 		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Defendendo
 	then
 		return false, "AcaoEmAndamento"
@@ -336,14 +333,9 @@ function MaquinaDeEstados:TenteAtacarLeveEmPe(): (boolean, string?, string?)
 		return false, nil, "AcaoEmAndamento"
 	end
 
-	local cooldown = Modulo_Configuracoes.ObterConfiguracao("CooldownComboLeve") or 0.5
-	local dadosAtaque = self.dados.ultimoAtaqueTipos
-	local ultimoLeve = dadosAtaque and dadosAtaque["AtaqueLeve"] or 0
-	local ultimoPesado = dadosAtaque and dadosAtaque["AtaquePesado"] or 0
-
-	local ultimoAtaque = math.max(ultimoLeve, ultimoPesado)
-
-	if ultimoAtaque > 0 and (agora - ultimoAtaque) < cooldown then
+	local cooldown = Modulo_Configuracoes.ObterConfiguracao("CooldownComboLeve") or 0.8
+	local ultimoTerminou = self.dados.ultimoComboTerminou or 0
+	if ultimoTerminou > 0 and (agora - ultimoTerminou) < cooldown then
 		return false, nil, "Cooldown"
 	end
 
@@ -385,14 +377,9 @@ function MaquinaDeEstados:TenteAtacarLeveAgachado(): (boolean, string?, string?)
 	end
 
 	local agora = tick()
-	local cooldown = Modulo_Configuracoes.ObterConfiguracao("CooldownComboLeve") or 0.5
-	local dadosAtaque = self.dados.ultimoAtaqueTipos
-	local ultimoLeve = dadosAtaque and dadosAtaque["AtaqueLeve"] or 0
-	local ultimoPesado = dadosAtaque and dadosAtaque["AtaquePesado"] or 0
-
-	local ultimoAtaque = math.max(ultimoLeve, ultimoPesado)
-
-	if ultimoAtaque > 0 and (agora - ultimoAtaque) < cooldown then
+	local cooldown = Modulo_Configuracoes.ObterConfiguracao("CooldownComboLeve") or 0.8
+	local ultimoTerminou = self.dados.ultimoComboTerminou or 0
+	if ultimoTerminou > 0 and (agora - ultimoTerminou) < cooldown then
 		return false, nil, "Cooldown"
 	end
 
@@ -409,69 +396,6 @@ function MaquinaDeEstados:TenteAtacarLeveAgachado(): (boolean, string?, string?)
 	self.dados.indiceCombo = 1
 
 	return true, "AtaqueLeve", nil
-end
-
-function MaquinaDeEstados:TenteCarregarPesado(): (boolean, string?)
-	if self:_EstaBloqueado() then
-		return false, "EstadoBloqueante"
-	end
-
-	if self.dados.agachado then
-		return false, "Agachado"
-	end
-
-	if not self:_MovimentoPermiteAtaque() then
-		return false, "MovimentoInvalido"
-	end
-
-	if self.dados.bloqueando then
-		return false, "Bloqueando"
-	end
-
-	local configModo = Modulo_Configuracoes.ObterModoAnimacao(self.dados.modoAnimacao)
-
-	if not configModo or configModo.tipo ~= "Combate" then
-		return false, "SemCombate"
-	end
-
-	if self.dados.estadoAcao ~= MaquinaDeEstados.EstadoAcao.Nenhuma then
-		return false, "AcaoEmAndamento"
-	end
-
-	local cooldown = Modulo_Configuracoes.ObterConfiguracao("CooldownAtaquePesado") or 2.0
-	local agora = tick()
-	local ultimoPesado = self.dados.ultimoAtaqueTipos and self.dados.ultimoAtaqueTipos["AtaquePesado"] or 0
-	if ultimoPesado > 0 and (agora - ultimoPesado) < cooldown then
-		return false, "Cooldown"
-	end
-
-	self:_PararCorrida()
-
-	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.CarregandoPesado)
-	return true, nil
-end
-
-function MaquinaDeEstados:TenteSoltarPesado(): (boolean, string?)
-	if self.dados.estadoAcao ~= MaquinaDeEstados.EstadoAcao.CarregandoPesado then
-		return false, "NaoCarregando"
-	end
-
-	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.SoltandoPesado)
-	return true, nil
-end
-
-function MaquinaDeEstados:TenteExecutarPesado(): (boolean, string?)
-	if self.dados.estadoAcao ~= MaquinaDeEstados.EstadoAcao.SoltandoPesado then
-		return false, "NaoSoltando"
-	end
-
-	local agora = tick()
-
-	self.dados.ultimoAtaqueTipos["AtaquePesado"] = agora
-
-	self.dados.ultimoAtaque = agora
-	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.AtaquePesado)
-	return true, nil
 end
 
 function MaquinaDeEstados:TenteBloquear(shiftLockAtivo: boolean?): (boolean, string?)
@@ -629,9 +553,6 @@ function MaquinaDeEstados:TenteCorrer(): (boolean, string?)
 
 	if
 		self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.AtacandoLeve
-		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.CarregandoPesado
-		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.SoltandoPesado
-		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.AtaquePesado
 		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Defendendo
 	then
 		return false, "AcaoEmAndamento"
@@ -827,6 +748,10 @@ function MaquinaDeEstados:CompletarAcao()
 		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Aparando
 	then
 		return
+	end
+
+	if self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.AtacandoLeve then
+		self.dados.ultimoComboTerminou = tick()
 	end
 
 	self.dados.indiceCombo = 0

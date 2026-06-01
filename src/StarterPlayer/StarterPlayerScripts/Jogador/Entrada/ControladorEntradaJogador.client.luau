@@ -4,7 +4,7 @@
     Responsabilidade: Detecta inputs do jogador e distribui intencoes para movimento, combate e parkour.
     Uso: LocalScript; roda automaticamente para o jogador local em src/StarterPlayer/StarterPlayerScripts/Jogador/Entrada.
     Nao faz: Nao valida autoridade do servidor, nao salva dados persistentes e nao substitui regras server-side.
-    Funcoes principais: EstaSegurandoM1, EstaCarregandoPesado, EstaEmAnimacaoEquip, OnEquipAnimacaoTerminou, DebugWarn, EnviarAcaoComDebounce
+    Funcoes principais: EstaSegurandoM1, EstaEmAnimacaoEquip, OnEquipAnimacaoTerminou, DebugWarn, EnviarAcaoComDebounce
 ]]
 local DEBUG_ENABLED = false
 
@@ -37,23 +37,7 @@ local ModEquip =
 local Remotos = ReplicatedStorage:WaitForChild("Remotos")
 local TentarAcao = Remotos:WaitForChild("TentarAcao")
 local EquipAnimacaoTerminou = Remotos:WaitForChild("EquipAnimacaoTerminou")
-local AcaoRejeitada = Remotos:FindFirstChild("AcaoRejeitada")
-
-if AcaoRejeitada then
-	AcaoRejeitada.OnClientEvent:Connect(function(acao, motivo)
-		if acao == "CarregarPesado" or acao == "SoltarPesado" then
-			if motivo == "Cooldown" then
-				DebugPrint("[EntradaJogador] Acao rejeitada:", acao, "- motivo: Cooldown (heavy attack em cooldown)")
-			else
-				DebugPrint("[EntradaJogador] Acao rejeitada:", acao, "- motivo:", motivo or "?")
-			end
-		end
-	end)
-end
-
 local Configuracao = {
-
-	TempoCarregarPesado = 0.12,
 
 	CooldownDefesa = 0.5,
 
@@ -73,8 +57,6 @@ local estadoInput = {
 	agachadoAtivo = false,
 	correndoAtivo = false,
 	ultimaDefesa = 0,
-	carregandoPesado = false,
-	ataqueLevePendente = false,
 }
 
 local toolConexoes: { RBXScriptConnection } = {}
@@ -89,13 +71,10 @@ function ClientBridge.EstaSegurandoM1()
 	return estadoInput.mouse1Pressionado
 end
 
-function ClientBridge.EstaCarregandoPesado()
-	return estadoInput.carregandoPesado
-end
 
 local estadoEquip = "idle"
-local toolAtualEquipado = nil
-local toolPendente = nil
+local toolAtualEquipado: Tool? = nil
+local toolPendente: Tool? = nil
 local revertendoTool = false
 
 function ClientBridge.EstaEmAnimacaoEquip()
@@ -143,7 +122,7 @@ end
 local function ObterHumanoid(): Humanoid?
 	local char = player.Character
 	if char then
-		return char:FindFirstChildOfClass("Humanoid")
+		return char:FindFirstChildOfClass("Humanoid") :: Humanoid?
 	end
 	return nil
 end
@@ -174,7 +153,7 @@ ClientBridge.OnEquipAnimacaoTerminou = function(direcaoFinal: number)
 
 		local char = player.Character
 		if char then
-			local toolNoCharacter = char:FindFirstChildOfClass("Tool")
+			local toolNoCharacter = char:FindFirstChildOfClass("Tool") :: Tool?
 			if toolNoCharacter then
 				toolAtualEquipado = toolNoCharacter
 			end
@@ -207,26 +186,31 @@ end
 local function ProcessarMouse1Pressionado()
 	estadoInput.mouse1Pressionado = true
 	estadoInput.tempoMouse1 = tick()
-	estadoInput.carregandoPesado = false
-	estadoInput.ataqueLevePendente = true
 
 	local comboAtivo = ClientBridge.EstaComboAtivo and ClientBridge.EstaComboAtivo()
 	local janelaAtiva = ClientBridge.EstaJanelaComboAtiva and ClientBridge.EstaJanelaComboAtiva()
 
 	if comboAtivo or janelaAtiva then
-
 		if ClientBridge.MarcarContinuarCombo then
 			local marcou = ClientBridge.MarcarContinuarCombo()
 			if marcou then
-
 				EnviarAcao("AtacarLeveEmPe")
-				estadoInput.ataqueLevePendente = false
 				return
 			end
 		end
 	end
 
-	DebugPrint("[EntradaJogador] M1 pressionado - aguardando decisão leve/pesado")
+	if ClientBridge.PodeAtacarLeve and not ClientBridge.PodeAtacarLeve() then
+		DebugPrint("[EntradaJogador] M1 ignorado - ataque em cooldown pós-combo")
+		return
+	end
+
+	DebugPrint("[EntradaJogador] M1 pressionado - iniciando ataque leve")
+	if estadoInput.agachadoAtivo then
+		EnviarAcao("AtacarLeveAgachado")
+	else
+		EnviarAcao("AtacarLeveEmPe")
+	end
 end
 
 local function ProcessarMouse1Solto()
@@ -234,47 +218,10 @@ local function ProcessarMouse1Solto()
 		return
 	end
 
-	local tempoSegurando = tick() - estadoInput.tempoMouse1
 	estadoInput.mouse1Pressionado = false
-
-	if estadoInput.carregandoPesado then
-		DebugPrint("[EntradaJogador] M1 solto - SoltarPesado (carregou por", tempoSegurando, "s)")
-
-		if ClientBridge.ContinuarAtaquePesado then
-			ClientBridge.ContinuarAtaquePesado()
-		end
-
-		EnviarAcao("SoltarPesado")
-		estadoInput.carregandoPesado = false
-		estadoInput.ataqueLevePendente = false
-	elseif estadoInput.ataqueLevePendente then
-
-		DebugPrint("[EntradaJogador] M1 solto - AtaqueLeve (segurou", tempoSegurando, "s)")
-		if estadoInput.agachadoAtivo then
-			EnviarAcao("AtacarLeveAgachado")
-		else
-			EnviarAcao("AtacarLeveEmPe")
-		end
-		estadoInput.ataqueLevePendente = false
-	end
-end
-
-local function ProcessarMouse1Segurar()
-	if not estadoInput.mouse1Pressionado then
-		return
-	end
-
-	if estadoInput.carregandoPesado then
-		return
-	end
-
-	local tempoSegurando = tick() - estadoInput.tempoMouse1
-
-	if tempoSegurando >= Configuracao.TempoCarregarPesado and estadoInput.ataqueLevePendente then
-		DebugPrint("[EntradaJogador] M1 segurado por", tempoSegurando, "s - iniciando CarregarPesado")
-		EnviarAcao("CarregarPesado")
-		estadoInput.carregandoPesado = true
-		estadoInput.ataqueLevePendente = false
+	DebugPrint("[EntradaJogador] M1 solto")
+	if ClientBridge.SoltouM1 then
+		ClientBridge.SoltouM1()
 	end
 end
 
@@ -294,11 +241,6 @@ local function ProcessarMouse2Pressionado()
 			DebugPrint("[EntradaJogador] Ataque cancelado por defesa:", tipoAtaque)
 
 			EnviarAcao("CancelarAtaquePorDefesa", tipoAtaque)
-
-			if tipoAtaque == "CarregandoPesado" then
-				estadoInput.carregandoPesado = false
-				estadoInput.ataqueLevePendente = false
-			end
 
 			local tempoParaDefesa = Modulo_Configuracoes.ObterConfiguracao("TempoSegurandoM2ParaDefesa") or 0.15
 
@@ -582,26 +524,14 @@ UserInputService.InputEnded:Connect(function(input, _gameProcessed)
 	end
 end)
 
-local RunService = game:GetService("RunService")
-local ultimaVerificacao = 0
 
-RunService.Heartbeat:Connect(function()
-	local agora = tick()
-
-	if agora - ultimaVerificacao < 0.1 then
-		return
-	end
-	ultimaVerificacao = agora
-
-	ProcessarMouse1Segurar()
-end)
 
 local function OnChildAdded(child)
 	if child:IsA("Tool") then
 
 		local char = player.Character
 		if char then
-			local humanoid = char:FindFirstChild("Humanoid")
+			local humanoid = char:FindFirstChild("Humanoid") :: Humanoid?
 			if humanoid and humanoid.Health <= 0 then
 
 				local dados = child:FindFirstChild("Dados")
@@ -635,12 +565,10 @@ local function ConfigurarCharacter(char)
 		mouse1Pressionado = false,
 		mouse2Pressionado = false,
 		tempoMouse1 = 0,
+		tempoMouse2 = 0,
 		agachadoAtivo = false,
 		correndoAtivo = false,
 		ultimaDefesa = 0,
-
-		carregandoPesado = false,
-		ataqueLevePendente = false,
 	}
 
 	estadoEquip = "idle"
@@ -651,7 +579,7 @@ local function ConfigurarCharacter(char)
 	char.ChildAdded:Connect(OnChildAdded)
 	char.ChildRemoved:Connect(OnChildRemoved)
 
-	local humanoid = char:WaitForChild("Humanoid")
+	local humanoid = char:WaitForChild("Humanoid") :: Humanoid
 	humanoid.Died:Connect(function()
 
 		estadoEquip = "idle"

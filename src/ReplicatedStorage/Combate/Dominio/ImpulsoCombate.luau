@@ -53,11 +53,11 @@ end
 function Modulo_Impulso.ObterMagnitudeImpulso(tipoAtaque: string): number
 	local config = Modulo_Configuracoes.ConfiguracaoGlobal
 
-	if tipoAtaque == "AtaquePesado" or tipoAtaque == "AtaqueLeveFinal" then
-		return config.MagnitudeImpulsoAtaquePesado
+	if tipoAtaque == "AtaqueLeveFinal" then
+		return 25
 	end
 
-	return config.MagnitudeImpulsoAtaqueLeve
+	return config.MagnitudeImpulsoAtaqueLeve or 20
 end
 
 function Modulo_Impulso.ModoPermiteImpulso(modoAnimacao: string): boolean

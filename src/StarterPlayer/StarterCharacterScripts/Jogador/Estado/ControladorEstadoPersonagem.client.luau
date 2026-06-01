@@ -4,7 +4,7 @@
     Responsabilidade: Coordena estados locais do personagem, animacoes e respostas de movimento.
     Uso: LocalScript; roda automaticamente para o jogador local em src/StarterPlayer/StarterCharacterScripts/Jogador/Estado.
     Nao faz: Nao valida autoridade do servidor, nao salva dados persistentes e nao substitui regras server-side.
-    Funcoes principais: MarcarContinuarCombo, EstaJanelaComboAtiva, EstaComboAtivo, ContinuarAtaquePesado, EstaAtaquePesadoAtivo, EstaAguardandoSoltarPesado
+    Funcoes principais: MarcarContinuarCombo, EstaJanelaComboAtiva, EstaComboAtivo
 ]]
 local DEBUG_ENABLED = false
 
@@ -25,11 +25,14 @@ local humanoid = character:WaitForChild("Humanoid")
 local animator = humanoid:WaitForChild("Animator")
 
 local Modulos = ReplicatedStorage
-local Modulo_Configuracoes = require(Modulos:WaitForChild("Combate"):WaitForChild("Configuracoes"):WaitForChild("ConfigCombate"))
+local Modulo_Configuracoes =
+	require(Modulos:WaitForChild("Combate"):WaitForChild("Configuracoes"):WaitForChild("ConfigCombate"))
 local Modulo_Combo = require(Modulos:WaitForChild("Combate"):WaitForChild("Dominio"):WaitForChild("ComboCombate"))
-local GerenciadorHitboxCliente = require(Modulos:WaitForChild("Combate"):WaitForChild("Hitbox"):WaitForChild("GerenciadorHitboxCliente"))
+local GerenciadorHitboxCliente =
+	require(Modulos:WaitForChild("Combate"):WaitForChild("Hitbox"):WaitForChild("GerenciadorHitboxCliente"))
 
-local ClientBridge = require(Modulos:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
+local ClientBridge =
+	require(Modulos:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
 
 local TIMINGS = {
 	JumpHold = 0.28,
@@ -38,8 +41,8 @@ local TIMINGS = {
 	MoveFadeIn = 0.18,
 	MoveFadeOut = 0.18,
 
-	ActionFadeIn = 0.10,
-	ActionFadeOut = 0.10,
+	ActionFadeIn = 0.20,
+	ActionFadeOut = 0.20,
 
 	SoftEnd = 0.40,
 }
@@ -82,23 +85,16 @@ local movementFlags = {
 	isSwimming = false,
 	isDashing = false,
 }
-local parkourState = {
+export type ParkourState = {
+	ativo: boolean,
+	estadoAcaoAnterior: string,
+}
+local parkourState: ParkourState = {
 	ativo = false,
 	estadoAcaoAnterior = "Nenhuma",
 }
 
 local isShiftHeld = false
-
-local heavyAttackState = {
-	animacao = nil,
-	aguardandoSoltar = false,
-	conexoesMarkers = {},
-	conexaoTermino = nil,
-	earlyCancelTimer = nil,
-	earlyCancelExecutado = false,
-	tempoInicio = 0,
-	conexaoMonitorReversao = nil :: RBXScriptConnection?,
-}
 
 local function ObterVelocidadeInicial()
 	return Modulo_Configuracoes.ObterConfiguracao("VelocidadeInicialMovimento") or 5
@@ -108,6 +104,30 @@ local velocidadeRampAlvo = ObterVelocidadeInicial()
 local velocidadeRampAtual = ObterVelocidadeInicial()
 local rampAtivo = true
 local rampSnap = false -- forca aplicar alvo sem interpolar (estados nao-locomocao)
+
+export type HitFreezeState = {
+	ativo: boolean,
+	velocidadeOriginal: number,
+	timer: thread?,
+}
+local hitFreezeState: HitFreezeState = {
+	ativo = false,
+	velocidadeOriginal = 1,
+	timer = nil,
+}
+
+export type SolidHitRewindState = {
+	ativo: boolean,
+	conexaoMonitor: RBXScriptConnection?,
+	tempoAlvoRetorno: number,
+}
+local solidHitRewindState: SolidHitRewindState = {
+	ativo = false,
+	conexaoMonitor = nil,
+	tempoAlvoRetorno = 0,
+}
+
+local ultimoTempoHitboxAtivou = 0
 
 humanoid.WalkSpeed = velocidadeRampAtual
 
@@ -119,12 +139,7 @@ AtualizarVelocidadeLocal = function()
 	local VelCorrendo = Modulo_Configuracoes.ObterConfiguracao("VelocidadeCorrendo")
 	local VelAndando = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAndando")
 
-	local emCombate = (
-		estadoAtual.estadoAcao == "AtacandoLeve"
-		or estadoAtual.estadoAcao == "CarregandoPesado"
-		or estadoAtual.estadoAcao == "SoltandoPesado"
-		or estadoAtual.estadoAcao == "AtaquePesado"
-	)
+	local emCombate = (estadoAtual.estadoAcao == "AtacandoLeve")
 
 	if emCombate then
 		local velBloq = VelBloq or 8
@@ -244,7 +259,6 @@ local function SincronizarStatusLocal()
 			)
 		end
 	end
-
 end
 
 local animacoesCarregadas = {}
@@ -288,20 +302,24 @@ local ANIMACOES_COM_DIRECAO = {
 
 local ANIMACOES_SEM_LOOP = {
 	Pulando = true,
-
 }
 
-local jumpAnimState = {
+export type JumpAnimState = {
+	animacao: AnimationTrack?,
+	conexaoTermino: RBXScriptConnection?,
+	aguardandoTermino: boolean,
+}
+local jumpAnimState: JumpAnimState = {
 	animacao = nil,
 	conexaoTermino = nil,
 	aguardandoTermino = false,
 }
 
-local AtualizarAnimacaoMovimento
-local AtualizarBaseIdle
-local ObterAnimacao
-local ObterToolEquipado
-local PararAnimacaoMov
+local AtualizarAnimacaoMovimento: () -> ()
+local AtualizarBaseIdle: () -> ()
+local ObterAnimacao: (animId: string) -> AnimationTrack?
+local ObterToolEquipado: () -> Tool?
+local PararAnimacaoMov: (forcarParar: boolean?) -> ()
 
 local function obterModoAnimacaoEfetivoParaIdle(): string
 	if estadoAtual.modoAnimacao ~= "Base" then
@@ -335,7 +353,6 @@ AtualizarBaseIdle = function()
 	local animId = Modulo_Configuracoes.ObterIdAnimacao(modoIdle, nomeIdle)
 
 	if not animId then
-
 		animId = Modulo_Configuracoes.ObterIdAnimacao("Base", nomeIdle)
 	end
 
@@ -347,7 +364,6 @@ AtualizarBaseIdle = function()
 	local novaTrack = ObterAnimacao(animId)
 
 	if novaTrack then
-
 		if animacaoBaseIdle then
 			animacaoBaseIdle:Stop(TIMINGS.MoveFadeOut)
 		end
@@ -360,7 +376,26 @@ AtualizarBaseIdle = function()
 	end
 end
 
-local comboState = {
+export type ComboState = {
+	animacaoAtiva: AnimationTrack?,
+	janelaAtiva: boolean,
+	indiceAtual: number,
+	conexoesMarkers: { any },
+	continuarCombo: boolean,
+	pendingConsume: boolean,
+	janelaTimer: thread?,
+	token: number,
+	earlyCancelTimer: thread?,
+	earlyCancelExecutado: boolean,
+	tempoInicio: number,
+	conexaoMonitorReversao: RBXScriptConnection?,
+	carregando: boolean,
+	multiplicadorDano: number,
+	conexaoCarga: RBXScriptConnection?,
+	tempoInicioCarga: number?,
+	ultimoComboTerminou: number?,
+}
+local comboState: ComboState = {
 	animacaoAtiva = nil,
 	janelaAtiva = false,
 	indiceAtual = 0,
@@ -372,13 +407,46 @@ local comboState = {
 	earlyCancelTimer = nil,
 	earlyCancelExecutado = false,
 	tempoInicio = 0,
-	conexaoMonitorReversao = nil :: RBXScriptConnection?,
+	conexaoMonitorReversao = nil,
+	carregando = false,
+	multiplicadorDano = 1.0,
+	conexaoCarga = nil,
+	tempoInicioCarga = nil,
+	ultimoComboTerminou = nil,
 }
 
 local defenseCancelState = {
 	ultimoCancelamento = 0,
 	cancelPendente = false,
 }
+
+local function LimparConexaoCarga()
+	if comboState.conexaoCarga then
+		comboState.conexaoCarga:Disconnect()
+		comboState.conexaoCarga = nil
+	end
+end
+
+local function IniciarMonitorCarga(track: AnimationTrack)
+	LimparConexaoCarga()
+	local janelaCarga = Modulo_Configuracoes.ObterConfiguracao("JanelaCargaLeve") or 0.25
+
+	comboState.conexaoCarga = RunService.RenderStepped:Connect(function()
+		if not track or not track.IsPlaying or not comboState.carregando then
+			LimparConexaoCarga()
+			return
+		end
+
+		local tempoCargaDecorrido = track.TimePosition - (comboState.tempoInicioCarga or 0)
+		if tempoCargaDecorrido >= janelaCarga then
+			comboState.carregando = false
+			track:AdjustSpeed(1.0)
+			comboState.multiplicadorDano = Modulo_Configuracoes.ObterConfiguracao("MultiplicadorDanoMaximoCarga") or 1.2
+			LimparConexaoCarga()
+			DebugPrint("[ControladorEstado] Carga máxima atingida - auto release")
+		end
+	end)
+end
 
 local function LimparConexoesMarkers()
 	for _, conexao in ipairs(comboState.conexoesMarkers) do
@@ -408,6 +476,7 @@ local function OnComboAnimacaoTerminou()
 	DebugPrint("[ControladorEstado] Combo animação terminou")
 
 	LimparConexoesMarkers()
+	LimparConexaoCarga()
 
 	GerenciadorHitboxCliente.PararTodas()
 
@@ -419,6 +488,10 @@ local function OnComboAnimacaoTerminou()
 	comboState.token = 0
 	comboState.earlyCancelExecutado = false
 	comboState.tempoInicio = 0
+	comboState.carregando = false
+	comboState.multiplicadorDano = 1.0
+	comboState.tempoInicioCarga = nil
+	comboState.ultimoComboTerminou = tick()
 
 	estadoAtual.estadoAcao = "Nenhuma"
 
@@ -437,6 +510,25 @@ local function OnComboAnimacaoTerminou()
 	AtualizarAnimacaoMovimento()
 end
 
+local function ContinuarComboEVerificarCarga(track: AnimationTrack)
+	comboState.tempoInicioCarga = track.TimePosition
+	comboState.carregando = false
+	comboState.multiplicadorDano = 1.0
+	LimparConexaoCarga()
+
+	local aindaSegurando = ClientBridge.EstaSegurandoM1 and ClientBridge.EstaSegurandoM1()
+	if aindaSegurando then
+		comboState.carregando = true
+		local velCarga = Modulo_Configuracoes.ObterConfiguracao("VelocidadeCargaAtaque") or 0.4
+		track:AdjustSpeed(velCarga)
+		IniciarMonitorCarga(track)
+		DebugPrint("[ControladorEstado] Combo continuado: carregando próximo golpe")
+	else
+		track:AdjustSpeed(1.0)
+		DebugPrint("[ControladorEstado] Combo continuado: golpe normal")
+	end
+end
+
 local function OnMarkerJanelaCombo(ehFinal: boolean)
 	if not comboState.animacaoAtiva then
 		return
@@ -450,8 +542,13 @@ local function OnMarkerJanelaCombo(ehFinal: boolean)
 	comboState.janelaAtiva = true
 	comboState.continuarCombo = false
 
-	DebugPrint(string.format("[ControladorEstado] Janela de combo ativada (golpe %d, final=%s)",
-		comboState.indiceAtual, tostring(ehFinal)))
+	DebugPrint(
+		string.format(
+			"[ControladorEstado] Janela de combo ativada (golpe %d, final=%s)",
+			comboState.indiceAtual,
+			tostring(ehFinal)
+		)
+	)
 
 	local combo = Modulo_Configuracoes.ObterConfiguracaoCombo(estadoAtual.modoAnimacao)
 	if not combo then
@@ -467,7 +564,7 @@ local function OnMarkerJanelaCombo(ehFinal: boolean)
 		comboState.janelaAtiva = false
 
 		if comboState.animacaoAtiva and comboState.animacaoAtiva.IsPlaying then
-			comboState.animacaoAtiva:AdjustSpeed(1)
+			ContinuarComboEVerificarCarga(comboState.animacaoAtiva)
 		end
 
 		TentarAcao:FireServer("ComboContinuado", comboState.indiceAtual + 1)
@@ -475,7 +572,6 @@ local function OnMarkerJanelaCombo(ehFinal: boolean)
 	end
 
 	comboState.janelaTimer = task.delay(combo.janelaCombo, function()
-
 		if myToken ~= comboState.token then
 			return
 		end
@@ -485,18 +581,16 @@ local function OnMarkerJanelaCombo(ehFinal: boolean)
 		end
 
 		if comboState.continuarCombo then
-
 			DebugPrint("[ControladorEstado] Combo continuando - velocidade restaurada")
 			comboState.janelaAtiva = false
 			comboState.continuarCombo = false
 
 			if comboState.animacaoAtiva and comboState.animacaoAtiva.IsPlaying then
-				comboState.animacaoAtiva:AdjustSpeed(1)
+				ContinuarComboEVerificarCarga(comboState.animacaoAtiva)
 			end
 
 			TentarAcao:FireServer("ComboContinuado", comboState.indiceAtual + 1)
 		else
-
 			DebugPrint("[ControladorEstado] Janela expirou - combo terminando")
 			comboState.janelaAtiva = false
 
@@ -511,6 +605,20 @@ end
 
 local function OnMarkerAtaquePorMao(indiceGolpe: number, tipoMarcador: string)
 	DebugPrint(string.format("[ControladorEstado] Marker %s - golpe %d", tipoMarcador, indiceGolpe))
+
+	if comboState.carregando then
+		comboState.carregando = false
+		LimparConexaoCarga()
+		if comboState.animacaoAtiva then
+			comboState.animacaoAtiva:AdjustSpeed(1.0)
+		end
+		comboState.multiplicadorDano = Modulo_Configuracoes.ObterConfiguracao("MultiplicadorDanoMaximoCarga") or 1.2
+		DebugPrint("[ControladorEstado] Marker de ataque atingido durante carga - auto release total")
+	end
+
+	if comboState.animacaoAtiva then
+		ultimoTempoHitboxAtivou = comboState.animacaoAtiva.TimePosition
+	end
 
 	local tipoAtaque = Modulo_Configuracoes.ObterTipoAtaquePorIndice(estadoAtual.modoAnimacao, indiceGolpe)
 
@@ -554,13 +662,14 @@ local function OnMarkerAtaquePorMao(indiceGolpe: number, tipoMarcador: string)
 				)
 
 				comboState.earlyCancelTimer = task.delay(tempoParaEarlyCancel, function()
-
 					if
 						comboState.animacaoAtiva
 						and comboState.animacaoAtiva.IsPlaying
 						and not comboState.earlyCancelExecutado
 					then
 						comboState.earlyCancelExecutado = true
+						comboState.ultimoComboTerminou = tick()
+						comboState.tempoInicioCarga = nil
 						DebugPrint("[ControladorEstado] Early cancel executado - mudando estado para Normal")
 
 						GerenciadorHitboxCliente.PararTodas()
@@ -590,82 +699,6 @@ local function OnMarkerAtaqueFim()
 	GerenciadorHitboxCliente.PararTodas()
 end
 
-local function OnMarkerHeavyAtaquePorMao(tipoMarcador: string)
-	DebugPrint(string.format("[ControladorEstado] Marker %s - heavy attack", tipoMarcador))
-
-	local tipoAtaque = "AtaquePesado"
-
-	if ClientBridge.AplicarImpulsoAtaque then
-		ClientBridge.AplicarImpulsoAtaque(tipoAtaque)
-	end
-
-	if tipoMarcador == "HeavyAttackRight" then
-		GerenciadorHitboxCliente.OnMarkerAttackRight()
-	elseif tipoMarcador == "HeavyAttackLeft" then
-		GerenciadorHitboxCliente.OnMarkerAttackLeft()
-	elseif tipoMarcador == "HeavyAttackBoth" then
-		GerenciadorHitboxCliente.OnMarkerAttackBoth()
-	end
-
-	local hrp = character:FindFirstChild("HumanoidRootPart")
-	local dados = {
-		tipoMarcador = tipoMarcador,
-		cframe = hrp and hrp.CFrame or nil,
-	}
-	TentarAcao:FireServer("HeavyAttackHitbox", dados)
-
-	if heavyAttackState.animacao and heavyAttackState.animacao.IsPlaying then
-		local track = heavyAttackState.animacao
-		local janelaEarlyCancel = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelamentoAtaquePesado") or 0.2
-		local speed = math.max(track.Speed, 0.1)
-		local tempoRestante = (track.Length - track.TimePosition) / speed
-
-		if tempoRestante > janelaEarlyCancel and janelaEarlyCancel > 0 then
-			local tempoParaEarlyCancel = tempoRestante - janelaEarlyCancel
-			DebugPrint(
-				string.format(
-					"[ControladorEstado] Heavy attack early cancel agendado: %.2fs restante, early cancel em %.2fs",
-					tempoRestante,
-					tempoParaEarlyCancel
-				)
-			)
-
-			heavyAttackState.earlyCancelTimer = task.delay(tempoParaEarlyCancel, function()
-
-				if
-					heavyAttackState.animacao
-					and heavyAttackState.animacao.IsPlaying
-					and not heavyAttackState.earlyCancelExecutado
-				then
-					heavyAttackState.earlyCancelExecutado = true
-					DebugPrint("[ControladorEstado] Heavy attack early cancel executado - mudando estado para Normal")
-
-					GerenciadorHitboxCliente.PararTodas()
-
-					estadoAtual.estadoAcao = "Nenhuma"
-
-					TentarAcao:FireServer("HeavyAttackEarlyCancel")
-
-					if isShiftHeld then
-						movementFlags.isRunning = true
-						estadoAtual.estadoMov = "Correndo"
-						estadoAtual.correndo = true
-					end
-
-					AtualizarVelocidadeLocal()
-
-					AtualizarAnimacaoMovimento()
-				end
-			end)
-		end
-	end
-end
-
-local function OnMarkerHeavyAtaqueFim()
-	DebugPrint("[ControladorEstado] Marker HeavyAttackEnd - parando hitboxes")
-	GerenciadorHitboxCliente.PararTodas()
-end
-
 local function ConfigurarMarkersCombo(track: AnimationTrack)
 	LimparConexoesMarkers()
 
@@ -686,18 +719,6 @@ local function ConfigurarMarkersCombo(track: AnimationTrack)
 		onAtaqueFim = OnMarkerAtaqueFim,
 
 		onJanelaCombo = OnMarkerJanelaCombo,
-
-		onHeavyAtaqueDireita = function()
-			OnMarkerHeavyAtaquePorMao("HeavyAttackRight")
-		end,
-		onHeavyAtaqueEsquerda = function()
-			OnMarkerHeavyAtaquePorMao("HeavyAttackLeft")
-		end,
-		onHeavyAtaqueAmbos = function()
-			OnMarkerHeavyAtaquePorMao("HeavyAttackBoth")
-		end,
-
-		onHeavyAtaqueFim = OnMarkerHeavyAtaqueFim,
 	})
 
 	local mockConexao = {
@@ -712,7 +733,6 @@ local function ConfigurarMarkersCombo(track: AnimationTrack)
 	table.insert(comboState.conexoesMarkers, mockConexao :: any)
 
 	local conexaoStopped = track.Stopped:Connect(function()
-
 		if comboState.animacaoAtiva == track then
 			OnComboAnimacaoTerminou()
 		end
@@ -723,7 +743,6 @@ local function ConfigurarMarkersCombo(track: AnimationTrack)
 end
 
 function ClientBridge.MarcarContinuarCombo()
-
 	if comboState.janelaAtiva then
 		comboState.continuarCombo = true
 		DebugPrint("[ControladorEstado] Input de continuar combo registrado (janela ativa)")
@@ -747,44 +766,83 @@ function ClientBridge.EstaComboAtivo()
 	return comboState.animacaoAtiva and comboState.animacaoAtiva.IsPlaying
 end
 
-local function LimparConexoesHeavyAttack()
-	for _, conexao in ipairs(heavyAttackState.conexoesMarkers) do
-		if conexao and conexao.Connected then
-			conexao:Disconnect()
-		end
-	end
-	heavyAttackState.conexoesMarkers = {}
-
-	if heavyAttackState.conexaoTermino then
-		heavyAttackState.conexaoTermino:Disconnect()
-		heavyAttackState.conexaoTermino = nil
-	end
-
-	if heavyAttackState.earlyCancelTimer then
-		pcall(task.cancel, heavyAttackState.earlyCancelTimer)
-		heavyAttackState.earlyCancelTimer = nil
-	end
-
-	if heavyAttackState.conexaoMonitorReversao then
-		heavyAttackState.conexaoMonitorReversao:Disconnect()
-		heavyAttackState.conexaoMonitorReversao = nil
-	end
+function ClientBridge.PodeAtacarLeve(): boolean
+	local agora = tick()
+	local ultimoTerminou = comboState.ultimoComboTerminou or 0
+	local cooldown = Modulo_Configuracoes.ObterConfiguracao("CooldownComboLeve") or 0.8
+	return (agora - ultimoTerminou) >= cooldown
 end
 
-local function OnHeavyAttackTerminou()
-	DebugPrint("[ControladorEstado] Animação de ataque pesado terminou")
+-- ═══════════════════════════════════════════════════════════════════
+-- Hit Freeze: micro-pausa ao acertar entidade
+-- ═══════════════════════════════════════════════════════════════════
+
+local function LimparHitFreeze()
+	if hitFreezeState.timer then
+		pcall(task.cancel, hitFreezeState.timer)
+		hitFreezeState.timer = nil
+	end
+	hitFreezeState.ativo = false
+end
+
+local function AplicarHitFreeze()
+	local track = comboState.animacaoAtiva
+	if not track or not track.IsPlaying then
+		return
+	end
+	if hitFreezeState.ativo or solidHitRewindState.ativo then
+		return
+	end
+
+	local velFreeze = Modulo_Configuracoes.ObterConfiguracao("VelocidadeHitFreeze") or 0.2
+	local durFreeze = Modulo_Configuracoes.ObterConfiguracao("DuracaoHitFreeze") or 0.1
+
+	hitFreezeState.ativo = true
+	hitFreezeState.velocidadeOriginal = track.Speed
+	track:AdjustSpeed(velFreeze)
+
+	hitFreezeState.timer = task.delay(durFreeze, function()
+		if track and track.IsPlaying and hitFreezeState.ativo then
+			track:AdjustSpeed(hitFreezeState.velocidadeOriginal)
+		end
+		hitFreezeState.ativo = false
+		hitFreezeState.timer = nil
+	end)
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Rewind em parte sólida: reverte animação até o marker de hitbox
+-- ═══════════════════════════════════════════════════════════════════
+
+local function LimparRewindSolido()
+	if solidHitRewindState.conexaoMonitor then
+		solidHitRewindState.conexaoMonitor:Disconnect()
+		solidHitRewindState.conexaoMonitor = nil
+	end
+	solidHitRewindState.ativo = false
+	solidHitRewindState.tempoAlvoRetorno = 0
+end
+
+local function FinalizarRewindSolido(ehCombo: boolean)
+	LimparRewindSolido()
+	LimparConexaoCarga()
+
 	GerenciadorHitboxCliente.PararTodas()
 
-	local earlyCancelJaExecutado = heavyAttackState.earlyCancelExecutado
+	if ehCombo then
+		LimparConexoesMarkers()
+		comboState.animacaoAtiva = nil
+		comboState.janelaAtiva = false
+		comboState.indiceAtual = 0
+		comboState.continuarCombo = false
+		comboState.pendingConsume = false
+		comboState.token = 0
+		comboState.earlyCancelExecutado = false
+		comboState.tempoInicio = 0
+		comboState.carregando = false
+		comboState.multiplicadorDano = 1.0
 
-	LimparConexoesHeavyAttack()
-	heavyAttackState.animacao = nil
-	heavyAttackState.aguardandoSoltar = false
-	heavyAttackState.earlyCancelExecutado = false
-
-	if earlyCancelJaExecutado then
-		DebugPrint("[ControladorEstado] Early cancel já executado, ignorando término normal")
-		return
+		TentarAcao:FireServer("ComboTerminou")
 	end
 
 	estadoAtual.estadoAcao = "Nenhuma"
@@ -796,182 +854,69 @@ local function OnHeavyAttackTerminou()
 	end
 
 	AtualizarVelocidadeLocal()
-
+	AtualizarBaseIdle()
 	AtualizarAnimacaoMovimento()
-
-	local acaoNome = "AtaquePesado"
-	local ok, err = pcall(function()
-		local rem = ReplicatedStorage:FindFirstChild("Remotos")
-		if rem and rem:FindFirstChild("AcaoAnimacaoTerminou") then
-			rem:FindFirstChild("AcaoAnimacaoTerminou"):FireServer(acaoNome)
-		end
-	end)
-	if not ok then
-		DebugPrint("[ControladorEstado] Falha ao notificar servidor do término da ação:", err)
-	end
 end
 
-local function OnMarkerAttackRelease()
-	DebugPrint("[ControladorEstado] Marcador AttackRelease atingido")
-
-	if not heavyAttackState.animacao or not heavyAttackState.animacao.IsPlaying then
+local function AplicarRewindParteSolida()
+	if solidHitRewindState.ativo then
 		return
 	end
 
-	local aindaSegurando = ClientBridge.EstaSegurandoM1 and ClientBridge.EstaSegurandoM1()
-
-	if aindaSegurando then
-
-		heavyAttackState.animacao:AdjustSpeed(0)
-		heavyAttackState.aguardandoSoltar = true
-		DebugPrint("[ControladorEstado] Animação pausada - aguardando soltar M1")
-	else
-
-		if ClientBridge.AplicarImpulsoAtaque then
-			ClientBridge.AplicarImpulsoAtaque("AtaquePesado")
-		end
-		DebugPrint("[ControladorEstado] M1 já foi solto - animação continua, impulso aplicado")
+	local track = comboState.animacaoAtiva
+	if not track or not track.IsPlaying then
+		return
 	end
-end
 
-local function OnMarkerHeavyAttack()
-	DebugPrint("[ControladorEstado] Marcador HeavyAttack atingido - ativando hitbox")
+	LimparHitFreeze()
 
-	GerenciadorHitboxCliente.OnMarkerAttackRight()
+	solidHitRewindState.ativo = true
+	solidHitRewindState.tempoAlvoRetorno = ultimoTempoHitboxAtivou
 
-	local hrp = character:FindFirstChild("HumanoidRootPart")
-	local dados = {
-		cframe = hrp and hrp.CFrame or nil,
-		tipoMarcador = "AttackRight",
-	}
-	TentarAcao:FireServer("HeavyAttackHitbox", dados)
+	-- Parar hitboxes imediatamente
+	GerenciadorHitboxCliente.PararTodas()
 
-	if heavyAttackState.animacao and heavyAttackState.animacao.IsPlaying then
-		local track = heavyAttackState.animacao
-		local janelaEarlyCancel = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelamentoAtaquePesado") or 0.2
-		local speed = math.max(track.Speed, 0.1)
-		local tempoRestante = (track.Length - track.TimePosition) / speed
+	-- Desconectar listeners para evitar interferência
+	LimparConexoesMarkers()
+	comboState.animacaoAtiva = nil
 
-		if tempoRestante > janelaEarlyCancel and janelaEarlyCancel > 0 then
-			local tempoParaEarlyCancel = tempoRestante - janelaEarlyCancel
-			DebugPrint(
-				string.format(
-					"[ControladorEstado] Heavy attack early cancel agendado: %.2fs restante, early cancel em %.2fs",
-					tempoRestante,
-					tempoParaEarlyCancel
-				)
-			)
+	-- Transição suave: para → micro delay → reverte
+	track:AdjustSpeed(0)
 
-			heavyAttackState.earlyCancelTimer = task.delay(tempoParaEarlyCancel, function()
-
-				if
-					heavyAttackState.animacao
-					and heavyAttackState.animacao.IsPlaying
-					and not heavyAttackState.earlyCancelExecutado
-				then
-					heavyAttackState.earlyCancelExecutado = true
-					DebugPrint("[ControladorEstado] Heavy attack early cancel executado - mudando estado para Normal")
-
-					GerenciadorHitboxCliente.PararTodas()
-
-					estadoAtual.estadoAcao = "Nenhuma"
-
-					TentarAcao:FireServer("HeavyAttackEarlyCancel")
-
-					if isShiftHeld then
-						movementFlags.isRunning = true
-						estadoAtual.estadoMov = "Correndo"
-						estadoAtual.correndo = true
-					end
-
-					AtualizarVelocidadeLocal()
-
-					AtualizarAnimacaoMovimento()
-				end
-			end)
+	task.delay(0.02, function()
+		if not track or not track.IsPlaying then
+			FinalizarRewindSolido(true)
+			return
 		end
-	end
-end
 
-local function ConfigurarMarkersHeavyAttack(track: AnimationTrack)
-	LimparConexoesHeavyAttack()
+		local velRewind = Modulo_Configuracoes.ObterConfiguracao("VelocidadeRewindSolido") or -0.5
+		track:AdjustSpeed(velRewind)
 
-	heavyAttackState.animacao = track
-	heavyAttackState.aguardandoSoltar = false
+		if solidHitRewindState.conexaoMonitor then
+			solidHitRewindState.conexaoMonitor:Disconnect()
+		end
 
-	local limpezaListeners = Modulo_Combo.ConfigurarListenersMarcadores(track, {
+		local tempoInicioRewind = os.clock()
+		local tempoAlvo = ultimoTempoHitboxAtivou > 0 and ultimoTempoHitboxAtivou or 0
 
-		onAttackRelease = OnMarkerAttackRelease,
-
-		onHeavyAtaqueDireita = function()
-			OnMarkerHeavyAtaquePorMao("HeavyAttackRight")
-		end,
-		onHeavyAtaqueEsquerda = function()
-			OnMarkerHeavyAtaquePorMao("HeavyAttackLeft")
-		end,
-		onHeavyAtaqueAmbos = function()
-			OnMarkerHeavyAtaquePorMao("HeavyAttackBoth")
-		end,
-
-		onHeavyAtaqueFim = OnMarkerHeavyAtaqueFim,
-
-		onHeavyAttack = OnMarkerHeavyAttack,
-	})
-
-	local mockConexao = {
-		Connected = true,
-		Disconnect = function(self)
-			if self.Connected then
-				self.Connected = false
-				limpezaListeners()
+		solidHitRewindState.conexaoMonitor = RunService.RenderStepped:Connect(function()
+			if not track or not track.IsPlaying then
+				FinalizarRewindSolido(true)
+				return
 			end
-		end,
-	}
-	table.insert(heavyAttackState.conexoesMarkers, mockConexao :: any)
 
-	heavyAttackState.conexaoTermino = track.Stopped:Connect(function()
-		OnHeavyAttackTerminou()
+			local completo = false
+			if track.TimePosition <= tempoAlvo + 0.015 or os.clock() - tempoInicioRewind >= 0.15 then
+				completo = true
+			end
+
+			if completo or track.TimePosition <= 0 then
+				local fadeOut = Modulo_Configuracoes.ObterConfiguracao("FadeOutRewindSolido") or 0.25
+				track:Stop(fadeOut)
+				FinalizarRewindSolido(true)
+			end
+		end)
 	end)
-
-	DebugPrint("[ControladorEstado] Markers de ataque pesado configurados")
-end
-
-function ClientBridge.ContinuarAtaquePesado()
-	if not heavyAttackState.animacao or not heavyAttackState.animacao.IsPlaying then
-		DebugPrint("[ControladorEstado] ContinuarAtaquePesado - sem animação ativa")
-		return false
-	end
-
-	local velocidadeSoltar = Modulo_Configuracoes.ObterConfiguracao("VelocidadeSoltarPesado") or 1.0
-
-	if heavyAttackState.aguardandoSoltar then
-
-		heavyAttackState.animacao:AdjustSpeed(velocidadeSoltar)
-		heavyAttackState.aguardandoSoltar = false
-
-		if ClientBridge.AplicarImpulsoAtaque then
-			ClientBridge.AplicarImpulsoAtaque("AtaquePesado")
-		end
-
-		DebugPrint(
-			"[ControladorEstado] Animação de ataque pesado retomada com impulso (velocidade:",
-			velocidadeSoltar,
-			")"
-		)
-		return true
-	end
-
-	heavyAttackState.animacao:AdjustSpeed(velocidadeSoltar)
-	DebugPrint("[ControladorEstado] Velocidade ajustada para soltar (velocidade:", velocidadeSoltar, ")")
-	return true
-end
-
-function ClientBridge.EstaAtaquePesadoAtivo()
-	return heavyAttackState.animacao and heavyAttackState.animacao.IsPlaying
-end
-
-function ClientBridge.EstaAguardandoSoltarPesado()
-	return heavyAttackState.aguardandoSoltar
 end
 
 function ClientBridge.TentarCancelarAtaquePorDefesa()
@@ -984,15 +929,17 @@ function ClientBridge.TentarCancelarAtaquePorDefesa()
 	end
 
 	if comboState.animacaoAtiva and comboState.animacaoAtiva.IsPlaying then
-		local tempoDecorrido = agora - comboState.tempoInicio
+		local tempoAnimacao = comboState.animacaoAtiva.TimePosition - (comboState.tempoInicioCarga or 0)
 		local janelaAtaque = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelAtaque") or 0.15
 
-		if comboState.indiceAtual <= 1 and tempoDecorrido <= janelaAtaque then
+		local podeCancelar = (tempoAnimacao <= janelaAtaque) or comboState.carregando
+		if podeCancelar then
 			DebugPrint(
 				string.format(
-					"[ControladorEstado] Defense cancel: Cancelando ataque leve (%.3fs dentro da janela de %.3fs)",
-					tempoDecorrido,
-					janelaAtaque
+					"[ControladorEstado] Defense cancel: Cancelando ataque leve (%.3fs dentro da janela de %.3fs ou carregando=%s)",
+					tempoAnimacao,
+					janelaAtaque,
+					tostring(comboState.carregando)
 				)
 			)
 
@@ -1013,6 +960,7 @@ function ClientBridge.TentarCancelarAtaquePorDefesa()
 			end)
 
 			LimparConexoesMarkers()
+			LimparConexaoCarga()
 			comboState.animacaoAtiva = nil
 			comboState.janelaAtiva = false
 			comboState.indiceAtual = 0
@@ -1021,6 +969,13 @@ function ClientBridge.TentarCancelarAtaquePorDefesa()
 			comboState.token = 0
 			comboState.earlyCancelExecutado = false
 			comboState.tempoInicio = 0
+			comboState.carregando = false
+			comboState.multiplicadorDano = 1.0
+			comboState.tempoInicioCarga = nil
+
+			local cooldownCompleto = Modulo_Configuracoes.ObterConfiguracao("CooldownComboLeve") or 0.4
+			local cooldownCancel = 0.1
+			comboState.ultimoComboTerminou = agora - cooldownCompleto + cooldownCancel
 
 			estadoAtual.estadoAcao = "Nenhuma"
 
@@ -1029,51 +984,6 @@ function ClientBridge.TentarCancelarAtaquePorDefesa()
 			defenseCancelState.cancelPendente = true
 
 			return true, "AtaqueLeve"
-		end
-	end
-
-	if heavyAttackState.animacao and heavyAttackState.animacao.IsPlaying then
-		local tempoDecorrido = agora - heavyAttackState.tempoInicio
-		local janelaCarregar = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelAtaquePesado") or 0.92
-
-		if tempoDecorrido <= janelaCarregar then
-			DebugPrint(
-				string.format(
-					"[ControladorEstado] Defense cancel: Cancelando carregamento pesado (%.3fs dentro da janela de %.3fs)",
-					tempoDecorrido,
-					janelaCarregar
-				)
-			)
-
-			local track = heavyAttackState.animacao
-			local velReversao = Modulo_Configuracoes.ObterConfiguracao("VelocidadeReversaoCancelamento") or -1.5
-			track:AdjustSpeed(velReversao)
-
-			heavyAttackState.conexaoMonitorReversao = RunService.RenderStepped:Connect(function()
-				if not track or not track.IsPlaying or track.TimePosition <= 0.01 then
-					if heavyAttackState.conexaoMonitorReversao then
-						heavyAttackState.conexaoMonitorReversao:Disconnect()
-						heavyAttackState.conexaoMonitorReversao = nil
-					end
-					if track and track.IsPlaying then
-						track:Stop(0.1)
-					end
-				end
-			end)
-
-			LimparConexoesHeavyAttack()
-			heavyAttackState.animacao = nil
-			heavyAttackState.aguardandoSoltar = false
-			heavyAttackState.earlyCancelExecutado = false
-			heavyAttackState.tempoInicio = 0
-
-			estadoAtual.estadoAcao = "Nenhuma"
-
-			defenseCancelState.ultimoCancelamento = agora
-
-			defenseCancelState.cancelPendente = true
-
-			return true, "CarregandoPesado"
 		end
 	end
 
@@ -1092,17 +1002,26 @@ function ClientBridge.CancelarCancelPendente()
 	if defenseCancelState.cancelPendente then
 		defenseCancelState.cancelPendente = false
 		DebugPrint("[ControladorEstado] Cancel pendente cancelado - indo para defesa")
-
 	end
 end
 
-local equipAnimState = {
+export type EquipAnimState = {
+	animacao: AnimationTrack?,
+	direcao: number,
+	modoAlvo: string?,
+	conexaoTermino: RBXScriptConnection?,
+	tempoInicio: number,
+	armaClonada: Tool?,
+	conexaoMarkerEquip: RBXScriptConnection?,
+	conexaoMarkerDesequip: RBXScriptConnection?,
+	acessorioJaClonado: boolean,
+}
+local equipAnimState: EquipAnimState = {
 	animacao = nil,
 	direcao = 0,
 	modoAlvo = nil,
 	conexaoTermino = nil,
 	tempoInicio = 0,
-
 	armaClonada = nil,
 	conexaoMarkerEquip = nil,
 	conexaoMarkerDesequip = nil,
@@ -1113,13 +1032,11 @@ ObterToolEquipado = function(): Tool?
 	if not character then
 		return nil
 	end
-	return character:FindFirstChildOfClass("Tool")
+	return character:FindFirstChildOfClass("Tool") :: Tool?
 end
 
 local function ClonarAcessorioParaJogador()
-
 	if equipAnimState.acessorioJaClonado then
-
 		if equipAnimState.armaClonada and equipAnimState.armaClonada.Parent then
 			DebugPrint("[ControladorEstado] Arma já existe, ignorando")
 			return
@@ -1176,7 +1093,6 @@ local function ClonarAcessorioParaJogador()
 end
 
 local function RemoverAcessorioDoJogador()
-
 	GerenciadorHitboxCliente.DestruirTodas()
 
 	EquipamentoAcao:FireServer("RemoverAcessorio", "RightArm")
@@ -1199,22 +1115,17 @@ local function LimparConexoesMarkersEquip()
 end
 
 local function ConfigurarMarkersEquip(track: AnimationTrack, ehEquipar: boolean)
-
 	LimparConexoesMarkersEquip()
 
 	if ehEquipar then
-
 		equipAnimState.conexaoMarkerEquip = track:GetMarkerReachedSignal("Equip"):Connect(function()
-
 			if equipAnimState.direcao == 1 then
 				ClonarAcessorioParaJogador()
 				DebugPrint("[ControladorEstado] Marker 'Equip' atingido - acessório clonado")
 			end
 		end)
 	else
-
 		equipAnimState.conexaoMarkerDesequip = track:GetMarkerReachedSignal("Desequip"):Connect(function()
-
 			if equipAnimState.direcao == -1 then
 				RemoverAcessorioDoJogador()
 				DebugPrint("[ControladorEstado] Marker 'Desequip' atingido - acessório removido")
@@ -1237,12 +1148,10 @@ local function OnEquipAnimacaoTerminou()
 	equipAnimState.modoAlvo = nil
 
 	if direcaoFinal == 1 then
-
 		if not equipAnimState.acessorioJaClonado then
 			ClonarAcessorioParaJogador()
 		end
 	elseif direcaoFinal == -1 then
-
 		RemoverAcessorioDoJogador()
 	end
 
@@ -1260,7 +1169,6 @@ function ClientBridge.EstaEmAnimacaoEquip()
 end
 
 function ClientBridge.PodeAlterarTool()
-
 	if estadoAtual.estadoAcao ~= "Nenhuma" then
 		return false
 	end
@@ -1272,7 +1180,15 @@ function ClientBridge.PodeAlterarTool()
 	return true
 end
 
-local dashState = {
+export type DashState = {
+	animacao: AnimationTrack?,
+	direcao: string,
+	conexaoTermino: RBXScriptConnection?,
+	velocityConnection: RBXScriptConnection?,
+	earlyCancelTimer: thread?,
+	earlyCancelExecutado: boolean,
+}
+local dashState: DashState = {
 	animacao = nil,
 	direcao = "Frente",
 	conexaoTermino = nil,
@@ -1304,14 +1220,12 @@ local function CalcularDirecaoDashLocal(): string
 	local dotRight = rightXZ:Dot(moveXZ)
 
 	if math.abs(dotForward) >= math.abs(dotRight) then
-
 		if dotForward >= 0 then
 			return "Frente"
 		else
 			return "Tras"
 		end
 	else
-
 		if dotRight >= 0 then
 			return "Direita"
 		else
@@ -1411,13 +1325,16 @@ local function OnDashAnimacaoTerminou()
 	AtualizarAnimacaoMovimento()
 end
 
-local attackImpulseState = {
-	connection = nil :: RBXScriptConnection?,
+export type AttackImpulseState = {
+	connection: RBXScriptConnection?,
+	endTime: number,
+}
+local attackImpulseState: AttackImpulseState = {
+	connection = nil,
 	endTime = 0,
 }
 
 local function PararImpulsoAtaque()
-
 	if attackImpulseState.connection then
 		attackImpulseState.connection:Disconnect()
 		attackImpulseState.connection = nil
@@ -1435,9 +1352,9 @@ local function AplicarImpulsoAtaque(tipoAtaque: string)
 	local magnitude
 	local duracao
 
-	if tipoAtaque == "AtaquePesado" or tipoAtaque == "AtaqueLeveFinal" then
-		magnitude = Modulo_Configuracoes.ObterConfiguracao("MagnitudeImpulsoAtaquePesado") or 25
-		duracao = Modulo_Configuracoes.ObterConfiguracao("DuracaoImpulsoAtaquePesado") or 0.1
+	if tipoAtaque == "AtaqueLeveFinal" then
+		magnitude = Modulo_Configuracoes.ObterConfiguracao("MagnitudeImpulsoAtaqueFinal") or 25
+		duracao = Modulo_Configuracoes.ObterConfiguracao("DuracaoImpulsoAtaqueFinal") or 0.1
 	else
 		magnitude = Modulo_Configuracoes.ObterConfiguracao("MagnitudeImpulsoAtaqueLeve") or 15
 		duracao = Modulo_Configuracoes.ObterConfiguracao("DuracaoImpulsoAtaqueLeve") or 0.1
@@ -1449,7 +1366,6 @@ local function AplicarImpulsoAtaque(tipoAtaque: string)
 	direcaoAtaque = Vector3.new(direcaoAtaque.X, 0, direcaoAtaque.Z).Unit
 
 	attackImpulseState.connection = RunService.RenderStepped:Connect(function(_deltaTime)
-
 		if tick() >= attackImpulseState.endTime then
 			PararImpulsoAtaque()
 			return
@@ -1488,11 +1404,7 @@ local function AplicarKnockbackRecebido(direcao: Vector3, magnitude: number)
 	direcao = Vector3.new(direcao.X, 0, direcao.Z).Unit
 
 	local velocidadeAtual = hrp.AssemblyLinearVelocity
-	hrp.AssemblyLinearVelocity = Vector3.new(
-		direcao.X * magnitude,
-		velocidadeAtual.Y + 5,
-		direcao.Z * magnitude
-	)
+	hrp.AssemblyLinearVelocity = Vector3.new(direcao.X * magnitude, velocidadeAtual.Y + 5, direcao.Z * magnitude)
 
 	DebugPrint(string.format("[ControladorEstado] Knockback recebido: magnitude=%.1f", magnitude))
 end
@@ -1526,13 +1438,11 @@ local function CalcularMultiplicadorDirecao(): number
 	elseif dot > 0.1 then
 		return 1
 	else
-
 		return direcaoAtual
 	end
 end
 
 local function CalcularMovimentoLateral(): (string, number)
-
 	local shiftLockOnOuFirstPerson = (
 		UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter
 		or player.CameraMode == Enum.CameraMode.LockFirstPerson
@@ -1576,9 +1486,6 @@ local function CalcularMovimentoLateral(): (string, number)
 
 	local emCombate = (
 		estadoAtual.estadoAcao == "AtacandoLeve"
-		or estadoAtual.estadoAcao == "CarregandoPesado"
-		or estadoAtual.estadoAcao == "SoltandoPesado"
-		or estadoAtual.estadoAcao == "AtaquePesado"
 		or estadoAtual.estadoAcao == "Defendendo"
 		or estadoAtual.bloqueando
 	)
@@ -1587,7 +1494,6 @@ local function CalcularMovimentoLateral(): (string, number)
 	local prefixo = podeCorrer and "Correndo" or "Andando"
 
 	if temComponenteFrontal then
-
 		if indoParaDireita then
 			if indoParaFrente then
 				return prefixo .. "Direita", 1
@@ -1602,7 +1508,6 @@ local function CalcularMovimentoLateral(): (string, number)
 			end
 		end
 	else
-
 		if indoParaDireita then
 			return prefixo .. "Direita", 1
 		else
@@ -1617,11 +1522,9 @@ local function DefinirVelocidadeMovimento(velocidadeBase: number)
 	end
 
 	if animacaoUsaDirecao then
-
 		local mult = CalcularMultiplicadorDirecao()
 		velocidadeAnimacaoAlvo = velocidadeBase * mult
 	else
-
 		animacaoAtualMov:AdjustSpeed(velocidadeBase)
 	end
 end
@@ -1648,14 +1551,12 @@ end
 
 PararAnimacaoMov = function(forcarParar: boolean?)
 	if animacaoAtualMov then
-
 		if timerPararAnimacao then
 			pcall(task.cancel, timerPararAnimacao)
 			timerPararAnimacao = nil
 		end
 
 		if forcarParar then
-
 			if ANIMACOES_COM_DIRECAO[ultimaAnimacaoMovNome] then
 				walkCycleState.time = animacaoAtualMov.TimePosition
 				walkCycleState.speed = velocidadeAnimacaoAtual
@@ -1667,13 +1568,11 @@ PararAnimacaoMov = function(forcarParar: boolean?)
 			animacaoMovPausada = false
 			ultimaAnimacaoMovNome = nil
 		else
-
 			animacaoMovPausada = true
 			velocidadeAnimacaoAlvo = 0
 
 			timerPararAnimacao = task.delay(TEMPO_MANTER_ANIMACAO, function()
 				if animacaoMovPausada and animacaoAtualMov then
-
 					if ANIMACOES_COM_DIRECAO[ultimaAnimacaoMovNome] then
 						walkCycleState.time = animacaoAtualMov.TimePosition
 						walkCycleState.speed = velocidadeAnimacaoAtual
@@ -1733,7 +1632,6 @@ local function OnJumpAnimacaoTerminou()
 	end
 
 	if movementFlags.isJumping or movementFlags.isFalling then
-
 		movementFlags.isJumping = false
 		movementFlags.isFalling = true
 		estadoAtual.estadoMov = "Caindo"
@@ -1775,30 +1673,24 @@ local function TocarAnimacaoMov(nomeAnimacao: string, velocidadeBase: number?)
 		or (ultimaAnimacaoMovNome == nomeAnimacao and animacaoAtualMov and animacaoAtualMov.IsPlaying)
 
 	if mesmaAnimacao and animacaoAtualMov and animacaoAtualMov.IsPlaying then
-
 		animacaoMovPausada = false
 		animacaoUsaDirecao = usaDirecao
 
 		if not usaDirecao then
-
 			velocidadeAnimacaoAlvo = velocidade
 		else
-
 			velocidadeAnimacaoAlvo = velocidade * CalcularMultiplicadorDirecao()
 		end
 		return
 	end
 
 	if animacaoAtualMov and animacaoAtualMov ~= track then
-
 		PararAnimacaoMov(true)
 	end
 
 	if not animacaoAtualMov or not animacaoAtualMov.IsPlaying then
-
 		local tempoParaRestaurar = 0
 		if usaDirecao then
-
 			if walkCycleState.time > 0 then
 				tempoParaRestaurar = walkCycleState.time
 
@@ -1857,13 +1749,36 @@ local function TocarAnimacaoMov(nomeAnimacao: string, velocidadeBase: number?)
 	ultimaAnimacaoMovNome = nomeAnimacao
 
 	if usaDirecao then
-
 		local mult = CalcularMultiplicadorDirecao()
 		velocidadeAnimacaoAlvo = velocidade * mult
-
 	else
-
 		velocidadeAnimacaoAlvo = velocidade
+	end
+end
+
+function ClientBridge.SoltouM1()
+	if comboState.animacaoAtiva and comboState.carregando then
+		comboState.carregando = false
+		LimparConexaoCarga()
+
+		local track = comboState.animacaoAtiva
+		local janelaCarga = Modulo_Configuracoes.ObterConfiguracao("JanelaCargaLeve") or 0.25
+		local multMax = Modulo_Configuracoes.ObterConfiguracao("MultiplicadorDanoMaximoCarga") or 1.2
+
+		-- Calcula proporção da carga
+		local tempoCargaDecorrido = track.TimePosition - (comboState.tempoInicioCarga or 0)
+		local ratio = math.clamp(tempoCargaDecorrido / janelaCarga, 0, 1)
+		comboState.multiplicadorDano = 1.0 + ratio * (multMax - 1.0)
+
+		track:AdjustSpeed(1.0)
+
+		DebugPrint(
+			string.format(
+				"[ControladorEstado] M1 solto - Carga finalizada: ratio=%.2f, mult=%.2f",
+				ratio,
+				comboState.multiplicadorDano
+			)
+		)
 	end
 end
 
@@ -1896,7 +1811,6 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 	animacaoAtualAcao = track
 
 	if ehDash then
-
 		if dashState.conexaoTermino then
 			dashState.conexaoTermino:Disconnect()
 		end
@@ -1972,7 +1886,6 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 	end
 
 	if ehEquipar then
-
 		if equipAnimState.conexaoTermino then
 			equipAnimState.conexaoTermino:Disconnect()
 		end
@@ -2008,35 +1921,32 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 	local combo = Modulo_Configuracoes.ObterConfiguracaoCombo(estadoAtual.modoAnimacao)
 
 	if ehCombo and combo and nomeAnimacao then
-
+		ultimoTempoHitboxAtivou = 0
 		comboState.animacaoAtiva = track
 		comboState.janelaAtiva = false
 		comboState.indiceAtual = 1
 		comboState.continuarCombo = false
 		comboState.tempoInicio = tick()
 
+		comboState.tempoInicioCarga = 0
+		comboState.carregando = false
+		comboState.multiplicadorDano = 1.0
+		LimparConexaoCarga()
+
+		local aindaSegurando = ClientBridge.EstaSegurandoM1 and ClientBridge.EstaSegurandoM1()
+		if aindaSegurando then
+			comboState.carregando = true
+			local velCarga = Modulo_Configuracoes.ObterConfiguracao("VelocidadeCargaAtaque") or 0.4
+			track:AdjustSpeed(velCarga)
+			IniciarMonitorCarga(track)
+			DebugPrint("[ControladorEstado] Animação de combo iniciada (CARREGANDO)")
+		else
+			track:AdjustSpeed(velocidade)
+			DebugPrint("[ControladorEstado] Animação de combo iniciada (NORMAL)")
+		end
+
 		ConfigurarMarkersCombo(track)
-
-		DebugPrint(
-			string.format(
-				"[ControladorEstado] Animação de combo iniciada: %s (velocidade %.1f)",
-				nomeAnimacao :: string,
-				velocidade
-			)
-		)
 		return
-	end
-
-	local ehAtaquePesado = nomeAnimacao and nomeAnimacao == "AtaquePesado"
-
-	if ehAtaquePesado then
-
-		heavyAttackState.tempoInicio = tick()
-		ConfigurarMarkersHeavyAttack(track)
-
-		DebugPrint(
-			string.format("[ControladorEstado] Animação de ataque pesado iniciada (velocidade %.1f)", velocidade)
-		)
 	end
 end
 
@@ -2050,12 +1960,7 @@ local function ObterMultiplicadorVelocidadeAnimacao(): number
 
 	if estado == "Andando" then
 		local emDefendendo = (estadoAtual.estadoAcao == "Defendendo")
-		local emAtacando = (
-			estadoAtual.estadoAcao == "AtacandoLeve"
-			or estadoAtual.estadoAcao == "CarregandoPesado"
-			or estadoAtual.estadoAcao == "SoltandoPesado"
-			or estadoAtual.estadoAcao == "AtaquePesado"
-		)
+		local emAtacando = (estadoAtual.estadoAcao == "AtacandoLeve")
 
 		if emDefendendo then
 			multiplicador = 0.55
@@ -2082,7 +1987,6 @@ local function ObterMultiplicadorVelocidadeAnimacao(): number
 	end
 
 	if baseAnim and baseAnim > 0 then
-
 		local ratio = walkSpeed / baseAnim
 		local delta = ratio - 1
 		local adjustedRatio = 1 + delta * 1.05
@@ -2145,10 +2049,8 @@ AtualizarAnimacaoMovimento = function()
 
 	if querIdle then
 		if animacaoQueUsaDirecao and animacaoAtualMov and animacaoAtualMov.IsPlaying and not animacaoMovPausada then
-
 			PararAnimacaoMov(false)
 		elseif not animacaoMovPausada then
-
 			PararAnimacaoMov(true)
 		end
 		return
@@ -2157,16 +2059,13 @@ AtualizarAnimacaoMovimento = function()
 	if (nomeAnimacao == "Andando" or nomeAnimacao == "Correndo") and not estadoAtual.agachado then
 		local tipoLateral, velocidadeLateral = CalcularMovimentoLateral()
 		if tipoLateral ~= "Nenhum" then
-
 			if ultimaAnimacaoMovNome == tipoLateral and animacaoAtualMov and animacaoAtualMov.IsPlaying then
-
 				velocidadeAnimacaoAlvo = velocidadeLateral * velocidade
 				return
 			end
 
 			local tempoDesdeUltimaTroca = tick() - ultimaTrocaLateralTime
 			if tempoDesdeUltimaTroca < DEBOUNCE_TROCA_LATERAL then
-
 				if
 					ultimaAnimacaoMovNome == "AndandoDireita"
 					or ultimaAnimacaoMovNome == "AndandoEsquerda"
@@ -2198,7 +2097,6 @@ AtualizarAnimacaoMovimento = function()
 			if animId then
 				local track = ObterAnimacao(animId)
 				if track then
-
 					if animacaoAtualMov and animacaoAtualMov ~= track then
 						PararAnimacaoMov(true)
 					end
@@ -2236,7 +2134,6 @@ AtualizarAnimacaoMovimento = function()
 			end
 			return
 		else
-
 			local emAnimacaoLateral = (
 				ultimaAnimacaoMovNome == "AndandoDireita"
 				or ultimaAnimacaoMovNome == "AndandoEsquerda"
@@ -2244,7 +2141,6 @@ AtualizarAnimacaoMovimento = function()
 				or ultimaAnimacaoMovNome == "CorrendoEsquerda"
 			)
 			if emAnimacaoLateral then
-
 				local tempoAtual = 0
 				local velocidadeAnterior = velocidadeAnimacaoAtual
 
@@ -2307,8 +2203,7 @@ local function ProcessarSincronizacao(entidade: Model, dados)
 		return
 	end
 
-	local movimentoMudou =
-		estadoMovAnterior ~= estadoAtual.estadoMov
+	local movimentoMudou = estadoMovAnterior ~= estadoAtual.estadoMov
 		or bloqueandoAnterior ~= estadoAtual.bloqueando
 		or agachadoAnterior ~= estadoAtual.agachado
 		or correndoAnterior ~= estadoAtual.correndo
@@ -2322,24 +2217,14 @@ local function ProcessarSincronizacao(entidade: Model, dados)
 
 	local modoMudou = modoAnterior ~= estadoAtual.modoAnimacao
 	if modoMudou and animacaoAtualMov then
-
 		if movementFlags.isJumping or movementFlags.isFalling then
-
 			ultimaAnimacaoMovNome = nil
 		else
-
 			PararAnimacaoMov(true)
 		end
 	end
 
-	if
-		estadoAtual.estadoAcao == "AtacandoLeve"
-		or estadoAtual.estadoAcao == "CarregandoPesado"
-		or estadoAtual.estadoAcao == "SoltandoPesado"
-		or estadoAtual.estadoAcao == "AtaquePesado"
-		or estadoAtual.estadoAcao == "Defendendo"
-	then
-
+	if estadoAtual.estadoAcao == "AtacandoLeve" or estadoAtual.estadoAcao == "Defendendo" then
 		movementFlags.isRunning = false
 
 		AtualizarVelocidadeLocal()
@@ -2351,25 +2236,16 @@ local function ProcessarSincronizacao(entidade: Model, dados)
 		local foiEquipDesequip = (acaoAnterior == "Equipando" or acaoAnterior == "Desequipando")
 
 		if foiEquipDesequip and animacaoAtualAcao and animacaoAtualAcao.IsPlaying then
-
 			animacaoAtualAcao.Stopped:Once(function()
 				animacaoAtualAcao = nil
 				AtualizarAnimacaoMovimento()
 			end)
 		else
-
 			PararAnimacaoAcao()
 		end
 	end
 
-	if
-		(
-			acaoAnterior == "AtacandoLeve"
-			or acaoAnterior == "CarregandoPesado"
-			or acaoAnterior == "SoltandoPesado"
-			or acaoAnterior == "AtaquePesado"
-		) and estadoAtual.estadoAcao == "Nenhuma"
-	then
+	if acaoAnterior == "AtacandoLeve" and estadoAtual.estadoAcao == "Nenhuma" then
 		if isShiftHeld then
 			movementFlags.isRunning = true
 
@@ -2382,7 +2258,6 @@ local function ProcessarSincronizacao(entidade: Model, dados)
 	end
 
 	if movementFlags.isRunning and (movementFlags.isJumping or movementFlags.isFalling) then
-
 		DefinirVelocidadeMovimento(TIMINGS.RunInAirSpeed)
 		return
 	end
@@ -2527,17 +2402,9 @@ local function AtualizarEstadoMovimento()
 	end
 
 	if movementFlags.isJumping or movementFlags.isFalling then
-
-		local emCombate = (
-			estadoAtual.estadoAcao == "AtacandoLeve"
-			or estadoAtual.estadoAcao == "CarregandoPesado"
-			or estadoAtual.estadoAcao == "SoltandoPesado"
-			or estadoAtual.estadoAcao == "AtaquePesado"
-			or estadoAtual.estadoAcao == "Defendendo"
-		)
+		local emCombate = (estadoAtual.estadoAcao == "AtacandoLeve" or estadoAtual.estadoAcao == "Defendendo")
 
 		if movementFlags.isRunning and not emCombate then
-
 			if estadoAtual.estadoMov ~= "Correndo" then
 				estadoAtual.estadoMov = "Correndo"
 			end
@@ -2547,13 +2414,11 @@ local function AtualizarEstadoMovimento()
 		end
 
 		if movementFlags.isFalling then
-
 			if estadoAtual.estadoMov ~= "Caindo" then
 				estadoAtual.estadoMov = "Caindo"
 				AtualizarAnimacaoMovimento()
 			end
 		elseif movementFlags.isJumping then
-
 			if estadoAtual.estadoMov ~= "Pulando" then
 				estadoAtual.estadoMov = "Pulando"
 				AtualizarAnimacaoMovimento()
@@ -2564,13 +2429,7 @@ local function AtualizarEstadoMovimento()
 
 	local isMoving = humanoid.MoveDirection.Magnitude > 0.1
 
-	local emCombate = (
-		estadoAtual.estadoAcao == "AtacandoLeve"
-		or estadoAtual.estadoAcao == "CarregandoPesado"
-		or estadoAtual.estadoAcao == "SoltandoPesado"
-		or estadoAtual.estadoAcao == "AtaquePesado"
-		or estadoAtual.estadoAcao == "Defendendo"
-	)
+	local emCombate = (estadoAtual.estadoAcao == "AtacandoLeve" or estadoAtual.estadoAcao == "Defendendo")
 
 	local podeCorrer = movementFlags.isRunning and not emCombate
 
@@ -2601,16 +2460,8 @@ local function AtualizarEstadoMovimento()
 
 		TentarAcao:FireServer("SincronizarMovimento", novoEstado)
 	else
-
 		if animacaoAtualMov then
-
-			emCombate = (
-				estadoAtual.estadoAcao == "AtacandoLeve"
-				or estadoAtual.estadoAcao == "CarregandoPesado"
-				or estadoAtual.estadoAcao == "SoltandoPesado"
-				or estadoAtual.estadoAcao == "AtaquePesado"
-				or estadoAtual.estadoAcao == "Defendendo"
-			)
+			emCombate = (estadoAtual.estadoAcao == "AtacandoLeve" or estadoAtual.estadoAcao == "Defendendo")
 			if not (estadoAtual.estadoMov == "Andando" and emCombate) then
 				DefinirVelocidadeMovimento(1)
 			end
@@ -2635,11 +2486,9 @@ local function _VerificarMaterialQueda()
 			AtualizarAnimacaoMovimento()
 		end
 	else
-
 		if movementFlags.isFalling or movementFlags.isJumping then
 			movementFlags.isFalling = false
 			movementFlags.isJumping = false
-
 		end
 	end
 end
@@ -2676,18 +2525,14 @@ local function OnStateChanged(oldState, newState)
 			if animacaoAtualMov and animacaoAtualMov.IsPlaying then
 				DefinirVelocidadeMovimento(TIMINGS.RunInAirSpeed)
 			else
-
 				AtualizarAnimacaoMovimento()
 			end
 			return
 		end
-
 	end
 
 	if newState == Enum.HumanoidStateType.Freefall then
-
 		if jumpAnimState.aguardandoTermino then
-
 			return
 		end
 
@@ -2709,7 +2554,6 @@ local function OnStateChanged(oldState, newState)
 		or newState == Enum.HumanoidStateType.RunningNoPhysics
 		or newState == Enum.HumanoidStateType.GettingUp
 	then
-
 		movementFlags.isJumping = false
 		movementFlags.isFalling = false
 
@@ -2718,14 +2562,7 @@ local function OnStateChanged(oldState, newState)
 		if movementFlags.isRunning then
 			estadoAtual.estadoMov = "Correndo"
 			if animacaoAtualMov then
-
-				local emCombate = (
-					estadoAtual.estadoAcao == "AtacandoLeve"
-					or estadoAtual.estadoAcao == "CarregandoPesado"
-					or estadoAtual.estadoAcao == "SoltandoPesado"
-					or estadoAtual.estadoAcao == "AtaquePesado"
-					or estadoAtual.estadoAcao == "Defendendo"
-				)
+				local emCombate = (estadoAtual.estadoAcao == "AtacandoLeve" or estadoAtual.estadoAcao == "Defendendo")
 				if not emCombate then
 					DefinirVelocidadeMovimento(1)
 				end
@@ -2773,17 +2610,14 @@ TocarAnimacao.OnClientEvent:Connect(ProcessarTocarAnimacao)
 RunService.Heartbeat:Connect(AtualizarEstadoMovimento)
 
 local function AtualizarDirecaoAnimacao(deltaTime: number)
-
 	if not animacaoAtualMov or not animacaoAtualMov.IsPlaying then
 		return
 	end
 
 	if animacaoMovPausada then
-
 		local velocidadePausaComDirecao = VELOCIDADE_PAUSA * direcaoAtual
 		local diferenca = velocidadePausaComDirecao - velocidadeAnimacaoAtual
 		if math.abs(diferenca) > 0.01 then
-
 			velocidadeAnimacaoAtual = velocidadeAnimacaoAtual
 				+ diferenca * math.min(1, deltaTime * SUAVIDADE_TRANSICAO_CORRENDO)
 			animacaoAtualMov:AdjustSpeed(velocidadeAnimacaoAtual)
@@ -2818,12 +2652,10 @@ local function AtualizarDirecaoAnimacao(deltaTime: number)
 		)
 
 		if tipoLateral ~= "Nenhum" then
-
 			if not emAnimacaoLateral or ultimaAnimacaoMovNome ~= tipoLateral then
 				AtualizarAnimacaoMovimento()
 				return
 			else
-
 				velocidadeAnimacaoAlvo = velocidadeLateral * ObterMultiplicadorVelocidadeAnimacao()
 				direcaoAtual = velocidadeLateral > 0 and 1 or -1
 			end
@@ -2852,7 +2684,6 @@ local function AtualizarDirecaoAnimacao(deltaTime: number)
 		velocidadeAnimacaoAtual = velocidadeAnimacaoAtual + diferenca * math.min(1, deltaTime * suavidade)
 		animacaoAtualMov:AdjustSpeed(velocidadeAnimacaoAtual)
 	elseif velocidadeAnimacaoAtual ~= velocidadeAnimacaoAlvo then
-
 		velocidadeAnimacaoAtual = velocidadeAnimacaoAlvo
 		animacaoAtualMov:AdjustSpeed(velocidadeAnimacaoAtual)
 	end
@@ -2868,7 +2699,6 @@ local function PreCarregarAnimacoes()
 	DebugPrint(string.format("[ControladorEstado] Pré-carregando %d animações...", total))
 
 	for _, animId in ipairs(todasAnimacoes) do
-
 		local track = ObterAnimacao(animId)
 		if track then
 			carregadas = carregadas + 1
@@ -2943,6 +2773,10 @@ player.CharacterAdded:Connect(function(novoCharacter)
 		timerPararAnimacao = nil
 	end
 
+	LimparHitFreeze()
+	LimparRewindSolido()
+	ultimoTempoHitboxAtivou = 0
+
 	estadoAtual = {
 		estadoMov = "Parado",
 		estadoAcao = "Nenhuma",
@@ -2963,12 +2797,18 @@ PreCarregarAnimacoes()
 
 GerenciadorHitboxCliente.DefinirCharacter(character)
 GerenciadorHitboxCliente.DefinirCallbackHit(function(alvo, mao)
+	AplicarHitFreeze()
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	TentarAcao:FireServer("HitboxAcerto", {
 		mao = mao,
 		alvo = alvo,
 		cframe = hrp and hrp.CFrame or nil,
+		multiplicadorDano = comboState.multiplicadorDano,
 	})
+end)
+
+GerenciadorHitboxCliente.DefinirCallbackSolidHit(function(_raycastResult, _mao)
+	AplicarRewindParteSolida()
 end)
 
 AtualizarBaseIdle()

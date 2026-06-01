@@ -862,10 +862,6 @@ local function podeIniciarParkour(): boolean
 		return false
 	end
 
-	if ClientBridge.EstaAtaquePesadoAtivo and ClientBridge.EstaAtaquePesadoAtivo() then
-		return false
-	end
-
 	return true
 end
 

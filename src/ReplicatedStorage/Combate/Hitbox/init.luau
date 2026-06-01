@@ -13,13 +13,16 @@ local ShapecastHitbox = require(script.Shapecast)
 export type Mao = "Right" | "Left"
 
 export type OnHitCallback = (alvo: Model, mao: Mao) -> ()
+export type OnSolidHitCallback = (raycastResult: RaycastResult, mao: Mao) -> ()
 
 export type HitboxHandle = {
 	mao: Mao,
 	hitbox: any,
 	ativa: boolean,
 	jaAtingidos: { [Model]: boolean },
+	jaAcertouSolido: boolean,
 	_onHitCallback: OnHitCallback?,
+	_onSolidHitCallback: OnSolidHitCallback?,
 }
 
 local Modulo_Hitbox = {}
@@ -80,7 +83,9 @@ function Modulo_Hitbox.CriarHitbox(
 		hitbox = hitbox,
 		ativa = false,
 		jaAtingidos = {},
+		jaAcertouSolido = false,
 		_onHitCallback = nil,
+		_onSolidHitCallback = nil,
 	}
 
 	return handle, nil
@@ -112,15 +117,32 @@ local function _FiltrarParaEntidadeViva(raycastResult: RaycastResult): Model?
 	return modelo
 end
 
-function Modulo_Hitbox.AtivarHitbox(handle: HitboxHandle, onHit: OnHitCallback, duracao: number?)
+local function _EhParteSolida(raycastResult: RaycastResult): boolean
+	local instancia = raycastResult.Instance
+	if not instancia or not instancia:IsA("BasePart") then
+		return false
+	end
+	local parte = instancia :: BasePart
+	if not parte.CanCollide then
+		return false
+	end
+	if parte.Transparency > 0.1 then
+		return false
+	end
+	return true
+end
+
+function Modulo_Hitbox.AtivarHitbox(handle: HitboxHandle, onHit: OnHitCallback, duracao: number?, onSolidHit: OnSolidHitCallback?)
 	if not handle or not handle.hitbox then
 		warn("[Modulo_Hitbox] Handle inválido para AtivarHitbox")
 		return
 	end
 
 	table.clear(handle.jaAtingidos)
+	handle.jaAcertouSolido = false
 	handle.ativa = true
 	handle._onHitCallback = onHit
+	handle._onSolidHitCallback = onSolidHit
 
 	handle.hitbox:OnHit(function(raycastResult: RaycastResult, _segment: any)
 		if not handle.ativa then
@@ -128,18 +150,24 @@ function Modulo_Hitbox.AtivarHitbox(handle: HitboxHandle, onHit: OnHitCallback, 
 		end
 
 		local modelo = _FiltrarParaEntidadeViva(raycastResult)
-		if not modelo then
+		if modelo then
+			if handle.jaAtingidos[modelo] then
+				return
+			end
+
+			handle.jaAtingidos[modelo] = true
+
+			if handle._onHitCallback then
+				handle._onHitCallback(modelo, handle.mao)
+			end
 			return
 		end
 
-		if handle.jaAtingidos[modelo] then
-			return
-		end
-
-		handle.jaAtingidos[modelo] = true
-
-		if handle._onHitCallback then
-			handle._onHitCallback(modelo, handle.mao)
+		if not handle.jaAcertouSolido and _EhParteSolida(raycastResult) then
+			handle.jaAcertouSolido = true
+			if handle._onSolidHitCallback then
+				handle._onSolidHitCallback(raycastResult, handle.mao)
+			end
 		end
 	end)
 

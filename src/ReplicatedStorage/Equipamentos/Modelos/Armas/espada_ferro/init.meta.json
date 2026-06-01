@@ -26,7 +26,6 @@
         ]
       }
     },
-    "CanBeDropped": false,
     "ModelMeshCFrame": [
       -389.76788330078125,
       -3.2518153190612793,
@@ -41,7 +40,8 @@
       -0.9754977226257324,
       0.0343436598777771
     ],
-    "TextureContent": "rbxassetid://4980776503"
+    "TextureContent": "rbxassetid://4980776503",
+    "CanBeDropped": false
   },
   "className": "Tool"
 }

@@ -29,6 +29,7 @@ local hitboxesPorMao: { [Mao]: HitboxHandle? } = {
 }
 
 local callbackAlvoAtingido: OnAlvoAtingido? = nil
+local callbackParteSolida: ((raycastResult: RaycastResult, mao: Mao) -> ())? = nil
 
 local character: Model? = nil
 
@@ -36,6 +37,10 @@ local GerenciadorHitboxCliente = {}
 
 function GerenciadorHitboxCliente.DefinirCallbackHit(callback: OnAlvoAtingido)
 	callbackAlvoAtingido = callback
+end
+
+function GerenciadorHitboxCliente.DefinirCallbackSolidHit(callback: (raycastResult: RaycastResult, mao: Mao) -> ())
+	callbackParteSolida = callback
 end
 
 function GerenciadorHitboxCliente.DefinirCharacter(novoCharacter: Model)
@@ -86,6 +91,14 @@ local function _OnHitInterno(alvo: Model, mao: Mao)
 	end
 end
 
+local function _OnSolidHitInterno(raycastResult: RaycastResult, mao: Mao)
+	DebugPrint(string.format("[GerenciadorHitbox] Solid Hit: %s pela mão %s", raycastResult.Instance.Name, mao))
+
+	if callbackParteSolida then
+		callbackParteSolida(raycastResult, mao)
+	end
+end
+
 function GerenciadorHitboxCliente.IniciarAtaqueMao(mao: Mao, duracao: number?)
 	local handle = hitboxesPorMao[mao]
 
@@ -106,7 +119,7 @@ function GerenciadorHitboxCliente.IniciarAtaqueMao(mao: Mao, duracao: number?)
 		Modulo_Hitbox.PararHitbox(handle)
 	end
 
-	Modulo_Hitbox.AtivarHitbox(handle, _OnHitInterno, duracao)
+	Modulo_Hitbox.AtivarHitbox(handle, _OnHitInterno, duracao, _OnSolidHitInterno)
 	DebugPrint("[GerenciadorHitbox] Hitbox ativada para mão:", mao)
 end
 

@@ -20,7 +20,6 @@ local ActionModes = {
 		animacoes = {
 
 			AtaqueLeve = "rbxassetid://80851426931067",
-			AtaquePesado = "rbxassetid://117244978564325",
 			Defesa = "rbxassetid://106963330997976",
 			DefesaQuebrada = "rbxassetid://103742519902549",
 			Aparar = "rbxassetid://129329167930963",
@@ -64,7 +63,6 @@ local ActionModes = {
 		animacoes = {
 
 			AtaqueLeve = "rbxassetid://122280944254589",
-			AtaquePesado = "rbxassetid://125243003105031",
 			Defesa = "rbxassetid://127751906771957",
 			DefesaQuebrada = "rbxassetid://94588265013910",
 			Aparar = "rbxassetid://139881462472225",
@@ -184,7 +182,6 @@ local ActionModes = {
 		animacoes = {
 
 			AtaqueLeve = "rbxassetid://122280944254589",
-			AtaquePesado = "rbxassetid://125243003105031",
 			Defesa = "rbxassetid://127751906771957",
 			DefesaQuebrada = "rbxassetid://94588265013910",
 			Aparar = "rbxassetid://139881462472225",
@@ -219,7 +216,6 @@ local ActionModes = {
 		animacoes = {
 
 			AtaqueLeve = "rbxassetid://122280944254589",
-			AtaquePesado = "rbxassetid://125243003105031",
 			Defesa = "rbxassetid://127751906771957",
 			DefesaQuebrada = "rbxassetid://94588265013910",
 			Aparar = "rbxassetid://139881462472225",
@@ -253,7 +249,6 @@ local ActionModes = {
 		animacoes = {
 
 			AtaqueLeve = "rbxassetid://0000000000",
-			AtaquePesado = "rbxassetid://0000000000",
 			Defesa = "rbxassetid://0000000000",
 			DefesaQuebrada = "rbxassetid://0000000000",
 			Aparar = "rbxassetid://0000000000",
@@ -287,7 +282,6 @@ local ActionModes = {
 		animacoes = {
 
 			AtaqueLeve = "rbxassetid://0000000000",
-			AtaquePesado = "rbxassetid://0000000000",
 			Defesa = "rbxassetid://0000000000",
 			DefesaQuebrada = "rbxassetid://0000000000",
 			Aparar = "rbxassetid://0000000000",

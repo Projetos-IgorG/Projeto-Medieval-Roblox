@@ -26,32 +26,24 @@ export type ModoAnimacao = {
 export type ConfiguracaoGlobal = {
 
 	TempoStunLeve: number,
-	TempoStunPesado: number,
 	TempoStunAparado: number,
 	TempoAparando: number,
 
 	JanelaParry: number,
 	CooldownParry: number,
 
-	TempoCarregarPesado: number,
 	JanelaCombo: number,
 	VelocidadeComboEspera: number,
 	TempoMinimoQueda: number,
 	VelocidadeCorrendoNoAr: number,
 
-	VelocidadeCarregandoPesado: number,
-	VelocidadeSoltarPesado: number,
-
 	JanelaCancelamentoComboFinal: number,
-	JanelaCancelamentoAtaquePesado: number,
 	JanelaCancelAtaque: number,
-	JanelaCancelAtaquePesado: number,
 	CooldownCancel: number,
 	TempoSegurandoM2ParaDefesa: number,
 	VelocidadeReversaoCancelamento: number,
 
 	CooldownComboLeve: number,
-	CooldownAtaquePesado: number,
 	CooldownBloqueio: number,
 
 	VelocidadeAndando: number,
@@ -77,14 +69,22 @@ export type ConfiguracaoGlobal = {
 	VelocidadeAnimacaoDash: number,
 
 	MagnitudeImpulsoAtaqueLeve: number,
-	MagnitudeImpulsoAtaquePesado: number,
+	MagnitudeImpulsoAtaqueFinal: number,
 	MagnitudeImpulsoParry: number,
 	DuracaoImpulsoAtaqueLeve: number,
-	DuracaoImpulsoAtaquePesado: number,
+	DuracaoImpulsoAtaqueFinal: number,
 
 	MagnitudeKnockbackLeve: number,
-	MagnitudeKnockbackPesado: number,
 	VisualizarHitbox: boolean,
+
+	VelocidadeHitFreeze: number,
+	DuracaoHitFreeze: number,
+	VelocidadeRewindSolido: number,
+	FadeOutRewindSolido: number,
+
+	VelocidadeCargaAtaque: number,
+	JanelaCargaLeve: number,
+	MultiplicadorDanoMaximoCarga: number,
 }
 
 local REGEX_ASSET_ID = "^rbxassetid://(%d+)$"
@@ -93,45 +93,38 @@ local ASSET_ID_INVALIDO = "rbxassetid://0000000000"
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Modulo_Configuracoes = {}
-local Modulo_ModosAnimacao = require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Animacoes"):WaitForChild("ModosAnimacao"))
+local Modulo_ModosAnimacao =
+	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Animacoes"):WaitForChild("ModosAnimacao"))
 
 Modulo_Configuracoes.ConfiguracaoGlobal = {
 
 	TempoStunLeve = 0.3,
-	TempoStunPesado = 0.6,
 	TempoStunAparado = 0.7,
 	TempoAparando = 0.7,
 
-	JanelaParry = 0.2,
+	JanelaParry = 0.25,
 	CooldownParry = 1.0,
 
-	TempoCarregarPesado = 0.2,
 	JanelaCombo = 0.2,
 	VelocidadeComboEspera = 0.4,
 	TempoMinimoQueda = 0.28,
 	VelocidadeCorrendoNoAr = 0.4,
 
-	VelocidadeCarregandoPesado = 1.1,
-	VelocidadeSoltarPesado = 1.0,
-
 	JanelaCancelamentoComboFinal = 0.6,
-	JanelaCancelamentoAtaquePesado = 0.5,
 	JanelaCancelAtaque = 0.3,
-	JanelaCancelAtaquePesado = 0.7,
 	CooldownCancel = 1.0,
 	TempoSegurandoM2ParaDefesa = 0.13,
 	VelocidadeReversaoCancelamento = -1.5,
 
-	CooldownComboLeve = 0.5,
-	CooldownAtaquePesado = 2.0,
-	CooldownBloqueio = 0.5,
+	CooldownComboLeve = 0.4,
+	CooldownBloqueio = 0.4,
 
 	VelocidadeAndando = 12,
 	VelocidadeCorrendo = 20,
 	VelocidadeBloqueando = 6,
-	VelocidadeDefesaQuebrada = 3,
+	VelocidadeDefesaQuebrada = 2,
 	VelocidadeAgachando = 7,
-	VelocidadeAparando = 3,
+	VelocidadeAparando = 1,
 	VelocidadeEscalando = 12,
 
 	VelocidadeInicialMovimento = 5,
@@ -151,14 +144,22 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	DashCameraFixarY = true,
 
 	MagnitudeImpulsoAtaqueLeve = 20,
-	MagnitudeImpulsoAtaquePesado = 50,
+	MagnitudeImpulsoAtaqueFinal = 25,
 	MagnitudeImpulsoParry = 25,
 	DuracaoImpulsoAtaqueLeve = 0.1,
-	DuracaoImpulsoAtaquePesado = 0.2,
+	DuracaoImpulsoAtaqueFinal = 0.1,
 
 	MagnitudeKnockbackLeve = 15,
-	MagnitudeKnockbackPesado = 150,
 	VisualizarHitbox = true,
+
+	VelocidadeHitFreeze = 0.005,
+	DuracaoHitFreeze = 0.1,
+	VelocidadeRewindSolido = -0.4,
+	FadeOutRewindSolido = 0.5,
+
+	VelocidadeCargaAtaque = 0.4,
+	JanelaCargaLeve = 0.25,
+	MultiplicadorDanoMaximoCarga = 1.2,
 }
 
 Modulo_Configuracoes.ModoAnimacoes = Modulo_ModosAnimacao
@@ -196,7 +197,6 @@ function Modulo_Configuracoes.ObterModoAnimacao(nomeModo: string): ModoAnimacao?
 end
 
 function Modulo_Configuracoes.ObterAnimacao(nomeModo: string, nomeAnimacao: string): string?
-
 	local modo = Modulo_Configuracoes.ModoAnimacoes[nomeModo]
 	if modo and modo.animacoes and modo.animacoes[nomeAnimacao] then
 		local animId = modo.animacoes[nomeAnimacao]
@@ -276,7 +276,6 @@ function Modulo_Configuracoes.ObterConfiguracaoCombo(nomeModo: string): any?
 end
 
 function Modulo_Configuracoes.ObterTipoAtaquePorIndice(_nomeModo: string, indice: number): string
-
 	if indice >= 4 then
 		return "AtaqueLeveFinal"
 	end

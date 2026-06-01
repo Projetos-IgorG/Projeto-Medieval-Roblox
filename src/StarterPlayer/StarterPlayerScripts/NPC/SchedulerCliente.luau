@@ -90,6 +90,37 @@ local function remover(modelo: Instance)
 	ctrl:destruir()
 end
 
+-- Buffers reutilizados a cada tick para minimizar pressao de GC.
+type Item = { ctrl: ControladorNPC.ControladorImpl, distancia: number }
+local porArchetypeBuf: { [string]: { Item } } = {}
+local itemPool: { Item } = {}
+local itemPoolN = 0
+
+local function obterItem(): Item
+	if itemPoolN > 0 then
+		local it = itemPool[itemPoolN]
+		itemPool[itemPoolN] = nil
+		itemPoolN -= 1
+		return it
+	end
+	return { ctrl = (nil :: any), distancia = 0 }
+end
+
+local function devolverListaParaPool(lista: { Item })
+	for i = #lista, 1, -1 do
+		local it = lista[i]
+		it.ctrl = (nil :: any)
+		it.distancia = 0
+		itemPoolN += 1
+		itemPool[itemPoolN] = it
+		lista[i] = nil
+	end
+end
+
+local function ordenarPorDistancia(a: Item, b: Item): boolean
+	return a.distancia < b.distancia
+end
+
 local function tickGlobal(dt: number)
 	acumulador += dt
 	if acumulador < ConfigNPC.Padrao.IntervaloAtualizacao then
@@ -98,10 +129,7 @@ local function tickGlobal(dt: number)
 	local passo = acumulador
 	acumulador = 0
 
-	-- 1) Categoriza por archetype com (controlador, distancia).
-	type Item = { ctrl: ControladorNPC.ControladorImpl, distancia: number }
-	local porArchetype: { [string]: { Item } } = {}
-
+	-- 1) Categoriza por archetype com (controlador, distancia) usando buffers reciclados.
 	for modelo, ctrl in controladores do
 		if not modelo.Parent then
 			controladores[modelo] = nil
@@ -109,19 +137,23 @@ local function tickGlobal(dt: number)
 			continue
 		end
 		local d = distanciaJogador(modelo)
-		local lista = porArchetype[ctrl.archetype]
+		local lista = porArchetypeBuf[ctrl.archetype]
 		if not lista then
 			lista = {}
-			porArchetype[ctrl.archetype] = lista
+			porArchetypeBuf[ctrl.archetype] = lista
 		end
-		table.insert(lista, { ctrl = ctrl, distancia = d })
+		local item = obterItem()
+		item.ctrl = ctrl
+		item.distancia = d
+		lista[#lista + 1] = item
 	end
 
 	-- 2) Para cada archetype, ordena por distancia e ativa apenas os MaxAtivos primeiros.
-	for archetype, lista in porArchetype do
-		table.sort(lista, function(a, b)
-			return a.distancia < b.distancia
-		end)
+	for archetype, lista in porArchetypeBuf do
+		if #lista == 0 then
+			continue
+		end
+		table.sort(lista, ordenarPorDistancia)
 		local max = ConfigNPC.Obter(archetype, "MaxAtivosPorArchetype") or 999
 		for indice, item in lista do
 			local lod
@@ -133,6 +165,7 @@ local function tickGlobal(dt: number)
 			item.ctrl:definirLOD(lod)
 			item.ctrl:atualizar(passo, item.distancia)
 		end
+		devolverListaParaPool(lista)
 	end
 end
 

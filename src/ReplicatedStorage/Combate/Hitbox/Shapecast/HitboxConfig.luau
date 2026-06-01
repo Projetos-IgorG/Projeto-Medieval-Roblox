@@ -5,13 +5,17 @@
     Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
     Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
 ]]
+-- Debug_Visible em producao cria BoxHandleAdornment em workspace.Terrain por
+-- segmento de hitbox por tick - perf hog real. Mantemos somente no Studio.
+local RunService = game:GetService("RunService")
+
 return {
 
 	Tag = "DmgPoint",
 
 	Minimum_Stationary_Length = 1,
 
-	Debug_Visible = true,
+	Debug_Visible = RunService:IsStudio() or false,
 	Debug_Instance_Raycast_Destroy_Time = 1,
 	Debug_Instance_Spherecast_Destroy_Time = 0.1,
 	Debug_Instance_Blockcast_Destroy_Time = 0.1,

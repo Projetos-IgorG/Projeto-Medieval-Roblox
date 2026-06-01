@@ -31,6 +31,7 @@ local MaquinaDeEstados = require(ReplicatedStorage:WaitForChild("Jogador"):WaitF
 local ControladorCombate = {}
 
 local maquinasDeEstado = {}
+local danoAplicadoEvent = Instance.new("BindableEvent")
 
 local Remotos = ReplicatedStorage:WaitForChild("Remotos")
 local TentarAcao = Remotos:WaitForChild("TentarAcao")
@@ -106,6 +107,10 @@ end
 
 function ControladorCombate.RemoverMaquina(entidade: Model)
 	maquinasDeEstado[entidade] = nil
+end
+
+function ControladorCombate.AoDanoAplicado(callback: (Model, Model, string, number) -> ()): RBXScriptConnection
+	return danoAplicadoEvent.Event:Connect(callback)
 end
 
 function ControladorCombate._SincronizarEstado(entidade: Model)
@@ -270,12 +275,11 @@ function ControladorCombate._ProcessarHit(atacante: Model, alvo: Model, tipoAtaq
 	-- ===== BLOQUEIO (sem parry) =====
 	if maquinaAlvo:EstaBloqueando() then
 
-		if tipoAtaque == "AtaquePesado" or tipoAtaque == "AtaqueLeveFinal" then
-			local tempoStun = Modulo_Configuracoes.ObterConfiguracao("TempoStunPesado") or 0.6
+		if tipoAtaque == "AtaqueLeveFinal" then
+			local tempoStun = 0.6
 
 			maquinaAlvo:QuebrarDefesa(tempoStun)
 			ControladorCombate._TocarAnimacao(alvo, "DefesaQuebrada")
-			ControladorCombate._TocarAnimacao(atacante, "AtaquePesado")
 
 			-- Knockback no defensor (defesa quebrada).
 			ControladorCombate._AplicarKnockback(alvo, atacante, tipoAtaque)
@@ -313,13 +317,9 @@ function ControladorCombate._ProcessarHit(atacante: Model, alvo: Model, tipoAtaq
 	if resultado.sucesso then
 		local danoAplicado = resultado.danoAplicado or 0
 		DebugPrint(string.format("[Combate] Dano aplicado: %.1f em %s", danoAplicado, alvo.Name))
+		danoAplicadoEvent:Fire(atacante, alvo, tipoAtaque, danoAplicado)
 
-		local tempoStun
-		if tipoAtaque == "AtaquePesado" then
-			tempoStun = Modulo_Configuracoes.ObterConfiguracao("TempoStunPesado")
-		else
-			tempoStun = Modulo_Configuracoes.ObterConfiguracao("TempoStunLeve")
-		end
+		local tempoStun = Modulo_Configuracoes.ObterConfiguracao("TempoStunLeve")
 
 		maquinaAlvo:EntrarStun(tempoStun or 0.3)
 		ControladorCombate._TocarAnimacao(alvo, "Stunado")
@@ -442,25 +442,6 @@ function ControladorCombate.ProcessarComboEarlyCancel(entidade: Model)
 	return true, nil
 end
 
-function ControladorCombate.ProcessarHeavyAttackEarlyCancel(entidade: Model)
-	local maquina = ControladorCombate.ObterMaquina(entidade)
-
-	local estadoAcao = maquina:ObterEstadoAcao()
-	if estadoAcao == "SoltandoPesado" or estadoAcao == "AtaquePesado" then
-		maquina:CompletarAcao()
-
-		local humanoid = entidade:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAndando") or 14
-		end
-
-		ControladorCombate._SincronizarEstado(entidade)
-
-		DebugPrint(string.format("[Combate] %s: Heavy attack early cancel executado", entidade.Name))
-	end
-
-	return true, nil
-end
 
 function ControladorCombate.ProcessarDashEarlyCancel(entidade: Model)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
@@ -493,11 +474,13 @@ function ControladorCombate.ProcessarCancelarAtaquePorDefesa(entidade: Model, ti
 	local estadoAcao = maquina:ObterEstadoAcao()
 
 	local podeCancel = (tipoAtaque == "AtaqueLeve" and estadoAcao == "AtacandoLeve")
-		or (tipoAtaque == "CarregandoPesado"
-			and (estadoAcao == "CarregandoPesado" or estadoAcao == "SoltandoPesado" or estadoAcao == "AtaquePesado"))
 
 	if podeCancel then
 		maquina:CompletarAcao()
+
+		local cooldownCompleto = Modulo_Configuracoes.ObterConfiguracao("CooldownComboLeve") or 0.4
+		local cooldownCancel = 0.1
+		maquina.dados.ultimoComboTerminou = tick() - cooldownCompleto + cooldownCancel
 
 		local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 		if humanoid then
@@ -535,99 +518,6 @@ function ControladorCombate.ProcessarAtacarLeveAgachado(entidade: Model)
 	return true, nil
 end
 
-function ControladorCombate.ProcessarCarregarPesado(entidade: Model)
-	local maquina = ControladorCombate.ObterMaquina(entidade)
-
-	local sucesso, motivo = maquina:TenteCarregarPesado()
-
-	if not sucesso then
-
-		local player = Players:GetPlayerFromCharacter(entidade)
-		if player then
-			local rem = ReplicatedStorage:FindFirstChild("Remotos")
-			if rem and rem:FindFirstChild("AcaoRejeitada") then
-				rem:FindFirstChild("AcaoRejeitada"):FireClient(player, "CarregarPesado", motivo)
-			end
-		end
-		return false, motivo
-	end
-
-	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		local velBloq = Modulo_Configuracoes.ObterConfiguracao("VelocidadeBloqueando") or 6
-		humanoid.WalkSpeed = velBloq * 1.5
-	end
-
-	local velocidadeCarregar = Modulo_Configuracoes.ObterConfiguracao("VelocidadeCarregandoPesado") or 1.1
-	ControladorCombate._TocarAnimacao(entidade, "AtaquePesado", false, velocidadeCarregar)
-
-	return true, nil
-end
-
-function ControladorCombate.ProcessarSoltarPesado(entidade: Model)
-	local maquina = ControladorCombate.ObterMaquina(entidade)
-
-	local sucesso, motivo = maquina:TenteSoltarPesado()
-
-	if not sucesso then
-
-		local player = Players:GetPlayerFromCharacter(entidade)
-		if player then
-			local rem = ReplicatedStorage:FindFirstChild("Remotos")
-			if rem and rem:FindFirstChild("AcaoRejeitada") then
-				rem:FindFirstChild("AcaoRejeitada"):FireClient(player, "SoltarPesado", motivo)
-			end
-		end
-		return false, motivo
-	end
-
-	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		local velBloq = Modulo_Configuracoes.ObterConfiguracao("VelocidadeBloqueando") or 6
-		humanoid.WalkSpeed = velBloq * 1.5
-	end
-
-	ControladorCombate._AplicarImpulsoAtacante(entidade, "AtaquePesado")
-
-	ControladorCombate._SincronizarEstado(entidade)
-
-	return true, nil
-end
-
-function ControladorCombate.ProcessarHeavyAttackHitbox(entidade: Model, _dados: any?): (boolean, string?)
-	local maquina = ControladorCombate.ObterMaquina(entidade)
-
-	if maquina.dados.estadoAcao ~= "SoltandoPesado" then
-		DebugPrint(
-			string.format(
-				"[Combate] %s: HeavyAttackHitbox FALHOU - não está em SoltandoPesado (está em %s)",
-				entidade.Name,
-				maquina.dados.estadoAcao
-			)
-		)
-		return false, "EstadoInvalido"
-	end
-
-	local sucesso, motivo = maquina:TenteExecutarPesado()
-	if not sucesso then
-		DebugPrint(
-			string.format(
-				"[Combate] %s: HeavyAttackHitbox FALHOU - TenteExecutarPesado: %s",
-				entidade.Name,
-				motivo or "?"
-			)
-		)
-		return false, motivo
-	end
-
-	DebugPrint(
-		string.format("[Combate] %s: HeavyAttackHitbox - estado mudou para AtaquePesado", entidade.Name)
-	)
-
-	ControladorCombate._SincronizarEstado(entidade)
-
-	return true, nil
-end
 
 function ControladorCombate.ProcessarBloquear(entidade: Model, shiftLockAtivo: boolean?): (boolean, string?)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
@@ -1001,8 +891,6 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 
 	local estadoAcao = maquina:ObterEstadoAcao()
 	local emAtaque = estadoAcao == "AtacandoLeve"
-		or estadoAcao == "AtaquePesado"
-		or estadoAcao == "SoltandoPesado"
 		or estadoAcao == "AtacandoLeveAgachado"
 
 	if not emAtaque then
@@ -1033,10 +921,7 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 	end
 
 	local tipoAtaque = "AtaqueLeve"
-	if estadoAcao == "AtaquePesado" or estadoAcao == "SoltandoPesado" then
-		tipoAtaque = "AtaquePesado"
-	elseif estadoAcao == "AtacandoLeve" then
-
+	if estadoAcao == "AtacandoLeve" then
 		local indiceCombo = maquina.dados.indiceCombo or 1
 		tipoAtaque = DeterminarTipoAtaque(indiceCombo)
 	end
@@ -1047,7 +932,6 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 
 	local tool = ObterToolPorMao(entidade, mao)
 	if not tool then
-
 		tool = entidade:FindFirstChildOfClass("Tool")
 	end
 
@@ -1061,20 +945,29 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 		return false, "SemDanoBase"
 	end
 
+	local multMax = Modulo_Configuracoes.ObterConfiguracao("MultiplicadorDanoMaximoCarga") or 1.2
+	local multiplicadorDano = 1.0
+	if typeof(dados.multiplicadorDano) == "number" then
+		multiplicadorDano = math.clamp(dados.multiplicadorDano, 1.0, multMax)
+	end
+
 	local danoOverride: number? = nil
 	if ehDivideDano then
-		danoOverride = danoBase / 2
+		danoOverride = (danoBase / 2) * multiplicadorDano
+	else
+		danoOverride = danoBase * multiplicadorDano
 	end
 
 	ControladorCombate._ProcessarHit(entidade, alvo, tipoAtaque, danoOverride)
 
 	DebugPrint(
 		string.format(
-			"[Combate] %s: HitboxAcerto processado - mao=%s, alvo=%s, tipo=%s",
+			"[Combate] %s: HitboxAcerto processado - mao=%s, alvo=%s, tipo=%s, mult=%.2f",
 			entidade.Name,
 			mao,
 			alvo.Name,
-			tipoAtaque
+			tipoAtaque,
+			multiplicadorDano
 		)
 	)
 
@@ -1084,9 +977,6 @@ end
 local MapaAcoes = {
 	AtacarLeveEmPe = ControladorCombate.ProcessarAtacarLeveEmPe,
 	AtacarLeveAgachado = ControladorCombate.ProcessarAtacarLeveAgachado,
-	CarregarPesado = ControladorCombate.ProcessarCarregarPesado,
-	SoltarPesado = ControladorCombate.ProcessarSoltarPesado,
-	HeavyAttackHitbox = ControladorCombate.ProcessarHeavyAttackHitbox,
 	Bloquear = function(entidade, dados)
 
 		local shiftLockAtivo = typeof(dados) == "table" and dados.shiftLock or nil
@@ -1122,7 +1012,6 @@ local MapaAcoes = {
 	end,
 	ComboTerminou = ControladorCombate.ProcessarComboTerminou,
 	ComboEarlyCancel = ControladorCombate.ProcessarComboEarlyCancel,
-	HeavyAttackEarlyCancel = ControladorCombate.ProcessarHeavyAttackEarlyCancel,
 	DashEarlyCancel = ControladorCombate.ProcessarDashEarlyCancel,
 
 	HitboxAcerto = function(entidade, dados)

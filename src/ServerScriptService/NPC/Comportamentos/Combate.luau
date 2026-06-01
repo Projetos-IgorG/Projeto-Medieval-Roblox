@@ -53,9 +53,11 @@ local JANELA_PARRY_NPC = ConfigCombate.ConfiguracaoGlobal.JanelaParry or 0.2
 local COOLDOWN_PARRY_NPC = ConfigCombate.ConfiguracaoGlobal.CooldownParry or 1.0
 local DISTANCIA_CORRER_PADRAO = 20
 local CHAVE_DISTANCIA_CORRER = "NPC_DistanciaCorrer"
+local HITS_PARA_TROCAR_ALVO = 2
+local JANELA_MEMORIA_AGRESSOR = 6
 
 -- Faixa unica de movimento: alcance da arma equipada, com tolerancia fixa.
-local TOLERANCIA_ALCANCE = 1
+local TOLERANCIA_ALCANCE = 0.7
 
 -- REQ 7: predicao de ataque do alvo. Cooldown curto entre tentativas de
 -- bloqueio preditivo para nao spammar quando alvo encadeia varios ataques.
@@ -76,7 +78,7 @@ local JANELA_PREPARO_APOS_APARADO = 1.4
 
 local INTERVALO_ROLAGEM_ORBITA = 7
 local CHANCE_ORBITA_VERDADEIRO = 0.45
-local DURACAO_ORBITA = 2
+local DURACAO_ORBITA = 1.2
 local VELOCIDADE_ORBITA = VELOCIDADE_ANDANDO
 
 -- =============================================================================
@@ -148,11 +150,54 @@ local function alvoVivoComHRP(alvo: Model?): (boolean, BasePart?)
 	return true, hrp
 end
 
+local atualizarSubscricaoAlvo: (Ctx, Model?) -> ()
+
+local function alvoDentroDoRaio(ctx: Ctx, alvo: Model?, raio: number): (boolean, BasePart?)
+	local vivo, hrp = alvoVivoComHRP(alvo)
+	if not vivo or not hrp then
+		return false, nil
+	end
+	local d = (hrp.Position - ctx.modelo:GetPivot().Position).Magnitude
+	return d <= raio, hrp
+end
+
+local function refAlvo(alvo: Model?): number
+	if not alvo then
+		return 0
+	end
+	local player = Players:GetPlayerFromCharacter(alvo)
+	if player then
+		return player.UserId
+	end
+	local id = alvo:GetAttribute(TiposNPC.Chaves.Id)
+	if typeof(id) == "number" then
+		return -id
+	end
+	return 0
+end
+
+local function definirAlvoFocado(ctx: Ctx, alvo: Model?)
+	if ctx.estado.alvoAtual == alvo then
+		return
+	end
+	ctx.estado.alvoAtual = alvo
+	ctx.estado.agressorCandidato = nil
+	ctx.estado.hitsAgressorCandidato = 0
+	ctx.estado.agressorCandidatoAte = 0
+	atualizarSubscricaoAlvo(ctx, alvo)
+	ctx.modelo:SetAttribute(TiposNPC.Chaves.AlvoRef, refAlvo(alvo))
+end
+
 local function encontrarAlvo(ctx: Ctx): Model?
+	local atual = ctx.estado.alvoAtual
+	local manterAtual = alvoDentroDoRaio(ctx, atual, RAIO_DESEQUIPAR)
+	if manterAtual then
+		return atual
+	end
+
 	local pos = ctx.modelo:GetPivot().Position
 	local alvo: Model? = nil
 	local melhor = math.huge
-	local raioBase = ctx.estado.alvoAtual and RAIO_DESAGGRO or RAIO_AGGRO
 	for _, player in Players:GetPlayers() do
 		local char = player.Character
 		if not char then
@@ -167,7 +212,7 @@ local function encontrarAlvo(ctx: Ctx): Model?
 			continue
 		end
 		local d = (hrp.Position - pos).Magnitude
-		if d < raioBase and d < melhor then
+		if d < RAIO_AGGRO and d < melhor then
 			melhor = d
 			alvo = char
 		end
@@ -207,10 +252,7 @@ local function mapearEstadoMaquina(estadoAcao: string): string?
 		return TiposNPC.Estado.Aparando
 	elseif estadoAcao == "DefesaQuebrada" then
 		return TiposNPC.Estado.DefesaQuebrada
-	elseif estadoAcao == "AtacandoLeve"
-		or estadoAcao == "CarregandoPesado"
-		or estadoAcao == "SoltandoPesado"
-		or estadoAcao == "AtaquePesado" then
+	elseif estadoAcao == "AtacandoLeve" then
 		return TiposNPC.Estado.Atacando
 	elseif estadoAcao == "Defendendo" then
 		return TiposNPC.Estado.Defendendo
@@ -240,7 +282,7 @@ local function instalarSincMaquina(ctx: Ctx, maq: any)
 		end
 		-- Baiting: apos sair de um ataque proprio, fica em cooldown sem iniciar
 		-- novo ataque - espera o alvo atacar para tentar parry.
-		if anterior == "AtacandoLeve" or anterior == "AtaquePesado" then
+		if anterior == "AtacandoLeve" then
 			local espera = ESPERA_BAITING_MIN
 				+ math.random() * (ESPERA_BAITING_MAX - ESPERA_BAITING_MIN)
 			ctx.estado.cooldownAtaquePersonagem = os.clock() + espera
@@ -298,9 +340,6 @@ end
 
 local function ehEstadoAtaque(estadoAcao: string): boolean
 	return estadoAcao == "AtacandoLeve"
-		or estadoAcao == "CarregandoPesado"
-		or estadoAcao == "SoltandoPesado"
-		or estadoAcao == "AtaquePesado"
 end
 
 local function obterMaquinaAlvo(alvo: Model): any?
@@ -379,7 +418,7 @@ local function instalarSincAlvo(ctx: Ctx, alvo: Model)
 	end
 end
 
-local function atualizarSubscricaoAlvo(ctx: Ctx, novoAlvo: Model?)
+function atualizarSubscricaoAlvo(ctx: Ctx, novoAlvo: Model?)
 	if ctx.estado.alvoSubscrito == novoAlvo then
 		return
 	end
@@ -396,71 +435,76 @@ local function atualizarSubscricaoAlvo(ctx: Ctx, novoAlvo: Model?)
 	end
 end
 
+local function registrarDanoRecebido(ctx: Ctx, atacante: Model)
+	if ctx.estado.destruido or ctx.humanoide.Health <= 0 then
+		return
+	end
+	if not ctx.hostil then
+		return
+	end
+	if atacante == ctx.modelo then
+		return
+	end
+	local atacanteValido = alvoDentroDoRaio(ctx, atacante, RAIO_DESAGGRO)
+	if not atacanteValido then
+		return
+	end
+
+	local alvoAtual = ctx.estado.alvoAtual
+	if atacante == alvoAtual then
+		ctx.estado.agressorCandidato = nil
+		ctx.estado.hitsAgressorCandidato = 0
+		ctx.estado.agressorCandidatoAte = 0
+		return
+	end
+
+	local alvoAtualValido = alvoDentroDoRaio(ctx, alvoAtual, RAIO_DESEQUIPAR)
+	if not alvoAtualValido then
+		definirAlvoFocado(ctx, atacante)
+		return
+	end
+
+	local agora = os.clock()
+	if ctx.estado.agressorCandidato ~= atacante or (ctx.estado.agressorCandidatoAte or 0) < agora then
+		ctx.estado.agressorCandidato = atacante
+		ctx.estado.hitsAgressorCandidato = 1
+	else
+		ctx.estado.hitsAgressorCandidato = (ctx.estado.hitsAgressorCandidato or 0) + 1
+	end
+	ctx.estado.agressorCandidatoAte = agora + JANELA_MEMORIA_AGRESSOR
+
+	if (ctx.estado.hitsAgressorCandidato or 0) >= HITS_PARA_TROCAR_ALVO then
+		definirAlvoFocado(ctx, atacante)
+	end
+end
+
+local function instalarSincDanoRecebido(ctx: Ctx)
+	local cs = obterCombateServidor()
+	if not cs or not cs.AoDanoAplicado then
+		return
+	end
+	local conn = cs.AoDanoAplicado(function(atacante: Model, alvo: Model, _tipoAtaque: string, _dano: number)
+		if alvo ~= ctx.modelo then
+			return
+		end
+		registrarDanoRecebido(ctx, atacante)
+	end)
+	if typeof(conn) == "RBXScriptConnection" then
+		Comportamento.Helpers.RastrearConexao(ctx, conn)
+	end
+end
+
 local function obterAlcanceArma(ctx: Ctx): number?
 	return ControladorCombateNPC.ObterAlcanceArmaEquipada(ctx.modelo)
 end
 
 -- =============================================================================
--- Orientacao e movimento direcional. O movimento real fica 100% no Humanoid
--- (igual jogador); a orientacao usa AlignOrientation para nao escrever CFrame no
--- HRP durante locomocao, evitando travadas/teleporte/interpolacao picada.
+-- Movimento direcional. A orientacao visual para o alvo e renderizada no client
+-- pela View do NPC para evitar torque fisico/replicacao causando pulinhos.
 -- =============================================================================
 
-local function obterHRP(ctx: Ctx): BasePart?
-	return ctx.modelo:FindFirstChild("HumanoidRootPart") :: BasePart?
-end
-
-local function obterAttachmentOrientacao(hrp: BasePart): Attachment
-	local rootAttachment = hrp:FindFirstChild("RootAttachment")
-	if rootAttachment and rootAttachment:IsA("Attachment") then
-		return rootAttachment
-	end
-	local existente = hrp:FindFirstChild("NPC_OrientacaoAttachment")
-	if existente and existente:IsA("Attachment") then
-		return existente
-	end
-	local attachment = Instance.new("Attachment")
-	attachment.Name = "NPC_OrientacaoAttachment"
-	attachment.Parent = hrp
-	return attachment
-end
-
-local function obterAlignOrientacao(ctx: Ctx, hrp: BasePart): AlignOrientation
-	local existente = ctx.estado.alignOrientacaoAlvo
-	if typeof(existente) == "Instance" and existente:IsA("AlignOrientation") and existente.Parent == hrp then
-		return existente
-	end
-	if typeof(existente) == "Instance" then
-		existente:Destroy()
-	end
-
-	local align = Instance.new("AlignOrientation")
-	align.Name = "NPC_OrientacaoAlvo"
-	align.Mode = Enum.OrientationAlignmentMode.OneAttachment
-	align.Attachment0 = obterAttachmentOrientacao(hrp)
-	align.RigidityEnabled = false
-	align.Responsiveness = 22
-	align.MaxAngularVelocity = math.rad(720)
-	align.MaxTorque = 80000
-	align.Parent = hrp
-	ctx.estado.alignOrientacaoAlvo = align
-	return align
-end
-
-local function orientarParaAlvo(ctx: Ctx, alvoPos: Vector3)
-	local hrp = obterHRP(ctx)
-	if not hrp then
-		return
-	end
-	local pos = hrp.Position
-	local olhar = Vector3.new(alvoPos.X, pos.Y, alvoPos.Z)
-	local dir = olhar - pos
-	if dir.Magnitude < 0.01 then
-		return
-	end
-	local align = obterAlignOrientacao(ctx, hrp)
-	align.CFrame = CFrame.lookAt(pos, olhar)
-	align.Enabled = true
+local function orientarParaAlvo(_ctx: Ctx, _alvoPos: Vector3)
+	-- Visual-only no cliente. Mantemos esta funcao para preservar o fluxo de IA.
 end
 
 local function limparOrientacao(ctx: Ctx)
@@ -871,8 +915,8 @@ local Combate: Comportamento.Comportamento = {
 	iniciar = function(ctx: Ctx)
 		ctx.humanoide.JumpHeight = 7.2
 		ctx.humanoide.WalkSpeed = 0
-		-- NPC sempre olha para o alvo - rotacao gerenciada manualmente.
-		ctx.humanoide.AutoRotate = false
+		-- A orientacao visual para o alvo e feita no client; o servidor so move.
+		ctx.humanoide.AutoRotate = true
 		ctx.estado.cooldownBloqueio = 0
 		ctx.estado.bloqueandoAte = 0
 		ctx.estado.stunadoAte = 0
@@ -880,6 +924,9 @@ local Combate: Comportamento.Comportamento = {
 		ctx.estado.alvoAtual = nil
 		ctx.estado.alvoSubscrito = nil
 		ctx.estado.desconectarAlvo = nil
+		ctx.estado.agressorCandidato = nil
+		ctx.estado.hitsAgressorCandidato = 0
+		ctx.estado.agressorCandidatoAte = 0
 		ctx.estado.cooldownPredicaoParry = 0
 		ctx.estado.velocidadeAnimacaoLocomocao = 1
 		ctx.estado.destruido = false
@@ -900,6 +947,7 @@ local Combate: Comportamento.Comportamento = {
 				end
 			end
 		end
+		instalarSincDanoRecebido(ctx)
 
 		-- Comeca SEM arma equipada (modo Base, anim Idle base sem postura combate).
 		setModoCombateAttr(ctx, false)
@@ -963,11 +1011,9 @@ local Combate: Comportamento.Comportamento = {
 		end
 
 		local alvo = encontrarAlvo(ctx)
-		ctx.estado.alvoAtual = alvo
-		atualizarSubscricaoAlvo(ctx, alvo)
+		definirAlvoFocado(ctx, alvo)
 		if not alvo then
 			desengajar(ctx, maq)
-			ctx.modelo:SetAttribute(TiposNPC.Chaves.AlvoRef, 0)
 			return
 		end
 
@@ -975,9 +1021,6 @@ local Combate: Comportamento.Comportamento = {
 		if not alvoHRP then
 			return
 		end
-
-		local player = Players:GetPlayerFromCharacter(alvo)
-		ctx.modelo:SetAttribute(TiposNPC.Chaves.AlvoRef, player and player.UserId or 0)
 
 		local pos = ctx.modelo:GetPivot().Position
 		local distancia = (alvoHRP.Position - pos).Magnitude

@@ -15,7 +15,6 @@ local CHAVE_VIDA_ENTIDADE = "Ent_Vida"
 local MULTIPLICADORES_DANO: { [string]: number } = {
 	AtaqueLeve = 1.0,
 	AtaqueLeveFinal = 1.15,
-	AtaquePesado = 1.5,
 }
 
 export type ResultadoDano = {

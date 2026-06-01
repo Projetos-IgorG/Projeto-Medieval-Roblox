@@ -54,6 +54,16 @@ local function limparScriptsConflitantes(modelo: Model)
 			desc:Destroy()
 		end
 	end
+	-- Remove qualquer Animator gerado automaticamente: na arquitetura client-fat
+	-- cada cliente cria seu proprio Animator local, e o servidor NUNCA toca anim.
+	local hum = modelo:FindFirstChildOfClass("Humanoid")
+	if hum then
+		for _, child in hum:GetChildren() do
+			if child:IsA("Animator") then
+				child:Destroy()
+			end
+		end
+	end
 end
 
 local function clonarPersonagemDoPlayer(player: Player): Model?
