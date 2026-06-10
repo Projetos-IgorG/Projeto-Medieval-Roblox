@@ -503,8 +503,48 @@ end
 -- pela View do NPC para evitar torque fisico/replicacao causando pulinhos.
 -- =============================================================================
 
-local function orientarParaAlvo(_ctx: Ctx, _alvoPos: Vector3)
-	-- Visual-only no cliente. Mantemos esta funcao para preservar o fluxo de IA.
+local function obterOuCriarAlignOrientation(ctx: Ctx): AlignOrientation?
+	local existente = ctx.estado.alignOrientacaoAlvo
+	if typeof(existente) == "Instance" and existente:IsA("AlignOrientation") and existente.Parent then
+		return existente :: AlignOrientation
+	end
+
+	local hrp = ctx.modelo.PrimaryPart
+	if not hrp then
+		return nil
+	end
+
+	local att = hrp:FindFirstChild("OrientacaoAlvoAttachment") :: Attachment
+	if not att then
+		local newAtt = Instance.new("Attachment") :: Attachment
+		newAtt.Name = "OrientacaoAlvoAttachment"
+		newAtt.Parent = hrp
+		att = newAtt
+	end
+
+	local ao = Instance.new("AlignOrientation") :: AlignOrientation
+	ao.Name = "AlignOrientacaoAlvo"
+	ao.Mode = Enum.OrientationAlignmentMode.OneAttachment
+	ao.Attachment0 = att
+	ao.MaxTorque = 400000
+	ao.Responsiveness = 25
+	ao.Parent = hrp
+
+	ctx.estado.alignOrientacaoAlvo = ao
+	return ao
+end
+
+local function orientarParaAlvo(ctx: Ctx, alvoPos: Vector3)
+	ctx.humanoide.AutoRotate = false
+	local ao = obterOuCriarAlignOrientation(ctx)
+	local hrp = ctx.modelo.PrimaryPart
+	if ao and hrp then
+		local pos = hrp.Position
+		local lookPlano = Vector3.new(alvoPos.X, pos.Y, alvoPos.Z)
+		if (lookPlano - pos).Magnitude > 0.01 then
+			ao.CFrame = CFrame.lookAt(pos, lookPlano)
+		end
+	end
 end
 
 local function limparOrientacao(ctx: Ctx)
@@ -513,6 +553,14 @@ local function limparOrientacao(ctx: Ctx)
 		existente:Destroy()
 	end
 	ctx.estado.alignOrientacaoAlvo = nil
+
+	local hrp = ctx.modelo.PrimaryPart
+	if hrp then
+		local att = hrp:FindFirstChild("OrientacaoAlvoAttachment")
+		if att then
+			att:Destroy()
+		end
+	end
 end
 
 local function multiplicadorAnimacaoPorWalkSpeed(velocidade: number, correndo: boolean): number
@@ -893,6 +941,7 @@ end
 local function desengajar(ctx: Ctx, maq: any?)
 	pararMovimento(ctx)
 	limparOrientacao(ctx)
+	ctx.humanoide.AutoRotate = true
 	if ControladorCombateNPC.EstaArmaPronta(ctx.modelo) then
 		ControladorCombateNPC.DesequiparArma(ctx.modelo)
 		setModoCombateAttr(ctx, false)

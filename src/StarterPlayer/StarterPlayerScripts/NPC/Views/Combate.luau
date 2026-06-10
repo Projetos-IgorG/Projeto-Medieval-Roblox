@@ -17,21 +17,19 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
-local TiposNPC = require(
-	ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos")
-)
-local IdsCombate = require(
-	ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Animacoes"):WaitForChild("IdsAnimacoesCombate")
-)
+local TiposNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos"))
+local IdsCombate =
+	require(ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Animacoes"):WaitForChild("IdsAnimacoesCombate"))
 local Modulo_Hitbox = require(ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Hitbox"))
-local Timings = require(
-	ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Configuracoes"):WaitForChild("TimingsAtaqueNPC")
-)
-local Modulo_Combo = require(ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Dominio"):WaitForChild("ComboCombate"))
+local Timings =
+	require(ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Configuracoes"):WaitForChild("TimingsAtaqueNPC"))
+local Modulo_Combo =
+	require(ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Dominio"):WaitForChild("ComboCombate"))
 local ViewBase = require(script.Parent:WaitForChild("ViewBase"))
 
 local PLAYER_LOCAL = Players.LocalPlayer
-local NPC_HitReport: RemoteEvent = ReplicatedStorage:WaitForChild("Remotos"):WaitForChild("NPC_HitReport") :: RemoteEvent
+local NPC_HitReport: RemoteEvent =
+	ReplicatedStorage:WaitForChild("Remotos"):WaitForChild("NPC_HitReport") :: RemoteEvent
 
 type Ctx = ViewBase.ContextoView
 
@@ -44,7 +42,6 @@ local FADE_REACAO_PARA_ATAQUE = 0.16
 local FADE_ENTRADA_ATAQUE = 0.16
 local FADE_SAIDA_ATAQUE = 0.22
 local FADE_EQUIP = 0.10
-local VELOCIDADE_ORIENTACAO_VISUAL = 14
 
 local SUFIXO_PARA_BRACO = {
 	Right = "Right Arm",
@@ -133,6 +130,21 @@ local function obterRootJointVisual(ctx: Ctx): Motor6D?
 	return nil
 end
 
+local function obterNeckJoint(ctx: Ctx): Motor6D?
+	local existente = ctx.estado.neckJoint
+	if typeof(existente) == "Instance" and existente:IsA("Motor6D") and existente.Parent then
+		return existente
+	end
+
+	local neck = ctx.modelo:FindFirstChild("Neck", true) :: Motor6D?
+	if neck and neck:IsA("Motor6D") then
+		ctx.estado.neckJoint = neck
+		ctx.estado.neckC0Base = neck.C0
+		return neck
+	end
+	return nil
+end
+
 local function obterPosicaoAlvoVisual(ctx: Ctx): Vector3?
 	local alvoRef = ctx.modelo:GetAttribute(TiposNPC.Chaves.AlvoRef)
 	if typeof(alvoRef) ~= "number" or alvoRef == 0 then
@@ -170,7 +182,7 @@ local function yawDoVetor(dir: Vector3): number
 	return math.atan2(-dir.X, -dir.Z)
 end
 
-local function atualizarOrientacaoVisual(ctx: Ctx, dt: number)
+local function atualizarOrientacaoVisual(ctx: Ctx, _dt: number)
 	if ctx.lod == TiposNPC.LOD.Distante then
 		return
 	end
@@ -188,31 +200,44 @@ local function atualizarOrientacaoVisual(ctx: Ctx, dt: number)
 		ctx.estado.rootJointVisualC0Base = baseC0
 	end
 
-	local atual: number = ctx.estado.jointYawSuavizado or 0
-	local offsetDesejado = atual
 	local alvoPos = obterPosicaoAlvoVisual(ctx)
+	local atual = 0
+
 	if alvoPos then
 		local dx = alvoPos.X - hrp.Position.X
 		local dz = alvoPos.Z - hrp.Position.Z
 		if (dx * dx + dz * dz) > 0.0025 then
 			local desiredYaw = yawDoVetor(Vector3.new(dx, 0, dz))
-			local partVisual = joint.Part1 or ctx.modelo:FindFirstChild("Torso") :: BasePart?
-			local lookVisual = partVisual and partVisual.CFrame.LookVector or hrp.CFrame.LookVector
-			local visualYaw = yawDoVetor(Vector3.new(lookVisual.X, 0, lookVisual.Z))
-			offsetDesejado = normAngulo(atual + normAngulo(desiredYaw - visualYaw))
-		else
-			offsetDesejado = 0
+			local hrpYaw = yawDoVetor(hrp.CFrame.LookVector)
+			atual = normAngulo(desiredYaw - hrpYaw)
 		end
-	else
-		offsetDesejado = 0
 	end
 
-	local alpha = 1 - math.exp(-math.max(dt, 0) * VELOCIDADE_ORIENTACAO_VISUAL)
-	atual = atual + normAngulo(offsetDesejado - atual) * math.clamp(alpha, 0, 1)
-	ctx.estado.jointYawAtual = offsetDesejado
+	ctx.estado.jointYawAtual = atual
 	ctx.estado.jointYawSuavizado = atual
 
 	joint.C0 = CFrame.Angles(0, atual, 0) * (baseC0 :: CFrame)
+
+	-- Rotacao da Cabeca (Neck) no eixo Y fixa no alvo, preservando X e Z do animador
+	local neck = obterNeckJoint(ctx)
+	if neck then
+		if alvoPos then
+			local head = ctx.modelo:FindFirstChild("Head") :: BasePart?
+			local torso = ctx.modelo:FindFirstChild("Torso") :: BasePart?
+			if head and torso then
+				local dir = alvoPos - head.Position
+				if dir.Magnitude > 0.1 then
+					local desiredHeadYawWorld = yawDoVetor(dir)
+					local torsoYawWorld = yawDoVetor(torso.CFrame.LookVector)
+					local relativeYaw = normAngulo(desiredHeadYawWorld - torsoYawWorld)
+
+					-- Mantem X (pitch) e Y (roll) do animador, sobrescreve Z (yaw)
+					local rx, ry, _ = neck.Transform:ToEulerAnglesXYZ()
+					neck.Transform = CFrame.Angles(rx, ry, relativeYaw)
+				end
+			end
+		end
+	end
 end
 
 local function restaurarOrientacaoVisual(ctx: Ctx)
@@ -221,10 +246,18 @@ local function restaurarOrientacaoVisual(ctx: Ctx)
 	if typeof(joint) == "Instance" and joint:IsA("Motor6D") and typeof(baseC0) == "CFrame" then
 		joint.C0 = baseC0
 	end
+
+	local neck = ctx.estado.neckJoint
+	if typeof(neck) == "Instance" and neck:IsA("Motor6D") and neck.Parent then
+		neck.Transform = CFrame.new()
+	end
+
 	ctx.estado.rootJointVisual = nil
 	ctx.estado.rootJointVisualC0Base = nil
 	ctx.estado.jointYawAtual = nil
 	ctx.estado.jointYawSuavizado = nil
+	ctx.estado.neckJoint = nil
+	ctx.estado.neckC0Base = nil
 end
 
 -- =============================================================================
@@ -697,7 +730,11 @@ local function sincronizarArmaVisual(ctx: Ctx)
 	if pronta then
 		-- Recria se faltar qualquer mao ou se a arma equipada mudou.
 		local idAtual = (ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId) :: string?) or "punhos"
-		if ctx.estado.armaVisualIdLocal ~= idAtual or not ctx.estado.WeaponModelLocalRight or not ctx.estado.WeaponModelLocalLeft then
+		if
+			ctx.estado.armaVisualIdLocal ~= idAtual
+			or not ctx.estado.WeaponModelLocalRight
+			or not ctx.estado.WeaponModelLocalLeft
+		then
 			cancelarHitboxSwing(ctx)
 			destruirWeaponModelsLocais(ctx)
 			criarWeaponModelsLocais(ctx)
@@ -737,11 +774,9 @@ local function instalarSubscricoes(ctx: Ctx)
 					tocarEstado(ctx)
 				elseif chave == TiposNPC.Chaves.Acao or chave == TiposNPC.Chaves.AcaoTick then
 					tocarAcao(ctx)
-				elseif chave == TiposNPC.Chaves.LocomocaoNome
-					or chave == TiposNPC.Chaves.LocomocaoVelocidade then
+				elseif chave == TiposNPC.Chaves.LocomocaoNome or chave == TiposNPC.Chaves.LocomocaoVelocidade then
 					aplicarLocomocao(ctx)
-				elseif chave == TiposNPC.Chaves.ArmaPronta
-					or chave == TiposNPC.Chaves.ArmaEquipadaId then
+				elseif chave == TiposNPC.Chaves.ArmaPronta or chave == TiposNPC.Chaves.ArmaEquipadaId then
 					sincronizarArmaVisual(ctx)
 				end
 			end)
@@ -772,8 +807,7 @@ local Combate: ViewBase.View = {
 		-- LOD comeca Distante; aplicamos quando promover via aoLOD.
 	end,
 
-	atualizar = function(_ctx: Ctx, _dt: number, _distancia: number)
-	end,
+	atualizar = function(_ctx: Ctx, _dt: number, _distancia: number) end,
 
 	aoLOD = function(ctx: Ctx, novo: string, _anterior: string)
 		if novo == TiposNPC.LOD.Distante then
