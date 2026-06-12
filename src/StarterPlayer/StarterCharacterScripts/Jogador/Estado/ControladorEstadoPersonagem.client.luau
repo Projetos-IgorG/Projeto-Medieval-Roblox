@@ -96,6 +96,26 @@ local parkourState: ParkourState = {
 
 local isShiftHeld = false
 
+local conexoesGlobais: { RBXScriptConnection } = {}
+
+local function ConectarGlobal(signal: RBXScriptSignal, callback: (...any) -> ...any): RBXScriptConnection
+	local conexao = signal:Connect(callback)
+	table.insert(conexoesGlobais, conexao)
+	return conexao
+end
+
+local function DesconectarTudoGlobal()
+	for _, conexao in ipairs(conexoesGlobais) do
+		if conexao.Connected then
+			conexao:Disconnect()
+		end
+	end
+	table.clear(conexoesGlobais)
+end
+
+script.Destroying:Connect(DesconectarTudoGlobal)
+humanoid.Died:Connect(DesconectarTudoGlobal)
+
 local function ObterVelocidadeInicial()
 	return Modulo_Configuracoes.ObterConfiguracao("VelocidadeInicialMovimento") or 5
 end
@@ -169,7 +189,7 @@ AtualizarVelocidadeLocal = function()
 	end
 end
 
-RunService.Heartbeat:Connect(function(dt)
+ConectarGlobal(RunService.Heartbeat, function(dt)
 	if not humanoid or not humanoid.Parent then
 		return
 	end
@@ -912,7 +932,11 @@ local function AplicarRewindParteSolida()
 
 			if completo or track.TimePosition <= 0 then
 				local fadeOut = Modulo_Configuracoes.ObterConfiguracao("FadeOutRewindSolido") or 0.25
-				track:Stop(fadeOut)
+				if track and track.IsPlaying then
+					track:AdjustSpeed(0)
+					track.TimePosition = math.max(0, tempoAlvo)
+					track:Stop(fadeOut)
+				end
 				FinalizarRewindSolido(true)
 			end
 		end)
@@ -929,7 +953,9 @@ function ClientBridge.TentarCancelarAtaquePorDefesa()
 	end
 
 	if comboState.animacaoAtiva and comboState.animacaoAtiva.IsPlaying then
-		local tempoAnimacao = comboState.animacaoAtiva.TimePosition - (comboState.tempoInicioCarga or 0)
+		local tempoCarga = comboState.tempoInicioCarga or 0
+		local trackTime = comboState.animacaoAtiva.TimePosition
+		local tempoAnimacao = trackTime - tempoCarga
 		local janelaAtaque = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelAtaque") or 0.15
 
 		local podeCancelar = (tempoAnimacao <= janelaAtaque) or comboState.carregando
@@ -944,23 +970,31 @@ function ClientBridge.TentarCancelarAtaquePorDefesa()
 			)
 
 			local track = comboState.animacaoAtiva
+			local tempoInicioCurrentStrike = comboState.tempoInicioCarga or 0
 			local velReversao = Modulo_Configuracoes.ObterConfiguracao("VelocidadeReversaoCancelamento") or -1.5
+
+			-- Desconectar listeners e cargas ANTES de criar o monitor de reversão,
+			-- para evitar que LimparConexoesMarkers() desconecte a nova conexaoMonitorReversao!
+			LimparConexoesMarkers()
+			LimparConexaoCarga()
+
 			track:AdjustSpeed(velReversao)
 
 			comboState.conexaoMonitorReversao = RunService.RenderStepped:Connect(function()
-				if not track or not track.IsPlaying or track.TimePosition <= 0.01 then
-					if comboState.conexaoMonitorReversao then
-						comboState.conexaoMonitorReversao:Disconnect()
+				if not track or not track.IsPlaying or track.TimePosition <= tempoInicioCurrentStrike + 0.01 then
+					local conn = comboState.conexaoMonitorReversao
+					if conn then
+						conn:Disconnect()
 						comboState.conexaoMonitorReversao = nil
 					end
 					if track and track.IsPlaying then
+						track:AdjustSpeed(0)
+						track.TimePosition = tempoInicioCurrentStrike
 						track:Stop(0.1)
 					end
 				end
 			end)
 
-			LimparConexoesMarkers()
-			LimparConexaoCarga()
 			comboState.animacaoAtiva = nil
 			comboState.janelaAtiva = false
 			comboState.indiceAtual = 0
@@ -1404,14 +1438,15 @@ local function AplicarKnockbackRecebido(direcao: Vector3, magnitude: number)
 	direcao = Vector3.new(direcao.X, 0, direcao.Z).Unit
 
 	local velocidadeAtual = hrp.AssemblyLinearVelocity
-	hrp.AssemblyLinearVelocity = Vector3.new(direcao.X * magnitude, velocidadeAtual.Y + 5, direcao.Z * magnitude)
+	-- Knockback puramente horizontal: sem elevacao Y para evitar pulinhos.
+	hrp.AssemblyLinearVelocity = Vector3.new(direcao.X * magnitude, velocidadeAtual.Y, direcao.Z * magnitude)
 
 	DebugPrint(string.format("[ControladorEstado] Knockback recebido: magnitude=%.1f", magnitude))
 end
 
 local AplicarKnockbackRemote = Remotos:FindFirstChild("AplicarKnockback")
 if AplicarKnockbackRemote then
-	AplicarKnockbackRemote.OnClientEvent:Connect(function(direcao, magnitude)
+	ConectarGlobal(AplicarKnockbackRemote.OnClientEvent, function(direcao, magnitude)
 		AplicarKnockbackRecebido(direcao, magnitude)
 	end)
 end
@@ -1606,6 +1641,9 @@ local function PararAnimacaoAcao()
 	end
 
 	if animacaoAtualAcao then
+		if animacaoAtualAcao.IsPlaying then
+			animacaoAtualAcao:AdjustSpeed(0)
+		end
 		animacaoAtualAcao:Stop(TIMINGS.ActionFadeOut)
 		animacaoAtualAcao = nil
 	end
@@ -1803,7 +1841,7 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 
 	PararAnimacaoAcao()
 
-	track.Priority = Enum.AnimationPriority.Action
+	track.Priority = if nomeAnimacao == "DefesaQuebrada" then Enum.AnimationPriority.Movement else Enum.AnimationPriority.Action
 	track.Looped = loop
 	track:Play(0.1)
 	track:AdjustSpeed(velocidade)
@@ -2580,7 +2618,7 @@ end
 
 humanoid.StateChanged:Connect(OnStateChanged)
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
+ConectarGlobal(UserInputService.InputBegan, function(input, gameProcessed)
 	if gameProcessed then
 		return
 	end
@@ -2594,7 +2632,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 end)
 
-UserInputService.InputEnded:Connect(function(input, _gameProcessed)
+ConectarGlobal(UserInputService.InputEnded, function(input, _gameProcessed)
 	if input.KeyCode == Enum.KeyCode.LeftShift then
 		movementFlags.isRunning = false
 		isShiftHeld = false
@@ -2604,10 +2642,10 @@ UserInputService.InputEnded:Connect(function(input, _gameProcessed)
 	end
 end)
 
-SincronizarEstado.OnClientEvent:Connect(ProcessarSincronizacao)
-TocarAnimacao.OnClientEvent:Connect(ProcessarTocarAnimacao)
+ConectarGlobal(SincronizarEstado.OnClientEvent, ProcessarSincronizacao)
+ConectarGlobal(TocarAnimacao.OnClientEvent, ProcessarTocarAnimacao)
 
-RunService.Heartbeat:Connect(AtualizarEstadoMovimento)
+ConectarGlobal(RunService.Heartbeat, AtualizarEstadoMovimento)
 
 local function AtualizarDirecaoAnimacao(deltaTime: number)
 	if not animacaoAtualMov or not animacaoAtualMov.IsPlaying then
@@ -2689,7 +2727,7 @@ local function AtualizarDirecaoAnimacao(deltaTime: number)
 	end
 end
 
-RunService.RenderStepped:Connect(AtualizarDirecaoAnimacao)
+ConectarGlobal(RunService.RenderStepped, AtualizarDirecaoAnimacao)
 
 local function PreCarregarAnimacoes()
 	local todasAnimacoes = Modulo_Configuracoes.ObterTodasAnimacoes()
@@ -2708,95 +2746,12 @@ local function PreCarregarAnimacoes()
 	DebugPrint(string.format("[ControladorEstado] %d/%d animações pré-carregadas!", carregadas, total))
 end
 
-player.CharacterAdded:Connect(function(novoCharacter)
-	character = novoCharacter
-	humanoid = character:WaitForChild("Humanoid")
-	animator = humanoid:WaitForChild("Animator")
-
-	GerenciadorHitboxCliente.DestruirTodas()
-	GerenciadorHitboxCliente.DefinirCharacter(novoCharacter)
-
-	humanoid.StateChanged:Connect(OnStateChanged)
-
-	DesativarScriptAnimate()
-
-	animacoesCarregadas = {}
-	animacaoAtualMov = nil
-	animacaoAtualAcao = nil
-	animacaoBaseIdle = nil
-	idBaseIdleAtual = nil
-
-	LimparConexoesMarkers()
-	comboState.animacaoAtiva = nil
-	comboState.janelaAtiva = false
-	comboState.indiceAtual = 0
-	comboState.continuarCombo = false
-	comboState.pendingConsume = false
-	comboState.token = 0
-
-	LimparConexoesMarkersEquip()
-	if equipAnimState.conexaoTermino then
-		equipAnimState.conexaoTermino:Disconnect()
-		equipAnimState.conexaoTermino = nil
-	end
-
-	equipAnimState.animacao = nil
-	equipAnimState.direcao = 0
-	equipAnimState.modoAlvo = nil
-	equipAnimState.armaClonada = nil
-	equipAnimState.acessorioJaClonado = false
-
-	movementFlags = {
-		isRunning = false,
-		isJumping = false,
-		isFalling = false,
-		isClimbing = false,
-		isSwimming = false,
-		isDashing = false,
-	}
-
-	parkourState = {
-		ativo = false,
-		estadoAcaoAnterior = "Nenhuma",
-	}
-
-	LimparJumpAnimState()
-
-	direcaoAtual = 1
-	velocidadeAnimacaoAlvo = 1
-	velocidadeAnimacaoAtual = 1
-	animacaoUsaDirecao = false
-	animacaoMovPausada = false
-	ultimaAnimacaoMovNome = nil
-	if timerPararAnimacao then
-		pcall(task.cancel, timerPararAnimacao)
-		timerPararAnimacao = nil
-	end
-
-	LimparHitFreeze()
-	LimparRewindSolido()
-	ultimoTempoHitboxAtivou = 0
-
-	estadoAtual = {
-		estadoMov = "Parado",
-		estadoAcao = "Nenhuma",
-		estadoAcaoAnterior = "Nenhuma",
-		modoAnimacao = "Base",
-		bloqueando = false,
-		agachado = false,
-		correndo = false,
-	}
-
-	PreCarregarAnimacoes()
-
-	AtualizarBaseIdle()
-	AtualizarAnimacaoMovimento()
-end)
+-- player.CharacterAdded connection removed because the script is inside StarterCharacterScripts and runs fresh on spawn.
 
 PreCarregarAnimacoes()
 
 GerenciadorHitboxCliente.DefinirCharacter(character)
-GerenciadorHitboxCliente.DefinirCallbackHit(function(alvo, mao)
+GerenciadorHitboxCliente.DefinirCallbackHit(function(alvo, mao, raycastResult)
 	AplicarHitFreeze()
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	TentarAcao:FireServer("HitboxAcerto", {
@@ -2804,6 +2759,7 @@ GerenciadorHitboxCliente.DefinirCallbackHit(function(alvo, mao)
 		alvo = alvo,
 		cframe = hrp and hrp.CFrame or nil,
 		multiplicadorDano = comboState.multiplicadorDano,
+		parteAtingida = raycastResult and raycastResult.Instance.Name or nil,
 	})
 end)
 

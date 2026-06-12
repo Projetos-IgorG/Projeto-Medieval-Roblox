@@ -488,7 +488,10 @@ function MaquinaDeEstados:TentePararBloqueio(): (boolean, string?)
 	self.dados.prontoParaAparar = false
 	self.dados.ultimoParry = tick()
 	self.dados.parryToken += 1
-	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Nenhuma)
+
+	if self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Defendendo then
+		self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Nenhuma)
+	end
 
 	return true, nil
 end
@@ -720,13 +723,16 @@ end
 
 function MaquinaDeEstados:AplicarAparando(duracao: number?)
 	local tempo = duracao or 0.7
-	self.dados.bloqueando = false
 	self.dados.prontoParaAparar = false
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Aparando)
 
 	task.delay(tempo, function()
 		if self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Aparando then
-			self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Nenhuma)
+			if self.dados.bloqueando then
+				self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Defendendo)
+			else
+				self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Nenhuma)
+			end
 		end
 	end)
 end

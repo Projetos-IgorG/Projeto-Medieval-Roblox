@@ -88,15 +88,21 @@ function Modulo_Impulso.AplicarImpulso(atacante: Model, modoAnimacao: string, ti
 	local humanoidRoot = atacante:FindFirstChild("HumanoidRootPart") :: BasePart
 
 	local direcao = humanoidRoot.CFrame.LookVector
-	local elevacao = Vector3.new(0, 5, 0)
+	local direcaoPlana = Vector3.new(direcao.X, 0, direcao.Z)
+	if direcaoPlana.Magnitude < 0.001 then
+		direcaoPlana = Vector3.new(0, 0, -1)
+	else
+		direcaoPlana = direcaoPlana.Unit
+	end
 
 	local sucesso, resultado = pcall(function()
 		if humanoidRoot.Anchored then
 			local deslocamento = math.clamp(magnitude * 0.035, 0.5, 4)
-			local novaPosicao = humanoidRoot.Position + Vector3.new(direcao.X, 0, direcao.Z).Unit * deslocamento
-			humanoidRoot.CFrame = CFrame.lookAt(novaPosicao, novaPosicao + Vector3.new(direcao.X, 0, direcao.Z).Unit)
+			local novaPosicao = humanoidRoot.Position + direcaoPlana * deslocamento
+			humanoidRoot.CFrame = CFrame.lookAt(novaPosicao, novaPosicao + direcaoPlana)
 		else
-			local impulsoVetor = (direcao * magnitude) + elevacao
+			-- Impulso puramente horizontal: sem elevacao Y para evitar pulinhos.
+			local impulsoVetor = direcaoPlana * magnitude
 			local massa = humanoidRoot.AssemblyMass or 1
 			humanoidRoot:ApplyImpulse(impulsoVetor * massa)
 		end
@@ -156,10 +162,11 @@ function Modulo_Impulso.AplicarImpulsoParry(defensor: Model, atacante: Model): R
 			local novaPosicao = atacanteRoot.Position + direcao * deslocamento
 			atacanteRoot.CFrame = CFrame.lookAt(novaPosicao, novaPosicao + direcao)
 		else
+			-- Impulso de parry puramente horizontal: sem elevacao Y.
 			local velocidadeAtual = atacanteRoot.AssemblyLinearVelocity
 			atacanteRoot.AssemblyLinearVelocity = Vector3.new(
 				direcao.X * magnitude,
-				velocidadeAtual.Y + 5,
+				velocidadeAtual.Y,
 				direcao.Z * magnitude
 			)
 		end

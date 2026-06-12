@@ -157,10 +157,11 @@ function Modulo_Knockback.AplicarKnockback(
 				local novaPosicao = alvoRoot.Position + direcao * deslocamento
 				alvoRoot.CFrame = CFrame.lookAt(novaPosicao, novaPosicao + direcao)
 			else
+				-- Knockback puramente horizontal: sem elevacao Y para evitar pulinhos.
 				local velocidadeAtual = alvoRoot.AssemblyLinearVelocity
 				alvoRoot.AssemblyLinearVelocity = Vector3.new(
 					direcao.X * magnitude,
-					velocidadeAtual.Y + 5,
+					velocidadeAtual.Y,
 					direcao.Z * magnitude
 				)
 			end

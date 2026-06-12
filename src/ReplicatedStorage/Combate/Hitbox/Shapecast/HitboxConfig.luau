@@ -15,6 +15,8 @@ return {
 
 	Minimum_Stationary_Length = 1,
 
+	ParryDebugBlock = true,
+
 	Debug_Visible = RunService:IsStudio() or false,
 	Debug_Instance_Raycast_Destroy_Time = 1,
 	Debug_Instance_Spherecast_Destroy_Time = 0.1,

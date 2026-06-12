@@ -63,8 +63,12 @@ end
 
 function Helpers.LimparConexoes(ctx: ContextoNPC)
 	for _, c in ctx.conexoes do
-		if c.Connected then
-			c:Disconnect()
+		if typeof(c) == "RBXScriptConnection" then
+			if c.Connected then
+				c:Disconnect()
+			end
+		elseif typeof(c) == "function" then
+			pcall(c :: any)
 		end
 	end
 	table.clear(ctx.conexoes)

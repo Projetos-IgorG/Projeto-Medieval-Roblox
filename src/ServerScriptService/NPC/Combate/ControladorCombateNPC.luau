@@ -100,6 +100,7 @@ type Estado = {
 	verificarAlvo: (() -> boolean)?,
 	timings: typeof(Timings.Punhos),
 	destruido: boolean,
+	tipoAtaqueAtual: string?,
 }
 
 local estados: { [Model]: Estado } = {}
@@ -300,6 +301,7 @@ function Mod.Iniciar(modelo: Model): Estado?
 		verificarAlvo = nil,
 		timings = Timings.Punhos,
 		destruido = false,
+		tipoAtaqueAtual = nil,
 	}
 	estados[modelo] = s
 
@@ -383,6 +385,7 @@ function Mod.DesequiparArma(modelo: Model)
 		s.indiceCombo = 0
 		s.swingHitFim = 0
 		table.clear(s.jaAtingidos)
+		s.modelo:SetAttribute("NPC_AcertouCombo", false)
 		local cs = obterCS()
 		if cs and cs.ProcessarComboTerminou then
 			pcall(cs.ProcessarComboTerminou, s.modelo)
@@ -417,10 +420,40 @@ function Mod.TocarLocomocao(modelo: Model, nome: string, velocidadeAnimacao: num
 	setLocomocao(s, nome, velocidadeAnimacao)
 end
 
-local function finalizarSwing(s: Estado, token: number)
+local iniciarSwing: (s: Estado, cs: any, maquina: any, token: number) -> ()
+local finalizarSwing: (s: Estado, token: number) -> ()
+
+function finalizarSwing(s: Estado, token: number)
 	if s.destruido or s.comboToken ~= token then
 		return
 	end
+
+	local cs = obterCS()
+	local maquina = cs and cs.ObterMaquina(s.modelo)
+	local continuar = false
+	if maquina and maquina.dados and maquina.dados.continuarCombo then
+		continuar = true
+		maquina.dados.continuarCombo = false
+	end
+
+	if continuar and s.indiceCombo < 4 then
+		s.indiceCombo = s.indiceCombo + 1
+		s.comboToken += 1
+		local novoToken = s.comboToken
+
+		if maquina.AvancarGolpeCombo then
+			pcall(maquina.AvancarGolpeCombo, maquina, s.indiceCombo)
+		end
+
+		task.defer(function()
+			if s.destruido or s.comboToken ~= novoToken then
+				return
+			end
+			iniciarSwing(s, cs, maquina, novoToken)
+		end)
+		return
+	end
+
 	s.atacando = false
 	s.ultimoSwingFim = os.clock()
 	s.swingHitFim = 0
@@ -436,7 +469,7 @@ local function finalizarSwing(s: Estado, token: number)
 		end
 		if s.indiceCombo == indiceNoFim then
 			s.indiceCombo = 0
-			local cs = obterCS()
+			s.modelo:SetAttribute("NPC_AcertouCombo", false)
 			if cs and cs.ProcessarComboTerminou then
 				pcall(cs.ProcessarComboTerminou, s.modelo)
 			end
@@ -447,17 +480,44 @@ local function finalizarSwing(s: Estado, token: number)
 	end)
 end
 
+function iniciarSwing(s: Estado, cs: any, maquina: any, token: number)
+	if s.destruido or s.comboToken ~= token then
+		return
+	end
+
+	local t = s.timings.AtaqueLeve
+	setAcao(s, TiposNPC.Acao.AtaqueLeve, s.indiceCombo)
+	s.swingHitInicio = s.acaoTick + t.AtrasoHit
+	s.swingHitFim = s.acaoTick + t.Duracao
+	table.clear(s.jaAtingidos)
+
+	local tipoAtaque = "AtaqueLeve"
+	if s.indiceCombo >= 4 then
+		tipoAtaque = "AtaqueLeveFinal"
+	end
+	s.tipoAtaqueAtual = tipoAtaque
+
+	-- ProcessarComboHitbox ja chama _AplicarImpulsoAtacante internamente.
+	-- Nao chamar aqui para evitar impulso duplicado.
+	if cs.ProcessarComboHitbox then
+		pcall(cs.ProcessarComboHitbox, s.modelo, { indice = s.indiceCombo })
+	end
+
+	-- O swing completa naturalmente; a hitbox do cliente do alvo eh quem
+	-- determina se o golpe acertou. Nao cancelamos antecipadamente.
+
+	task.delay(t.Duracao, function()
+		finalizarSwing(s, token)
+	end)
+end
+
 function Mod.AtacarLeve(modelo: Model, verificarAlvo: (() -> boolean)?): boolean
 	local s = estados[modelo]
 	if not s then
 		return false
 	end
-	if not s.armaPronta or s.atacando or s.equipando then
-		return false
-	end
 
-	s.verificarAlvo = verificarAlvo
-
+	local agora = os.clock()
 	local cs = obterCS()
 	if not cs then
 		return false
@@ -468,6 +528,22 @@ function Mod.AtacarLeve(modelo: Model, verificarAlvo: (() -> boolean)?): boolean
 		return false
 	end
 
+	if s.atacando then
+		s.verificarAlvo = verificarAlvo
+		local duracao = s.timings.AtaqueLeve.Duracao
+		if agora >= s.swingHitInicio - 0.05 and agora <= s.acaoTick + duracao then
+			maquina.dados.continuarCombo = true
+			return true
+		end
+		return false
+	end
+
+	if not s.armaPronta or s.equipando then
+		return false
+	end
+
+	s.verificarAlvo = verificarAlvo
+
 	if maquina.DefinirModo then
 		maquina:DefinirModo("Punhos")
 	end
@@ -477,44 +553,16 @@ function Mod.AtacarLeve(modelo: Model, verificarAlvo: (() -> boolean)?): boolean
 		return false
 	end
 
-	if cs._AplicarImpulsoAtacante then
-		pcall(cs._AplicarImpulsoAtacante, modelo, tipoAtaque)
-	end
-
 	local velBloq = Modulo_Configuracoes.ObterConfiguracao("VelocidadeBloqueando") or 6
 	s.humanoide.WalkSpeed = velBloq * 1.5
 
-	s.indiceCombo = math.min(4, s.indiceCombo + 1)
+	s.indiceCombo = 1
+	s.tipoAtaqueAtual = tipoAtaque
 	s.atacando = true
 	s.comboToken += 1
 	local token = s.comboToken
 
-	-- Janela de aceitacao de hit reports do cliente (referenciada em ProcessarReporteHit).
-	local t = s.timings.AtaqueLeve
-	-- setAcao atualiza acaoTick para os.clock() agora; a janela usa esse tempo.
-	setAcao(s, TiposNPC.Acao.AtaqueLeve, s.indiceCombo)
-	s.swingHitInicio = s.acaoTick + t.AtrasoHit
-	s.swingHitFim = s.acaoTick + t.Duracao
-	table.clear(s.jaAtingidos)
-
-	if cs.ProcessarComboHitbox then
-		pcall(cs.ProcessarComboHitbox, s.modelo, { indice = s.indiceCombo })
-	end
-
-	-- Cancelamento por verificarAlvo (sai cedo se alvo ja saiu da faixa).
-	task.delay(t.AtrasoHit, function()
-		if s.destruido or s.comboToken ~= token then
-			return
-		end
-		if s.verificarAlvo and not s.verificarAlvo() then
-			s.swingHitFim = 0 -- fecha janela
-			finalizarSwing(s, token)
-		end
-	end)
-
-	task.delay(t.Duracao, function()
-		finalizarSwing(s, token)
-	end)
+	iniciarSwing(s, cs, maquina, token)
 
 	return true
 end
@@ -530,6 +578,7 @@ function Mod.PararAtaque(modelo: Model)
 	s.swingHitFim = 0
 	s.verificarAlvo = nil
 	table.clear(s.jaAtingidos)
+	s.modelo:SetAttribute("NPC_AcertouCombo", false)
 	local cs = obterCS()
 	if cs and cs.ProcessarComboTerminou then
 		pcall(cs.ProcessarComboTerminou, s.modelo)
@@ -571,7 +620,7 @@ local function distanciaModelos(a: Model, b: Model): number
 	return (pa.Position - pb.Position).Magnitude
 end
 
-local function processarReporteHit(jogador: Player, npcModel: Model, alvoModel: Model, acaoTickReportado: number)
+local function processarReporteHit(jogador: Player, npcModel: Model, alvoModel: Model, acaoTickReportado: number, parteAtingida: string?)
 	-- Tipos basicos.
 	if typeof(npcModel) ~= "Instance" or not npcModel:IsA("Model") then
 		return
@@ -607,7 +656,7 @@ local function processarReporteHit(jogador: Player, npcModel: Model, alvoModel: 
 	if s.swingHitFim <= 0 then
 		return
 	end
-	if agora < s.swingHitInicio - 0.05 or agora > s.swingHitFim + 0.10 then
+	if agora < s.swingHitInicio - 0.10 or agora > s.swingHitFim + 0.80 then
 		return
 	end
 
@@ -628,12 +677,13 @@ local function processarReporteHit(jogador: Player, npcModel: Model, alvoModel: 
 	end
 
 	s.jaAtingidos[alvoModel] = true
+	s.modelo:SetAttribute("NPC_AcertouCombo", true)
 
 	local cs = obterCS()
 	if not cs or not cs._ProcessarHit then
 		return
 	end
-	pcall(cs._ProcessarHit, s.modelo, alvoModel, "AtaqueLeve", s.danoLeve)
+	pcall(cs._ProcessarHit, s.modelo, alvoModel, s.tipoAtaqueAtual or "AtaqueLeve", s.danoLeve, parteAtingida)
 end
 
 NPC_HitReport.OnServerEvent:Connect(processarReporteHit)

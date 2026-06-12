@@ -26,7 +26,73 @@ local Modulo_Configuracoes = require(Combate:WaitForChild("Configuracoes"):WaitF
 local Modulo_Dano = require(DominioCombate:WaitForChild("DanoCombate"))
 local Modulo_Impulso = require(DominioCombate:WaitForChild("ImpulsoCombate"))
 local Modulo_Knockback = require(DominioCombate:WaitForChild("KnockbackCombate"))
-local MaquinaDeEstados = require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Estado"):WaitForChild("MaquinaEstadosJogador"))
+local MaquinaDeEstados =
+	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Estado"):WaitForChild("MaquinaEstadosJogador"))
+
+local function isParryDebugActive(): boolean
+	local attr = ReplicatedStorage:GetAttribute("ParryDebugBlock")
+	if attr ~= nil then
+		return attr == true
+	end
+	local ok, HitboxConfig = pcall(
+		require,
+		ReplicatedStorage:WaitForChild("Combate")
+			:WaitForChild("Hitbox")
+			:WaitForChild("Shapecast")
+			:WaitForChild("HitboxConfig") :: ModuleScript
+	)
+	return ok and HitboxConfig.ParryDebugBlock == true
+end
+
+local function DestruirDefesaBlock(entidade: Model)
+	local existente = entidade:FindFirstChild("DefesaBlock")
+	if existente then
+		existente:Destroy()
+	end
+end
+
+local function CriarDefesaBlock(entidade: Model, debugAtivo: boolean, prontoParaAparar: boolean)
+	local hrp = entidade:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not hrp then return end
+
+	local existente = entidade:FindFirstChild("DefesaBlock")
+	if existente then
+		existente:Destroy()
+	end
+
+	local block = Instance.new("Part")
+	block.Name = "DefesaBlock"
+	block.Size = Vector3.new(3.7, 5, 1.5)
+	block.CanCollide = false
+	block.CanTouch = true
+	block.CanQuery = true
+	block.Massless = true
+	block.Transparency = if debugAtivo then 0.5 else 1.0
+	block.Color = if prontoParaAparar then Color3.fromRGB(255, 255, 0) else Color3.fromRGB(0, 255, 0) -- Yellow vs Green
+	block.Material = Enum.Material.ForceField
+	block.CastShadow = false
+
+	-- Define o CFrame inicial alinhado com o HRP (frente do personagem) antes de soldar
+	block.CFrame = hrp.CFrame * CFrame.new(0, 0, -1.5)
+
+	-- Solda ao HumanoidRootPart (que nao se move com animacoes) em vez do Torso
+	local weld = Instance.new("ManualWeld")
+	weld.Name = "DefesaBlockWeld"
+	weld.Part0 = hrp
+	weld.Part1 = block
+	weld.C0 = CFrame.new(0, 0, -1.5)
+	weld.Parent = block
+
+	block.Parent = entidade
+end
+
+local function AtualizarDefesaBlock(entidade: Model, debugAtivo: boolean, prontoParaAparar: boolean)
+	local block = entidade:FindFirstChild("DefesaBlock") :: BasePart?
+	if block then
+		block.Transparency = if debugAtivo then 0.5 else 1.0
+		block.Color = if prontoParaAparar then Color3.fromRGB(255, 255, 0) else Color3.fromRGB(0, 255, 0)
+	end
+end
 
 local ControladorCombate = {}
 
@@ -39,6 +105,7 @@ local MudarShiftLock = Remotos:WaitForChild("MudarShiftLock")
 local SincronizarEstado = Remotos:WaitForChild("SincronizarEstado")
 local TocarAnimacao = Remotos:WaitForChild("TocarAnimacao")
 local EquipAnimacaoTerminou = Remotos:WaitForChild("EquipAnimacaoTerminou")
+local DanoDebugVisual = Remotos:WaitForChild("DanoDebugVisual") :: RemoteEvent
 
 local function DeterminarTipoAtaque(indice: number): string
 	if indice >= 4 then
@@ -89,8 +156,13 @@ function ControladorCombate.ObterMaquina(entidade: Model)
 	if not maquinasDeEstado[entidade] then
 		maquinasDeEstado[entidade] = MaquinaDeEstados.Novo(entidade)
 
-		maquinasDeEstado[entidade]:AoMudarEstadoAcao(function(_novo, _anterior)
+		maquinasDeEstado[entidade]:AoMudarEstadoAcao(function(novo, _anterior)
 			ControladorCombate._SincronizarEstado(entidade)
+			if novo == "Defendendo" then
+				ControladorCombate._TocarAnimacao(entidade, "Defesa", true)
+			elseif novo ~= "Aparando" then
+				DestruirDefesaBlock(entidade)
+			end
 		end)
 
 		maquinasDeEstado[entidade]:AoMudarEstadoMov(function(_novo, _anterior)
@@ -153,11 +225,9 @@ function ControladorCombate._SincronizarEstado(entidade: Model)
 	local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		if dados.estadoAcao == "Nenhuma" then
-
 			if maquina.dados.correndoIntent then
 				maquina.dados.correndoIntent = nil
 				maquina.dados.correndo = true
-
 			end
 
 			if dados.agachado then
@@ -165,7 +235,6 @@ function ControladorCombate._SincronizarEstado(entidade: Model)
 			elseif dados.bloqueando then
 				humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeBloqueando") or 6
 			end
-
 		end
 	end
 
@@ -219,19 +288,27 @@ function ControladorCombate._AplicarKnockback(alvo: Model, atacante: Model, tipo
 			)
 		)
 	else
-
 		if resultado.erro and not resultado.erro:match("não permite") then
 			DebugPrint("[Combate] Falha ao aplicar knockback: " .. tostring(resultado.erro))
 		end
 	end
 end
 
+-- Funções de bloco de defesa movidas para o topo do arquivo
+
 function ControladorCombate._CriarHitbox(_atacante: Model, _tipoAtaque: string, _cframeCliente: CFrame?)
 	warn("[ControladorCombate] _CriarHitbox está deprecado. Use ShapecastHitbox no cliente.")
 	return {}
 end
 
-function ControladorCombate._ProcessarHit(atacante: Model, alvo: Model, tipoAtaque: string, danoOverride: number?)
+function ControladorCombate._ProcessarHit(
+	atacante: Model,
+	alvo: Model,
+	tipoAtaque: string,
+	danoOverride: number?,
+	parteAtingida: string?,
+	multiplicadorDano: number?
+)
 	local maquinaAtacante = maquinasDeEstado[atacante]
 	local maquinaAlvo = ControladorCombate.ObterMaquina(alvo)
 
@@ -239,9 +316,8 @@ function ControladorCombate._ProcessarHit(atacante: Model, alvo: Model, tipoAtaq
 		return
 	end
 
-	-- ===== PARRY (defensor pronto para aparar) =====
-	if maquinaAlvo:EstaProntoParaAparar() and maquinaAlvo:EstaBloqueando() then
-
+	-- ===== PARRY (defensor pronto para aparar e atingiu o bloco de defesa) =====
+	if maquinaAlvo:EstaProntoParaAparar() and maquinaAlvo:EstaBloqueando() and parteAtingida == "DefesaBlock" then
 		local tempoStun = Modulo_Configuracoes.ObterConfiguracao("TempoStunAparado") or 0.7
 		local tempoAparando = Modulo_Configuracoes.ObterConfiguracao("TempoAparando") or tempoStun
 
@@ -258,6 +334,8 @@ function ControladorCombate._ProcessarHit(atacante: Model, alvo: Model, tipoAtaq
 			maquinaAlvo:AplicarAparando(tempoAparando)
 		end
 
+		AtualizarDefesaBlock(alvo, isParryDebugActive(), false)
+
 		-- Reseta cooldown de parry do defensor: parry bem sucedido permite aparar
 		-- o proximo ataque imediatamente. (REQ: 'Aparar resetar o proprio cooldown')
 		maquinaAlvo.dados.ultimoParry = 0
@@ -269,12 +347,17 @@ function ControladorCombate._ProcessarHit(atacante: Model, alvo: Model, tipoAtaq
 		end
 
 		DebugPrint(string.format("[Combate] %s APAROU ataque de %s!", alvo.Name, atacante.Name))
+		if DanoDebugVisual then
+			DanoDebugVisual:FireAllClients(alvo, 0, {
+				tipo = "Parry",
+				atacante = atacante
+			})
+		end
 		return
 	end
 
-	-- ===== BLOQUEIO (sem parry) =====
-	if maquinaAlvo:EstaBloqueando() then
-
+	-- ===== BLOQUEIO (sem parry, mas atingiu o bloco de defesa) =====
+	if maquinaAlvo:EstaBloqueando() and parteAtingida == "DefesaBlock" then
 		if tipoAtaque == "AtaqueLeveFinal" then
 			local tempoStun = 0.6
 
@@ -285,9 +368,14 @@ function ControladorCombate._ProcessarHit(atacante: Model, alvo: Model, tipoAtaq
 			ControladorCombate._AplicarKnockback(alvo, atacante, tipoAtaque)
 
 			DebugPrint(string.format("[Combate] %s teve a defesa QUEBRADA por %s!", alvo.Name, atacante.Name))
+			if DanoDebugVisual then
+				DanoDebugVisual:FireAllClients(alvo, 0, {
+					tipo = "BlockBroken",
+					atacante = atacante
+				})
+			end
 			return
 		else
-
 			-- Ataque leve absorvido: nao tira vida, mas cada lado sente um leve impacto.
 			-- Defensor recua um pouco, atacante recua um pouco (feedback de hit).
 			local modoAtacante = maquinaAtacante:ObterModo()
@@ -295,6 +383,19 @@ function ControladorCombate._ProcessarHit(atacante: Model, alvo: Model, tipoAtaq
 			Modulo_Knockback.AplicarKnockback(atacante, alvo, modoAtacante, "AtaqueLeve")
 			Modulo_Knockback.AplicarKnockback(alvo, atacante, modoAlvo, "AtaqueLeve")
 			DebugPrint(string.format("[Combate] %s bloqueou ataque de %s", alvo.Name, atacante.Name))
+
+			local danoBase = danoOverride
+			if not danoBase then
+				local tool = atacante:FindFirstChildOfClass("Tool")
+				danoBase = (tool and Modulo_Dano.ObterDanoBase(tool)) or 0
+			end
+
+			if DanoDebugVisual then
+				DanoDebugVisual:FireAllClients(alvo, danoBase, {
+					tipo = "Block",
+					atacante = atacante
+				})
+			end
 			return
 		end
 	end
@@ -302,7 +403,6 @@ function ControladorCombate._ProcessarHit(atacante: Model, alvo: Model, tipoAtaq
 	-- ===== HIT NORMAL =====
 	local resultado
 	if danoOverride then
-
 		resultado = Modulo_Dano.AplicarDanoComValor(atacante, alvo, tipoAtaque, danoOverride)
 	else
 		local characterAtacante = atacante
@@ -325,6 +425,15 @@ function ControladorCombate._ProcessarHit(atacante: Model, alvo: Model, tipoAtaq
 		ControladorCombate._TocarAnimacao(alvo, "Stunado")
 
 		ControladorCombate._AplicarKnockback(alvo, atacante, tipoAtaque)
+
+		if DanoDebugVisual then
+			DanoDebugVisual:FireAllClients(alvo, danoAplicado, {
+				tipo = "Hit",
+				atacante = atacante,
+				multiplicador = multiplicadorDano,
+				bypassed = (maquinaAlvo:EstaBloqueando() and parteAtingida ~= "DefesaBlock")
+			})
+		end
 	else
 		DebugPrint("[Combate] Falha ao aplicar dano: " .. tostring(resultado.erro))
 	end
@@ -336,7 +445,6 @@ function ControladorCombate.ProcessarAtacarLeveEmPe(entidade: Model): (boolean, 
 	local sucesso, tipoAtaque, motivo = maquina:TenteAtacarLeveEmPe()
 
 	if not sucesso then
-
 		if motivo == "ComboContinuado" then
 			DebugPrint(string.format("[Combate] %s: Combo input registrado", entidade.Name))
 			return true, nil
@@ -442,12 +550,10 @@ function ControladorCombate.ProcessarComboEarlyCancel(entidade: Model)
 	return true, nil
 end
 
-
 function ControladorCombate.ProcessarDashEarlyCancel(entidade: Model)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
 	if maquina:ObterEstadoAcao() == MaquinaDeEstados.EstadoAcao.Dashando then
-
 		maquina:CompletarDash()
 
 		maquina.dados.correndoIntent = nil
@@ -518,7 +624,6 @@ function ControladorCombate.ProcessarAtacarLeveAgachado(entidade: Model)
 	return true, nil
 end
 
-
 function ControladorCombate.ProcessarBloquear(entidade: Model, shiftLockAtivo: boolean?): (boolean, string?)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
@@ -536,7 +641,7 @@ function ControladorCombate.ProcessarBloquear(entidade: Model, shiftLockAtivo: b
 		humanoid.WalkSpeed = Modulo_Configuracoes.ObterConfiguracao("VelocidadeBloqueando") or 6
 	end
 
-	ControladorCombate._TocarAnimacao(entidade, "Defesa", true)
+	-- Animação agora é iniciada de forma centralizada pelo listener AoMudarEstadoAcao
 
 	local status = entidade:FindFirstChild("Status")
 	local agora = tick()
@@ -552,6 +657,7 @@ function ControladorCombate.ProcessarBloquear(entidade: Model, shiftLockAtivo: b
 				prontoAparar.Value = true
 			end
 		end
+		CriarDefesaBlock(entidade, isParryDebugActive(), true)
 		ControladorCombate._SincronizarEstado(entidade)
 
 		task.delay(Modulo_Configuracoes.ObterConfiguracao("JanelaParry") or 0.2, function()
@@ -562,6 +668,7 @@ function ControladorCombate.ProcessarBloquear(entidade: Model, shiftLockAtivo: b
 					prontoAparar.Value = false
 				end
 			end
+			AtualizarDefesaBlock(entidade, isParryDebugActive(), false)
 			ControladorCombate._SincronizarEstado(entidade)
 		end)
 	else
@@ -572,6 +679,7 @@ function ControladorCombate.ProcessarBloquear(entidade: Model, shiftLockAtivo: b
 				prontoAparar.Value = false
 			end
 		end
+		CriarDefesaBlock(entidade, isParryDebugActive(), false)
 		ControladorCombate._SincronizarEstado(entidade)
 	end
 
@@ -595,6 +703,7 @@ function ControladorCombate.ProcessarPararBloqueio(entidade: Model): (boolean, s
 		end
 	end
 
+	DestruirDefesaBlock(entidade)
 	ControladorCombate._SincronizarEstado(entidade)
 
 	return true, nil
@@ -615,6 +724,7 @@ function ControladorCombate.ProcessarQuebrarDefesa(entidade: Model): (boolean, s
 	end
 
 	ControladorCombate._TocarAnimacao(entidade, "DefesaQuebrada")
+	DestruirDefesaBlock(entidade)
 
 	return true, nil
 end
@@ -890,12 +1000,15 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
 	local estadoAcao = maquina:ObterEstadoAcao()
-	local emAtaque = estadoAcao == "AtacandoLeve"
-		or estadoAcao == "AtacandoLeveAgachado"
+	local emAtaque = estadoAcao == "AtacandoLeve" or estadoAcao == "AtacandoLeveAgachado"
 
 	if not emAtaque then
 		DebugPrint(
-			string.format("[Combate] %s: HitboxAcerto ignorado - não está atacando (estado=%s)", entidade.Name, estadoAcao)
+			string.format(
+				"[Combate] %s: HitboxAcerto ignorado - não está atacando (estado=%s)",
+				entidade.Name,
+				estadoAcao
+			)
 		)
 		return false, "NaoAtacando"
 	end
@@ -958,7 +1071,8 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 		danoOverride = danoBase * multiplicadorDano
 	end
 
-	ControladorCombate._ProcessarHit(entidade, alvo, tipoAtaque, danoOverride)
+	local parteAtingida: string? = dados.parteAtingida
+	ControladorCombate._ProcessarHit(entidade, alvo, tipoAtaque, danoOverride, parteAtingida, multiplicadorDano)
 
 	DebugPrint(
 		string.format(
@@ -978,7 +1092,6 @@ local MapaAcoes = {
 	AtacarLeveEmPe = ControladorCombate.ProcessarAtacarLeveEmPe,
 	AtacarLeveAgachado = ControladorCombate.ProcessarAtacarLeveAgachado,
 	Bloquear = function(entidade, dados)
-
 		local shiftLockAtivo = typeof(dados) == "table" and dados.shiftLock or nil
 		return ControladorCombate.ProcessarBloquear(entidade, shiftLockAtivo)
 	end,
@@ -1003,11 +1116,9 @@ local MapaAcoes = {
 	Desequipar = ControladorCombate.ProcessarDesequipar,
 
 	ComboHitbox = function(entidade, dados)
-
 		return ControladorCombate.ProcessarComboHitbox(entidade, dados)
 	end,
 	ComboContinuado = function(entidade, dados)
-
 		return ControladorCombate.ProcessarComboContinuado(entidade, dados)
 	end,
 	ComboTerminou = ControladorCombate.ProcessarComboTerminou,
@@ -1019,7 +1130,6 @@ local MapaAcoes = {
 	end,
 
 	CancelarAtaquePorDefesa = function(entidade, dados)
-
 		return ControladorCombate.ProcessarCancelarAtaquePorDefesa(entidade, dados)
 	end,
 }
@@ -1117,7 +1227,6 @@ end)
 
 Players.PlayerAdded:Connect(function(player)
 	player.CharacterAdded:Connect(function(character)
-
 		local status = character:WaitForChild("Status", 5)
 		if not status then
 			warn("[ControladorCombate] Status não encontrado para " .. player.Name)
@@ -1147,7 +1256,6 @@ end)
 
 for _, player in ipairs(Players:GetPlayers()) do
 	if player.Character then
-
 		local _status = player.Character:WaitForChild("Status", 5)
 		ControladorCombate.ObterMaquina(player.Character)
 

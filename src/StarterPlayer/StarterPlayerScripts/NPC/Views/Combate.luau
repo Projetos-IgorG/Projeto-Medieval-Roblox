@@ -475,7 +475,7 @@ local function ativarHitboxMaoCliente(ctx: Ctx, mao: string, duracao: number?, a
 	end
 	ctx.estado[key] = handle
 
-	Modulo_Hitbox.AtivarHitbox(handle, function(alvo: Model, _maoHit)
+	Modulo_Hitbox.AtivarHitbox(handle, function(alvo: Model, _maoHit, raycastResult)
 		if ctx.estado.acaoTick ~= acaoTick then
 			return
 		end
@@ -484,7 +484,7 @@ local function ativarHitboxMaoCliente(ctx: Ctx, mao: string, duracao: number?, a
 		end
 		-- Reporta para servidor: ele valida atacando + janela + distancia + dedup
 		-- e chama _ProcessarHit canonico.
-		NPC_HitReport:FireServer(ctx.modelo, alvo, acaoTick)
+		NPC_HitReport:FireServer(ctx.modelo, alvo, acaoTick, raycastResult and raycastResult.Instance.Name or nil)
 	end, duracao)
 end
 
@@ -574,6 +574,24 @@ local function configurarHitboxParaSwing(ctx: Ctx, track: AnimationTrack, acaoTi
 		limparConexoesHitboxAnimacao(ctx)
 	end)
 
+	local tempoAtivacao = acaoTick + t.AtrasoHit
+	local agora = os.clock()
+	local delayTempo = tempoAtivacao - agora
+
+	task.delay(math.max(0, delayTempo), function()
+		if not (ctx :: any).destruido
+			and ctx.estado.swingHitToken == token
+			and ctx.estado.acaoTick == acaoTick
+			and ehAlvoLocal(ctx)
+		then
+			if not ctx.estado.hitboxMarkerDisparado then
+				ctx.estado.hitboxMarkerDisparado = true
+				destruirHitboxMaoLocal(ctx, maoOposta(maoIndice))
+				ativarHitboxMaoCliente(ctx, maoIndice, nil, acaoTick)
+			end
+		end
+	end)
+
 	task.delay(t.Duracao, function()
 		if ctx.estado.swingHitToken ~= token then
 			return
@@ -622,8 +640,14 @@ local function tocarEstado(ctx: Ctx)
 		end
 		return
 	end
-	if ctx.estado.estadoTocando == entry.nome then
+	local track = ViewBase.CarregarTrack(ctx, entry.nome, entry.id)
+	if not track then
 		return
+	end
+	if ctx.estado.estadoTocando == entry.nome then
+		if track.IsPlaying then
+			return
+		end
 	end
 	ctx.estado.estadoTocando = entry.nome
 
@@ -638,10 +662,6 @@ local function tocarEstado(ctx: Ctx)
 		end
 	end
 
-	local track = ViewBase.CarregarTrack(ctx, entry.nome, entry.id)
-	if not track then
-		return
-	end
 	track.Looped = entry.looped
 	track:Play(FADE_REACAO_IN)
 end
@@ -691,19 +711,33 @@ local function tocarAcao(ctx: Ctx)
 			return
 		end
 		track.Looped = false
-		-- Stop and Play para reiniciar do comeco em cada novo swing.
-		if track.IsPlaying then
-			track:Stop(FADE_ENTRADA_ATAQUE)
-		end
-		task.defer(function()
-			if ctx.estado.acaoTick == tick and not (ctx :: any).destruido then
-				-- Configura hitbox local SOMENTE se este cliente for o alvo.
-				if typeof(tick) == "number" then
-					configurarHitboxParaSwing(ctx, track, tick)
+		local indice = ctx.modelo:GetAttribute(TiposNPC.Chaves.AcaoIndice) :: number?
+		local ehContinuacao = track.IsPlaying and typeof(indice) == "number" and indice > 1
+
+		if ehContinuacao then
+			-- Continuacao de combo: NAO reinicia a animacao. Apenas atualiza hitbox.
+			task.defer(function()
+				if ctx.estado.acaoTick == tick and not (ctx :: any).destruido then
+					if typeof(tick) == "number" then
+						configurarHitboxParaSwing(ctx, track, tick)
+					end
 				end
-				track:Play(FADE_ENTRADA_ATAQUE)
+			end)
+		else
+			-- Primeiro golpe ou animacao nao esta tocando: inicia do comeco.
+			if track.IsPlaying then
+				track:Stop(FADE_ENTRADA_ATAQUE)
 			end
-		end)
+			task.defer(function()
+				if ctx.estado.acaoTick == tick and not (ctx :: any).destruido then
+					-- Configura hitbox local SOMENTE se este cliente for o alvo.
+					if typeof(tick) == "number" then
+						configurarHitboxParaSwing(ctx, track, tick)
+					end
+					track:Play(FADE_ENTRADA_ATAQUE)
+				end
+			end)
+		end
 	end
 end
 

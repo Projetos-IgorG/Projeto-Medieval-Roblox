@@ -57,6 +57,7 @@ CriarRemoto(Remotos, "ArrastarItem", "Event")
 CriarRemoto(Remotos, "EquipamentoAcao", "Event")
 CriarRemoto(Remotos, "DroparTool", "Event")
 CriarRemoto(Remotos, "NPC_HitReport", "Event")
+CriarRemoto(Remotos, "DanoDebugVisual", "Event")
 
 DebugPrint("[ConfigIniciar] Remotos criados")
 

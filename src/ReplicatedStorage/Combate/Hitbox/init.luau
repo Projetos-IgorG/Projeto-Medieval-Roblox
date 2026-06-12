@@ -12,7 +12,7 @@ local ShapecastHitbox = require(script.Shapecast)
 
 export type Mao = "Right" | "Left"
 
-export type OnHitCallback = (alvo: Model, mao: Mao) -> ()
+export type OnHitCallback = (alvo: Model, mao: Mao, raycastResult: RaycastResult?) -> ()
 export type OnSolidHitCallback = (raycastResult: RaycastResult, mao: Mao) -> ()
 
 export type HitboxHandle = {
@@ -158,7 +158,7 @@ function Modulo_Hitbox.AtivarHitbox(handle: HitboxHandle, onHit: OnHitCallback, 
 			handle.jaAtingidos[modelo] = true
 
 			if handle._onHitCallback then
-				handle._onHitCallback(modelo, handle.mao)
+				handle._onHitCallback(modelo, handle.mao, raycastResult)
 			end
 			return
 		end

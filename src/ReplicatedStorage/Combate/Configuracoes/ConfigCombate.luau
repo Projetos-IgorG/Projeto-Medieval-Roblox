@@ -3,7 +3,7 @@
 --[[
     Script: ConfigCombate.luau
     Caminho: src/ReplicatedStorage/Combate/Configuracoes
-    Responsabilidade: Centraliza valores de alcance, dano, tempos, stamina e parametros gerais do combate.
+    Responsabilidade: Centraliza valores de dano, tempos, stamina e parametros gerais do combate.
     Uso: ModuleScript; use require(caminho) para ler as tabelas e valores exportados.
     Nao faz: Nao executa comportamento sozinho; apenas fornece dados para outros scripts.
     Funcoes principais: ValidarIdAnimacao, ModoExiste, ObterModoAnimacao, ObterAnimacao, ObterConfiguracao, AplicaImpulso

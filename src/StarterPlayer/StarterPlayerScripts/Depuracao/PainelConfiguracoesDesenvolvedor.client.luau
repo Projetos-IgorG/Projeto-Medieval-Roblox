@@ -159,6 +159,8 @@ export type CategoryEntry = {
 
 local categories: { CategoryEntry } = {}
 
+local fireAdminAction: (acao: string, overrides: { [string]: any }?) -> ()
+
 local adminState = {
 	alvo = player.Name,
 	tipoTool = "Armas",
@@ -403,7 +405,11 @@ registrar("Camera / Jogador", cameraConfig, cameraDefaults, nil, function(key, v
 	ModConfJogador.DefinirConfiguracao(key, value)
 end)
 
-registrar("Hitbox Debug", HitboxConfig)
+registrar("Hitbox Debug", HitboxConfig, nil, function(key, value)
+	if key == "ParryDebugBlock" then
+		fireAdminAction("MudarDebugParry", { ativo = value })
+	end
+end)
 
 local runtimeConfig = {
 	WalkSpeed = 16,
@@ -565,7 +571,7 @@ local function criarAdminPayload(overrides: { [string]: any }?)
 	return payload
 end
 
-local function fireAdminAction(acao: string, overrides: { [string]: any }?)
+fireAdminAction = function(acao: string, overrides: { [string]: any }?)
 	local remote = ensureAdminRemoteConnection()
 	if not remote then
 		setAdminStatus("Remote admin indisponivel", false)
@@ -2333,11 +2339,11 @@ local capacidadesNPC = {
 }
 
 local function obterRemoteNPC(nome: string): RemoteEvent?
-	local raiz = ReplicatedStorage:FindFirstChild("NPC")
-	local pasta = raiz and raiz:FindFirstChild("Remotos")
-	local remoto = pasta and pasta:FindFirstChild(nome)
+	local raiz = ReplicatedStorage:WaitForChild("NPC", 2)
+	local pasta = raiz and raiz:WaitForChild("Remotos", 2)
+	local remoto = pasta and pasta:WaitForChild(nome, 2)
 	if remoto and remoto:IsA("RemoteEvent") then
-		return remoto
+		return remoto :: RemoteEvent
 	end
 	return nil
 end
@@ -2370,6 +2376,7 @@ local function dispararAtualizarFlags()
 		warn("[DevPanel] RemoteEvent AtualizarFlagsNPCDev nao encontrado")
 		return
 	end
+	print("[DevPanel] Disparando atualizacao de flags em tempo real para os NPCs")
 	remoto:FireServer({
 		podeAndar = capacidadesNPC.podeAndar,
 		podeAtacar = capacidadesNPC.podeAtacar,
@@ -2379,11 +2386,13 @@ local function dispararAtualizarFlags()
 end
 
 local function dispararDespawnTodos()
+	print("[DevPanel] Botao Despawn clicado, buscando remote...")
 	local remoto = obterRemoteNPC("DespawnNPCDev")
 	if not remoto then
 		warn("[DevPanel] RemoteEvent DespawnNPCDev nao encontrado")
 		return
 	end
+	print("[DevPanel] Remote DespawnNPCDev encontrado, enviando pedido FireServer({ todos = true })")
 	remoto:FireServer({ todos = true })
 end
 

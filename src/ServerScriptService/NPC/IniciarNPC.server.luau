@@ -92,33 +92,48 @@ end)
 
 DespawnDevRemote.OnServerEvent:Connect(function(player: Player, payload: any)
 	if not podeUsarDev(player) then
+		warn(string.format("[DevNPC] Player %s tentou usar DespawnNPCDev sem permissao", player.Name))
 		return
 	end
+	print(string.format("[DevNPC] Recebido pedido de despawn por %s. Payload: %s", player.Name, game:GetService("HttpService"):JSONEncode(payload)))
 	if typeof(payload) == "number" then
-		GerenciadorNPC.DespawnNPC(payload)
+		local sucesso = GerenciadorNPC.DespawnNPC(payload)
+		print(string.format("[DevNPC] Despawn de NPC unico (ID %d): sucesso = %s", payload, tostring(sucesso)) )
 	elseif typeof(payload) == "table" and payload.todos == true then
-		for _, reg in GerenciadorNPC.Listar() do
-			GerenciadorNPC.DespawnNPC(reg.id)
+		local lista = GerenciadorNPC.Listar()
+		print(string.format("[DevNPC] Despawn de todos os NPCs. Quantidade listada: %d", #lista))
+		for _, reg in lista do
+			local sucesso = GerenciadorNPC.DespawnNPC(reg.id)
+			print(string.format("[DevNPC] Despawning NPC ID %d (Archetype %s): sucesso = %s", reg.id, reg.archetype, tostring(sucesso)))
 		end
+	else
+		warn(string.format("[DevNPC] Payload de despawn invalido ou nao suportado: %s", typeof(payload)))
 	end
 end)
 
 -- Atualiza flags de capacidade em TODOS os NPCs hostis ja spawnados (real-time toggles).
 FlagsDevRemote.OnServerEvent:Connect(function(player: Player, payload: any)
 	if not podeUsarDev(player) then
+		warn(string.format("[DevNPC] Player %s tentou usar AtualizarFlagsNPCDev sem permissao", player.Name))
 		return
 	end
 	if typeof(payload) ~= "table" then
+		warn("[DevNPC] Payload de atualizacao de flags invalido")
 		return
 	end
+	print(string.format("[DevNPC] Atualizando flags para NPCs ja spawnados. Payload: %s", game:GetService("HttpService"):JSONEncode(payload)))
+	local count = 0
 	for _, reg in GerenciadorNPC.Listar() do
-		if reg.archetype ~= TiposNPC.Archetype.Combate or not reg.hostil then
-			continue
-		end
 		local modelo = reg.modelo
 		if not modelo or not modelo.Parent then
 			continue
 		end
+		local hostil = modelo:GetAttribute(TiposNPC.Chaves.Hostil) == true
+		if reg.archetype ~= TiposNPC.Archetype.Combate or not hostil then
+			continue
+		end
+		
+		count += 1
 		if typeof(payload.podeAndar) == "boolean" then
 			modelo:SetAttribute(TiposNPC.Chaves.PodeAndar, payload.podeAndar)
 		end
@@ -137,6 +152,7 @@ FlagsDevRemote.OnServerEvent:Connect(function(player: Player, payload: any)
 			modelo:SetAttribute(TiposNPC.Chaves.PodeParry, payload.podeParry and defenderAtivo)
 		end
 	end
+	print(string.format("[DevNPC] Atualizadas flags de %d NPCs hostis de combate", count))
 end)
 
 -- Limpeza ao encerrar (jogadores saindo nao removem NPCs; servidor encerrar sim, naturalmente).

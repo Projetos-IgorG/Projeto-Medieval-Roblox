@@ -11,15 +11,9 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local TiposNPC = require(
-	ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos")
-)
-local RemotosNPC = require(
-	ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("RemotosNPC")
-)
-local Especies = require(
-	ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("Especies")
-)
+local TiposNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos"))
+local RemotosNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("RemotosNPC"))
+local Especies = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("Especies"))
 
 local Construtor = require(script.Parent:WaitForChild("ConstrutorModeloNPC"))
 local Scheduler = require(script.Parent:WaitForChild("SchedulerServidor"))
@@ -31,9 +25,8 @@ require(ComportamentosFolder:WaitForChild("Dialogo"))
 require(ComportamentosFolder:WaitForChild("Combate"))
 require(ComportamentosFolder:WaitForChild("Animal"))
 
-local Gerenciador_Entidades = require(
-	script.Parent.Parent:WaitForChild("Entidades"):WaitForChild("GerenciadorEntidades")
-)
+local Gerenciador_Entidades =
+	require(script.Parent.Parent:WaitForChild("Entidades"):WaitForChild("GerenciadorEntidades"))
 
 type OpcoesSpawn = TiposNPC.OpcoesSpawn
 type Ctx = Comportamento.ContextoNPC
@@ -112,15 +105,21 @@ function Gerenciador.SpawnNPC(opcoes: OpcoesSpawn): TiposNPC.RegistroNPC?
 
 	-- Sincroniza Vida (Atributo) <-> Humanoid.Health para combate continuar funcionando.
 	local conexoesEnt: { RBXScriptConnection } = {}
-	table.insert(conexoesEnt, humanoide.HealthChanged:Connect(function(saude)
-		local entidade = Gerenciador_Entidades.ObterPorModelo(modelo)
-		if entidade then
-			entidade:definirAtributo("Vida", saude)
-		end
-	end))
-	table.insert(conexoesEnt, humanoide.Died:Connect(function()
-		modelo:SetAttribute(TiposNPC.Chaves.Estado, TiposNPC.Estado.Morto)
-	end))
+	table.insert(
+		conexoesEnt,
+		humanoide.HealthChanged:Connect(function(saude)
+			local entidade = Gerenciador_Entidades.ObterPorModelo(modelo)
+			if entidade then
+				entidade:definirAtributo("Vida", saude)
+			end
+		end)
+	)
+	table.insert(
+		conexoesEnt,
+		humanoide.Died:Connect(function()
+			modelo:SetAttribute(TiposNPC.Chaves.Estado, TiposNPC.Estado.Morto)
+		end)
+	)
 
 	modelo:SetAttribute(TiposNPC.Chaves.Id, id)
 	modelo:SetAttribute(TiposNPC.Chaves.Archetype, opcoes.archetype)
@@ -154,18 +153,23 @@ function Gerenciador.SpawnNPC(opcoes: OpcoesSpawn): TiposNPC.RegistroNPC?
 	registrosPorModelo[modelo] = ctx
 
 	-- Inicia comportamento e inscreve no scheduler.
-	local ok, err = pcall(comp.iniciar, ctx)
+	local ok, err = pcall(function()
+		comp.iniciar(ctx)
+	end)
 	if not ok then
 		warn(string.format("[NPC] Erro em iniciar() de '%s': %s", opcoes.archetype, tostring(err)))
 	end
 	Scheduler.Inscrever(ctx)
 
 	-- Despawn automatico ao remover o modelo do mundo (ex: morte com cleanup externo).
-	table.insert(conexoesEnt, modelo.AncestryChanged:Connect(function(_, parent)
-		if parent == nil then
-			Gerenciador.DespawnNPC(id)
-		end
-	end))
+	table.insert(
+		conexoesEnt,
+		modelo.AncestryChanged:Connect(function(_, parent)
+			if parent == nil then
+				Gerenciador.DespawnNPC(id)
+			end
+		end)
+	)
 
 	return {
 		id = id,
@@ -190,12 +194,18 @@ function Gerenciador.DespawnNPC(idOuModelo: number | Model): boolean
 
 	local comp = Comportamento.Obter(ctx.archetype)
 	if comp then
-		pcall(comp.destruir, ctx)
+		pcall(function()
+			comp.destruir(ctx)
+		end)
 	end
 
 	for _, c in ctx.conexoes do
-		if c.Connected then
-			c:Disconnect()
+		if typeof(c) == "RBXScriptConnection" then
+			if c.Connected then
+				c:Disconnect()
+			end
+		elseif typeof(c) == "function" then
+			pcall(c :: any)
 		end
 	end
 	table.clear(ctx.conexoes)

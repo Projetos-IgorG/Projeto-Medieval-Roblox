@@ -164,6 +164,10 @@ if player.Character then
 	onCharacterAdded(player.Character)
 end
 
-player.CharacterAdded:Connect(onCharacterAdded)
-player.CharacterRemoving:Connect(cleanup)
 RunService:BindToRenderStep("HeadShadowProjection", Enum.RenderPriority.Camera.Value + 1, update)
+
+script.Destroying:Connect(function()
+	cleanup()
+	RunService:UnbindFromRenderStep("HeadShadowProjection")
+	projector:Destroy()
+end)

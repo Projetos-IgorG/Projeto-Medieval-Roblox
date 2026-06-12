@@ -10,7 +10,7 @@
 ]]
 local Modulo_Hitbox = require(script.Parent)
 
-local DEBUG_ENABLED = true
+local DEBUG_ENABLED = false
 
 local function DebugPrint(...)
 	if DEBUG_ENABLED then
@@ -21,7 +21,7 @@ end
 type Mao = Modulo_Hitbox.Mao
 type HitboxHandle = Modulo_Hitbox.HitboxHandle
 
-export type OnAlvoAtingido = (alvo: Model, mao: Mao) -> ()
+export type OnAlvoAtingido = (alvo: Model, mao: Mao, raycastResult: RaycastResult?) -> ()
 
 local hitboxesPorMao: { [Mao]: HitboxHandle? } = {
 	Right = nil,
@@ -44,7 +44,6 @@ function GerenciadorHitboxCliente.DefinirCallbackSolidHit(callback: (raycastResu
 end
 
 function GerenciadorHitboxCliente.DefinirCharacter(novoCharacter: Model)
-
 	GerenciadorHitboxCliente.DestruirTodas()
 	character = novoCharacter
 end
@@ -83,11 +82,11 @@ function GerenciadorHitboxCliente.CriarHitboxesDisponiveis()
 	GerenciadorHitboxCliente.CriarHitboxParaMao("Left")
 end
 
-local function _OnHitInterno(alvo: Model, mao: Mao)
+local function _OnHitInterno(alvo: Model, mao: Mao, raycastResult: RaycastResult?)
 	DebugPrint(string.format("[GerenciadorHitbox] Hit: %s pela mão %s", alvo.Name, mao))
 
 	if callbackAlvoAtingido then
-		callbackAlvoAtingido(alvo, mao)
+		callbackAlvoAtingido(alvo, mao, raycastResult)
 	end
 end
 

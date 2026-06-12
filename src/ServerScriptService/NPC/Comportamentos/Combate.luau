@@ -59,6 +59,168 @@ local JANELA_MEMORIA_AGRESSOR = 6
 -- Faixa unica de movimento: alcance da arma equipada, com tolerancia fixa.
 local TOLERANCIA_ALCANCE = 0.7
 
+-- =============================================================================
+-- Helpers de Orientação e Bloco de Defesa (Definidos no topo para evitar warnings de lint)
+-- =============================================================================
+
+local function obterOuCriarAlignOrientation(ctx: Ctx): AlignOrientation?
+	local existente = ctx.estado.alignOrientacaoAlvo
+	if typeof(existente) == "Instance" and existente:IsA("AlignOrientation") and existente.Parent then
+		return existente :: AlignOrientation
+	end
+
+	local hrp = ctx.modelo.PrimaryPart
+	if not hrp then
+		return nil
+	end
+
+	local att = hrp:FindFirstChild("OrientacaoAlvoAttachment") :: Attachment
+	if not att then
+		local newAtt = Instance.new("Attachment") :: Attachment
+		newAtt.Name = "OrientacaoAlvoAttachment"
+		newAtt.Parent = hrp
+		att = newAtt
+	end
+
+	local ao = Instance.new("AlignOrientation") :: AlignOrientation
+	ao.Name = "AlignOrientacaoAlvo"
+	ao.Mode = Enum.OrientationAlignmentMode.OneAttachment
+	ao.Attachment0 = att
+	-- Torque e responsividade baixos: a orientacao visual eh feita no client.
+	-- Aqui so garantimos que o HRP nao fique de costas pro alvo.
+	ao.MaxTorque = 50000
+	ao.Responsiveness = 12
+	ao.Parent = hrp
+
+	ctx.estado.alignOrientacaoAlvo = ao
+	return ao
+end
+
+local function orientarParaAlvo(ctx: Ctx, alvoPos: Vector3)
+	ctx.humanoide.AutoRotate = false
+	local ao = obterOuCriarAlignOrientation(ctx)
+	local hrp = ctx.modelo.PrimaryPart
+	if ao and hrp then
+		local pos = hrp.Position
+		local lookPlano = Vector3.new(alvoPos.X, pos.Y, alvoPos.Z)
+		if (lookPlano - pos).Magnitude > 0.8 then -- Threshold aumentado para evitar rotação NaN/infinita em proximidade
+			ao.CFrame = CFrame.lookAt(pos, lookPlano)
+		end
+	end
+end
+
+local function limparOrientacao(ctx: Ctx)
+	local existente = ctx.estado.alignOrientacaoAlvo
+	if typeof(existente) == "Instance" then
+		existente:Destroy()
+	end
+	ctx.estado.alignOrientacaoAlvo = nil
+
+	local hrp = ctx.modelo.PrimaryPart
+	if hrp then
+		local att = hrp:FindFirstChild("OrientacaoAlvoAttachment")
+		if att then
+			att:Destroy()
+		end
+	end
+end
+
+local function isParryDebugActive(): boolean
+	local attr = ReplicatedStorage:GetAttribute("ParryDebugBlock")
+	if attr ~= nil then
+		return attr == true
+	end
+	local ok, HitboxConfig = pcall(require, ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Hitbox"):WaitForChild("Shapecast"):WaitForChild("HitboxConfig") :: ModuleScript)
+	return ok and HitboxConfig.ParryDebugBlock == true
+end
+
+local function DestruirDefesaBlock(entidade: Model)
+	local existente = 	entidade:FindFirstChild("DefesaBlock")
+	if existente then
+		existente:Destroy()
+	end
+end
+
+local function CriarDefesaBlock(entidade: Model, debugAtivo: boolean, prontoParaAparar: boolean, alvoPos: Vector3?)
+	local hrp = entidade:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not hrp then return end
+
+	local existente = entidade:FindFirstChild("DefesaBlock")
+	if existente then
+		existente:Destroy()
+	end
+
+	local block = Instance.new("Part")
+	block.Name = "DefesaBlock"
+	block.Size = Vector3.new(3.7, 5, 1.5) -- Alinhado com o tamanho do player
+	block.CanCollide = false
+	block.CanTouch = true
+	block.CanQuery = true
+	block.Massless = true
+	block.Anchored = true
+	block.Transparency = if debugAtivo then 0.5 else 1.0
+	block.Color = if prontoParaAparar then Color3.fromRGB(255, 255, 0) else Color3.fromRGB(0, 255, 0) -- Yellow vs Green
+	block.Material = Enum.Material.ForceField
+	block.CastShadow = false
+
+	-- Posiciona o bloco na direcao do alvo (nao na orientacao do HRP)
+	local pos = hrp.Position
+	local direcao: Vector3
+	if alvoPos then
+		local dirPlana = Vector3.new(alvoPos.X - pos.X, 0, alvoPos.Z - pos.Z)
+		direcao = if dirPlana.Magnitude > 0.1 then dirPlana.Unit else hrp.CFrame.LookVector
+	else
+		direcao = hrp.CFrame.LookVector
+	end
+	direcao = Vector3.new(direcao.X, 0, direcao.Z)
+	if direcao.Magnitude < 0.01 then
+		direcao = Vector3.new(0, 0, -1)
+	else
+		direcao = direcao.Unit
+	end
+
+	local blockPos = pos + direcao * 1.5
+	block.CFrame = CFrame.lookAt(blockPos, blockPos + direcao)
+
+	block.Parent = entidade
+end
+
+local function ReposicionarDefesaBlock(entidade: Model, alvoPos: Vector3?)
+	local block = entidade:FindFirstChild("DefesaBlock") :: BasePart?
+	if not block then return end
+	local hrp = entidade:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not hrp then return end
+
+	local pos = hrp.Position
+	local direcao: Vector3
+	if alvoPos then
+		local dirPlana = Vector3.new(alvoPos.X - pos.X, 0, alvoPos.Z - pos.Z)
+		direcao = if dirPlana.Magnitude > 0.1 then dirPlana.Unit else hrp.CFrame.LookVector
+	else
+		direcao = hrp.CFrame.LookVector
+	end
+	direcao = Vector3.new(direcao.X, 0, direcao.Z)
+	if direcao.Magnitude < 0.01 then
+		direcao = Vector3.new(0, 0, -1)
+	else
+		direcao = direcao.Unit
+	end
+
+	local blockPos = pos + direcao * 1.5
+	block.CFrame = CFrame.lookAt(blockPos, blockPos + direcao)
+end
+
+local function AtualizarDefesaBlock(entidade: Model, debugAtivo: boolean, prontoParaAparar: boolean, alvoPos: Vector3?)
+	local block = 	entidade:FindFirstChild("DefesaBlock") :: BasePart?
+	if block then
+		block.Transparency = if debugAtivo then 0.5 else 1.0
+		block.Color = if prontoParaAparar then Color3.fromRGB(255, 255, 0) else Color3.fromRGB(0, 255, 0)
+		if alvoPos then
+			ReposicionarDefesaBlock(entidade, alvoPos)
+		end
+	end
+end
+
 -- REQ 7: predicao de ataque do alvo. Cooldown curto entre tentativas de
 -- bloqueio preditivo para nao spammar quando alvo encadeia varios ataques.
 -- ATRASO_PARRY: aguarda Xs apos o alvo iniciar o ataque para sincronizar
@@ -280,11 +442,22 @@ local function instalarSincMaquina(ctx: Ctx, maq: any)
 			setEstado(ctx, TiposNPC.Estado.Morto)
 			return
 		end
-		-- Baiting: apos sair de um ataque proprio, fica em cooldown sem iniciar
-		-- novo ataque - espera o alvo atacar para tentar parry.
+
+		if novo ~= "Defendendo" and novo ~= "Aparando" then
+			DestruirDefesaBlock(ctx.modelo)
+		end
+
+		-- Baiting/Perseguicao: apos sair de um ataque proprio, define o cooldown.
+		-- Se o NPC acertou o golpe, reduz drasticamente o cooldown para continuar pressionando.
 		if anterior == "AtacandoLeve" then
-			local espera = ESPERA_BAITING_MIN
-				+ math.random() * (ESPERA_BAITING_MAX - ESPERA_BAITING_MIN)
+			local acertou = ctx.modelo:GetAttribute("NPC_AcertouCombo") == true
+			local espera
+			if acertou then
+				espera = 0.2 + math.random() * 0.3
+			else
+				espera = ESPERA_BAITING_MIN
+					+ math.random() * (ESPERA_BAITING_MAX - ESPERA_BAITING_MIN)
+			end
 			ctx.estado.cooldownAtaquePersonagem = os.clock() + espera
 		end
 		local mapped = mapearEstadoMaquina(novo)
@@ -300,6 +473,7 @@ local function instalarSincMaquina(ctx: Ctx, maq: any)
 				ctx.estado.cooldownPredicaoParry = 0
 				ctx.humanoide.WalkSpeed = VELOCIDADE_APARANDO
 				ControladorCombateNPC.PararAtaque(ctx.modelo)
+				limparOrientacao(ctx)
 			elseif mapped == TiposNPC.Estado.Stunado
 				or mapped == TiposNPC.Estado.DefesaQuebrada then
 				ctx.estado.bloqueandoAte = 0
@@ -307,6 +481,7 @@ local function instalarSincMaquina(ctx: Ctx, maq: any)
 				ctx.humanoide:Move(Vector3.zero, false)
 				ctx.humanoide.WalkSpeed = 0
 				ControladorCombateNPC.PararAtaque(ctx.modelo)
+				limparOrientacao(ctx)
 			end
 			-- REQ 8: parry bem sucedido (estado Aparando) reseta o cooldown de
 			-- bloqueio para que NPC possa aparar o proximo ataque imediatamente.
@@ -324,6 +499,12 @@ local function instalarSincMaquina(ctx: Ctx, maq: any)
 				or atual == TiposNPC.Estado.Stunado
 				or atual == TiposNPC.Estado.DefesaQuebrada
 				or atual == TiposNPC.Estado.Defendendo then
+				
+				local aindaBloqueando = maq.dados and maq.dados.bloqueando == true
+				if aindaBloqueando and (atual == TiposNPC.Estado.Defendendo or atual == TiposNPC.Estado.Aparando) then
+					return
+				end
+				
 				setEstado(ctx, TiposNPC.Estado.Idle)
 			end
 		end
@@ -503,65 +684,7 @@ end
 -- pela View do NPC para evitar torque fisico/replicacao causando pulinhos.
 -- =============================================================================
 
-local function obterOuCriarAlignOrientation(ctx: Ctx): AlignOrientation?
-	local existente = ctx.estado.alignOrientacaoAlvo
-	if typeof(existente) == "Instance" and existente:IsA("AlignOrientation") and existente.Parent then
-		return existente :: AlignOrientation
-	end
-
-	local hrp = ctx.modelo.PrimaryPart
-	if not hrp then
-		return nil
-	end
-
-	local att = hrp:FindFirstChild("OrientacaoAlvoAttachment") :: Attachment
-	if not att then
-		local newAtt = Instance.new("Attachment") :: Attachment
-		newAtt.Name = "OrientacaoAlvoAttachment"
-		newAtt.Parent = hrp
-		att = newAtt
-	end
-
-	local ao = Instance.new("AlignOrientation") :: AlignOrientation
-	ao.Name = "AlignOrientacaoAlvo"
-	ao.Mode = Enum.OrientationAlignmentMode.OneAttachment
-	ao.Attachment0 = att
-	ao.MaxTorque = 400000
-	ao.Responsiveness = 25
-	ao.Parent = hrp
-
-	ctx.estado.alignOrientacaoAlvo = ao
-	return ao
-end
-
-local function orientarParaAlvo(ctx: Ctx, alvoPos: Vector3)
-	ctx.humanoide.AutoRotate = false
-	local ao = obterOuCriarAlignOrientation(ctx)
-	local hrp = ctx.modelo.PrimaryPart
-	if ao and hrp then
-		local pos = hrp.Position
-		local lookPlano = Vector3.new(alvoPos.X, pos.Y, alvoPos.Z)
-		if (lookPlano - pos).Magnitude > 0.01 then
-			ao.CFrame = CFrame.lookAt(pos, lookPlano)
-		end
-	end
-end
-
-local function limparOrientacao(ctx: Ctx)
-	local existente = ctx.estado.alignOrientacaoAlvo
-	if typeof(existente) == "Instance" then
-		existente:Destroy()
-	end
-	ctx.estado.alignOrientacaoAlvo = nil
-
-	local hrp = ctx.modelo.PrimaryPart
-	if hrp then
-		local att = hrp:FindFirstChild("OrientacaoAlvoAttachment")
-		if att then
-			att:Destroy()
-		end
-	end
-end
+-- Funções de orientação movidas para o topo do arquivo
 
 local function multiplicadorAnimacaoPorWalkSpeed(velocidade: number, correndo: boolean): number
 	local baseAnim
@@ -769,6 +892,15 @@ end
 -- Bloqueio / Parry do NPC (espelhado na MaquinaDeEstados canonica).
 -- =============================================================================
 
+-- Funções de bloco de defesa movidas para o topo do arquivo
+
+local function obterPosicaoAlvo(ctx: Ctx): Vector3?
+	local alvo = ctx.estado.alvoAtual
+	if not alvo then return nil end
+	local hrpAlvo = alvo:FindFirstChild("HumanoidRootPart") :: BasePart?
+	return hrpAlvo and hrpAlvo.Position or nil
+end
+
 local function definirEstadoBloqueioMaquina(ctx: Ctx, bloqueando: boolean, prontoParry: boolean)
 	local maq = ctx.estado.maquina
 	if not maq or not maq.dados then
@@ -778,6 +910,18 @@ local function definirEstadoBloqueioMaquina(ctx: Ctx, bloqueando: boolean, pront
 	maq.dados.prontoParaAparar = prontoParry
 	if bloqueando then
 		maq.dados.stunado = false
+	end
+
+	local alvoPos = obterPosicaoAlvo(ctx)
+	if bloqueando then
+		local block = ctx.modelo:FindFirstChild("DefesaBlock")
+		if block then
+			AtualizarDefesaBlock(ctx.modelo, isParryDebugActive(), prontoParry, alvoPos)
+		else
+			CriarDefesaBlock(ctx.modelo, isParryDebugActive(), prontoParry, alvoPos)
+		end
+	else
+		DestruirDefesaBlock(ctx.modelo)
 	end
 end
 
@@ -803,6 +947,12 @@ function colocarParryEmCooldown(ctx: Ctx)
 	end
 	maq.dados.ultimoParry = tick()
 	maq.dados.prontoParaAparar = false
+	if maq.dados.bloqueando then
+		local alvoPos = obterPosicaoAlvo(ctx)
+		AtualizarDefesaBlock(ctx.modelo, isParryDebugActive(), false, alvoPos)
+	else
+		DestruirDefesaBlock(ctx.modelo)
+	end
 	if typeof(maq.dados.parryToken) == "number" then
 		maq.dados.parryToken += 1
 	end
@@ -933,7 +1083,7 @@ function tentarAtaqueRiposte(ctx: Ctx)
 				return false
 			end
 			local d = (hrp.Position - ctx.modelo:GetPivot().Position).Magnitude
-			return math.abs(d - alcance) <= TOLERANCIA_ALCANCE
+			return d <= alcance * 1.5
 		end)
 	end)
 end
@@ -1039,6 +1189,7 @@ local Combate: Comportamento.Comportamento = {
 		end
 
 		local podeAndar = lerFlag(ctx.modelo, TiposNPC.Chaves.PodeAndar, true)
+		local podeAtacar = lerFlag(ctx.modelo, TiposNPC.Chaves.PodeAtacar, true)
 
 		-- Bloqueando: mantem postura, nao persegue (mas continua olhando alvo).
 		if (ctx.estado.bloqueandoAte or 0) > agora then
@@ -1046,6 +1197,8 @@ local Combate: Comportamento.Comportamento = {
 			local _, hrpB = alvoVivoComHRP(alvoB)
 			if hrpB then
 				orientarParaAlvo(ctx, hrpB.Position)
+				-- Reposiciona DefesaBlock para apontar para o alvo a cada tick
+				ReposicionarDefesaBlock(ctx.modelo, hrpB.Position)
 			end
 			if alvoMantemComboLeve(ctx) then
 				ctx.estado.bloqueioSeguraCombo = true
@@ -1156,6 +1309,28 @@ local Combate: Comportamento.Comportamento = {
 			else
 				pararMovimento(ctx)
 			end
+
+			-- Tolerancia ampla para continuar combo durante ataque (o impulso pode deslocar levemente).
+			local dentroCombo = distancia <= alcance * 1.5
+			if dentroCombo and podeAtacar then
+				local alvoRef: Model = alvo
+				ControladorCombateNPC.AtacarLeve(ctx.modelo, function(): boolean
+					if not alvoRef or not alvoRef.Parent then
+						return false
+					end
+					local h = alvoRef:FindFirstChildOfClass("Humanoid")
+					if not h or h.Health <= 0 then
+						return false
+					end
+					local p = alvoRef:FindFirstChild("HumanoidRootPart") :: BasePart?
+					if not p then
+						return false
+					end
+					local d = (p.Position - ctx.modelo:GetPivot().Position).Magnitude
+					return d <= alcance * 1.5
+				end)
+			end
+
 			return
 		end
 
@@ -1200,7 +1375,6 @@ local Combate: Comportamento.Comportamento = {
 		end
 
 		if dentroDoAlcance then
-			local podeAtacar = lerFlag(ctx.modelo, TiposNPC.Chaves.PodeAtacar, true)
 			local podeDefender = lerFlag(ctx.modelo, TiposNPC.Chaves.PodeDefender, false)
 			local cooldownBloqueioOK = (ctx.estado.cooldownBloqueio or 0) <= agora
 			local cooldownAtaqueOK = (ctx.estado.cooldownAtaquePersonagem or 0) <= agora
@@ -1212,7 +1386,7 @@ local Combate: Comportamento.Comportamento = {
 			if podeAtacar and cooldownAtaqueOK then
 				local alvoRef: Model = alvo
 				ControladorCombateNPC.AtacarLeve(ctx.modelo, function(): boolean
-					-- Combo segue enquanto o alvo permanece na faixa do alcance da arma.
+					-- Combo segue enquanto o alvo permanece proximo (tolerancia ampla).
 					if not alvoRef or not alvoRef.Parent then
 						return false
 					end
@@ -1225,7 +1399,7 @@ local Combate: Comportamento.Comportamento = {
 						return false
 					end
 					local d = (p.Position - ctx.modelo:GetPivot().Position).Magnitude
-					return math.abs(d - alcance) <= TOLERANCIA_ALCANCE
+					return d <= alcance * 1.5
 				end)
 			end
 		end

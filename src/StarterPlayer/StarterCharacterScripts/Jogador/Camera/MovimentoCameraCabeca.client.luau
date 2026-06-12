@@ -59,4 +59,10 @@ end
 if player.Character then
 	setup(player.Character)
 end
-player.CharacterAdded:Connect(setup)
+
+script.Destroying:Connect(function()
+	if connection then
+		connection:Disconnect()
+		connection = nil
+	end
+end)

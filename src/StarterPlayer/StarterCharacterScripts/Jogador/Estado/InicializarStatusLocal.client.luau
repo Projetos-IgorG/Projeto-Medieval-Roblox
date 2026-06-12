@@ -20,11 +20,6 @@ local StatusLocalManager = require(ReplicatedStorage:WaitForChild("Jogador"):Wai
 
 local _statusLocal = StatusLocalManager.CriarStatusLocal(character)
 
-player.CharacterAdded:Connect(function(newCharacter)
-	character = newCharacter
-	_statusLocal = StatusLocalManager.CriarStatusLocal(newCharacter)
-end)
-
 local function ObterStatusLocal(): Folder?
 	return StatusLocalManager.ObterStatusLocal(character)
 end
