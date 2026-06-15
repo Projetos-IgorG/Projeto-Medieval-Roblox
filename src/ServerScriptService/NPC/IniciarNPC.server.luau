@@ -19,6 +19,13 @@ local TiposNPC = require(
 
 local GerenciadorNPC = require(script.Parent:WaitForChild("GerenciadorNPC"))
 
+local DEBUG = false
+local function dbg(...)
+	if DEBUG then
+		print(...)
+	end
+end
+
 -- Garante pasta /Workspace/NPCs e pasta de remotes.
 RemotosNPC.ObterPastaMundo()
 local SpawnDevRemote = RemotosNPC.ObterRemote("SpawnNPCDev", "RemoteEvent") :: RemoteEvent
@@ -95,16 +102,16 @@ DespawnDevRemote.OnServerEvent:Connect(function(player: Player, payload: any)
 		warn(string.format("[DevNPC] Player %s tentou usar DespawnNPCDev sem permissao", player.Name))
 		return
 	end
-	print(string.format("[DevNPC] Recebido pedido de despawn por %s. Payload: %s", player.Name, game:GetService("HttpService"):JSONEncode(payload)))
+	dbg(string.format("[DevNPC] Recebido pedido de despawn por %s. Payload: %s", player.Name, game:GetService("HttpService"):JSONEncode(payload)))
 	if typeof(payload) == "number" then
 		local sucesso = GerenciadorNPC.DespawnNPC(payload)
-		print(string.format("[DevNPC] Despawn de NPC unico (ID %d): sucesso = %s", payload, tostring(sucesso)) )
+		dbg(string.format("[DevNPC] Despawn de NPC unico (ID %d): sucesso = %s", payload, tostring(sucesso)) )
 	elseif typeof(payload) == "table" and payload.todos == true then
 		local lista = GerenciadorNPC.Listar()
-		print(string.format("[DevNPC] Despawn de todos os NPCs. Quantidade listada: %d", #lista))
+		dbg(string.format("[DevNPC] Despawn de todos os NPCs. Quantidade listada: %d", #lista))
 		for _, reg in lista do
 			local sucesso = GerenciadorNPC.DespawnNPC(reg.id)
-			print(string.format("[DevNPC] Despawning NPC ID %d (Archetype %s): sucesso = %s", reg.id, reg.archetype, tostring(sucesso)))
+			dbg(string.format("[DevNPC] Despawning NPC ID %d (Archetype %s): sucesso = %s", reg.id, reg.archetype, tostring(sucesso)))
 		end
 	else
 		warn(string.format("[DevNPC] Payload de despawn invalido ou nao suportado: %s", typeof(payload)))
@@ -121,7 +128,7 @@ FlagsDevRemote.OnServerEvent:Connect(function(player: Player, payload: any)
 		warn("[DevNPC] Payload de atualizacao de flags invalido")
 		return
 	end
-	print(string.format("[DevNPC] Atualizando flags para NPCs ja spawnados. Payload: %s", game:GetService("HttpService"):JSONEncode(payload)))
+	dbg(string.format("[DevNPC] Atualizando flags para NPCs ja spawnados. Payload: %s", game:GetService("HttpService"):JSONEncode(payload)))
 	local count = 0
 	for _, reg in GerenciadorNPC.Listar() do
 		local modelo = reg.modelo
@@ -152,7 +159,7 @@ FlagsDevRemote.OnServerEvent:Connect(function(player: Player, payload: any)
 			modelo:SetAttribute(TiposNPC.Chaves.PodeParry, payload.podeParry and defenderAtivo)
 		end
 	end
-	print(string.format("[DevNPC] Atualizadas flags de %d NPCs hostis de combate", count))
+	dbg(string.format("[DevNPC] Atualizadas flags de %d NPCs hostis de combate", count))
 end)
 
 -- Limpeza ao encerrar (jogadores saindo nao removem NPCs; servidor encerrar sim, naturalmente).
