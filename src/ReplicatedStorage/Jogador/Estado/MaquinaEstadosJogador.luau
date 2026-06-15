@@ -486,7 +486,9 @@ function MaquinaDeEstados:TentePararBloqueio(): (boolean, string?)
 
 	self.dados.bloqueando = false
 	self.dados.prontoParaAparar = false
-	self.dados.ultimoParry = tick()
+	if self.dados.ultimoParry ~= 0 then
+		self.dados.ultimoParry = tick()
+	end
 	self.dados.parryToken += 1
 
 	if self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Defendendo then

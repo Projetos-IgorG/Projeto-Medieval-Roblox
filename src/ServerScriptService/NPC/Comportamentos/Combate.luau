@@ -956,7 +956,9 @@ function colocarParryEmCooldown(ctx: Ctx)
 	if not maq or not maq.dados then
 		return
 	end
-	maq.dados.ultimoParry = tick()
+	if maq.dados.ultimoParry ~= 0 then
+		maq.dados.ultimoParry = tick()
+	end
 	maq.dados.prontoParaAparar = false
 	if maq.dados.bloqueando then
 		local alvoPos = obterPosicaoAlvo(ctx)
