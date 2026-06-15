@@ -58,6 +58,8 @@ local estado = {
 	CharacterBaseParts = nil :: { BasePart }?,
 	CharacterBasePartsFor = nil :: Model?,
 	DiedConnection = nil :: RBXScriptConnection?,
+	GrabHeartbeatConn = nil :: RBXScriptConnection?,
+	EscalarHeartbeatConn = nil :: RBXScriptConnection?,
 	CurrentCharacter = nil :: Model?,
 	SavedCollisions = {} :: { [BasePart]: boolean },
 	SavedHeadCanCollide = nil :: boolean?,
@@ -475,6 +477,15 @@ local function fullCleanup()
 	AnimacaoParkour.ResetarBraco()
 	if ClientBridge.SairParkour then
 		ClientBridge.SairParkour()
+	end
+
+	if estado.GrabHeartbeatConn then
+		estado.GrabHeartbeatConn:Disconnect()
+		estado.GrabHeartbeatConn = nil
+	end
+	if estado.EscalarHeartbeatConn then
+		estado.EscalarHeartbeatConn:Disconnect()
+		estado.EscalarHeartbeatConn = nil
 	end
 
 	destroyConstraints()
@@ -1017,7 +1028,10 @@ local function executarAgarrar(result, config)
 	local idleInicial = result.IdleMode or "IdleSuporte"
 
 	local grabFinalizado = false
-	local grabHeartbeatConn: RBXScriptConnection? = nil
+	if estado.GrabHeartbeatConn then
+		estado.GrabHeartbeatConn:Disconnect()
+		estado.GrabHeartbeatConn = nil
+	end
 
 	local function finalizarGrabComConfirmacao()
 		if grabFinalizado then
@@ -1025,9 +1039,9 @@ local function executarAgarrar(result, config)
 		end
 		grabFinalizado = true
 
-		if grabHeartbeatConn then
-			grabHeartbeatConn:Disconnect()
-			grabHeartbeatConn = nil
+		if estado.GrabHeartbeatConn then
+			estado.GrabHeartbeatConn:Disconnect()
+			estado.GrabHeartbeatConn = nil
 		end
 
 		if not isCharacterAlive(character) or estado.CurrentCharacter ~= character then
@@ -1058,7 +1072,7 @@ local function executarAgarrar(result, config)
 	end
 
 	local grabStart = os.clock()
-	grabHeartbeatConn = RunService.Heartbeat:Connect(function()
+	estado.GrabHeartbeatConn = RunService.Heartbeat:Connect(function()
 		if grabFinalizado then
 			return
 		end
@@ -1069,9 +1083,9 @@ local function executarAgarrar(result, config)
 		end
 
 		if not isCharacterAlive(character) or estado.CurrentCharacter ~= character then
-			if grabHeartbeatConn then
-				grabHeartbeatConn:Disconnect()
-				grabHeartbeatConn = nil
+			if estado.GrabHeartbeatConn then
+				estado.GrabHeartbeatConn:Disconnect()
+				estado.GrabHeartbeatConn = nil
 			end
 			return
 		end
@@ -1607,7 +1621,10 @@ local function executarEscalar(escalarResult, config)
 
 	local movimentoConcluido = false
 	local animacaoConcluida = false
-	local heartbeatConn: RBXScriptConnection? = nil
+	if estado.EscalarHeartbeatConn then
+		estado.EscalarHeartbeatConn:Disconnect()
+		estado.EscalarHeartbeatConn = nil
+	end
 
 	local function tentarFinalizar()
 		if not (movimentoConcluido and animacaoConcluida) then
@@ -1641,9 +1658,9 @@ local function executarEscalar(escalarResult, config)
 			return
 		end
 
-		if heartbeatConn then
-			heartbeatConn:Disconnect()
-			heartbeatConn = nil
+		if estado.EscalarHeartbeatConn then
+			estado.EscalarHeartbeatConn:Disconnect()
+			estado.EscalarHeartbeatConn = nil
 		end
 
 		removeConstraint(alignPos)
@@ -1671,15 +1688,15 @@ local function executarEscalar(escalarResult, config)
 	end)
 
 	local startTime = os.clock()
-	heartbeatConn = RunService.Heartbeat:Connect(function()
+	estado.EscalarHeartbeatConn = RunService.Heartbeat:Connect(function()
 		if movimentoConcluido then
 			return
 		end
 
 		if not isCharacterAlive(character) then
-			if heartbeatConn then
-				heartbeatConn:Disconnect()
-				heartbeatConn = nil
+			if estado.EscalarHeartbeatConn then
+				estado.EscalarHeartbeatConn:Disconnect()
+				estado.EscalarHeartbeatConn = nil
 			end
 			removeConstraint(alignPos)
 			removeConstraint(alignOri)

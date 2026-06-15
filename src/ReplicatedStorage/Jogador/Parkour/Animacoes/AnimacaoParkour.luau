@@ -237,6 +237,8 @@ function AnimacaoParkour.TocarAcao(nomeAnimacao: string, onEvento: Callback, onC
 
 	if idleTrackAtual then
 		pararTrack(idleTrackAtual, obterFadeOutIdleParaAcao(nomeAnimacao))
+		idleTrackAtual = nil
+		idleAtual = nil
 	end
 
 	acaoTrackAtual = track
@@ -330,6 +332,8 @@ function AnimacaoParkour.TocarAcaoPausadaNoMarker(nomeAnimacao: string, onCongel
 
 	if idleTrackAtual then
 		pararTrack(idleTrackAtual, obterFadeOutIdleParaAcao(nomeAnimacao))
+		idleTrackAtual = nil
+		idleAtual = nil
 	end
 
 	acaoTrackAtual = track
