@@ -2338,6 +2338,13 @@ local capacidadesNPC = {
 	podeParry = false,
 }
 
+local DEBUG = false
+local function dbg(...)
+	if DEBUG then
+		print(...)
+	end
+end
+
 local function obterRemoteNPC(nome: string): RemoteEvent?
 	local raiz = ReplicatedStorage:WaitForChild("NPC", 2)
 	local pasta = raiz and raiz:WaitForChild("Remotos", 2)
@@ -2376,7 +2383,7 @@ local function dispararAtualizarFlags()
 		warn("[DevPanel] RemoteEvent AtualizarFlagsNPCDev nao encontrado")
 		return
 	end
-	print("[DevPanel] Disparando atualizacao de flags em tempo real para os NPCs")
+	dbg("[DevPanel] Disparando atualizacao de flags em tempo real para os NPCs")
 	remoto:FireServer({
 		podeAndar = capacidadesNPC.podeAndar,
 		podeAtacar = capacidadesNPC.podeAtacar,
@@ -2386,13 +2393,13 @@ local function dispararAtualizarFlags()
 end
 
 local function dispararDespawnTodos()
-	print("[DevPanel] Botao Despawn clicado, buscando remote...")
+	dbg("[DevPanel] Botao Despawn clicado, buscando remote...")
 	local remoto = obterRemoteNPC("DespawnNPCDev")
 	if not remoto then
 		warn("[DevPanel] RemoteEvent DespawnNPCDev nao encontrado")
 		return
 	end
-	print("[DevPanel] Remote DespawnNPCDev encontrado, enviando pedido FireServer({ todos = true })")
+	dbg("[DevPanel] Remote DespawnNPCDev encontrado, enviando pedido FireServer({ todos = true })")
 	remoto:FireServer({ todos = true })
 end
 
