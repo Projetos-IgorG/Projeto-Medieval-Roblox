@@ -389,7 +389,7 @@ AtualizarBaseIdle = function()
 		end
 
 		animacaoBaseIdle = novaTrack
-		animacaoBaseIdle.Priority = Enum.AnimationPriority.Core
+		animacaoBaseIdle.Priority = Enum.AnimationPriority.Idle
 		animacaoBaseIdle.Looped = true
 		animacaoBaseIdle:Play(TIMINGS.MoveFadeIn)
 		DebugPrint(string.format("[ControladorEstado] BaseIdle atualizado para: %s (%s)", nomeIdle, animId))
@@ -2765,6 +2765,23 @@ end)
 
 GerenciadorHitboxCliente.DefinirCallbackSolidHit(function(_raycastResult, _mao)
 	AplicarRewindParteSolida()
+end)
+
+-- Monitorar e destruir Animate se adicionado tardiamente pelo Roblox no client
+ConectarGlobal(character.ChildAdded, function(child)
+	if (child:IsA("Script") or child:IsA("LocalScript")) and child.Name == "Animate" then
+		task.defer(function()
+			if child.Parent then
+				child:Destroy()
+				DebugPrint("[ControladorEstado] Script Animate tardio desativado no cliente")
+				for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+					track:Stop(0)
+				end
+				AtualizarBaseIdle()
+				AtualizarAnimacaoMovimento()
+			end
+		end)
+	end
 end)
 
 AtualizarBaseIdle()
