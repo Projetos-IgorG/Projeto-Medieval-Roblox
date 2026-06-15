@@ -19,16 +19,12 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
-local TiposNPC = require(
-	ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos")
-)
+local TiposNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos"))
 local Comportamento = require(script.Parent:WaitForChild("Comportamento"))
-local ConfigCombate = require(
-	ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Configuracoes"):WaitForChild("ConfigCombate")
-)
-local ControladorCombateNPC = require(
-	ServerScriptService:WaitForChild("NPC"):WaitForChild("Combate"):WaitForChild("ControladorCombateNPC")
-)
+local ConfigCombate =
+	require(ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Configuracoes"):WaitForChild("ConfigCombate"))
+local ControladorCombateNPC =
+	require(ServerScriptService:WaitForChild("NPC"):WaitForChild("Combate"):WaitForChild("ControladorCombateNPC"))
 
 type Ctx = Comportamento.ContextoNPC
 
@@ -130,12 +126,18 @@ local function isParryDebugActive(): boolean
 	if attr ~= nil then
 		return attr == true
 	end
-	local ok, HitboxConfig = pcall(require, ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Hitbox"):WaitForChild("Shapecast"):WaitForChild("HitboxConfig") :: ModuleScript)
+	local ok, HitboxConfig = pcall(
+		require,
+		ReplicatedStorage:WaitForChild("Combate")
+			:WaitForChild("Hitbox")
+			:WaitForChild("Shapecast")
+			:WaitForChild("HitboxConfig") :: ModuleScript
+	)
 	return ok and HitboxConfig.ParryDebugBlock == true
 end
 
 local function DestruirDefesaBlock(entidade: Model)
-	local existente = 	entidade:FindFirstChild("DefesaBlock")
+	local existente = entidade:FindFirstChild("DefesaBlock")
 	if existente then
 		existente:Destroy()
 	end
@@ -143,7 +145,9 @@ end
 
 local function CriarDefesaBlock(entidade: Model, debugAtivo: boolean, prontoParaAparar: boolean, alvoPos: Vector3?)
 	local hrp = entidade:FindFirstChild("HumanoidRootPart") :: BasePart?
-	if not hrp then return end
+	if not hrp then
+		return
+	end
 
 	local existente = entidade:FindFirstChild("DefesaBlock")
 	if existente then
@@ -187,9 +191,13 @@ end
 
 local function ReposicionarDefesaBlock(entidade: Model, alvoPos: Vector3?)
 	local block = entidade:FindFirstChild("DefesaBlock") :: BasePart?
-	if not block then return end
+	if not block then
+		return
+	end
 	local hrp = entidade:FindFirstChild("HumanoidRootPart") :: BasePart?
-	if not hrp then return end
+	if not hrp then
+		return
+	end
 
 	local pos = hrp.Position
 	local direcao: Vector3
@@ -211,7 +219,7 @@ local function ReposicionarDefesaBlock(entidade: Model, alvoPos: Vector3?)
 end
 
 local function AtualizarDefesaBlock(entidade: Model, debugAtivo: boolean, prontoParaAparar: boolean, alvoPos: Vector3?)
-	local block = 	entidade:FindFirstChild("DefesaBlock") :: BasePart?
+	local block = entidade:FindFirstChild("DefesaBlock") :: BasePart?
 	if block then
 		block.Transparency = if debugAtivo then 0.5 else 1.0
 		block.Color = if prontoParaAparar then Color3.fromRGB(255, 255, 0) else Color3.fromRGB(0, 255, 0)
@@ -455,8 +463,7 @@ local function instalarSincMaquina(ctx: Ctx, maq: any)
 			if acertou then
 				espera = 0.2 + math.random() * 0.3
 			else
-				espera = ESPERA_BAITING_MIN
-					+ math.random() * (ESPERA_BAITING_MAX - ESPERA_BAITING_MIN)
+				espera = ESPERA_BAITING_MIN + math.random() * (ESPERA_BAITING_MAX - ESPERA_BAITING_MIN)
 			end
 			ctx.estado.cooldownAtaquePersonagem = os.clock() + espera
 		end
@@ -474,8 +481,7 @@ local function instalarSincMaquina(ctx: Ctx, maq: any)
 				ctx.humanoide.WalkSpeed = VELOCIDADE_APARANDO
 				ControladorCombateNPC.PararAtaque(ctx.modelo)
 				limparOrientacao(ctx)
-			elseif mapped == TiposNPC.Estado.Stunado
-				or mapped == TiposNPC.Estado.DefesaQuebrada then
+			elseif mapped == TiposNPC.Estado.Stunado or mapped == TiposNPC.Estado.DefesaQuebrada then
 				ctx.estado.bloqueandoAte = 0
 				ctx.estado.stunadoAte = os.clock() + 0.05
 				ctx.humanoide:Move(Vector3.zero, false)
@@ -494,17 +500,18 @@ local function instalarSincMaquina(ctx: Ctx, maq: any)
 			end
 		elseif novo == "Nenhuma" then
 			local atual = ctx.modelo:GetAttribute(TiposNPC.Chaves.Estado)
-			if atual == TiposNPC.Estado.Aparado
+			if
+				atual == TiposNPC.Estado.Aparado
 				or atual == TiposNPC.Estado.Aparando
 				or atual == TiposNPC.Estado.Stunado
 				or atual == TiposNPC.Estado.DefesaQuebrada
-				or atual == TiposNPC.Estado.Defendendo then
-				
+				or atual == TiposNPC.Estado.Defendendo
+			then
 				local aindaBloqueando = maq.dados and maq.dados.bloqueando == true
 				if aindaBloqueando and (atual == TiposNPC.Estado.Defendendo or atual == TiposNPC.Estado.Aparando) then
 					return
 				end
-				
+
 				setEstado(ctx, TiposNPC.Estado.Idle)
 			end
 		end
@@ -732,9 +739,11 @@ local function escolherAnimDirecional(
 		local indoParaFrente = dotForward > 0
 		if temFrontal then
 			if indoParaDireita then
-				return if indoParaFrente then prefixo .. "Direita" else prefixo .. "Esquerda", if indoParaFrente then velocidadeAnim else -velocidadeAnim
+				return if indoParaFrente then prefixo .. "Direita" else prefixo .. "Esquerda",
+					if indoParaFrente then velocidadeAnim else -velocidadeAnim
 			else
-				return if indoParaFrente then prefixo .. "Esquerda" else prefixo .. "Direita", if indoParaFrente then velocidadeAnim else -velocidadeAnim
+				return if indoParaFrente then prefixo .. "Esquerda" else prefixo .. "Direita",
+					if indoParaFrente then velocidadeAnim else -velocidadeAnim
 			end
 		end
 		return if indoParaDireita then prefixo .. "Direita" else prefixo .. "Esquerda", velocidadeAnim
@@ -896,7 +905,9 @@ end
 
 local function obterPosicaoAlvo(ctx: Ctx): Vector3?
 	local alvo = ctx.estado.alvoAtual
-	if not alvo then return nil end
+	if not alvo then
+		return nil
+	end
 	local hrpAlvo = alvo:FindFirstChild("HumanoidRootPart") :: BasePart?
 	return hrpAlvo and hrpAlvo.Position or nil
 end
@@ -1266,13 +1277,7 @@ local Combate: Comportamento.Comportamento = {
 			if podeAndar then
 				local dirParaAlvo = alvoHRP.Position - pos
 				if dirParaAlvo.Magnitude > 0.001 then
-					moverDirecaoMantendoOlhar(
-						ctx,
-						alvoHRP.Position,
-						dirParaAlvo.Unit,
-						VELOCIDADE_APARANDO,
-						false
-					)
+					moverDirecaoMantendoOlhar(ctx, alvoHRP.Position, dirParaAlvo.Unit, VELOCIDADE_APARANDO, false)
 				end
 			else
 				pararMovimento(ctx)
@@ -1288,15 +1293,8 @@ local Combate: Comportamento.Comportamento = {
 		-- Atacando: continua ajustando somente ate a faixa do alcance da arma.
 		if ControladorCombateNPC.EstaAtacando(ctx.modelo) then
 			if podeAndar then
-				local moveu, animLoco = moverParaFaixaDeAlcance(
-					ctx,
-					pos,
-					alvoHRP.Position,
-					distancia,
-					alcance,
-					distanciaCorrer,
-					dt
-				)
+				local moveu, animLoco =
+					moverParaFaixaDeAlcance(ctx, pos, alvoHRP.Position, distancia, alcance, distanciaCorrer, dt)
 				if moveu and animLoco then
 					ControladorCombateNPC.TocarLocomocao(
 						ctx.modelo,
@@ -1348,21 +1346,10 @@ local Combate: Comportamento.Comportamento = {
 		end
 
 		if podeAndar then
-			local moveu, animLoco = moverParaFaixaDeAlcance(
-				ctx,
-				pos,
-				alvoHRP.Position,
-				distancia,
-				alcance,
-				distanciaCorrer,
-				dt
-			)
+			local moveu, animLoco =
+				moverParaFaixaDeAlcance(ctx, pos, alvoHRP.Position, distancia, alcance, distanciaCorrer, dt)
 			if moveu and animLoco then
-				ControladorCombateNPC.TocarLocomocao(
-					ctx.modelo,
-					animLoco,
-					ctx.estado.velocidadeAnimacaoLocomocao or 1
-				)
+				ControladorCombateNPC.TocarLocomocao(ctx.modelo, animLoco, ctx.estado.velocidadeAnimacaoLocomocao or 1)
 				setEstado(ctx, estadoPorAnimacaoLocomocao(animLoco))
 			else
 				ControladorCombateNPC.TocarLocomocao(ctx.modelo, "Idle")

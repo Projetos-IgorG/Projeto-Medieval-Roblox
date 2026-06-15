@@ -29,9 +29,7 @@ local Combate = ReplicatedStorage:WaitForChild("Combate")
 local Modulo_Configuracoes = require(Combate:WaitForChild("Configuracoes"):WaitForChild("ConfigCombate"))
 local Timings = require(Combate:WaitForChild("Configuracoes"):WaitForChild("TimingsAtaqueNPC"))
 
-local TiposNPC = require(
-	ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos")
-)
+local TiposNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos"))
 
 local Remotos = ReplicatedStorage:WaitForChild("Remotos")
 local NPC_HitReport: RemoteEvent = Remotos:WaitForChild("NPC_HitReport") :: RemoteEvent
@@ -420,7 +418,7 @@ function Mod.TocarLocomocao(modelo: Model, nome: string, velocidadeAnimacao: num
 	setLocomocao(s, nome, velocidadeAnimacao)
 end
 
-local iniciarSwing: (s: Estado, cs: any, maquina: any, token: number) -> ()
+local iniciarSwing: (s: Estado, cs: any, _maquina: any, token: number) -> ()
 local finalizarSwing: (s: Estado, token: number) -> ()
 
 function finalizarSwing(s: Estado, token: number)
@@ -480,7 +478,7 @@ function finalizarSwing(s: Estado, token: number)
 	end)
 end
 
-function iniciarSwing(s: Estado, cs: any, maquina: any, token: number)
+function iniciarSwing(s: Estado, cs: any, _maquina: any, token: number)
 	if s.destruido or s.comboToken ~= token then
 		return
 	end
@@ -620,7 +618,13 @@ local function distanciaModelos(a: Model, b: Model): number
 	return (pa.Position - pb.Position).Magnitude
 end
 
-local function processarReporteHit(jogador: Player, npcModel: Model, alvoModel: Model, acaoTickReportado: number, parteAtingida: string?)
+local function processarReporteHit(
+	jogador: Player,
+	npcModel: Model,
+	alvoModel: Model,
+	acaoTickReportado: number,
+	parteAtingida: string?
+)
 	-- Tipos basicos.
 	if typeof(npcModel) ~= "Instance" or not npcModel:IsA("Model") then
 		return

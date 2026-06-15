@@ -53,7 +53,9 @@ end
 
 local function CriarDefesaBlock(entidade: Model, debugAtivo: boolean, prontoParaAparar: boolean)
 	local hrp = entidade:FindFirstChild("HumanoidRootPart") :: BasePart?
-	if not hrp then return end
+	if not hrp then
+		return
+	end
 
 	local existente = entidade:FindFirstChild("DefesaBlock")
 	if existente then
@@ -350,7 +352,7 @@ function ControladorCombate._ProcessarHit(
 		if DanoDebugVisual then
 			DanoDebugVisual:FireAllClients(alvo, 0, {
 				tipo = "Parry",
-				atacante = atacante
+				atacante = atacante,
 			})
 		end
 		return
@@ -371,7 +373,7 @@ function ControladorCombate._ProcessarHit(
 			if DanoDebugVisual then
 				DanoDebugVisual:FireAllClients(alvo, 0, {
 					tipo = "BlockBroken",
-					atacante = atacante
+					atacante = atacante,
 				})
 			end
 			return
@@ -393,7 +395,7 @@ function ControladorCombate._ProcessarHit(
 			if DanoDebugVisual then
 				DanoDebugVisual:FireAllClients(alvo, danoBase, {
 					tipo = "Block",
-					atacante = atacante
+					atacante = atacante,
 				})
 			end
 			return
@@ -431,7 +433,7 @@ function ControladorCombate._ProcessarHit(
 				tipo = "Hit",
 				atacante = atacante,
 				multiplicador = multiplicadorDano,
-				bypassed = (maquinaAlvo:EstaBloqueando() and parteAtingida ~= "DefesaBlock")
+				bypassed = (maquinaAlvo:EstaBloqueando() and parteAtingida ~= "DefesaBlock"),
 			})
 		end
 	else
@@ -1013,11 +1015,23 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 		return false, "NaoAtacando"
 	end
 
+	local tool = (ObterToolPorMao(entidade, mao) or entidade:FindFirstChildOfClass("Tool")) :: any
+
+	if not tool then
+		DebugPrint(string.format("[Combate] %s: HitboxAcerto - sem tool para mao %s", entidade.Name, mao))
+		return false, "SemTool"
+	end
+
 	local hrpAtacante = entidade:FindFirstChild("HumanoidRootPart") :: BasePart?
 	local hrpAlvo = alvo:FindFirstChild("HumanoidRootPart") :: BasePart?
 
 	if hrpAtacante and hrpAlvo then
-		local alcanceMaximo = Modulo_Configuracoes.ObterConfiguracao("Alcance") or 8
+		local alcanceMaximo = 8
+		local dadosTool = tool:FindFirstChild("Dados")
+		local alcanceValue = dadosTool and dadosTool:FindFirstChild("Alcance")
+		if alcanceValue and (alcanceValue:IsA("NumberValue") or alcanceValue:IsA("IntValue")) then
+			alcanceMaximo = (alcanceValue :: any).Value
+		end
 
 		local distancia = (hrpAtacante.Position - hrpAlvo.Position).Magnitude
 		if distancia > alcanceMaximo * 2 then
@@ -1042,16 +1056,6 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 	local modo = maquina:ObterModo()
 	local configCombo = Modulo_Configuracoes.ObterConfiguracaoCombo(modo)
 	local ehDivideDano = configCombo and configCombo.divideDano == true
-
-	local tool = ObterToolPorMao(entidade, mao)
-	if not tool then
-		tool = entidade:FindFirstChildOfClass("Tool")
-	end
-
-	if not tool then
-		DebugPrint(string.format("[Combate] %s: HitboxAcerto - sem tool para mao %s", entidade.Name, mao))
-		return false, "SemTool"
-	end
 
 	local danoBase = Modulo_Dano.ObterDanoBase(tool)
 	if not danoBase then
