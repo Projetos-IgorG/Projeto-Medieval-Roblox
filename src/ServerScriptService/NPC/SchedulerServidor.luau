@@ -62,8 +62,8 @@ local function ajustarOwnership(insc: Inscricao)
 		return
 	end
 	local archetype = insc.ctx.archetype
-	-- Animal: o servidor cuida; nao transferimos para evitar exploit em IA simples.
-	if archetype == TiposNPC.Archetype.Animal then
+	-- Animal e Combate: o servidor cuida. Combate no servidor evita exploit e desyncs/teleportes de física no knockback.
+	if archetype == TiposNPC.Archetype.Animal or archetype == TiposNPC.Archetype.Combate then
 		pcall(function()
 			pp:SetNetworkOwner(nil)
 		end)
@@ -85,12 +85,22 @@ local function tickGlobal(_dt: number)
 	local agora = os.clock()
 	for id, insc in inscricoes do
 		local ctx = insc.ctx
-		if not ctx.modelo or not ctx.modelo.Parent then
+		if not ctx.modelo or not ctx.modelo.Parent or not ctx.humanoide or ctx.humanoide.Parent == nil then
 			inscricoes[id] = nil
-			continue
-		end
-		if not ctx.humanoide or ctx.humanoide.Parent == nil then
-			inscricoes[id] = nil
+			task.spawn(function()
+				local gerNPC = script.Parent:FindFirstChild("GerenciadorNPC")
+				if gerNPC and gerNPC:IsA("ModuleScript") then
+					local ok, GerenciadorNPC = pcall(require, gerNPC)
+					if ok and GerenciadorNPC and GerenciadorNPC.DespawnNPC then
+						GerenciadorNPC.DespawnNPC(id)
+						return
+					end
+				end
+				local comp = Comportamento.Obter(ctx.archetype)
+				if comp then
+					pcall(comp.destruir, ctx)
+				end
+			end)
 			continue
 		end
 
@@ -104,7 +114,7 @@ local function tickGlobal(_dt: number)
 			insc.proximaIA = agora + insc.intervaloIA
 			local comp = Comportamento.Obter(ctx.archetype)
 			if comp then
-				local ok, err = pcall(comp.atualizar, ctx, dt)
+				local ok, err = pcall(comp.atualizar :: any, ctx, dt)
 				if not ok then
 					warn(string.format("[NPC] Erro no comportamento '%s' (id=%d): %s", ctx.archetype, id, tostring(err)))
 				end

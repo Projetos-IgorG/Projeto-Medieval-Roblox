@@ -45,8 +45,6 @@ local DURACAO_BLOQUEIO_MIN = 1.1
 local DURACAO_BLOQUEIO_MAX = 2.0
 local CHANCE_BLOQUEIO_POR_TICK = 0.18
 local COOLDOWN_BLOQUEIO_NPC = (ConfigCombate.ConfiguracaoGlobal.CooldownBloqueio or 0.5) + 1.5
-local JANELA_PARRY_NPC = ConfigCombate.ConfiguracaoGlobal.JanelaParry or 0.2
-local COOLDOWN_PARRY_NPC = ConfigCombate.ConfiguracaoGlobal.CooldownParry or 1.0
 local DISTANCIA_CORRER_PADRAO = 20
 local CHAVE_DISTANCIA_CORRER = "NPC_DistanciaCorrer"
 local HITS_PARA_TROCAR_ALVO = 2
@@ -120,22 +118,7 @@ local function limparOrientacao(ctx: Ctx)
 		end
 	end
 end
-
-local function isParryDebugActive(): boolean
-	local attr = ReplicatedStorage:GetAttribute("ParryDebugBlock")
-	if attr ~= nil then
-		return attr == true
-	end
-	local ok, HitboxConfig = pcall(
-		require,
-		ReplicatedStorage:WaitForChild("Combate")
-			:WaitForChild("Hitbox")
-			:WaitForChild("Shapecast")
-			:WaitForChild("HitboxConfig") :: ModuleScript
-	)
-	return ok and HitboxConfig.ParryDebugBlock == true
-end
-
+-- Cleanup de fallback: destroi DefesaBlock caso sobreviva apos pipeline.
 local function DestruirDefesaBlock(entidade: Model)
 	local existente = entidade:FindFirstChild("DefesaBlock")
 	if existente then
@@ -143,99 +126,10 @@ local function DestruirDefesaBlock(entidade: Model)
 	end
 end
 
-local function CriarDefesaBlock(entidade: Model, debugAtivo: boolean, prontoParaAparar: boolean, alvoPos: Vector3?)
-	local hrp = entidade:FindFirstChild("HumanoidRootPart") :: BasePart?
-	if not hrp then
-		return
-	end
-
-	local existente = entidade:FindFirstChild("DefesaBlock")
-	if existente then
-		existente:Destroy()
-	end
-
-	local block = Instance.new("Part")
-	block.Name = "DefesaBlock"
-	block.Size = Vector3.new(3.7, 5, 1.5) -- Alinhado com o tamanho do player
-	block.CanCollide = false
-	block.CanTouch = true
-	block.CanQuery = true
-	block.Massless = true
-	block.Anchored = true
-	block.Transparency = if debugAtivo then 0.5 else 1.0
-	block.Color = if prontoParaAparar then Color3.fromRGB(255, 255, 0) else Color3.fromRGB(0, 255, 0) -- Yellow vs Green
-	block.Material = Enum.Material.ForceField
-	block.CastShadow = false
-
-	-- Posiciona o bloco na direcao do alvo (nao na orientacao do HRP)
-	local pos = hrp.Position
-	local direcao: Vector3
-	if alvoPos then
-		local dirPlana = Vector3.new(alvoPos.X - pos.X, 0, alvoPos.Z - pos.Z)
-		direcao = if dirPlana.Magnitude > 0.1 then dirPlana.Unit else hrp.CFrame.LookVector
-	else
-		direcao = hrp.CFrame.LookVector
-	end
-	direcao = Vector3.new(direcao.X, 0, direcao.Z)
-	if direcao.Magnitude < 0.01 then
-		direcao = Vector3.new(0, 0, -1)
-	else
-		direcao = direcao.Unit
-	end
-
-	local blockPos = pos + direcao * 1.5
-	block.CFrame = CFrame.lookAt(blockPos, blockPos + direcao)
-
-	block.Parent = entidade
-end
-
-local function ReposicionarDefesaBlock(entidade: Model, alvoPos: Vector3?)
-	local block = entidade:FindFirstChild("DefesaBlock") :: BasePart?
-	if not block then
-		return
-	end
-	local hrp = entidade:FindFirstChild("HumanoidRootPart") :: BasePart?
-	if not hrp then
-		return
-	end
-
-	local pos = hrp.Position
-	local direcao: Vector3
-	if alvoPos then
-		local dirPlana = Vector3.new(alvoPos.X - pos.X, 0, alvoPos.Z - pos.Z)
-		direcao = if dirPlana.Magnitude > 0.1 then dirPlana.Unit else hrp.CFrame.LookVector
-	else
-		direcao = hrp.CFrame.LookVector
-	end
-	direcao = Vector3.new(direcao.X, 0, direcao.Z)
-	if direcao.Magnitude < 0.01 then
-		direcao = Vector3.new(0, 0, -1)
-	else
-		direcao = direcao.Unit
-	end
-
-	local blockPos = pos + direcao * 1.5
-	block.CFrame = CFrame.lookAt(blockPos, blockPos + direcao)
-end
-
-local function AtualizarDefesaBlock(entidade: Model, debugAtivo: boolean, prontoParaAparar: boolean, alvoPos: Vector3?)
-	local block = entidade:FindFirstChild("DefesaBlock") :: BasePart?
-	if block then
-		block.Transparency = if debugAtivo then 0.5 else 1.0
-		block.Color = if prontoParaAparar then Color3.fromRGB(255, 255, 0) else Color3.fromRGB(0, 255, 0)
-		if alvoPos then
-			ReposicionarDefesaBlock(entidade, alvoPos)
-		end
-	end
-end
-
--- REQ 7: predicao de ataque do alvo. Cooldown curto entre tentativas de
--- bloqueio preditivo para nao spammar quando alvo encadeia varios ataques.
--- ATRASO_PARRY: aguarda Xs apos o alvo iniciar o ataque para sincronizar
--- o bloqueio com a janela de parry (a hitbox do alvo ainda nao chegou).
-local CHANCE_PARRY_PREDITIVO = 0.9
-local COOLDOWN_PREDICAO_PARRY = 0.4
-local ATRASO_PARRY_PREDITIVO = 0.28
+-- Cooldown entre tentativas de bloqueio preditivo para nao spammar.
+local COOLDOWN_PREDICAO_BLOQUEIO = 0.4
+-- Atraso apos detectar ataque do alvo antes de levantar guarda.
+local ATRASO_BLOQUEIO_PREDITIVO = 0.28
 
 -- Baiting: apos cada ataque proprio, NPC fica 1.0-2.5s sem iniciar novo ataque,
 -- esperando o alvo abrir guarda/atacar para conseguir parry. NPC continua
@@ -431,10 +325,8 @@ local function mapearEstadoMaquina(estadoAcao: string): string?
 end
 
 local iniciarBloqueio: (Ctx) -> ()
-local iniciarBloqueioCombo: (Ctx) -> ()
 local tentarBloqueioPreditivo: (Ctx, Model, boolean?) -> ()
 local tentarAtaqueRiposte: (Ctx) -> ()
-local colocarParryEmCooldown: (Ctx) -> ()
 
 local function instalarSincMaquina(ctx: Ctx, maq: any)
 	if not maq or not maq.AoMudarEstadoAcao then
@@ -451,6 +343,8 @@ local function instalarSincMaquina(ctx: Ctx, maq: any)
 			return
 		end
 
+		-- DefesaBlock agora e gerenciado pelo CombateServidor via weld.
+		-- Cleanup de fallback apenas.
 		if novo ~= "Defendendo" and novo ~= "Aparando" then
 			DestruirDefesaBlock(ctx.modelo)
 		end
@@ -898,43 +792,9 @@ local function estadoPorAnimacaoLocomocao(nomeAnimacao: string): string
 end
 
 -- =============================================================================
--- Bloqueio / Parry do NPC (espelhado na MaquinaDeEstados canonica).
+-- Bloqueio / Parry do NPC (delegado ao pipeline do player via
+-- ControladorCombateNPC.Bloquear/PararBloqueio).
 -- =============================================================================
-
--- Funções de bloco de defesa movidas para o topo do arquivo
-
-local function obterPosicaoAlvo(ctx: Ctx): Vector3?
-	local alvo = ctx.estado.alvoAtual
-	if not alvo then
-		return nil
-	end
-	local hrpAlvo = alvo:FindFirstChild("HumanoidRootPart") :: BasePart?
-	return hrpAlvo and hrpAlvo.Position or nil
-end
-
-local function definirEstadoBloqueioMaquina(ctx: Ctx, bloqueando: boolean, prontoParry: boolean)
-	local maq = ctx.estado.maquina
-	if not maq or not maq.dados then
-		return
-	end
-	maq.dados.bloqueando = bloqueando
-	maq.dados.prontoParaAparar = prontoParry
-	if bloqueando then
-		maq.dados.stunado = false
-	end
-
-	local alvoPos = obterPosicaoAlvo(ctx)
-	if bloqueando then
-		local block = ctx.modelo:FindFirstChild("DefesaBlock")
-		if block then
-			AtualizarDefesaBlock(ctx.modelo, isParryDebugActive(), prontoParry, alvoPos)
-		else
-			CriarDefesaBlock(ctx.modelo, isParryDebugActive(), prontoParry, alvoPos)
-		end
-	else
-		DestruirDefesaBlock(ctx.modelo)
-	end
-end
 
 local function pararBloqueio(ctx: Ctx)
 	if (ctx.estado.bloqueandoAte or 0) <= 0 then
@@ -944,34 +804,12 @@ local function pararBloqueio(ctx: Ctx)
 	ctx.estado.bloqueandoAte = 0
 	ctx.estado.bloqueioSeguraCombo = false
 	ctx.estado.cooldownBloqueio = os.clock() + COOLDOWN_BLOQUEIO_NPC
-	definirEstadoBloqueioMaquina(ctx, false, false)
-	colocarParryEmCooldown(ctx)
-	if ctx.humanoide.Health > 0 then
-		setEstado(ctx, TiposNPC.Estado.Idle)
-	end
+
+	-- Delega ao pipeline do player para parar bloqueio naturalmente.
+	ControladorCombateNPC.PararBloqueio(ctx.modelo)
 end
 
-function colocarParryEmCooldown(ctx: Ctx)
-	local maq = ctx.estado.maquina
-	if not maq or not maq.dados then
-		return
-	end
-	if maq.dados.ultimoParry ~= 0 then
-		maq.dados.ultimoParry = tick()
-	end
-	maq.dados.prontoParaAparar = false
-	if maq.dados.bloqueando then
-		local alvoPos = obterPosicaoAlvo(ctx)
-		AtualizarDefesaBlock(ctx.modelo, isParryDebugActive(), false, alvoPos)
-	else
-		DestruirDefesaBlock(ctx.modelo)
-	end
-	if typeof(maq.dados.parryToken) == "number" then
-		maq.dados.parryToken += 1
-	end
-end
-
-local function iniciarBloqueioInterno(ctx: Ctx, segurarCombo: boolean)
+function iniciarBloqueio(ctx: Ctx)
 	if not lerFlag(ctx.modelo, TiposNPC.Chaves.PodeDefender, false) then
 		return
 	end
@@ -985,37 +823,20 @@ local function iniciarBloqueioInterno(ctx: Ctx, segurarCombo: boolean)
 	if ControladorCombateNPC.EstaAtacando(ctx.modelo) then
 		return
 	end
-	-- Nao gateamos por stunadoAte: REQ 1 permite bloquear durante o stun.
+
+	-- Delega ao pipeline do player. O parry acontece naturalmente se o
+	-- cooldown interno da MaquinaDeEstados permitir.
+	local ok = ControladorCombateNPC.Bloquear(ctx.modelo)
+	if not ok then
+		return
+	end
 
 	local duracao = DURACAO_BLOQUEIO_MIN + math.random() * (DURACAO_BLOQUEIO_MAX - DURACAO_BLOQUEIO_MIN)
-	local maq = ctx.estado.maquina
-	local ultimoParry = if maq and maq.dados then maq.dados.ultimoParry or 0 else 0
-	local podeParry = lerFlag(ctx.modelo, TiposNPC.Chaves.PodeParry, false)
-		and (tick() - ultimoParry) >= COOLDOWN_PARRY_NPC
-
 	ctx.estado.bloqueioToken = (ctx.estado.bloqueioToken or 0) + 1
 	local token = ctx.estado.bloqueioToken
 	ctx.estado.bloqueandoAte = agora + duracao
-	ctx.estado.bloqueioSeguraCombo = segurarCombo
+	ctx.estado.bloqueioSeguraCombo = false
 	ctx.estado.cooldownBloqueio = agora + duracao + COOLDOWN_BLOQUEIO_NPC
-	ctx.humanoide.WalkSpeed = VELOCIDADE_BLOQUEANDO
-	setEstado(ctx, TiposNPC.Estado.Defendendo)
-	definirEstadoBloqueioMaquina(ctx, true, podeParry)
-
-	if podeParry then
-		local fimJanela = agora + JANELA_PARRY_NPC
-		task.delay(JANELA_PARRY_NPC, function()
-			if ctx.estado.destruido then
-				return
-			end
-			if ctx.estado.bloqueioToken ~= token then
-				return
-			end
-			if (ctx.estado.bloqueandoAte or 0) >= fimJanela then
-				definirEstadoBloqueioMaquina(ctx, true, false)
-			end
-		end)
-	end
 
 	task.delay(duracao, function()
 		if ctx.estado.destruido then
@@ -1030,14 +851,6 @@ local function iniciarBloqueioInterno(ctx: Ctx, segurarCombo: boolean)
 	end)
 end
 
-function iniciarBloqueio(ctx: Ctx)
-	iniciarBloqueioInterno(ctx, false)
-end
-
-function iniciarBloqueioCombo(ctx: Ctx)
-	iniciarBloqueioInterno(ctx, true)
-end
-
 function tentarBloqueioPreditivo(ctx: Ctx, alvo: Model, forcar: boolean?)
 	if not lerFlag(ctx.modelo, TiposNPC.Chaves.PodeDefender, false) then
 		return
@@ -1047,13 +860,10 @@ function tentarBloqueioPreditivo(ctx: Ctx, alvo: Model, forcar: boolean?)
 	if not forcar and not emPreparoAposAparado and (ctx.estado.cooldownPredicaoParry or 0) > agora then
 		return
 	end
-	if not forcar and not emPreparoAposAparado and math.random() > CHANCE_PARRY_PREDITIVO then
-		return
-	end
-	ctx.estado.cooldownPredicaoParry = agora + COOLDOWN_PREDICAO_PARRY
+	ctx.estado.cooldownPredicaoParry = agora + COOLDOWN_PREDICAO_BLOQUEIO
 	local token = (ctx.estado.predicaoToken or 0) + 1
 	ctx.estado.predicaoToken = token
-	task.delay(ATRASO_PARRY_PREDITIVO, function()
+	task.delay(ATRASO_BLOQUEIO_PREDITIVO, function()
 		if ctx.estado.destruido or ctx.humanoide.Health <= 0 then
 			return
 		end
@@ -1063,12 +873,9 @@ function tentarBloqueioPreditivo(ctx: Ctx, alvo: Model, forcar: boolean?)
 		if ctx.estado.alvoSubscrito ~= alvo and ctx.estado.alvoAtual ~= alvo then
 			return
 		end
-		local dados = dadosComboAlvo(ctx)
-		if dados and dados.estadoAcao == "AtacandoLeve" then
-			iniciarBloqueioCombo(ctx)
-		else
-			iniciarBloqueio(ctx)
-		end
+		-- Levanta a guarda naturalmente. O parry acontece automaticamente
+		-- pelo pipeline do player se o cooldown permitir.
+		iniciarBloqueio(ctx)
 	end)
 end
 
@@ -1205,13 +1012,13 @@ local Combate: Comportamento.Comportamento = {
 		local podeAtacar = lerFlag(ctx.modelo, TiposNPC.Chaves.PodeAtacar, true)
 
 		-- Bloqueando: mantem postura, nao persegue (mas continua olhando alvo).
+		-- Bloqueando: DefesaBlock agora usa weld ao HRP (igual player),
+		-- segue a orientacao fisica do NPC automaticamente.
 		if (ctx.estado.bloqueandoAte or 0) > agora then
 			local alvoB = ctx.estado.alvoAtual
 			local _, hrpB = alvoVivoComHRP(alvoB)
 			if hrpB then
 				orientarParaAlvo(ctx, hrpB.Position)
-				-- Reposiciona DefesaBlock para apontar para o alvo a cada tick
-				ReposicionarDefesaBlock(ctx.modelo, hrpB.Position)
 			end
 			if alvoMantemComboLeve(ctx) then
 				ctx.estado.bloqueioSeguraCombo = true
@@ -1272,8 +1079,29 @@ local Combate: Comportamento.Comportamento = {
 			setEstado(ctx, TiposNPC.Estado.Idle)
 			return
 		end
-		local dentroDoAlcance = math.abs(distancia - alcance) <= TOLERANCIA_ALCANCE
+		local dentroDoAlcance = distancia <= (alcance + TOLERANCIA_ALCANCE)
 		local distanciaCorrer = lerNumero(ctx.modelo, CHAVE_DISTANCIA_CORRER, DISTANCIA_CORRER_PADRAO)
+
+		if dentroDoAlcance then
+			if ctx.estado.chasingAlvo then
+				ctx.estado.chasingAlvo = nil
+				ctx.estado.cooldownAtaquePersonagem = 0
+			end
+
+			local npcParado = velocidadePlanaModelo(ctx.modelo) < 0.8 and ctx.humanoide.MoveDirection.Magnitude < 0.1
+			if npcParado then
+				if not ctx.estado.tempoParadoInicio then
+					ctx.estado.tempoParadoInicio = agora
+				elseif agora - ctx.estado.tempoParadoInicio >= 1.0 then
+					ctx.estado.cooldownAtaquePersonagem = 0
+				end
+			else
+				ctx.estado.tempoParadoInicio = nil
+			end
+		else
+			ctx.estado.chasingAlvo = true
+			ctx.estado.tempoParadoInicio = nil
+		end
 
 		if emAparado then
 			if podeAndar then
@@ -1334,6 +1162,39 @@ local Combate: Comportamento.Comportamento = {
 			return
 		end
 
+		if dentroDoAlcance then
+			local podeDefender = lerFlag(ctx.modelo, TiposNPC.Chaves.PodeDefender, false)
+			local cooldownBloqueioOK = (ctx.estado.cooldownBloqueio or 0) <= agora
+			local cooldownAtaqueOK = (ctx.estado.cooldownAtaquePersonagem or 0) <= agora
+
+			if podeDefender and cooldownBloqueioOK and math.random() < CHANCE_BLOQUEIO_POR_TICK then
+				iniciarBloqueio(ctx)
+				return
+			end
+			if podeAtacar and cooldownAtaqueOK then
+				local alvoRef: Model = alvo
+				local atacou = ControladorCombateNPC.AtacarLeve(ctx.modelo, function(): boolean
+					-- Combo segue enquanto o alvo permanece proximo (tolerancia ampla).
+					if not alvoRef or not alvoRef.Parent then
+						return false
+					end
+					local h = alvoRef:FindFirstChildOfClass("Humanoid")
+					if not h or h.Health <= 0 then
+						return false
+					end
+					local p = alvoRef:FindFirstChild("HumanoidRootPart") :: BasePart?
+					if not p then
+						return false
+					end
+					local d = (p.Position - ctx.modelo:GetPivot().Position).Magnitude
+					return d <= alcance * 1.5
+				end)
+				if atacou then
+					return
+				end
+			end
+		end
+
 		if podeAndar then
 			local orbitando, animOrbita = tentarOrbitar(ctx, alvo, pos, alvoHRP.Position, distancia, alcance, agora)
 			if orbitando and animOrbita then
@@ -1362,43 +1223,14 @@ local Combate: Comportamento.Comportamento = {
 			ControladorCombateNPC.TocarLocomocao(ctx.modelo, "Idle")
 			setEstado(ctx, TiposNPC.Estado.Idle)
 		end
-
-		if dentroDoAlcance then
-			local podeDefender = lerFlag(ctx.modelo, TiposNPC.Chaves.PodeDefender, false)
-			local cooldownBloqueioOK = (ctx.estado.cooldownBloqueio or 0) <= agora
-			local cooldownAtaqueOK = (ctx.estado.cooldownAtaquePersonagem or 0) <= agora
-
-			if podeDefender and cooldownBloqueioOK and math.random() < CHANCE_BLOQUEIO_POR_TICK then
-				iniciarBloqueio(ctx)
-				return
-			end
-			if podeAtacar and cooldownAtaqueOK then
-				local alvoRef: Model = alvo
-				ControladorCombateNPC.AtacarLeve(ctx.modelo, function(): boolean
-					-- Combo segue enquanto o alvo permanece proximo (tolerancia ampla).
-					if not alvoRef or not alvoRef.Parent then
-						return false
-					end
-					local h = alvoRef:FindFirstChildOfClass("Humanoid")
-					if not h or h.Health <= 0 then
-						return false
-					end
-					local p = alvoRef:FindFirstChild("HumanoidRootPart") :: BasePart?
-					if not p then
-						return false
-					end
-					local d = (p.Position - ctx.modelo:GetPivot().Position).Magnitude
-					return d <= alcance * 1.5
-				end)
-			end
-		end
 	end,
 
 	destruir = function(ctx: Ctx)
 		ctx.estado.destruido = true
 		atualizarSubscricaoAlvo(ctx, nil)
 		limparOrientacao(ctx)
-		definirEstadoBloqueioMaquina(ctx, false, false)
+		ControladorCombateNPC.PararBloqueio(ctx.modelo)
+		DestruirDefesaBlock(ctx.modelo)
 		ControladorCombateNPC.Destruir(ctx.modelo)
 		ctx.estado.maquina = nil
 		Comportamento.Helpers.LimparConexoes(ctx)

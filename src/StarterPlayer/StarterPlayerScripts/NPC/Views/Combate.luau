@@ -30,6 +30,8 @@ local ViewBase = require(script.Parent:WaitForChild("ViewBase"))
 local PLAYER_LOCAL = Players.LocalPlayer
 local NPC_HitReport: RemoteEvent =
 	ReplicatedStorage:WaitForChild("Remotos"):WaitForChild("NPC_HitReport") :: RemoteEvent
+local EquipAnimacaoTerminou: RemoteEvent =
+	ReplicatedStorage:WaitForChild("Remotos"):WaitForChild("EquipAnimacaoTerminou") :: RemoteEvent
 
 type Ctx = ViewBase.ContextoView
 
@@ -354,13 +356,14 @@ local function criarWeaponModelMao(ctx: Ctx, template: Model, mao: string)
 	end
 
 	clone.Parent = ctx.modelo
-	handle.CFrame = armPart.CFrame * CFrame.new(0, -1, 0) * CFrame.Angles(math.rad(-90), 0, 0)
 
 	local joint = Instance.new("Motor6D")
 	joint.Name = SUFIXO_PARA_SLOT[mao] .. "_WeaponJointLocal"
 	joint.Part0 = armPart
 	joint.Part1 = handle
-	joint.C0 = armPart.CFrame:Inverse() * handle.CFrame
+	-- Usar CFrame estático relativo ao braço para a C0 do Motor6D, evitando
+	-- ler o CFrame do braço já animado (que introduziria offsets incorretos).
+	joint.C0 = CFrame.new(0, -1, 0) * CFrame.Angles(math.rad(-90), 0, 0)
 	joint.C1 = CFrame.new()
 	joint.Parent = armPart
 
@@ -422,7 +425,9 @@ end
 
 local function maoPorIndice(indice: number?): string
 	local valor = if typeof(indice) == "number" then math.max(1, math.floor(indice)) else 1
-	return if valor % 2 == 0 then "Left" else "Right"
+	-- A animação de punhos R6 inicia o primeiro golpe (índice 1) com a mão Esquerda (Left).
+	-- Portanto, índices ímpares (1, 3) mapeiam para 'Left' e pares (2, 4) para 'Right'.
+	return if valor % 2 == 0 then "Right" else "Left"
 end
 
 local function limparConexoesHitboxAnimacao(ctx: Ctx)
@@ -574,11 +579,12 @@ local function configurarHitboxParaSwing(ctx: Ctx, track: AnimationTrack, acaoTi
 		limparConexoesHitboxAnimacao(ctx)
 	end)
 
-	local tempoAtivacao = acaoTick + t.AtrasoHit
-	local agora = os.clock()
-	local delayTempo = tempoAtivacao - agora
+	-- O fallback de atraso do hitbox deve ser calculado a partir de quando a animação inicia localmente no cliente,
+	-- e não baseado no clock desincronizado do servidor (acaoTick), evitando ativação prematura.
+	-- Adicionado um buffer de 0.15s para garantir que os marcadores da animação (markers) tenham prioridade.
+	local delayTempo = t.AtrasoHit + 0.15
 
-	task.delay(math.max(0, delayTempo), function()
+	task.delay(delayTempo, function()
 		if not (ctx :: any).destruido
 			and ctx.estado.swingHitToken == token
 			and ctx.estado.acaoTick == acaoTick
@@ -698,6 +704,19 @@ local function tocarAcao(ctx: Ctx)
 		end
 		track.Looped = false
 		track:Play(FADE_EQUIP)
+		-- Notifica o servidor quando a animacao terminar (igual player).
+		local equipToken = (ctx.estado.equipStoppedToken or 0) + 1
+		ctx.estado.equipStoppedToken = equipToken
+		local conn = ctx.estado.equipStoppedConn
+		if conn and conn.Connected then
+			conn:Disconnect()
+		end
+		ctx.estado.equipStoppedConn = track.Stopped:Connect(function()
+			if ctx.estado.equipStoppedToken ~= equipToken then
+				return
+			end
+			EquipAnimacaoTerminou:FireServer(ctx.modelo)
+		end)
 	elseif acao == TiposNPC.Acao.Desequipar then
 		local track = carregarTrack(ctx, "Desequipar")
 		if not track then
@@ -705,6 +724,19 @@ local function tocarAcao(ctx: Ctx)
 		end
 		track.Looped = false
 		track:Play(FADE_EQUIP)
+		-- Notifica o servidor quando a animacao terminar (igual player).
+		local equipToken = (ctx.estado.equipStoppedToken or 0) + 1
+		ctx.estado.equipStoppedToken = equipToken
+		local conn = ctx.estado.equipStoppedConn
+		if conn and conn.Connected then
+			conn:Disconnect()
+		end
+		ctx.estado.equipStoppedConn = track.Stopped:Connect(function()
+			if ctx.estado.equipStoppedToken ~= equipToken then
+				return
+			end
+			EquipAnimacaoTerminou:FireServer(ctx.modelo)
+		end)
 	elseif acao == TiposNPC.Acao.AtaqueLeve then
 		local track = carregarTrack(ctx, "AtaqueLeve")
 		if not track then

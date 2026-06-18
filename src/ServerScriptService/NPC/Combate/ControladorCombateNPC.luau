@@ -3,30 +3,26 @@
 --[[
 	Script: ControladorCombateNPC.luau
 	Caminho: src/ServerScriptService/NPC/Combate
-	Responsabilidade: Camada SO-LOGICA do combate de NPCs no servidor.
-	    NAO carrega animacoes, NAO clona WeaponModel, NAO mantem hitbox no
-	    servidor. Apenas:
-	      - mantem estado canonico (atacando, indiceCombo, acaoTick, swingToken),
-	      - publica atributos NPC_Acao/NPC_AcaoTick/NPC_LocomocaoNome/...
-	      - recebe reportes de hit do CLIENTE do alvo (RemoteEvent NPC_HitReport),
-	        valida (NPC realmente atacando, alvo proximo, dedup por swing) e
-	        delega o dano canonico ao CombateServidor._ProcessarHit.
-	    Cliente do alvo roda hitbox shapecast em seu WeaponModel LOCAL (que e o
-	    unico que esta animado pelo Animator local), com os mesmos DmgPoints da
-	    arma. Dano permanece autoritativo no servidor.
-	Uso: ModuleScript; require e use a mesma API publica de antes
+	Responsabilidade: Camada de combate de NPCs no servidor.
+	    Delega TODAS as acoes ao CombateServidor usando o MESMO pipeline do
+	    player: ProcessarAtacarLeveEmPe, ProcessarBloquear, ProcessarPararBloqueio,
+	    ProcessarEquipar, ProcessarDesequipar. Sincroniza atributos NPC_Acao/
+	    NPC_Estado/NPC_AcaoTick via hooks nos eventos da MaquinaDeEstados.
+	    Recebe reportes de hit do CLIENTE do alvo (RemoteEvent NPC_HitReport),
+	    valida (NPC realmente atacando, alvo proximo, dedup por swing) e
+	    delega o dano canonico ao CombateServidor._ProcessarHit.
+	Uso: ModuleScript; require e use a mesma API publica:
 	    (Iniciar/EquiparArma/DesequiparArma/AtacarLeve/PararAtaque/
-	     TocarLocomocao/EstaArmaPronta/EstaAtacando/EstaEquipando/
-	     ObterAlcanceArmaEquipada/Destruir).
+	     Bloquear/PararBloqueio/TocarLocomocao/EstaArmaPronta/EstaAtacando/
+	     EstaEquipando/EstaBloqueando/ObterAlcanceArmaEquipada/Destruir).
 	Funcoes principais: Iniciar, EquiparArma, DesequiparArma, AtacarLeve,
-	    TocarLocomocao, PararAtaque, Destruir
+	    Bloquear, PararBloqueio, TocarLocomocao, PararAtaque, Destruir
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local Combate = ReplicatedStorage:WaitForChild("Combate")
-local Modulo_Configuracoes = require(Combate:WaitForChild("Configuracoes"):WaitForChild("ConfigCombate"))
 local Timings = require(Combate:WaitForChild("Configuracoes"):WaitForChild("TimingsAtaqueNPC"))
 
 local TiposNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos"))
@@ -83,6 +79,7 @@ type Estado = {
 	armaPronta: boolean,
 	atacando: boolean,
 	equipando: boolean,
+	desequipando: boolean?,
 	indiceCombo: number,
 	ultimoSwingFim: number,
 	comboToken: number,
@@ -99,6 +96,7 @@ type Estado = {
 	timings: typeof(Timings.Punhos),
 	destruido: boolean,
 	tipoAtaqueAtual: string?,
+	disconnectHooks: { () -> () }?,
 }
 
 local estados: { [Model]: Estado } = {}
@@ -220,6 +218,9 @@ local function registrarArmaEquipada(s: Estado, tool: Tool?): Tool?
 end
 
 local function resolverArmaEquipada(s: Estado): Tool?
+	if s.armaEquipada then
+		return s.armaEquipada
+	end
 	local toolNoModelo = encontrarToolArmaNoModelo(s.modelo)
 	if toolNoModelo then
 		return registrarArmaEquipada(s, toolNoModelo)
@@ -227,9 +228,6 @@ local function resolverArmaEquipada(s: Estado): Tool?
 	local toolPorAtributo = encontrarToolArmaPorAtributo(s.modelo)
 	if toolPorAtributo then
 		return registrarArmaEquipada(s, toolPorAtributo)
-	end
-	if s.armaEquipada and s.armaEquipada.Parent then
-		return registrarArmaEquipada(s, s.armaEquipada)
 	end
 	return registrarArmaEquipada(s, obterTemplateArmaPadrao())
 end
@@ -268,6 +266,126 @@ end
 -- =============================================================================
 -- API publica.
 -- =============================================================================
+
+-- =============================================================================
+-- Sincronizacao de atributos NPC via eventos da MaquinaDeEstados.
+-- Sempre que a maquina muda estadoAcao, estadoMov ou modo, atualiza os
+-- atributos do modelo para que a View do NPC no cliente reaja.
+-- =============================================================================
+
+local function mapearEstadoAcaoParaNPCEstado(estadoAcao: string, dados: any): string?
+	if estadoAcao == "Aparado" then
+		return TiposNPC.Estado.Aparado
+	elseif estadoAcao == "Aparando" then
+		return TiposNPC.Estado.Aparando
+	elseif estadoAcao == "Stunado" then
+		return TiposNPC.Estado.Stunado
+	elseif estadoAcao == "DefesaQuebrada" then
+		return TiposNPC.Estado.DefesaQuebrada
+	elseif estadoAcao == "Defendendo" then
+		return TiposNPC.Estado.Defendendo
+	elseif estadoAcao == "AtacandoLeve" then
+		return TiposNPC.Estado.Atacando
+	end
+	-- Para "Nenhuma", verificar se esta bloqueando (transicao parcial).
+	if dados and dados.bloqueando then
+		return TiposNPC.Estado.Defendendo
+	end
+	return nil -- usa estadoMov
+end
+
+local function mapearEstadoAcaoParaNPCAcao(estadoAcao: string): string
+	if estadoAcao == "Equipando" then
+		return TiposNPC.Acao.Equipar
+	elseif estadoAcao == "Desequipando" then
+		return TiposNPC.Acao.Desequipar
+	elseif estadoAcao == "AtacandoLeve" then
+		return TiposNPC.Acao.AtaqueLeve
+	end
+	return TiposNPC.Acao.Idle
+end
+
+local function sincronizarAtributosDaMaquina(s: Estado, maquina: any)
+	if s.destruido then
+		return
+	end
+	local dados = maquina:ObterDados()
+	if not dados then
+		return
+	end
+
+	-- NPC_Acao e NPC_AcaoTick
+	local novaAcao = mapearEstadoAcaoParaNPCAcao(dados.estadoAcao)
+	local indiceCombo = maquina:ObterIndiceCombo()
+	setAcao(s, novaAcao, indiceCombo)
+
+	-- NPC_Estado (prioridade: estadoAcao > bloqueando > estadoMov)
+	local npcEstado = mapearEstadoAcaoParaNPCEstado(dados.estadoAcao, dados)
+	if not npcEstado then
+		-- Fallback para estadoMov
+		local mov = dados.estadoMov
+		if mov == "Correndo" then
+			npcEstado = TiposNPC.Estado.Correndo
+		elseif mov == "Andando" then
+			npcEstado = TiposNPC.Estado.Andando
+		else
+			npcEstado = TiposNPC.Estado.Idle
+		end
+	end
+	if s.modelo:GetAttribute(TiposNPC.Chaves.Estado) ~= npcEstado then
+		s.modelo:SetAttribute(TiposNPC.Chaves.Estado, npcEstado)
+	end
+
+	-- NPC_ArmaPronta: atualiza quando transicao de equip/desequip termina
+	local acaoAtual = dados.estadoAcao
+	if acaoAtual ~= "Equipando" and acaoAtual ~= "Desequipando" then
+		if s.equipando and acaoAtual == "Nenhuma" then
+			if s.desequipando then
+				s.armaPronta = false
+				s.desequipando = nil
+				s.armaEquipada = nil -- Limpa cache
+				setArmaPronta(s, false)
+			else
+				s.armaPronta = true
+				setArmaPronta(s, true)
+			end
+			s.equipando = false
+		end
+	end
+end
+
+local function instalarHooksMaquina(s: Estado, maquina: any)
+	local function onMudar()
+		sincronizarAtributosDaMaquina(s, maquina)
+	end
+
+	local disconnects: { () -> () } = {}
+	if maquina.AoMudarEstadoAcao then
+		local disc = maquina:AoMudarEstadoAcao(function(_novo: string, _anterior: string)
+			onMudar()
+		end)
+		if typeof(disc) == "function" then
+			table.insert(disconnects, disc)
+		end
+	end
+	if maquina.AoMudarEstadoMov then
+		local disc = maquina:AoMudarEstadoMov(function(_novo: string, _anterior: string)
+			onMudar()
+		end)
+		if typeof(disc) == "function" then
+			table.insert(disconnects, disc)
+		end
+	end
+	if maquina.AoMudarModo then
+		local disc = maquina:AoMudarModo(function(_novo: string, _anterior: string)
+			onMudar()
+		end)
+		if typeof(disc) == "function" then
+			table.insert(disconnects, disc)
+		end
+	end
+	s.disconnectHooks = disconnects
+end
 
 function Mod.Iniciar(modelo: Model): Estado?
 	if estados[modelo] then
@@ -309,6 +427,15 @@ function Mod.Iniciar(modelo: Model): Estado?
 	setAcao(s, TiposNPC.Acao.Idle, 0)
 	setLocomocao(s, "Idle", 1)
 
+	-- Instalar hooks na maquina de estados para sincronizar atributos NPC.
+	local cs = obterCS()
+	if cs and cs.ObterMaquina then
+		local ok, maquina = pcall(cs.ObterMaquina, modelo)
+		if ok and maquina then
+			instalarHooksMaquina(s, maquina)
+		end
+	end
+
 	return s
 end
 
@@ -345,27 +472,29 @@ function Mod.EquiparArma(modelo: Model)
 		return
 	end
 
+	s.armaEquipada = nil -- Força nova resolução
 	resolverArmaEquipada(s)
 
-	s.equipando = true
-	s.equipToken += 1
-	local token = s.equipToken
 	local idArma = s.armaEquipada and lerStringDados(s.armaEquipada, "Id")
 	if idArma then
 		s.modelo:SetAttribute(TiposNPC.Chaves.ArmaEquipadaId, idArma)
 	end
-	setAcao(s, TiposNPC.Acao.Equipar, 0)
 
-	local duracao = s.timings.Equipar.Duracao
-	task.delay(duracao, function()
-		if s.destruido or s.equipToken ~= token then
-			return
-		end
-		s.armaPronta = true
-		setArmaPronta(s, true)
+	local modo = lerStringDados(s.armaEquipada, "modoAnimacao") or "Punhos"
+	local cs = obterCS()
+	if not cs then
+		return
+	end
+
+	s.equipando = true
+	s.equipToken += 1
+
+	-- Delega ao pipeline do player. A conclusao (CompletarAcao) sera chamada
+	-- quando o cliente enviar EquipAnimacaoTerminou via RemoteEvent.
+	local ok = pcall(cs.ProcessarEquipar, modelo, modo)
+	if not ok then
 		s.equipando = false
-		setAcao(s, TiposNPC.Acao.Idle, 0)
-	end)
+	end
 end
 
 function Mod.DesequiparArma(modelo: Model)
@@ -391,20 +520,23 @@ function Mod.DesequiparArma(modelo: Model)
 	end
 
 	s.equipando = true
+	s.desequipando = true
 	s.desequipToken += 1
-	local token = s.desequipToken
-	setAcao(s, TiposNPC.Acao.Desequipar, 0)
 
-	local duracao = s.timings.Desequipar.Duracao
-	task.delay(duracao, function()
-		if s.destruido or s.desequipToken ~= token then
-			return
-		end
+	local cs = obterCS()
+	if not cs then
+		s.equipando = false
+		return
+	end
+
+	-- Delega ao pipeline do player. A conclusao sera chamada quando o
+	-- cliente enviar EquipAnimacaoTerminou via RemoteEvent.
+	local ok = pcall(cs.ProcessarDesequipar, modelo)
+	if not ok then
+		s.equipando = false
 		s.armaPronta = false
 		setArmaPronta(s, false)
-		s.equipando = false
-		setAcao(s, TiposNPC.Acao.Idle, 0)
-	end)
+	end
 end
 
 function Mod.TocarLocomocao(modelo: Model, nome: string, velocidadeAnimacao: number?)
@@ -526,6 +658,10 @@ function Mod.AtacarLeve(modelo: Model, verificarAlvo: (() -> boolean)?): boolean
 		return false
 	end
 
+	if maquina.dados then
+		maquina.dados.ultimoComboTerminou = 0
+	end
+
 	if s.atacando then
 		s.verificarAlvo = verificarAlvo
 		local duracao = s.timings.AtaqueLeve.Duracao
@@ -546,13 +682,12 @@ function Mod.AtacarLeve(modelo: Model, verificarAlvo: (() -> boolean)?): boolean
 		maquina:DefinirModo("Punhos")
 	end
 
-	local ok, tipoAtaque = maquina:TenteAtacarLeveEmPe()
-	if not ok or not tipoAtaque then
+	-- Delega ao pipeline do player: valida estado, toca animacao, aplica
+	-- impulso e seta WalkSpeed automaticamente.
+	local ok, tipoAtaque = cs.ProcessarAtacarLeveEmPe(modelo)
+	if not ok then
 		return false
 	end
-
-	local velBloq = Modulo_Configuracoes.ObterConfiguracao("VelocidadeBloqueando") or 6
-	s.humanoide.WalkSpeed = velBloq * 1.5
 
 	s.indiceCombo = 1
 	s.tipoAtaqueAtual = tipoAtaque
@@ -586,6 +721,53 @@ function Mod.PararAtaque(modelo: Model)
 	end
 end
 
+function Mod.Bloquear(modelo: Model): boolean
+	local s = estados[modelo]
+	if not s then
+		return false
+	end
+	if s.atacando or s.equipando or not s.armaPronta then
+		return false
+	end
+
+	local cs = obterCS()
+	if not cs then
+		return false
+	end
+
+	-- Delega ao pipeline do player. O `true` simula ShiftLock ativo
+	-- (obrigatorio para a MaquinaDeEstados permitir bloqueio).
+	local ok, _motivo = cs.ProcessarBloquear(modelo, true)
+	return ok == true
+end
+
+function Mod.PararBloqueio(modelo: Model): boolean
+	local s = estados[modelo]
+	if not s then
+		return false
+	end
+
+	local cs = obterCS()
+	if not cs then
+		return false
+	end
+
+	local ok, _motivo = cs.ProcessarPararBloqueio(modelo)
+	return ok == true
+end
+
+function Mod.EstaBloqueando(modelo: Model): boolean
+	local cs = obterCS()
+	if not cs then
+		return false
+	end
+	local maquina = cs.ObterMaquina(modelo)
+	if not maquina then
+		return false
+	end
+	return maquina:EstaBloqueando()
+end
+
 function Mod.Destruir(modelo: Model)
 	local s = estados[modelo]
 	if not s then
@@ -597,9 +779,25 @@ function Mod.Destruir(modelo: Model)
 	s.desequipToken += 1
 	s.atacando = false
 	s.equipando = false
+	s.desequipando = nil
 	s.armaPronta = false
 	s.swingHitFim = 0
 	table.clear(s.jaAtingidos)
+
+	-- Limpa hooks de eventos para evitar leaks de memória (closures pendentes)
+	if s.disconnectHooks then
+		for _, disc in s.disconnectHooks do
+			disc()
+		end
+		s.disconnectHooks = nil
+	end
+
+	-- Remove a máquina de estados cacheada no servidor
+	local cs = obterCS()
+	if cs and cs.RemoverMaquina then
+		pcall(cs.RemoverMaquina, modelo)
+	end
+
 	estados[modelo] = nil
 end
 
