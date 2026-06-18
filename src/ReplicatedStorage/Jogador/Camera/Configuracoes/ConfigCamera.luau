@@ -41,6 +41,7 @@ export type ConfiguracaoCamera = {
 	RunSpeedThreshold: number,
 	TransitionTime: number,
 	SmoothFactor: number,
+	OffsetLerpSpeed: number,
 }
 
 local ConfiguracaoPadrao: ConfiguracaoCamera = {
@@ -58,7 +59,7 @@ local ConfiguracaoPadrao: ConfiguracaoCamera = {
 	OffsetFPCabeca = Vector3.new(0, 0.3, -0.35),
 	FOVPrimeiraPessoa = 90,
 	FOVCorrendoPrimeiraPessoa = 110,
-	TransicaoPrimeiraPessoaTempo = 0.25,
+	TransicaoPrimeiraPessoaTempo = 0.4,
 
 	DefaultFOV = 100,
 	WalkFOV = 100,
@@ -69,6 +70,7 @@ local ConfiguracaoPadrao: ConfiguracaoCamera = {
 	RunSpeedThreshold = 18,
 	TransitionTime = 0.35,
 	SmoothFactor = 0.3,
+	OffsetLerpSpeed = 6,
 }
 
 local configuracaoAtual: ConfiguracaoCamera = ConfiguracaoPadrao

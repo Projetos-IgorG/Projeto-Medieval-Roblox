@@ -129,6 +129,12 @@ do
 		zoomDelta = newZoomDelta
 	end
 
+	function Zoom.SetZoomRadius(radius: number)
+		zoomSpring.x = radius
+		zoomSpring.goal = radius
+		zoomSpring.v = 0
+	end
+
 	function Zoom.ReleaseSpring()
 		zoomSpring.x = zoomSpring.goal
 		zoomSpring.v = 0

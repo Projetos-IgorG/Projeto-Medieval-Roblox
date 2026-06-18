@@ -45,7 +45,7 @@ function ClassicCamera.new()
 
 	self.currentMovementOffset = Vector3.zero
 	self.currentShoulderOffset = Vector3.zero
-	self.offsetLerpSpeed = 8
+	self.offsetLerpSpeed = ConfigJogador.ObterConfiguracao("OffsetLerpSpeed") or 8
 
 	self.emPrimeiraPessoa = false
 	self.transicaoPrimeiraPessoaAlpha = 0
@@ -337,8 +337,10 @@ function ClassicCamera:Update(dt)
 				local fpFocus = CFrame.new(headPos + lookVector * 0.5)
 
 				local alpha = self.transicaoPrimeiraPessoaAlpha
-				newCameraCFrame = newCameraCFrame:Lerp(fpCFrame, alpha)
-				newCameraFocus = newCameraFocus:Lerp(fpFocus, alpha)
+				-- Smoothstep easing: 3t^2 - 2t^3
+				local easedAlpha = alpha * alpha * (3 - 2 * alpha)
+				newCameraCFrame = newCameraCFrame:Lerp(fpCFrame, easedAlpha)
+				newCameraFocus = newCameraFocus:Lerp(fpFocus, easedAlpha)
 			end
 		end
 

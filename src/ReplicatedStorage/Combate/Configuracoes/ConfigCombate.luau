@@ -134,7 +134,7 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	CooldownComboLeve = 0.4,
 	CooldownBloqueio = 0.4,
 
-	VelocidadeAndando = 12,
+	VelocidadeAndando = 10,
 	VelocidadeCorrendo = 20,
 	VelocidadeBloqueando = 6,
 	VelocidadeDefesaQuebrada = 2,

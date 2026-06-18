@@ -294,14 +294,8 @@ local function sairPrimeiraPessoa(cameraModule: any)
 		controller:SetIsMouseLocked(restaurarShiftLock)
 	end
 
-	if restaurarShiftLock and controller then
-		if controller.GetMouseLockOffset and controller.currentShoulderOffset ~= nil then
-			controller.currentShoulderOffset = controller:GetMouseLockOffset()
-		end
-		if controller.transicaoPrimeiraPessoaAlpha then
-			controller.transicaoPrimeiraPessoaAlpha = 0
-		end
-	end
+	-- Do not snap currentShoulderOffset or transicaoPrimeiraPessoaAlpha instantly.
+	-- Let ClassicCamera lerp the offset and transicaoPrimeiraPessoaAlpha smoothly.
 
 	local isMouseLocked = restaurarShiftLock
 	local zoomRange = if isMouseLocked
@@ -309,11 +303,16 @@ local function sairPrimeiraPessoa(cameraModule: any)
 		else ConfigJogador.ObterConfiguracao("ZoomRangeOff")
 	local zoomMinimo = zoomRange and zoomRange.Min or 4
 
-	if controller.SetCameraToSubjectDistance then
-		controller:SetCameraToSubjectDistance(zoomMinimo)
+	local targetZoom = math.max(primeiraPessoaState.zoomAnterior or zoomMinimo, zoomMinimo)
+	if zoomRange then
+		targetZoom = math.clamp(targetZoom, zoomRange.Min, zoomRange.Max)
 	end
 
-	ZoomController.ReleaseSpring()
+	if controller.SetCameraToSubjectDistance then
+		controller:SetCameraToSubjectDistance(targetZoom)
+	end
+
+	-- Do not call ZoomController.ReleaseSpring() to allow smooth spring zoom transition.
 
 	local tempo = ConfigJogador.ObterConfiguracao("TransicaoPrimeiraPessoaTempo") or 0.4
 	task.delay(tempo, function()
@@ -817,6 +816,21 @@ function CameraModule:Update(dt)
 		end
 
 		local newCameraCFrame, newCameraFocus = self.activeCameraController:Update(dt)
+
+		if primeiraPessoaState.transicaoAtiva and self.activeCameraController.transicaoPrimeiraPessoaAlpha then
+			local alpha = self.activeCameraController.transicaoPrimeiraPessoaAlpha
+			local targetZoom = self.activeCameraController:GetCameraToSubjectDistance()
+			local zoomRange = if primeiraPessoaState.shiftLockAntesDePrimeiraPessoa
+				then ConfigJogador.ObterConfiguracao("ZoomRangeOn")
+				else ConfigJogador.ObterConfiguracao("ZoomRangeOff")
+			local zoomMinimo = zoomRange and zoomRange.Min or 4
+			targetZoom = math.max(targetZoom, zoomMinimo)
+
+			-- Smoothstep easing matching the camera CFrame lerp
+			local easedAlpha = alpha * alpha * (3 - 2 * alpha)
+			local currentZoom = 0.5 + (targetZoom - 0.5) * (1 - easedAlpha)
+			ZoomController.SetZoomRadius(currentZoom)
+		end
 
 		if self.activeOcclusionModule and not primeiraPessoaState.ativo then
 			newCameraCFrame, newCameraFocus = self.activeOcclusionModule:Update(dt, newCameraCFrame, newCameraFocus)

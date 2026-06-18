@@ -495,6 +495,26 @@ local function LimparConexoesMarkers()
 	end
 end
 
+local function RestaurarEstadoPosAcao()
+	if isShiftHeld then
+		movementFlags.isRunning = true
+		estadoAtual.correndo = true
+	else
+		movementFlags.isRunning = false
+		estadoAtual.correndo = false
+	end
+
+	local isMoving = humanoid.MoveDirection.Magnitude > 0.1
+	local emCombate = (estadoAtual.estadoAcao == "AtacandoLeve" or estadoAtual.estadoAcao == "Defendendo")
+	local podeCorrer = movementFlags.isRunning and not emCombate
+
+	if isMoving then
+		estadoAtual.estadoMov = podeCorrer and "Correndo" or "Andando"
+	else
+		estadoAtual.estadoMov = "Parado"
+	end
+end
+
 local function OnComboAnimacaoTerminou()
 	DebugPrint("[ControladorEstado] Combo animação terminou")
 
@@ -520,11 +540,7 @@ local function OnComboAnimacaoTerminou()
 
 	TentarAcao:FireServer("ComboTerminou")
 
-	if isShiftHeld then
-		movementFlags.isRunning = true
-		estadoAtual.estadoMov = "Correndo"
-		estadoAtual.correndo = true
-	end
+	RestaurarEstadoPosAcao()
 
 	AtualizarVelocidadeLocal()
 
@@ -713,11 +729,7 @@ local function OnMarkerAtaquePorMao(indiceGolpe: number, tipoMarcador: string)
 
 						TentarAcao:FireServer("ComboEarlyCancel")
 
-						if isShiftHeld then
-							movementFlags.isRunning = true
-							estadoAtual.estadoMov = "Correndo"
-							estadoAtual.correndo = true
-						end
+						RestaurarEstadoPosAcao()
 
 						AtualizarVelocidadeLocal()
 
@@ -1415,11 +1427,7 @@ local function OnRollAnimacaoTerminou()
 
 	estadoAtual.estadoAcao = "Nenhuma"
 
-	if isShiftHeld then
-		movementFlags.isRunning = true
-		estadoAtual.estadoMov = "Correndo"
-		estadoAtual.correndo = true
-	end
+	RestaurarEstadoPosAcao()
 
 	AtualizarVelocidadeLocal()
 
@@ -1567,11 +1575,7 @@ local function OnDashAnimacaoTerminou()
 
 	estadoAtual.estadoAcao = "Nenhuma"
 
-	if isShiftHeld then
-		movementFlags.isRunning = true
-		estadoAtual.estadoMov = "Correndo"
-		estadoAtual.correndo = true
-	end
+	RestaurarEstadoPosAcao()
 
 	AtualizarVelocidadeLocal()
 
@@ -1681,8 +1685,26 @@ local function CalcularMultiplicadorDirecao(): number
 		return direcaoAtual
 	end
 
+	local shiftLockOnOuFirstPerson = (
+		(ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("ShiftLockOn") == true)
+		or player.CameraMode == Enum.CameraMode.LockFirstPerson
+	)
+
 	local lookVector = hrp.CFrame.LookVector
-	local lookXZ = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
+	if shiftLockOnOuFirstPerson then
+		local camera = workspace.CurrentCamera
+		if camera then
+			lookVector = camera.CFrame.LookVector
+		end
+	end
+
+	local lookXZ = Vector3.new(lookVector.X, 0, lookVector.Z)
+	if lookXZ.Magnitude > 0.001 then
+		lookXZ = lookXZ.Unit
+	else
+		lookXZ = Vector3.new(hrp.CFrame.LookVector.X, 0, hrp.CFrame.LookVector.Z).Unit
+	end
+
 	local moveXZ = Vector3.new(moveDir.X, 0, moveDir.Z).Unit
 
 	local dot = lookXZ:Dot(moveXZ)
@@ -1698,7 +1720,7 @@ end
 
 local function CalcularMovimentoLateral(): (string, number)
 	local shiftLockOnOuFirstPerson = (
-		UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter
+		(ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("ShiftLockOn") == true)
 		or player.CameraMode == Enum.CameraMode.LockFirstPerson
 	)
 
@@ -1718,8 +1740,27 @@ local function CalcularMovimentoLateral(): (string, number)
 
 	local lookVector = hrp.CFrame.LookVector
 	local rightVector = hrp.CFrame.RightVector
-	local lookXZ = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
-	local rightXZ = Vector3.new(rightVector.X, 0, rightVector.Z).Unit
+
+	local camera = workspace.CurrentCamera
+	if camera then
+		lookVector = camera.CFrame.LookVector
+		rightVector = camera.CFrame.RightVector
+	end
+
+	local lookXZ = Vector3.new(lookVector.X, 0, lookVector.Z)
+	if lookXZ.Magnitude > 0.001 then
+		lookXZ = lookXZ.Unit
+	else
+		lookXZ = Vector3.new(hrp.CFrame.LookVector.X, 0, hrp.CFrame.LookVector.Z).Unit
+	end
+
+	local rightXZ = Vector3.new(rightVector.X, 0, rightVector.Z)
+	if rightXZ.Magnitude > 0.001 then
+		rightXZ = rightXZ.Unit
+	else
+		rightXZ = Vector3.new(hrp.CFrame.RightVector.X, 0, hrp.CFrame.RightVector.Z).Unit
+	end
+
 	local moveXZ = Vector3.new(moveDir.X, 0, moveDir.Z).Unit
 
 	local dotForward = lookXZ:Dot(moveXZ)
@@ -1858,6 +1899,8 @@ local function PararAnimacaoAcao()
 		comboState.pendingConsume = false
 		comboState.token = 0
 	end
+
+	-- fadeOutTimer removido
 
 	if animacaoAtualAcao then
 		if animacaoAtualAcao.IsPlaying then
@@ -2113,14 +2156,14 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 
 		if rollState.animacao and rollState.animacao.IsPlaying then
 			local rollTrack = rollState.animacao
-			local janelaEarlyCancel = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelamentoRoll") or 0.2
 			local tempoRestante = (rollTrack.Length - rollTrack.TimePosition) / rollTrack.Speed
+			local janelaEarlyCancel = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelamentoRoll") or 0.2
 
 			if tempoRestante > janelaEarlyCancel and janelaEarlyCancel > 0 then
 				local tempoParaEarlyCancel = tempoRestante - janelaEarlyCancel
 				DebugPrint(
 					string.format(
-						"[ControladorEstado] Roll early cancel agendado: %.2fs restante, early cancel em %.2fs",
+						"[ControladorEstado] Roll early cancel/cross-fade agendado: %.2fs restante, em %.2fs",
 						tempoRestante,
 						tempoParaEarlyCancel
 					)
@@ -2129,21 +2172,23 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 				rollState.earlyCancelTimer = task.delay(tempoParaEarlyCancel, function()
 					if rollState.animacao and rollState.animacao.IsPlaying and not rollState.earlyCancelExecutado then
 						rollState.earlyCancelExecutado = true
-						DebugPrint("[ControladorEstado] Roll early cancel executado - mudando estado para Normal")
+						DebugPrint("[ControladorEstado] Roll early cancel/cross-fade executado")
 
+						-- Para impulso físico para devolver controle ao jogador durante o cross-fade
+						PararImpulsoRoll()
+
+						-- Libera movimentação para iniciar a animação de destino
+						movementFlags.isRolling = false
 						estadoAtual.estadoAcao = "Nenhuma"
 
 						TentarAcao:FireServer("RollEarlyCancel")
 
-						if isShiftHeld then
-							movementFlags.isRunning = true
-							estadoAtual.estadoMov = "Correndo"
-							estadoAtual.correndo = true
-						end
-
+						RestaurarEstadoPosAcao()
 						AtualizarVelocidadeLocal()
-
 						AtualizarAnimacaoMovimento()
+
+						-- Faz a animação de Roll desvanecer suavemente enquanto a nova animação de movimento/idle entra
+						rollState.animacao:AdjustWeight(0, janelaEarlyCancel)
 					end
 				end)
 			end
@@ -2190,14 +2235,14 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 
 		if dashState.animacao and dashState.animacao.IsPlaying then
 			local dashTrack = dashState.animacao
-			local janelaEarlyCancel = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelamentoDash") or 0.1
 			local tempoRestante = (dashTrack.Length - dashTrack.TimePosition) / dashTrack.Speed
+			local janelaEarlyCancel = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelamentoDash") or 0.1
 
 			if tempoRestante > janelaEarlyCancel and janelaEarlyCancel > 0 then
 				local tempoParaEarlyCancel = tempoRestante - janelaEarlyCancel
 				DebugPrint(
 					string.format(
-						"[ControladorEstado] Dash early cancel agendado: %.2fs restante, early cancel em %.2fs",
+						"[ControladorEstado] Dash early cancel/cross-fade agendado: %.2fs restante, em %.2fs",
 						tempoRestante,
 						tempoParaEarlyCancel
 					)
@@ -2206,21 +2251,23 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 				dashState.earlyCancelTimer = task.delay(tempoParaEarlyCancel, function()
 					if dashState.animacao and dashState.animacao.IsPlaying and not dashState.earlyCancelExecutado then
 						dashState.earlyCancelExecutado = true
-						DebugPrint("[ControladorEstado] Dash early cancel executado - mudando estado para Normal")
+						DebugPrint("[ControladorEstado] Dash early cancel/cross-fade executado")
 
+						-- Para impulso físico para devolver controle ao jogador durante o cross-fade
+						PararImpulsoDash()
+
+						-- Libera movimentação para iniciar a animação de destino
+						movementFlags.isDashing = false
 						estadoAtual.estadoAcao = "Nenhuma"
 
 						TentarAcao:FireServer("DashEarlyCancel")
 
-						if isShiftHeld then
-							movementFlags.isRunning = true
-							estadoAtual.estadoMov = "Correndo"
-							estadoAtual.correndo = true
-						end
-
+						RestaurarEstadoPosAcao()
 						AtualizarVelocidadeLocal()
-
 						AtualizarAnimacaoMovimento()
+
+						-- Faz a animação de Dash desvanecer suavemente enquanto a nova animação de movimento/idle entra
+						dashState.animacao:AdjustWeight(0, janelaEarlyCancel)
 					end
 				end)
 			end

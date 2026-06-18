@@ -579,8 +579,10 @@ function BaseCamera:UpdateMouseBehavior()
 			CameraUtils.restoreRotationType()
 
 			local rotationActivated = CameraInput.getRotationActivated()
-			if rotationActivated or (self.inMouseLockedMode and isDashing) then
+			if self.inMouseLockedMode and isDashing then
 				CameraUtils.setMouseBehaviorOverride(Enum.MouseBehavior.LockCenter)
+			elseif rotationActivated then
+				CameraUtils.setMouseBehaviorOverride(Enum.MouseBehavior.LockCurrentPosition)
 			else
 				CameraUtils.restoreMouseBehavior()
 			end

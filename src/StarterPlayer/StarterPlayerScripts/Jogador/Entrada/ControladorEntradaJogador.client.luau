@@ -443,6 +443,19 @@ local function ProcessarToolDesequipado(tool: Tool)
 end
 
 local function ProcessarRoll()
+	local char = player.Character
+	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		local state = humanoid:GetState()
+		local noAr = humanoid.FloorMaterial == Enum.Material.Air 
+			or state == Enum.HumanoidStateType.Jumping 
+			or state == Enum.HumanoidStateType.Freefall
+		if noAr then
+			DebugPrint("[EntradaJogador] Roll bloqueado: Jogador no ar")
+			return
+		end
+	end
+
 	if ClientBridge.EstaEmParkour and ClientBridge.EstaEmParkour() then
 		DebugPrint("[EntradaJogador] Roll bloqueado: Jogador em parkour")
 		return
@@ -462,9 +475,7 @@ local function ProcessarRoll()
 	end
 
 	-- Salva a rotação original do boneco antes do roll começar
-	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
-	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
 	if hrp and humanoid then
 		ClientBridge.CFrameRotacaoOriginalRoll = hrp.CFrame - hrp.Position
 		ClientBridge.CFrameRotacaoRoll = hrp.CFrame - hrp.Position
@@ -496,6 +507,19 @@ local function ProcessarRoll()
 end
 
 local function ProcessarDash(direcaoParam: string?)
+	local char = player.Character
+	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		local state = humanoid:GetState()
+		local noAr = humanoid.FloorMaterial == Enum.Material.Air 
+			or state == Enum.HumanoidStateType.Jumping 
+			or state == Enum.HumanoidStateType.Freefall
+		if noAr then
+			DebugPrint("[EntradaJogador] Dash bloqueado: Jogador no ar")
+			return
+		end
+	end
+
 	if ClientBridge.EstaEmParkour and ClientBridge.EstaEmParkour() then
 		DebugPrint("[EntradaJogador] Dash bloqueado: Jogador em parkour")
 		return
@@ -522,9 +546,7 @@ local function ProcessarDash(direcaoParam: string?)
 	end
 
 	-- Salva a rotação original do boneco antes do dash começar
-	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
-	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
 	if hrp and humanoid then
 		ClientBridge.CFrameRotacaoDash = hrp.CFrame - hrp.Position
 		ClientBridge.PreDashActive = true
