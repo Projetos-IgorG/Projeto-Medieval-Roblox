@@ -861,7 +861,7 @@ local function getLateralDirection(normal, direcao)
 end
 
 local function podeIniciarParkour(): boolean
-	if ClientBridge.EstaEmDash and ClientBridge.EstaEmDash() then
+	if (ClientBridge.EstaEmRoll and ClientBridge.EstaEmRoll()) or (ClientBridge.EstaEmDash and ClientBridge.EstaEmDash()) then
 		return false
 	end
 

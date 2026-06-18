@@ -114,6 +114,7 @@ local function ConfigurarStatusPasta(Character)
 	createValue("BoolValue", "BloqueandoOn", false)
 	createValue("BoolValue", "ProntoAparar", false)
 	createValue("BoolValue", "StunadoOn", false)
+	createValue("BoolValue", "RollOn", false)
 	createValue("BoolValue", "DashOn", false)
 
 	createValue("NumberValue", "Forca", 0)
@@ -150,7 +151,7 @@ Players.PlayerAdded:Connect(function(Player)
 end)
 
 DebugPrint(
-	"[ConfigIniciar] Setup de Status configurado (server-only: estadoAcao, BloqueandoOn, ProntoAparar, StunadoOn, DashOn)"
+	"[ConfigIniciar] Setup de Status configurado (server-only: estadoAcao, BloqueandoOn, ProntoAparar, StunadoOn, RollOn, DashOn)"
 )
 
 local CombateServidor = ServerScriptService:WaitForChild("Combate"):WaitForChild("Servidor")

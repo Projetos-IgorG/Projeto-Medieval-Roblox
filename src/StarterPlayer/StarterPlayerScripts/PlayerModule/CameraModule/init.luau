@@ -831,12 +831,14 @@ function CameraModule:Update(dt)
 		if character then
 			local hrp = character:FindFirstChild("HumanoidRootPart")
 			if hrp then
+				local isRolling = ClientBridge.EstaEmRoll and ClientBridge.EstaEmRoll() or false
 				local isDashing = ClientBridge.EstaEmDash and ClientBridge.EstaEmDash() or false
-				currentCamera.CFrame = DynamicCamFX.Update(dt, currentCamera.CFrame, isInFirstPerson, isDashing, hrp)
+				local isRollOrDash = isRolling or isDashing
+				currentCamera.CFrame = DynamicCamFX.Update(dt, currentCamera.CFrame, isInFirstPerson, isRollOrDash, hrp)
 
 				local fixarY = Modulo_Configuracoes.ObterConfiguracao("DashCameraFixarY")
 				if fixarY and isInFirstPerson then
-					if isDashing then
+					if isRollOrDash then
 						local hrpY = (hrp :: BasePart).Position.Y
 						if not dashCamState.ativo then
 

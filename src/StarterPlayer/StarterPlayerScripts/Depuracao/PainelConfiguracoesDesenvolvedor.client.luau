@@ -16,14 +16,20 @@ local playerGui = player:WaitForChild("PlayerGui")
 
 local Modulos = ReplicatedStorage
 
-local ParkourConfigs = require(script.Parent.Parent:WaitForChild("Jogador"):WaitForChild("Parkour"):WaitForChild("Configuracoes"):WaitForChild("ConfigParkour"))
-local ModConfCombate = require(Modulos:WaitForChild("Combate"):WaitForChild("Configuracoes"):WaitForChild("ConfigCombate"))
-local ModConfJogador = require(Modulos:WaitForChild("Jogador"):WaitForChild("Camera"):WaitForChild("Configuracoes"):WaitForChild("ConfigCamera"))
+local ParkourConfigs = require(
+	script.Parent.Parent
+		:WaitForChild("Jogador")
+		:WaitForChild("Parkour")
+		:WaitForChild("Configuracoes")
+		:WaitForChild("ConfigParkour")
+)
+local ModConfCombate =
+	require(Modulos:WaitForChild("Combate"):WaitForChild("Configuracoes"):WaitForChild("ConfigCombate"))
+local ModConfJogador = require(
+	Modulos:WaitForChild("Jogador"):WaitForChild("Camera"):WaitForChild("Configuracoes"):WaitForChild("ConfigCamera")
+)
 local HitboxConfig = require(
-	Modulos:WaitForChild("Combate")
-		:WaitForChild("Hitbox")
-		:WaitForChild("Shapecast")
-		:WaitForChild("HitboxConfig")
+	Modulos:WaitForChild("Combate"):WaitForChild("Hitbox"):WaitForChild("Shapecast"):WaitForChild("HitboxConfig")
 )
 local AmbienteReplicado = Modulos:WaitForChild("Mundo"):WaitForChild("Ambiente")
 local CatalogoAmbiente = require(AmbienteReplicado:WaitForChild("CatalogoAmbiente"))
@@ -103,6 +109,17 @@ local SECTION_RULES: { [string]: { SectionRule } } = {
 	},
 	["Combate"] = {
 		{ prefix = "TempoStun", section = "Stun" },
+		{ prefix = "CooldownRoll", section = "Roll" },
+		{ prefix = "ForcaRoll", section = "Roll" },
+		{ prefix = "VelocidadeAnimacaoRoll", section = "Roll" },
+		{ prefix = "JanelaCancelamentoRoll", section = "Roll" },
+		{ prefix = "RollCamera", section = "Roll" },
+		{ prefix = "CooldownDash", section = "Dash" },
+		{ prefix = "ForcaDash", section = "Dash" },
+		{ prefix = "DuracaoDash", section = "Dash" },
+		{ prefix = "VelocidadeAnimacaoDash", section = "Dash" },
+		{ prefix = "JanelaCancelamentoDash", section = "Dash" },
+		{ prefix = "DashCamera", section = "Dash" },
 		{ prefix = "Janela", section = "Janelas de Tempo" },
 		{ prefix = "Cooldown", section = "Cooldowns" },
 		{ prefix = "Magnitude", section = "Impulso / Knockback" },
@@ -314,7 +331,6 @@ local parkourDebug = {
 local parkourDebugDefaults = table.clone(parkourDebug)
 
 registrar("Parkour Debug", parkourDebug, parkourDebugDefaults, function(key, value)
-
 	if ParkourConfigs[key] ~= nil then
 		ParkourConfigs[key] = value
 	end
@@ -651,7 +667,10 @@ local function extrairClimaAtual()
 end
 
 local function extrairAmbienteAtual()
-	ExtratorAmbiente.ImprimirAmbiente(tostring(adminState.ambiente) .. "Extraido", tostring(adminState.ambiente) .. " Extraido")
+	ExtratorAmbiente.ImprimirAmbiente(
+		tostring(adminState.ambiente) .. "Extraido",
+		tostring(adminState.ambiente) .. " Extraido"
+	)
 	setAdminStatus("Ambiente atual impresso no console", true)
 end
 
@@ -968,11 +987,21 @@ local function createNumberControl(
 
 	local function getStep(v: number): number
 		local abs = math.abs(v)
-		if abs == 0 then return 1 end
-		if abs < 0.1 then return 0.01 end
-		if abs < 1 then return 0.05 end
-		if abs < 10 then return 0.1 end
-		if abs < 100 then return 1 end
+		if abs == 0 then
+			return 1
+		end
+		if abs < 0.1 then
+			return 0.01
+		end
+		if abs < 1 then
+			return 0.05
+		end
+		if abs < 10 then
+			return 0.1
+		end
+		if abs < 100 then
+			return 1
+		end
 		return 10
 	end
 
@@ -1156,12 +1185,7 @@ local function createColor3Control(
 	return row
 end
 
-local function createStringControl(
-	parent: ScrollingFrame,
-	key: string,
-	value: string,
-	layoutOrder: number
-)
+local function createStringControl(parent: ScrollingFrame, key: string, value: string, layoutOrder: number)
 	local row = createRow(key, layoutOrder)
 	row.Parent = parent
 
@@ -1483,7 +1507,12 @@ local function createAdminAutocompleteInput(
 		local bestMatch = matches[1]
 		local lowerQuery = string.lower(query)
 
-		if bestMatch and query ~= "" and string.sub(string.lower(bestMatch), 1, #lowerQuery) == lowerQuery and string.lower(bestMatch) ~= lowerQuery then
+		if
+			bestMatch
+			and query ~= ""
+			and string.sub(string.lower(bestMatch), 1, #lowerQuery) == lowerQuery
+			and string.lower(bestMatch) ~= lowerQuery
+		then
 			ghostLabel.Text = bestMatch
 		else
 			ghostLabel.Text = ""
@@ -1546,7 +1575,13 @@ local function createAdminAutocompleteInput(
 	return row
 end
 
-local function createScreenButton(parent: ScrollingFrame, text: string, layoutOrder: number, onClick: () -> (), height: number?)
+local function createScreenButton(
+	parent: ScrollingFrame,
+	text: string,
+	layoutOrder: number,
+	onClick: () -> (),
+	height: number?
+)
 	local row = Instance.new("Frame")
 	row.Name = "AcaoTela_" .. tostring(layoutOrder)
 	row.Size = UDim2.new(1, 0, 0, height or 34)
@@ -1576,13 +1611,23 @@ local function createScreenButton(parent: ScrollingFrame, text: string, layoutOr
 	return row
 end
 
-local function createAdminButton(parent: ScrollingFrame, text: string, acao: string, layoutOrder: number, overrides: { [string]: any }?)
+local function createAdminButton(
+	parent: ScrollingFrame,
+	text: string,
+	acao: string,
+	layoutOrder: number,
+	overrides: { [string]: any }?
+)
 	return createScreenButton(parent, text, layoutOrder, function()
 		fireAdminAction(acao, overrides)
 	end)
 end
 
-local function createHomeTileGrid(parent: ScrollingFrame, layoutOrder: number, itens: { { texto: string, emoji: string, onClick: () -> () } })
+local function createHomeTileGrid(
+	parent: ScrollingFrame,
+	layoutOrder: number,
+	itens: { { texto: string, emoji: string, onClick: () -> () } }
+)
 	local linhas = math.ceil(#itens / 3)
 	local gridFrame = Instance.new("Frame")
 	gridFrame.Name = "HomeTiles"
@@ -1624,7 +1669,15 @@ end
 local function createTileGrid(
 	parent: ScrollingFrame,
 	layoutOrder: number,
-	itens: { { titulo: string, subtitulo: string?, emoji: string, ativo: boolean?, onClick: () -> () } },
+	itens: {
+		{
+			titulo: string,
+			subtitulo: string?,
+			emoji: string,
+			ativo: boolean?,
+			onClick: () -> (),
+		}
+	},
 	colunas: number?,
 	tamanho: number?
 )
@@ -1816,7 +1869,6 @@ local function renderCategory(category: CategoryEntry, filter: string?)
 			and t ~= "function"
 			and (t == "boolean" or t == "number" or t == "string" or t == "Vector3" or t == "Color3")
 		then
-
 			if category.nome == "Parkour Config" and PARKOUR_DEBUG_KEYS[k] then
 				continue
 			end
@@ -1847,7 +1899,6 @@ local function renderCategory(category: CategoryEntry, filter: string?)
 			table.insert(sectionKeys[section], key)
 		end
 	else
-
 		sectionOrder = { "" }
 		sectionKeys[""] = keys
 	end
@@ -1998,8 +2049,20 @@ function renderInicio()
 		{ emoji = "🛠️", texto = "Tools", onClick = renderToolbuilder },
 		{ emoji = "🌦️", texto = "Climas", onClick = renderClimas },
 		{ emoji = "🌍", texto = "Mundo", onClick = renderJogadorMundo },
-		{ emoji = "📊", texto = "Status", onClick = function() renderStatusJogador() end },
-		{ emoji = "🧝", texto = "NPCs", onClick = function() renderNPCs() end },
+		{
+			emoji = "📊",
+			texto = "Status",
+			onClick = function()
+				renderStatusJogador()
+			end,
+		},
+		{
+			emoji = "🧝",
+			texto = "NPCs",
+			onClick = function()
+				renderNPCs()
+			end,
+		},
 	})
 end
 
@@ -2017,10 +2080,15 @@ function renderConfiguracoes()
 		renderInicio()
 	end)
 	for i, cat in categories do
-		local btn = createLeftButton(cat.nome, i + 1, activeCategory ~= nil and activeCategory.nome == cat.nome, function()
-			searchBox.Text = ""
-			renderCategory(cat)
-		end)
+		local btn = createLeftButton(
+			cat.nome,
+			i + 1,
+			activeCategory ~= nil and activeCategory.nome == cat.nome,
+			function()
+				searchBox.Text = ""
+				renderCategory(cat)
+			end
+		)
 		categoryButtons[cat.nome] = btn
 	end
 
@@ -2049,16 +2117,39 @@ function renderToolbuilder()
 	end
 
 	createSectionHeader(settingsScroll, "Contexto", nextOrder())
-	createAdminAutocompleteInput(settingsScroll, "Jogador alvo", "alvo", nextOrder(), listarNomesJogadores, "Digite para buscar jogador")
-	createAdminDropdown(settingsScroll, "Tipo tool", nextOrder(), tiposTool, adminState.tipoTool, function(tipoSelecionado)
-		adminState.tipoTool = tipoSelecionado
-		local toolsAtualizados = listarToolsPorTipo(tipoSelecionado)
-		adminState.tool = toolsAtualizados[1] or ""
-		renderToolbuilder()
-	end, "Selecione um tipo")
-	createAdminDropdown(settingsScroll, "Tool", nextOrder(), toolsDisponiveis, adminState.tool, function(toolSelecionada)
-		adminState.tool = toolSelecionada
-	end, "Selecione uma tool")
+	createAdminAutocompleteInput(
+		settingsScroll,
+		"Jogador alvo",
+		"alvo",
+		nextOrder(),
+		listarNomesJogadores,
+		"Digite para buscar jogador"
+	)
+	createAdminDropdown(
+		settingsScroll,
+		"Tipo tool",
+		nextOrder(),
+		tiposTool,
+		adminState.tipoTool,
+		function(tipoSelecionado)
+			adminState.tipoTool = tipoSelecionado
+			local toolsAtualizados = listarToolsPorTipo(tipoSelecionado)
+			adminState.tool = toolsAtualizados[1] or ""
+			renderToolbuilder()
+		end,
+		"Selecione um tipo"
+	)
+	createAdminDropdown(
+		settingsScroll,
+		"Tool",
+		nextOrder(),
+		toolsDisponiveis,
+		adminState.tool,
+		function(toolSelecionada)
+			adminState.tool = toolSelecionada
+		end,
+		"Selecione uma tool"
+	)
 	createAdminInput(settingsScroll, "Quantidade", "quantidade", nextOrder())
 	createAdminInput(settingsScroll, "Distancia", "distancia", nextOrder())
 
@@ -2114,7 +2205,9 @@ function renderClimas()
 		end
 		if climaValor and climaValor:IsA("StringValue") then
 			adminState.clima = climaValor.Value
-			adminState.condicao = if condicaoPainelExiste(climaValor.Value) then climaValor.Value else CatalogoAmbiente.ClimaPadrao
+			adminState.condicao = if condicaoPainelExiste(climaValor.Value)
+				then climaValor.Value
+				else CatalogoAmbiente.ClimaPadrao
 		end
 		if horaValor and horaValor:IsA("StringValue") then
 			adminState.horario = horaValor.Value
@@ -2151,7 +2244,11 @@ function renderClimas()
 		local horaTexto = if horaValor and horaValor:IsA("StringValue") then horaValor.Value else "?"
 		local faseTexto = if faseValor and faseValor:IsA("StringValue") then faseValor.Value else "?"
 		local pausadoValor = estadoMundo:FindFirstChild("TempoPausado")
-		local pausadoTexto = if pausadoValor and pausadoValor:IsA("BoolValue") and pausadoValor.Value then " [PAUSADO]" else ""
+		local pausadoTexto = if pausadoValor
+				and pausadoValor:IsA("BoolValue")
+				and pausadoValor.Value
+			then " [PAUSADO]"
+			else ""
 		return ambienteTexto .. " / " .. climaTexto .. " - " .. horaTexto .. " (" .. faseTexto .. ")" .. pausadoTexto
 	end
 
@@ -2160,7 +2257,14 @@ function renderClimas()
 	createStringControl(
 		settingsScroll,
 		"Selecao",
-		ambienteSelecionado.nome .. " / " .. climaSelecionado.nome .. " - " .. ConfiguracaoTempo.FormatarHora(minutosPainel) .. " (" .. fase.nome .. ")",
+		ambienteSelecionado.nome
+			.. " / "
+			.. climaSelecionado.nome
+			.. " - "
+			.. ConfiguracaoTempo.FormatarHora(minutosPainel)
+			.. " ("
+			.. fase.nome
+			.. ")",
 		nextOrder()
 	)
 
@@ -2688,9 +2792,13 @@ function renderStatusJogador()
 
 	-- Helpers de leitura.
 	local function lerStatusLocal(char: Model?, nome: string)
-		if not char then return nil end
+		if not char then
+			return nil
+		end
 		local pasta = char:FindFirstChild("StatusLocal")
-		if not pasta then return nil end
+		if not pasta then
+			return nil
+		end
 		local valor = pasta:FindFirstChild(nome)
 		if valor and (valor:IsA("StringValue") or valor:IsA("BoolValue") or valor:IsA("NumberValue")) then
 			return (valor :: any).Value
@@ -2699,7 +2807,9 @@ function renderStatusJogador()
 	end
 
 	local function texto(valor: any): string
-		if valor == nil then return "-" end
+		if valor == nil then
+			return "-"
+		end
 		if typeof(valor) == "boolean" then
 			return if valor then "Sim" else "Nao"
 		end
@@ -2750,7 +2860,9 @@ function renderStatusJogador()
 			local lista = LeitorEntidade.ListarAtributos(char)
 			for _, attr in lista do
 				local ui = linhasAtributos[attr.id]
-				if not ui then continue end
+				if not ui then
+					continue
+				end
 				ui.valor.Text = formatarValorAtributo(attr, attr.valor)
 				local fracao = 0
 				if attr.max > attr.min then
@@ -2803,54 +2915,81 @@ function renderStatusJogador()
 	settingsScroll.CanvasPosition = Vector2.zero
 end
 
-table.insert(connections, searchBox:GetPropertyChangedSignal("Text"):Connect(function()
-	if telaAtual == "Configuracoes" and activeCategory then
-		renderCategory(activeCategory, searchBox.Text)
-	end
-end))
-
-table.insert(connections, resetBtn.MouseButton1Click:Connect(function()
-	if telaAtual ~= "Configuracoes" then return end
-	if not activeCategory then return end
-	if activeCategory.tipo == "AcoesAdmin" then return end
-	local cat = activeCategory
-	for key, defVal in cat.defaults do
-		if cat.setter then
-			cat.setter(key, defVal)
-		else
-			cat.config[key] = defVal
+table.insert(
+	connections,
+	searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+		if telaAtual == "Configuracoes" and activeCategory then
+			renderCategory(activeCategory, searchBox.Text)
 		end
-		if cat.onChange then
-			cat.onChange(key, defVal)
+	end)
+)
+
+table.insert(
+	connections,
+	resetBtn.MouseButton1Click:Connect(function()
+		if telaAtual ~= "Configuracoes" then
+			return
 		end
-	end
-	renderCategory(cat, searchBox.Text)
-end))
+		if not activeCategory then
+			return
+		end
+		if activeCategory.tipo == "AcoesAdmin" then
+			return
+		end
+		local cat = activeCategory
+		for key, defVal in cat.defaults do
+			if cat.setter then
+				cat.setter(key, defVal)
+			else
+				cat.config[key] = defVal
+			end
+			if cat.onChange then
+				cat.onChange(key, defVal)
+			end
+		end
+		renderCategory(cat, searchBox.Text)
+	end)
+)
 
-table.insert(connections, closeBtn.MouseButton1Click:Connect(function()
-	isOpen = false
-	screenGui.Enabled = false
-end))
+table.insert(
+	connections,
+	closeBtn.MouseButton1Click:Connect(function()
+		isOpen = false
+		screenGui.Enabled = false
+	end)
+)
 
-table.insert(connections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	if input.KeyCode ~= TOGGLE_KEY then return end
+table.insert(
+	connections,
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then
+			return
+		end
+		if input.KeyCode ~= TOGGLE_KEY then
+			return
+		end
 
-	if UserInputService:GetFocusedTextBox() then return end
+		if UserInputService:GetFocusedTextBox() then
+			return
+		end
 
-	isOpen = not isOpen
-	screenGui.Enabled = isOpen
+		isOpen = not isOpen
+		screenGui.Enabled = isOpen
 
-	if isOpen then
-		renderInicio()
-	end
-end))
+		if isOpen then
+			renderInicio()
+		end
+	end)
+)
 
-table.insert(connections, screenGui.Destroying:Connect(function()
-	clearControlConnections()
-	clearLeftConnections()
-	for _, conn in connections do
-		conn:Disconnect()
-	end
-	table.clear(connections)
-end))
+table.insert(
+	connections,
+	screenGui.Destroying:Connect(function()
+		clearControlConnections()
+		clearLeftConnections()
+		for _, conn in connections do
+			conn:Disconnect()
+		end
+		table.clear(connections)
+	end)
+)

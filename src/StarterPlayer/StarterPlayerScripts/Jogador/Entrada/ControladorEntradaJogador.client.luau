@@ -46,7 +46,7 @@ local Configuracao = {
 	TeclaAgachar = Enum.KeyCode.C,
 	TeclaCorrer = Enum.KeyCode.LeftShift,
 	TeclaQuebrarDefesa = Enum.KeyCode.G,
-	TeclaDash = Enum.KeyCode.Q,
+	TeclaRoll = Enum.KeyCode.Q,
 }
 
 local estadoInput = {
@@ -442,21 +442,60 @@ local function ProcessarToolDesequipado(tool: Tool)
 	DebugPrint("[EntradaJogador] Tool removido durante animação - ignorando (não deveria ocorrer)")
 end
 
-local function ProcessarPular()
-
-	if estadoInput.agachadoAtivo then
-		estadoInput.agachadoAtivo = false
-		EnviarAcao("Levantar")
-		task.delay(0.05, function()
-			EnviarAcao("Pular")
-		end)
+local function ProcessarRoll()
+	if ClientBridge.EstaEmParkour and ClientBridge.EstaEmParkour() then
+		DebugPrint("[EntradaJogador] Roll bloqueado: Jogador em parkour")
 		return
 	end
 
-	EnviarAcao("Pular")
+	if ClientBridge.EstaEmAnimacaoEquip and ClientBridge.EstaEmAnimacaoEquip() then
+		DebugPrint("[EntradaJogador] Roll bloqueado: Animação de equipamento em andamento")
+		return
+	end
+
+	local cooldownRoll = Modulo_Configuracoes.ObterConfiguracao("CooldownRoll") or 1.5
+	local agora = tick()
+	local ultimoRoll = ClientBridge.UltimoRollTime or 0
+	if (agora - ultimoRoll) < cooldownRoll then
+		DebugPrint("[EntradaJogador] Roll bloqueado: Cooldown ativo")
+		return
+	end
+
+	-- Salva a rotação original do boneco antes do roll começar
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+	if hrp and humanoid then
+		ClientBridge.CFrameRotacaoOriginalRoll = hrp.CFrame - hrp.Position
+		ClientBridge.CFrameRotacaoRoll = hrp.CFrame - hrp.Position
+		ClientBridge.PreRollActive = true
+
+		local moveDir = humanoid.MoveDirection
+		if moveDir.Magnitude > 0.1 then
+			ClientBridge.DirecaoMovimentoRoll = Vector3.new(moveDir.X, 0, moveDir.Z).Unit
+		else
+			ClientBridge.DirecaoMovimentoRoll = nil
+		end
+	end
+
+	local direcao = "Frente"
+	if ClientBridge.CalcularDirecaoRoll then
+		direcao = ClientBridge.CalcularDirecaoRoll(true)
+	end
+
+	EnviarAcao("Roll", direcao)
+
+	task.delay(0.5, function()
+		if ClientBridge.PreRollActive then
+			ClientBridge.PreRollActive = nil
+			ClientBridge.CFrameRotacaoRoll = nil
+			ClientBridge.CFrameRotacaoOriginalRoll = nil
+			ClientBridge.DirecaoMovimentoRoll = nil
+		end
+	end)
 end
 
-local function ProcessarDash()
+local function ProcessarDash(direcaoParam: string?)
 	if ClientBridge.EstaEmParkour and ClientBridge.EstaEmParkour() then
 		DebugPrint("[EntradaJogador] Dash bloqueado: Jogador em parkour")
 		return
@@ -464,6 +503,13 @@ local function ProcessarDash()
 
 	if ClientBridge.EstaEmAnimacaoEquip and ClientBridge.EstaEmAnimacaoEquip() then
 		DebugPrint("[EntradaJogador] Dash bloqueado: Animação de equipamento em andamento")
+		return
+	end
+
+	local estaCorrendo = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("CorrendoOn") or false
+	local estadoMov = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("estadoMov") or "Parado"
+	if estaCorrendo or estadoMov == "Correndo" then
+		DebugPrint("[EntradaJogador] Dash bloqueado: Jogador está correndo")
 		return
 	end
 
@@ -484,10 +530,7 @@ local function ProcessarDash()
 		ClientBridge.PreDashActive = true
 	end
 
-	local direcao = "Frente"
-	if ClientBridge.CalcularDirecaoDash then
-		direcao = ClientBridge.CalcularDirecaoDash()
-	end
+	local direcao = direcaoParam or "Tras"
 
 	EnviarAcao("Dash", direcao)
 
@@ -497,6 +540,33 @@ local function ProcessarDash()
 			ClientBridge.CFrameRotacaoDash = nil
 		end
 	end)
+end
+
+local function ProcessarPular()
+
+	if estadoInput.agachadoAtivo then
+		estadoInput.agachadoAtivo = false
+		EnviarAcao("Levantar")
+		task.delay(0.05, function()
+			EnviarAcao("Pular")
+		end)
+		return
+	end
+
+	-- Verifica se o jogador está se movendo para trás ou para os lados.
+	-- Se sim, a tecla Space aciona o Dash em vez do pulo (apenas se ShiftLock estiver ativo).
+	local direcao = "Frente"
+	if ClientBridge.CalcularDirecaoRoll then
+		direcao = ClientBridge.CalcularDirecaoRoll(false)
+	end
+
+	local shiftLockAtivo = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("ShiftLockOn") or false
+	if shiftLockAtivo and (direcao == "Tras" or direcao == "Esquerda" or direcao == "Direita") then
+		ProcessarDash(direcao)
+		return
+	end
+
+	EnviarAcao("Pular")
 end
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -531,8 +601,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		return
 	end
 
-	if input.KeyCode == Configuracao.TeclaDash then
-		ProcessarDash()
+	if input.KeyCode == Configuracao.TeclaRoll then
+		ProcessarRoll()
 		return
 	end
 

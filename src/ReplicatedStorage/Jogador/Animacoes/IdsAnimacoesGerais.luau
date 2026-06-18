@@ -30,10 +30,14 @@ local GeneralAnimations = {
 			IdleAgachado = "rbxassetid://129640837531159",
 			AndandoAgachado = "rbxassetid://87797732262383",
 
-			DashFrente = "rbxassetid://77731344105069",
-			DashTras = "rbxassetid://116512808764487",
-			DashEsquerda = "rbxassetid://80802499324784",
-			DashDireita = "rbxassetid://114879502782228",
+			RollFrente = "rbxassetid://77731344105069",
+			RollTras = "rbxassetid://116512808764487",
+			RollEsquerda = "rbxassetid://80802499324784",
+			RollDireita = "rbxassetid://114879502782228",
+
+			DashTras = "rbxassetid://0000000000",
+			DashEsquerda = "rbxassetid://0000000000",
+			DashDireita = "rbxassetid://0000000000",
 
 			Stunado = "rbxassetid://104947799689111",
 

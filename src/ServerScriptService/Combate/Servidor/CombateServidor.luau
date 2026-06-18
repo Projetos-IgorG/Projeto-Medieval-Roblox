@@ -216,6 +216,7 @@ function ControladorCombate._SincronizarEstado(entidade: Model)
 		atualizarValor("BloqueandoOn", dados.bloqueando)
 		atualizarValor("ProntoAparar", dados.prontoParaAparar)
 		atualizarValor("StunadoOn", dados.stunado)
+		atualizarValor("RollOn", dados.rolando)
 		atualizarValor("DashOn", dados.dashando)
 	end
 
@@ -611,6 +612,31 @@ function ControladorCombate.ProcessarComboEarlyCancel(entidade: Model)
 	return true, nil
 end
 
+function ControladorCombate.ProcessarRollEarlyCancel(entidade: Model)
+	local maquina = ControladorCombate.ObterMaquina(entidade)
+
+	if maquina:ObterEstadoAcao() == MaquinaDeEstados.EstadoAcao.Rolando then
+		maquina:CompletarRoll()
+
+		maquina.dados.correndoIntent = nil
+
+		local status = entidade:FindFirstChild("Status")
+		if status then
+			local rollOn = status:FindFirstChild("RollOn")
+			if rollOn and rollOn:IsA("BoolValue") then
+				rollOn.Value = false
+			end
+		end
+
+		ControladorCombate._PararAnimacao(entidade)
+		ControladorCombate._SincronizarEstado(entidade)
+
+		DebugPrint(string.format("[Combate] %s: Roll early cancel executado", entidade.Name))
+	end
+
+	return true, nil
+end
+
 function ControladorCombate.ProcessarDashEarlyCancel(entidade: Model)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
@@ -956,6 +982,7 @@ function ControladorCombate.ProcessarCorrer(entidade: Model): (boolean, string?)
 			if
 				estadoAcao == MaquinaDeEstados.EstadoAcao.Equipando
 				or estadoAcao == MaquinaDeEstados.EstadoAcao.Desequipando
+				or estadoAcao == MaquinaDeEstados.EstadoAcao.Rolando
 				or estadoAcao == MaquinaDeEstados.EstadoAcao.Dashando
 			then
 				(maquina.dados :: any).correndoIntent = true
@@ -985,6 +1012,65 @@ function ControladorCombate.ProcessarPararCorrer(entidade: Model)
 	if humanoid then
 		maquina.dados.correndoIntent = nil
 	end
+
+	ControladorCombate._SincronizarEstado(entidade)
+	return true, nil
+end
+
+function ControladorCombate.ProcessarRoll(entidade: Model, direcao: string): (boolean, string?)
+	local maquina = ControladorCombate.ObterMaquina(entidade)
+
+	local estavaCorrendo = maquina.dados.correndo
+
+	local sucesso, motivo = maquina:TenteRoll(direcao)
+
+	if not sucesso then
+		DebugPrint(string.format("[Combate] %s: Roll FALHOU - %s", entidade.Name, motivo or "?"))
+		return false, motivo
+	end
+
+	DebugPrint(string.format("[Combate] %s: Roll OK - direção=%s", entidade.Name, direcao))
+
+	if estavaCorrendo then
+		(maquina.dados :: any).correndoIntent = true
+	end
+
+	local nomeAnimacao = "Roll" .. direcao
+	local velocidadeAnim = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAnimacaoRoll") or 1.0
+	ControladorCombate._TocarAnimacao(entidade, nomeAnimacao, false, velocidadeAnim)
+
+	local status = entidade:FindFirstChild("Status")
+	if status then
+		local rollOn = status:FindFirstChild("RollOn")
+		if rollOn and rollOn:IsA("BoolValue") then
+			rollOn.Value = true
+		end
+	end
+
+	ControladorCombate._SincronizarEstado(entidade)
+	return true, nil
+end
+
+function ControladorCombate.ProcessarRollTerminou(entidade: Model): (boolean, string?)
+	local maquina = ControladorCombate.ObterMaquina(entidade)
+
+	if maquina.dados.estadoAcao ~= MaquinaDeEstados.EstadoAcao.Rolando then
+		return false, "NaoEstaRolando"
+	end
+
+	maquina:CompletarRoll()
+
+	DebugPrint(string.format("[Combate] %s: Roll TERMINOU", entidade.Name))
+
+	local status = entidade:FindFirstChild("Status")
+	if status then
+		local rollOn = status:FindFirstChild("RollOn")
+		if rollOn and rollOn:IsA("BoolValue") then
+			rollOn.Value = false
+		end
+	end
+
+	maquina.dados.correndoIntent = nil
 
 	ControladorCombate._SincronizarEstado(entidade)
 	return true, nil
@@ -1210,10 +1296,16 @@ local MapaAcoes = {
 	Correr = ControladorCombate.ProcessarCorrer,
 	PararCorrer = ControladorCombate.ProcessarPararCorrer,
 	Aterrissar = ControladorCombate.ProcessarAterrissar,
+	Roll = function(entidade, dados)
+		return ControladorCombate.ProcessarRoll(entidade, dados)
+	end,
+	RollTerminou = ControladorCombate.ProcessarRollTerminou,
+	RollEarlyCancel = ControladorCombate.ProcessarRollEarlyCancel,
 	Dash = function(entidade, dados)
 		return ControladorCombate.ProcessarDash(entidade, dados)
 	end,
 	DashTerminou = ControladorCombate.ProcessarDashTerminou,
+	DashEarlyCancel = ControladorCombate.ProcessarDashEarlyCancel,
 	SincronizarMovimento = function(entidade, dados)
 		return ControladorCombate.ProcessarSincronizarMovimento(entidade, dados)
 	end,
@@ -1230,7 +1322,6 @@ local MapaAcoes = {
 	end,
 	ComboTerminou = ControladorCombate.ProcessarComboTerminou,
 	ComboEarlyCancel = ControladorCombate.ProcessarComboEarlyCancel,
-	DashEarlyCancel = ControladorCombate.ProcessarDashEarlyCancel,
 
 	HitboxAcerto = function(entidade, dados)
 		return ControladorCombate.ProcessarHitboxAcerto(entidade, dados)

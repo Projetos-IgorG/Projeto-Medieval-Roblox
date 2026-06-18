@@ -558,7 +558,8 @@ function BaseCamera:UpdateMouseBehavior()
 
 	local isDashing = false
 	if ClientBridge then
-		if (ClientBridge.EstaEmDash and ClientBridge.EstaEmDash()) or ClientBridge.PreDashActive then
+		if (ClientBridge.EstaEmRoll and ClientBridge.EstaEmRoll()) or ClientBridge.PreRollActive
+			or (ClientBridge.EstaEmDash and ClientBridge.EstaEmDash()) or ClientBridge.PreDashActive then
 			isDashing = true
 		end
 	end

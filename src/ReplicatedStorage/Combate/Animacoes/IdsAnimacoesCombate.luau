@@ -43,10 +43,10 @@ local ActionModes = {
 			IdleAgachado = "rbxassetid://113336055232894",
 			AndandoAgachado = "rbxassetid://110248727392186",
 
-			DashFrente = "rbxassetid://110380195030160",
-			DashTras = "rbxassetid://137774822058926",
-			DashEsquerda = "rbxassetid://134473715541120",
-			DashDireita = "rbxassetid://118967040484648",
+			RollFrente = "rbxassetid://110380195030160",
+			RollTras = "rbxassetid://137774822058926",
+			RollEsquerda = "rbxassetid://134473715541120",
+			RollDireita = "rbxassetid://118967040484648",
 
 			Stunado = "rbxassetid://119175260965936",
 		},
@@ -84,10 +84,10 @@ local ActionModes = {
 			IdleAgachado = "rbxassetid://0000000000",
 			AndandoAgachado = "rbxassetid://0000000000",
 
-			DashFrente = "rbxassetid://0000000000",
-			DashTras = "rbxassetid://0000000000",
-			DashEsquerda = "rbxassetid://0000000000",
-			DashDireita = "rbxassetid://0000000000",
+			RollFrente = "rbxassetid://0000000000",
+			RollTras = "rbxassetid://0000000000",
+			RollEsquerda = "rbxassetid://0000000000",
+			RollDireita = "rbxassetid://0000000000",
 
 			Stunado = "rbxassetid://111940476196229",
 		},

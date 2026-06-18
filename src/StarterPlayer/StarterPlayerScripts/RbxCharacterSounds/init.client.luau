@@ -67,8 +67,11 @@ local function getMaterialKey(humanoid: Humanoid): string
 	return Footsteps.materialMap[humanoid.FloorMaterial] or CONFIG.DefaultMaterial
 end
 
-local function isDashAction(estadoAcao: string?): boolean
-	return estadoAcao ~= nil and string.find(estadoAcao, "Dash") ~= nil
+local function isRollOrDashAction(estadoAcao: string?): boolean
+	if estadoAcao == nil then
+		return false
+	end
+	return string.find(estadoAcao, "Rolando") ~= nil or string.find(estadoAcao, "Dashando") ~= nil
 end
 
 local function getPitchRange(estadoMov: string?)
@@ -110,15 +113,15 @@ local function canEmitByEnvironment(humanoid: Humanoid, statusState, allowDuring
 		return false
 	end
 
-	if not allowDuringDash and statusState.dashOn then
+	if not allowDuringDash and (statusState.dashOn or statusState.rollOn) then
 		return false
 	end
 
-	if not allowDuringDash and isDashAction(statusState.estadoAcao) then
+	if not allowDuringDash and isRollOrDashAction(statusState.estadoAcao) then
 		return false
 	end
 
-	if not allowDuringDash and ClientBridge.EstaEmDash and ClientBridge.EstaEmDash() then
+	if not allowDuringDash and ((ClientBridge.EstaEmRoll and ClientBridge.EstaEmRoll()) or (ClientBridge.EstaEmDash and ClientBridge.EstaEmDash())) then
 		return false
 	end
 
@@ -201,6 +204,7 @@ local function bindCharacter(character: Model)
 		estadoMov = nil :: string?,
 		estadoAcao = nil :: string?,
 		dashOn = false,
+		rollOn = false,
 	}
 
 	local trackConnections = {}
@@ -296,6 +300,10 @@ local function bindCharacter(character: Model)
 
 		watchStatusBool(folder, "DashOn", function(value)
 			statusState.dashOn = value
+		end)
+
+		watchStatusBool(folder, "RollOn", function(value)
+			statusState.rollOn = value
 		end)
 	end
 

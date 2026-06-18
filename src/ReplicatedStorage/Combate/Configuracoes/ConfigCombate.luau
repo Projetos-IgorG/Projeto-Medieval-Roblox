@@ -64,9 +64,20 @@ export type ConfiguracaoGlobal = {
 	VelocidadeBaseAnimAgachando: number,
 	VelocidadeBaseAnimBloqueando: number,
 
+	CooldownRoll: number,
+	ForcaRoll: number,
+	VelocidadeAnimacaoRoll: number,
+	JanelaCancelamentoRoll: number,
+	RollCameraFixarY: boolean,
+
 	CooldownDash: number,
-	ForcaDash: number,
+	ForcaDashLateral: number,
+	ForcaDashTras: number,
+	DuracaoDashLateral: number,
+	DuracaoDashTras: number,
 	VelocidadeAnimacaoDash: number,
+	JanelaCancelamentoDash: number,
+	DashCameraFixarY: boolean,
 
 	MagnitudeImpulsoAtaqueLeve: number,
 	MagnitudeImpulsoAtaqueFinal: number,
@@ -141,10 +152,19 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	VelocidadeBaseAnimAgachando = 11,
 	VelocidadeBaseAnimBloqueando = 6,
 
+	CooldownRoll = 1.5,
+	ForcaRoll = 45,
+	VelocidadeAnimacaoRoll = 1.0,
+	JanelaCancelamentoRoll = 0.2,
+	RollCameraFixarY = true,
+
 	CooldownDash = 1.5,
-	ForcaDash = 45,
+	ForcaDashLateral = 55,
+	ForcaDashTras = 50,
+	DuracaoDashLateral = 0.22,
+	DuracaoDashTras = 0.12,
 	VelocidadeAnimacaoDash = 1.0,
-	JanelaCancelamentoDash = 0.2,
+	JanelaCancelamentoDash = 0.1,
 	DashCameraFixarY = true,
 
 	MagnitudeImpulsoAtaqueLeve = 20,

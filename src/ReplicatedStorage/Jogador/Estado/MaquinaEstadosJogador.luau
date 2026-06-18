@@ -42,6 +42,7 @@ MaquinaDeEstados.EstadoAcao = {
 	Stunado = "Stunado",
 	Equipando = "Equipando",
 	Desequipando = "Desequipando",
+	Rolando = "Rolando",
 	Dashando = "Dashando",
 	Morto = "Morto",
 }
@@ -52,6 +53,7 @@ local ESTADOS_BLOQUEANTES = {
 	[MaquinaDeEstados.EstadoAcao.Morto] = true,
 	[MaquinaDeEstados.EstadoAcao.Equipando] = true,
 	[MaquinaDeEstados.EstadoAcao.Desequipando] = true,
+	[MaquinaDeEstados.EstadoAcao.Rolando] = true,
 	[MaquinaDeEstados.EstadoAcao.Dashando] = true,
 }
 
@@ -96,9 +98,16 @@ export type DadosEstado = {
 	continuarCombo: boolean,
 	ultimaContinuacaoCombo: number,
 
+	-- Roll (esquiva rolando no chão)
+	rolando: boolean,
+	ultimoRoll: number,
+	direcaoRoll: string,
+
+	-- Dash (impulso rápido lateral/trás)
 	dashando: boolean,
 	ultimoDash: number,
 	direcaoDash: string,
+
 	correndoIntent: boolean?,
 	ultimoComboTerminou: number?,
 	ultimoAtaqueTipos: { [string]: number },
@@ -133,9 +142,14 @@ function MaquinaDeEstados.Novo(entidade: Model)
 		continuarCombo = false,
 		ultimaContinuacaoCombo = 0,
 
+		rolando = false,
+		ultimoRoll = 0,
+		direcaoRoll = "Frente",
+
 		dashando = false,
 		ultimoDash = 0,
 		direcaoDash = "Frente",
+
 		ultimoComboTerminou = 0,
 	} :: DadosEstado
 
@@ -163,7 +177,6 @@ function MaquinaDeEstados:_PararCorrida()
 	end
 
 	if self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Correndo then
-
 		if self.humanoid and self.humanoid.MoveDirection.Magnitude > 0.1 then
 			self:_AlterarEstadoMov(MaquinaDeEstados.EstadoMov.Andando)
 		else
@@ -213,7 +226,6 @@ function MaquinaDeEstados:_AlterarEstadoAcao(novoEstado: string)
 end
 
 function MaquinaDeEstados:TentePular(): (boolean, string?)
-
 	if self:_EstaBloqueado() then
 		return false, "EstadoBloqueante"
 	end
@@ -245,7 +257,6 @@ function MaquinaDeEstados:TentePular(): (boolean, string?)
 end
 
 function MaquinaDeEstados:TenteAterrissar(): boolean
-
 	if
 		self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Pulando
 		or self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Caindo
@@ -257,7 +268,6 @@ function MaquinaDeEstados:TenteAterrissar(): boolean
 end
 
 function MaquinaDeEstados:DefinirEstadoMov(novoEstado: string): boolean
-
 	local estadoValido = false
 	for _, estado in pairs(MaquinaDeEstados.EstadoMov) do
 		if estado == novoEstado then
@@ -275,7 +285,6 @@ function MaquinaDeEstados:DefinirEstadoMov(novoEstado: string): boolean
 end
 
 function MaquinaDeEstados:TenteAtacarLeveEmPe(): (boolean, string?, string?)
-
 	if self:_EstaBloqueado() then
 		return false, nil, "EstadoBloqueante"
 	end
@@ -313,12 +322,10 @@ function MaquinaDeEstados:TenteAtacarLeveEmPe(): (boolean, string?, string?)
 
 	if self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.AtacandoLeve then
 		if self.dados.janelaComboAtiva then
-
 			self.dados.continuarCombo = true
 			DebugPrint(string.format("[MaquinaDeEstados] %s: Combo continuado na janela!", self.entidade.Name))
 			return false, nil, "ComboContinuado"
 		else
-
 			return false, nil, "ForaDaJanela"
 		end
 	end
@@ -402,17 +409,19 @@ end
 function MaquinaDeEstados:TenteBloquear(shiftLockAtivo: boolean?): (boolean, string?)
 	-- Bloqueio pode ser iniciado mesmo durante Stunado/Aparado/DefesaQuebrada
 	-- (controlado por ESTADOS_PERMITE_BLOQUEIO mais abaixo). Apenas Morto/
-	-- Equipando/Desequipando/Dashando bloqueiam de fato.
-	if self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Morto
+	-- Equipando/Desequipando/Rolando/Dashando bloqueiam de fato.
+	if
+		self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Morto
 		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Equipando
 		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Desequipando
-		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Dashando then
+		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Rolando
+		or self.dados.estadoAcao == MaquinaDeEstados.EstadoAcao.Dashando
+	then
 		return false, "EstadoBloqueante"
 	end
 
 	local estaComShiftLock = shiftLockAtivo
 	if estaComShiftLock == nil then
-
 		local statusLocal = self.entidade:FindFirstChild("StatusLocal")
 		if statusLocal then
 			local shiftLockValue = statusLocal:FindFirstChild("ShiftLockOn")
@@ -619,8 +628,9 @@ function MaquinaDeEstados:TenteDesequipar(): (boolean, string?)
 	return true, nil
 end
 
-function MaquinaDeEstados:TenteDash(direcao: string): (boolean, string?)
+-- ========== ROLL (esquiva rolando no chão, tecla Q) ==========
 
+function MaquinaDeEstados:TenteRoll(direcao: string): (boolean, string?)
 	if self:_EstaBloqueado() then
 		return false, "EstadoBloqueante"
 	end
@@ -645,6 +655,69 @@ function MaquinaDeEstados:TenteDash(direcao: string): (boolean, string?)
 	end
 
 	if self.humanoid and self.humanoid.FloorMaterial == Enum.Material.Air then
+		DebugPrint(string.format("[MaquinaDeEstados] %s: Roll bloqueado - FloorMaterial é Air", self.entidade.Name))
+		return false, "NoAr"
+	end
+
+	local agora = tick()
+	local cooldown = Modulo_Configuracoes.ObterConfiguracao("CooldownRoll") or 1.5
+
+	if (agora - self.dados.ultimoRoll) < cooldown then
+		return false, "Cooldown"
+	end
+
+	self.dados.rolando = true
+	self.dados.direcaoRoll = direcao or "Frente"
+	self.dados.ultimoRoll = agora
+
+	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Rolando)
+
+	return true, nil
+end
+
+function MaquinaDeEstados:CompletarRoll()
+	if self.dados.estadoAcao ~= MaquinaDeEstados.EstadoAcao.Rolando then
+		return false
+	end
+
+	self.dados.rolando = false
+	self.dados.direcaoRoll = "Frente"
+	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Nenhuma)
+
+	return true
+end
+
+-- ========== DASH (impulso rápido lateral/trás, tecla Space) ==========
+
+function MaquinaDeEstados:TenteDash(direcao: string): (boolean, string?)
+	if self:_EstaBloqueado() then
+		return false, "EstadoBloqueante"
+	end
+
+	if self.dados.estadoAcao ~= MaquinaDeEstados.EstadoAcao.Nenhuma then
+		return false, "AcaoEmAndamento"
+	end
+
+	if self.dados.bloqueando then
+		return false, "Bloqueando"
+	end
+
+	if self.dados.agachado then
+		return false, "Agachado"
+	end
+
+	if self.dados.correndo or self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Correndo then
+		return false, "Correndo"
+	end
+
+	if
+		self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Pulando
+		or self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Caindo
+	then
+		return false, "NoAr"
+	end
+
+	if self.humanoid and self.humanoid.FloorMaterial == Enum.Material.Air then
 		DebugPrint(string.format("[MaquinaDeEstados] %s: Dash bloqueado - FloorMaterial é Air", self.entidade.Name))
 		return false, "NoAr"
 	end
@@ -657,7 +730,7 @@ function MaquinaDeEstados:TenteDash(direcao: string): (boolean, string?)
 	end
 
 	self.dados.dashando = true
-	self.dados.direcaoDash = direcao or "Frente"
+	self.dados.direcaoDash = direcao or "Tras"
 	self.dados.ultimoDash = agora
 
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Dashando)
@@ -838,7 +911,6 @@ function MaquinaDeEstados:DesativarParry()
 end
 
 function MaquinaDeEstados:AtualizarMovimento(velocidade: number, noChao: boolean, velocidadeY: number)
-
 	if
 		self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Escalando
 		or self.dados.estadoMov == MaquinaDeEstados.EstadoMov.Nadando

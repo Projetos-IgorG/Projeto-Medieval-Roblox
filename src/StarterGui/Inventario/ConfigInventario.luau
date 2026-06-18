@@ -342,6 +342,7 @@ function module:addTool(tool: Tool, parent: string, position: number?)
 			or inputState == Enum.UserInputState.End
 			or self.slotsLocked
 			or (ClientBridge.PodeAlterarTool and not ClientBridge.PodeAlterarTool())
+			or (ClientBridge.EstaEmRoll and ClientBridge.EstaEmRoll())
 			or (ClientBridge.EstaEmDash and ClientBridge.EstaEmDash())
 		then
 			return

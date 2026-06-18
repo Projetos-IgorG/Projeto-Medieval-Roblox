@@ -25,6 +25,20 @@ ClientBridge.PodeAlterarTool = nil :: (() -> boolean)?
 
 ClientBridge.OnEquipAnimacaoTerminou = nil :: ((number) -> ())?
 
+ClientBridge.CalcularDirecaoRoll = nil :: ((boolean?) -> string)?
+
+ClientBridge.EstaEmRoll = nil :: (() -> boolean)?
+
+ClientBridge.PreRollActive = nil :: boolean?
+
+ClientBridge.CFrameRotacaoRoll = nil :: CFrame?
+
+ClientBridge.CFrameRotacaoOriginalRoll = nil :: CFrame?
+
+ClientBridge.DirecaoMovimentoRoll = nil :: Vector3?
+
+ClientBridge.UltimoRollTime = 0
+
 ClientBridge.CalcularDirecaoDash = nil :: (() -> string)?
 
 ClientBridge.EstaEmDash = nil :: (() -> boolean)?

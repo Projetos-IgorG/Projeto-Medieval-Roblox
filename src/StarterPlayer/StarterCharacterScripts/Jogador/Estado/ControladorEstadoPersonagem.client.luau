@@ -83,6 +83,7 @@ local movementFlags = {
 	isFalling = false,
 	isClimbing = false,
 	isSwimming = false,
+	isRolling = false,
 	isDashing = false,
 }
 export type ParkourState = {
@@ -263,6 +264,7 @@ local function SincronizarStatusLocal()
 
 	atualizarValor("CorrendoOn", estadoAtual.estadoMov == "Correndo")
 
+	atualizarValor("RollOn", movementFlags.isRolling)
 	atualizarValor("DashOn", movementFlags.isDashing)
 
 	if DEBUG_ENABLED then
@@ -1233,7 +1235,11 @@ function ClientBridge.PodeAlterarTool()
 	return true
 end
 
-export type DashState = {
+-- ═══════════════════════════════════════════════════════════════════
+-- Roll (esquiva rolando no chão, tecla Q)
+-- ═══════════════════════════════════════════════════════════════════
+
+export type RollState = {
 	animacao: AnimationTrack?,
 	direcao: string,
 	conexaoTermino: RBXScriptConnection?,
@@ -1241,7 +1247,7 @@ export type DashState = {
 	earlyCancelTimer: thread?,
 	earlyCancelExecutado: boolean,
 }
-local dashState: DashState = {
+local rollState: RollState = {
 	animacao = nil,
 	direcao = "Frente",
 	conexaoTermino = nil,
@@ -1250,7 +1256,7 @@ local dashState: DashState = {
 	earlyCancelExecutado = false,
 }
 
-local function CalcularDirecaoDashLocal(): string
+local function CalcularDirecaoRollLocal(atualizarCFrame: boolean?): string
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	if not hrp then
 		return "Frente"
@@ -1262,8 +1268,9 @@ local function CalcularDirecaoDashLocal(): string
 		return "Frente"
 	end
 
-	local lookVector = hrp.CFrame.LookVector
-	local rightVector = hrp.CFrame.RightVector
+	local originalRotation = ClientBridge.CFrameRotacaoRoll or (hrp.CFrame - hrp.Position)
+	local lookVector = originalRotation.LookVector
+	local rightVector = originalRotation.RightVector
 
 	local lookXZ = Vector3.new(lookVector.X, 0, lookVector.Z)
 	lookXZ = if lookXZ.Magnitude > 0.001 then lookXZ.Unit else Vector3.new(0, 0, -1)
@@ -1276,22 +1283,173 @@ local function CalcularDirecaoDashLocal(): string
 	local dotForward = lookXZ:Dot(moveXZ)
 	local dotRight = rightXZ:Dot(moveXZ)
 
-	if math.abs(dotForward) >= math.abs(dotRight) then
-		if dotForward >= 0 then
-			return "Frente"
-		else
-			return "Tras"
+	local angle = math.atan2(dotRight, dotForward) * (180 / math.pi)
+
+	local function ObterRotacaoXZ(direcaoVector: Vector3): CFrame
+		return CFrame.lookAt(Vector3.zero, Vector3.new(direcaoVector.X, 0, direcaoVector.Z).Unit)
+	end
+
+	if angle >= -22.5 and angle <= 22.5 then
+		return "Frente"
+	elseif math.abs(angle) > 22.5 and math.abs(angle) <= 67.5 then
+		-- Diagonal Frente-Direita ou Frente-Esquerda
+		if atualizarCFrame then
+			ClientBridge.CFrameRotacaoRoll = ObterRotacaoXZ(moveXZ)
 		end
-	else
-		if dotRight >= 0 then
-			return "Direita"
-		else
-			return "Esquerda"
+		return "Frente"
+	elseif angle > 67.5 and angle <= 112.5 then
+		return "Direita"
+	elseif angle > -112.5 and angle <= -67.5 then
+		return "Esquerda"
+	elseif math.abs(angle) > 112.5 and math.abs(angle) <= 157.5 then
+		-- Diagonal Trás-Direita ou Trás-Esquerda
+		if atualizarCFrame then
+			ClientBridge.CFrameRotacaoRoll = ObterRotacaoXZ(-moveXZ)
 		end
+		return "Tras"
+	else -- angle > 157.5 or angle <= -157.5
+		return "Tras"
 	end
 end
 
-ClientBridge.CalcularDirecaoDash = CalcularDirecaoDashLocal
+ClientBridge.CalcularDirecaoRoll = CalcularDirecaoRollLocal
+
+function ClientBridge.EstaEmRoll()
+	return movementFlags.isRolling
+end
+
+local function IniciarImpulsoRoll(direcao: string)
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return
+	end
+
+	local forcaRoll = Modulo_Configuracoes.ObterConfiguracao("ForcaRoll") or 45
+
+	if rollState.velocityConnection then
+		rollState.velocityConnection:Disconnect()
+	end
+
+	local startRotation = ClientBridge.CFrameRotacaoOriginalRoll or (hrp.CFrame - hrp.Position)
+	local targetRotation = ClientBridge.CFrameRotacaoRoll or startRotation
+	local lookVector = targetRotation.LookVector
+	local rightVector = targetRotation.RightVector
+
+	local dirVector = ClientBridge.DirecaoMovimentoRoll
+	if not dirVector then
+		dirVector = lookVector
+		if direcao == "Tras" then
+			dirVector = -lookVector
+		elseif direcao == "Esquerda" then
+			dirVector = -rightVector
+		elseif direcao == "Direita" then
+			dirVector = rightVector
+		end
+	end
+
+	dirVector = Vector3.new(dirVector.X, 0, dirVector.Z).Unit
+	local tempoInicio = tick()
+
+	rollState.velocityConnection = RunService.RenderStepped:Connect(function(_deltaTime)
+		if not rollState.animacao or not rollState.animacao.IsPlaying then
+			if rollState.velocityConnection then
+				rollState.velocityConnection:Disconnect()
+				rollState.velocityConnection = nil
+			end
+			return
+		end
+
+		if not hrp or not hrp.Parent then
+			if rollState.velocityConnection then
+				rollState.velocityConnection:Disconnect()
+				rollState.velocityConnection = nil
+			end
+			return
+		end
+
+		local t = math.clamp((tick() - tempoInicio) / 0.15, 0, 1)
+		local currentRotation = startRotation:Lerp(targetRotation, t)
+
+		local velocidadeAtual = hrp.AssemblyLinearVelocity
+		local velocidadeAlvo = dirVector * forcaRoll
+
+		hrp.AssemblyLinearVelocity = Vector3.new(velocidadeAlvo.X, velocidadeAtual.Y, velocidadeAlvo.Z)
+
+		hrp.CFrame = currentRotation + hrp.Position
+	end)
+end
+
+local function PararImpulsoRoll()
+	if rollState.velocityConnection then
+		rollState.velocityConnection:Disconnect()
+		rollState.velocityConnection = nil
+	end
+end
+
+local function OnRollAnimacaoTerminou()
+	DebugPrint("[ControladorEstado] Roll animação terminou")
+
+	PararImpulsoRoll()
+
+	rollState.animacao = nil
+	rollState.direcao = "Frente"
+	movementFlags.isRolling = false
+	ClientBridge.CFrameRotacaoRoll = nil
+	ClientBridge.CFrameRotacaoOriginalRoll = nil
+	ClientBridge.PreRollActive = nil
+	ClientBridge.DirecaoMovimentoRoll = nil
+
+	if rollState.conexaoTermino then
+		rollState.conexaoTermino:Disconnect()
+		rollState.conexaoTermino = nil
+	end
+
+	if rollState.earlyCancelTimer then
+		pcall(task.cancel, rollState.earlyCancelTimer)
+		rollState.earlyCancelTimer = nil
+	end
+
+	rollState.earlyCancelExecutado = false
+
+	TentarAcao:FireServer("RollTerminou")
+
+	estadoAtual.estadoAcao = "Nenhuma"
+
+	if isShiftHeld then
+		movementFlags.isRunning = true
+		estadoAtual.estadoMov = "Correndo"
+		estadoAtual.correndo = true
+	end
+
+	AtualizarVelocidadeLocal()
+
+	AtualizarAnimacaoMovimento()
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Dash (impulso rápido lateral/trás, tecla Space)
+-- ═══════════════════════════════════════════════════════════════════
+
+export type DashState = {
+	animacao: AnimationTrack?,
+	direcao: string,
+	conexaoTermino: RBXScriptConnection?,
+	velocityConnection: RBXScriptConnection?,
+	earlyCancelTimer: thread?,
+	earlyCancelExecutado: boolean,
+	impulsoTimer: thread?,
+}
+local dashState: DashState = {
+	animacao = nil,
+	direcao = "Tras",
+	conexaoTermino = nil,
+	velocityConnection = nil,
+	earlyCancelTimer = nil,
+	earlyCancelExecutado = false,
+	impulsoTimer = nil,
+}
+
+ClientBridge.CalcularDirecaoDash = CalcularDirecaoRollLocal
 
 function ClientBridge.EstaEmDash()
 	return movementFlags.isDashing
@@ -1303,27 +1461,36 @@ local function IniciarImpulsoDash(direcao: string)
 		return
 	end
 
-	local forcaDash = Modulo_Configuracoes.ObterConfiguracao("ForcaDash") or 50
+	local forcaDash, duracaoDash
+	if direcao == "Tras" then
+		forcaDash = Modulo_Configuracoes.ObterConfiguracao("ForcaDashTras") or 50
+		duracaoDash = Modulo_Configuracoes.ObterConfiguracao("DuracaoDashTras") or 0.12
+	else
+		forcaDash = Modulo_Configuracoes.ObterConfiguracao("ForcaDashLateral") or 55
+		duracaoDash = Modulo_Configuracoes.ObterConfiguracao("DuracaoDashLateral") or 0.22
+	end
 
 	if dashState.velocityConnection then
 		dashState.velocityConnection:Disconnect()
 	end
 
-	local lookVector = hrp.CFrame.LookVector
-	local rightVector = hrp.CFrame.RightVector
+	local startRotation = ClientBridge.CFrameRotacaoDash or (hrp.CFrame - hrp.Position)
+	local lookVector = startRotation.LookVector
+	local rightVector = startRotation.RightVector
 
-	local dirVector = lookVector
+	local dirVector
 	if direcao == "Tras" then
 		dirVector = -lookVector
 	elseif direcao == "Esquerda" then
 		dirVector = -rightVector
 	elseif direcao == "Direita" then
 		dirVector = rightVector
+	else
+		dirVector = lookVector
 	end
 
 	dirVector = Vector3.new(dirVector.X, 0, dirVector.Z).Unit
-
-	local startRotation = ClientBridge.CFrameRotacaoDash or (hrp.CFrame - hrp.Position)
+	local tempoInicio = tick()
 
 	dashState.velocityConnection = RunService.RenderStepped:Connect(function(_deltaTime)
 		if not dashState.animacao or not dashState.animacao.IsPlaying then
@@ -1342,12 +1509,23 @@ local function IniciarImpulsoDash(direcao: string)
 			return
 		end
 
+		-- Limitar a duração do impulso físico
+		if (tick() - tempoInicio) >= duracaoDash then
+			if dashState.velocityConnection then
+				dashState.velocityConnection:Disconnect()
+				dashState.velocityConnection = nil
+			end
+			return
+		end
+
 		local velocidadeAtual = hrp.AssemblyLinearVelocity
 		local velocidadeAlvo = dirVector * forcaDash
 
 		hrp.AssemblyLinearVelocity = Vector3.new(velocidadeAlvo.X, velocidadeAtual.Y, velocidadeAlvo.Z)
 
-		hrp.CFrame = startRotation + hrp.Position
+		if direcao == "Tras" then
+			hrp.CFrame = startRotation + hrp.Position
+		end
 	end)
 end
 
@@ -1355,6 +1533,10 @@ local function PararImpulsoDash()
 	if dashState.velocityConnection then
 		dashState.velocityConnection:Disconnect()
 		dashState.velocityConnection = nil
+	end
+	if dashState.impulsoTimer then
+		pcall(task.cancel, dashState.impulsoTimer)
+		dashState.impulsoTimer = nil
 	end
 end
 
@@ -1364,7 +1546,7 @@ local function OnDashAnimacaoTerminou()
 	PararImpulsoDash()
 
 	dashState.animacao = nil
-	dashState.direcao = "Frente"
+	dashState.direcao = "Tras"
 	movementFlags.isDashing = false
 	ClientBridge.CFrameRotacaoDash = nil
 	ClientBridge.PreDashActive = nil
@@ -1870,6 +2052,7 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 
 	local ehEquipar = nomeAnimacao and (nomeAnimacao == "Equipar" or nomeAnimacao == "Desequipar")
 
+	local ehRoll = nomeAnimacao and (nomeAnimacao:match("^Roll"))
 	local ehDash = nomeAnimacao and (nomeAnimacao:match("^Dash"))
 
 	if ehEquipar and equipAnimState.animacao and equipAnimState.animacao.IsPlaying then
@@ -1879,13 +2062,96 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 
 	PararAnimacaoAcao()
 
-	track.Priority = if nomeAnimacao == "DefesaQuebrada" then Enum.AnimationPriority.Movement else Enum.AnimationPriority.Action
+	track.Priority = if nomeAnimacao == "DefesaQuebrada"
+		then Enum.AnimationPriority.Movement
+		else Enum.AnimationPriority.Action
 	track.Looped = loop
-	track:Play(0.1)
+	local fadeTime = if ehRoll then 0.2 else 0.1
+	track:Play(fadeTime)
 	track:AdjustSpeed(velocidade)
 
 	animacaoAtualAcao = track
 
+	-- ======== ROLL (esquiva rolando no chão) ========
+	if ehRoll then
+		ClientBridge.PreRollActive = nil
+		ClientBridge.UltimoRollTime = tick()
+		if rollState.conexaoTermino then
+			rollState.conexaoTermino:Disconnect()
+		end
+		PararImpulsoRoll()
+		PararAnimacaoMov(true)
+
+		local direcao = "Frente"
+		if nomeAnimacao == "RollFrente" then
+			direcao = "Frente"
+		elseif nomeAnimacao == "RollTras" then
+			direcao = "Tras"
+		elseif nomeAnimacao == "RollEsquerda" then
+			direcao = "Esquerda"
+		elseif nomeAnimacao == "RollDireita" then
+			direcao = "Direita"
+		end
+
+		rollState.animacao = track
+		rollState.direcao = direcao
+		movementFlags.isRolling = true
+
+		rollState.conexaoTermino = track.Stopped:Connect(function()
+			OnRollAnimacaoTerminou()
+		end)
+
+		IniciarImpulsoRoll(direcao)
+
+		DebugPrint("[ControladorEstado] Animação de Roll iniciada:", nomeAnimacao)
+
+		if rollState.earlyCancelTimer then
+			pcall(task.cancel, rollState.earlyCancelTimer)
+			rollState.earlyCancelTimer = nil
+		end
+		rollState.earlyCancelExecutado = false
+
+		if rollState.animacao and rollState.animacao.IsPlaying then
+			local rollTrack = rollState.animacao
+			local janelaEarlyCancel = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelamentoRoll") or 0.2
+			local tempoRestante = (rollTrack.Length - rollTrack.TimePosition) / rollTrack.Speed
+
+			if tempoRestante > janelaEarlyCancel and janelaEarlyCancel > 0 then
+				local tempoParaEarlyCancel = tempoRestante - janelaEarlyCancel
+				DebugPrint(
+					string.format(
+						"[ControladorEstado] Roll early cancel agendado: %.2fs restante, early cancel em %.2fs",
+						tempoRestante,
+						tempoParaEarlyCancel
+					)
+				)
+
+				rollState.earlyCancelTimer = task.delay(tempoParaEarlyCancel, function()
+					if rollState.animacao and rollState.animacao.IsPlaying and not rollState.earlyCancelExecutado then
+						rollState.earlyCancelExecutado = true
+						DebugPrint("[ControladorEstado] Roll early cancel executado - mudando estado para Normal")
+
+						estadoAtual.estadoAcao = "Nenhuma"
+
+						TentarAcao:FireServer("RollEarlyCancel")
+
+						if isShiftHeld then
+							movementFlags.isRunning = true
+							estadoAtual.estadoMov = "Correndo"
+							estadoAtual.correndo = true
+						end
+
+						AtualizarVelocidadeLocal()
+
+						AtualizarAnimacaoMovimento()
+					end
+				end)
+			end
+		end
+		return
+	end
+
+	-- ======== DASH (impulso rápido lateral/trás) ========
 	if ehDash then
 		ClientBridge.PreDashActive = nil
 		ClientBridge.UltimoDashTime = tick()
@@ -1895,10 +2161,8 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 		PararImpulsoDash()
 		PararAnimacaoMov(true)
 
-		local direcao = "Frente"
-		if nomeAnimacao == "DashFrente" then
-			direcao = "Frente"
-		elseif nomeAnimacao == "DashTras" then
+		local direcao = "Tras"
+		if nomeAnimacao == "DashTras" then
 			direcao = "Tras"
 		elseif nomeAnimacao == "DashEsquerda" then
 			direcao = "Esquerda"
@@ -1926,7 +2190,7 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 
 		if dashState.animacao and dashState.animacao.IsPlaying then
 			local dashTrack = dashState.animacao
-			local janelaEarlyCancel = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelamentoDash") or 0.12
+			local janelaEarlyCancel = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelamentoDash") or 0.1
 			local tempoRestante = (dashTrack.Length - dashTrack.TimePosition) / dashTrack.Speed
 
 			if tempoRestante > janelaEarlyCancel and janelaEarlyCancel > 0 then
@@ -2086,7 +2350,7 @@ local function ObterMultiplicadorVelocidadeAnimacao(): number
 end
 
 AtualizarAnimacaoMovimento = function()
-	if movementFlags.isDashing then
+	if movementFlags.isRolling or movementFlags.isDashing then
 		return
 	end
 
