@@ -1,7 +1,7 @@
 --!strict
 --[[
-	DAMAGE DISPLAY LOCAL (DanoDebugVisual)
-	Caminho: src/StarterPlayer/StarterPlayerScripts/DanoDebugVisual.client.luau
+	DAMAGE DISPLAY LOCAL (DepuracaoDanoVisual)
+	Caminho: src/StarterPlayer/StarterPlayerScripts/Depuracao/DepuracaoDanoVisual.client.luau
 	Responsabilidade: Cria textos visuais (damage popups) acima de quem foi acertado, defendido ou aparado.
 	Uso: LocalScript; auto-inicia ao escutar o RemoteEvent DanoDebugVisual.
 ]]
