@@ -29,6 +29,12 @@ ClientBridge.CalcularDirecaoDash = nil :: (() -> string)?
 
 ClientBridge.EstaEmDash = nil :: (() -> boolean)?
 
+ClientBridge.PreDashActive = nil :: boolean?
+
+ClientBridge.CFrameRotacaoDash = nil :: CFrame?
+
+ClientBridge.UltimoDashTime = 0
+
 ClientBridge.EstaEmParkour = nil :: (() -> boolean)?
 
 ClientBridge.EntrarParkour = nil :: (() -> ())?

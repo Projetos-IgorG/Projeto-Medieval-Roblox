@@ -467,12 +467,36 @@ local function ProcessarDash()
 		return
 	end
 
+	local cooldownDash = Modulo_Configuracoes.ObterConfiguracao("CooldownDash") or 1.5
+	local agora = tick()
+	local ultimoDash = ClientBridge.UltimoDashTime or 0
+	if (agora - ultimoDash) < cooldownDash then
+		DebugPrint("[EntradaJogador] Dash bloqueado: Cooldown ativo")
+		return
+	end
+
+	-- Salva a rotação original do boneco antes do dash começar
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+	if hrp and humanoid then
+		ClientBridge.CFrameRotacaoDash = hrp.CFrame - hrp.Position
+		ClientBridge.PreDashActive = true
+	end
+
 	local direcao = "Frente"
 	if ClientBridge.CalcularDirecaoDash then
 		direcao = ClientBridge.CalcularDirecaoDash()
 	end
 
 	EnviarAcao("Dash", direcao)
+
+	task.delay(0.5, function()
+		if ClientBridge.PreDashActive then
+			ClientBridge.PreDashActive = nil
+			ClientBridge.CFrameRotacaoDash = nil
+		end
+	end)
 end
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)

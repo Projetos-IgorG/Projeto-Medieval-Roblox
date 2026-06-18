@@ -1265,8 +1265,12 @@ local function CalcularDirecaoDashLocal(): string
 	local lookVector = hrp.CFrame.LookVector
 	local rightVector = hrp.CFrame.RightVector
 
-	local lookXZ = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
-	local rightXZ = Vector3.new(rightVector.X, 0, rightVector.Z).Unit
+	local lookXZ = Vector3.new(lookVector.X, 0, lookVector.Z)
+	lookXZ = if lookXZ.Magnitude > 0.001 then lookXZ.Unit else Vector3.new(0, 0, -1)
+
+	local rightXZ = Vector3.new(rightVector.X, 0, rightVector.Z)
+	rightXZ = if rightXZ.Magnitude > 0.001 then rightXZ.Unit else Vector3.new(1, 0, 0)
+
 	local moveXZ = Vector3.new(moveDir.X, 0, moveDir.Z).Unit
 
 	local dotForward = lookXZ:Dot(moveXZ)
@@ -1319,8 +1323,18 @@ local function IniciarImpulsoDash(direcao: string)
 
 	dirVector = Vector3.new(dirVector.X, 0, dirVector.Z).Unit
 
+	local startRotation = ClientBridge.CFrameRotacaoDash or (hrp.CFrame - hrp.Position)
+
 	dashState.velocityConnection = RunService.RenderStepped:Connect(function(_deltaTime)
 		if not dashState.animacao or not dashState.animacao.IsPlaying then
+			if dashState.velocityConnection then
+				dashState.velocityConnection:Disconnect()
+				dashState.velocityConnection = nil
+			end
+			return
+		end
+
+		if not hrp or not hrp.Parent then
 			if dashState.velocityConnection then
 				dashState.velocityConnection:Disconnect()
 				dashState.velocityConnection = nil
@@ -1332,6 +1346,8 @@ local function IniciarImpulsoDash(direcao: string)
 		local velocidadeAlvo = dirVector * forcaDash
 
 		hrp.AssemblyLinearVelocity = Vector3.new(velocidadeAlvo.X, velocidadeAtual.Y, velocidadeAlvo.Z)
+
+		hrp.CFrame = startRotation + hrp.Position
 	end)
 end
 
@@ -1350,6 +1366,8 @@ local function OnDashAnimacaoTerminou()
 	dashState.animacao = nil
 	dashState.direcao = "Frente"
 	movementFlags.isDashing = false
+	ClientBridge.CFrameRotacaoDash = nil
+	ClientBridge.PreDashActive = nil
 
 	if dashState.conexaoTermino then
 		dashState.conexaoTermino:Disconnect()
@@ -1869,6 +1887,8 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 	animacaoAtualAcao = track
 
 	if ehDash then
+		ClientBridge.PreDashActive = nil
+		ClientBridge.UltimoDashTime = tick()
 		if dashState.conexaoTermino then
 			dashState.conexaoTermino:Disconnect()
 		end

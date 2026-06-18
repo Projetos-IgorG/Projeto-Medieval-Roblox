@@ -22,6 +22,8 @@ local CameraToggleStateController = require(script.Parent:WaitForChild("CameraTo
 local CameraInput = require(script.Parent:WaitForChild("CameraInput"))
 local CameraUI = require(script.Parent:WaitForChild("CameraUI"))
 
+local ClientBridge = nil
+
 local player = Players.LocalPlayer
 
 local FFlagUserFixGamepadMaxZoom
@@ -542,6 +544,25 @@ end
 function BaseCamera:UpdateMouseBehavior()
 	local blockToggleDueToClickToMove = UserGameSettings.ComputerMovementMode == Enum.ComputerMovementMode.ClickToMove
 
+	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+	if not ClientBridge then
+		pcall(function()
+			local jogador = ReplicatedStorage:FindFirstChild("Jogador")
+			local com = jogador and jogador:FindFirstChild("ComunicacaoCliente")
+			local ponte = com and com:FindFirstChild("PonteCliente")
+			if ponte then
+				ClientBridge = require(ponte)
+			end
+		end)
+	end
+
+	local isDashing = false
+	if ClientBridge then
+		if (ClientBridge.EstaEmDash and ClientBridge.EstaEmDash()) or ClientBridge.PreDashActive then
+			isDashing = true
+		end
+	end
+
 	if self.isCameraToggle and blockToggleDueToClickToMove == false then
 		CameraUI.setCameraModeToastEnabled(true)
 		CameraInput.enableCameraToggleInput()
@@ -550,15 +571,15 @@ function BaseCamera:UpdateMouseBehavior()
 		CameraUI.setCameraModeToastEnabled(false)
 		CameraInput.disableCameraToggleInput()
 
-		if self.inFirstPerson or self.inMouseLockedMode then
+		if (self.inFirstPerson or self.inMouseLockedMode) and not isDashing then
 			CameraUtils.setRotationTypeOverride(Enum.RotationType.CameraRelative)
 			CameraUtils.setMouseBehaviorOverride(Enum.MouseBehavior.LockCenter)
 		else
 			CameraUtils.restoreRotationType()
 
 			local rotationActivated = CameraInput.getRotationActivated()
-			if rotationActivated then
-				CameraUtils.setMouseBehaviorOverride(Enum.MouseBehavior.LockCurrentPosition)
+			if rotationActivated or (self.inMouseLockedMode and isDashing) then
+				CameraUtils.setMouseBehaviorOverride(Enum.MouseBehavior.LockCenter)
 			else
 				CameraUtils.restoreMouseBehavior()
 			end
