@@ -104,6 +104,10 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 
 	JanelaParry = 0.25,
 	CooldownParry = 1.0,
+	-- Janela de compensacao de latencia para parry: o servidor aceita um pedido
+	-- de bloquear enviado ate este tempo (s) antes de processar o HitboxAcerto.
+	-- Cobre ~200ms de ping com margem. Nao aumentar alem de 0.5s (exploit risk).
+	JanelaLagCompParry = 0.45,
 
 	JanelaCombo = 0.2,
 	VelocidadeComboEspera = 0.4,

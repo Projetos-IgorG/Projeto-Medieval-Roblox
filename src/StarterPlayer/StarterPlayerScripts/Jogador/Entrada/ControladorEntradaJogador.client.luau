@@ -184,6 +184,11 @@ ClientBridge.OnEquipAnimacaoTerminou = function(direcaoFinal: number)
 end
 
 local function ProcessarMouse1Pressionado()
+	if ClientBridge.EstaEmParkour and ClientBridge.EstaEmParkour() then
+		DebugPrint("[EntradaJogador] M1 ignorado - jogador em parkour")
+		return
+	end
+
 	estadoInput.mouse1Pressionado = true
 	estadoInput.tempoMouse1 = tick()
 
@@ -226,6 +231,10 @@ local function ProcessarMouse1Solto()
 end
 
 local function ProcessarMouse2Pressionado()
+	if ClientBridge.EstaEmParkour and ClientBridge.EstaEmParkour() then
+		DebugPrint("[EntradaJogador] M2 ignorado - jogador em parkour")
+		return
+	end
 
 	local agora = tick()
 	if (agora - estadoInput.ultimaDefesa) < Configuracao.CooldownDefesa then
@@ -256,7 +265,7 @@ local function ProcessarMouse2Pressionado()
 
 					local shiftLockAtivo = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("ShiftLockOn")
 						or false
-					EnviarAcao("Bloquear", { shiftLock = shiftLockAtivo })
+					EnviarAcao("Bloquear", { shiftLock = shiftLockAtivo, timestamp = tick() })
 				else
 					DebugPrint("[EntradaJogador] M2 solto após cancel - apenas cancelou, sem defesa")
 
@@ -273,7 +282,7 @@ local function ProcessarMouse2Pressionado()
 	estadoInput.ultimaDefesa = agora
 
 	local shiftLockAtivo = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("ShiftLockOn") or false
-	EnviarAcao("Bloquear", { shiftLock = shiftLockAtivo })
+	EnviarAcao("Bloquear", { shiftLock = shiftLockAtivo, timestamp = tick() })
 end
 
 local function ProcessarMouse2Solto()
@@ -448,6 +457,10 @@ local function ProcessarPular()
 end
 
 local function ProcessarDash()
+	if ClientBridge.EstaEmParkour and ClientBridge.EstaEmParkour() then
+		DebugPrint("[EntradaJogador] Dash bloqueado: Jogador em parkour")
+		return
+	end
 
 	if ClientBridge.EstaEmAnimacaoEquip and ClientBridge.EstaEmAnimacaoEquip() then
 		DebugPrint("[EntradaJogador] Dash bloqueado: Animação de equipamento em andamento")

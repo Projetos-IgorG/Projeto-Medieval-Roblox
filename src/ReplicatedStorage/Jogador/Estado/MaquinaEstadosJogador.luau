@@ -102,6 +102,7 @@ export type DadosEstado = {
 	correndoIntent: boolean?,
 	ultimoComboTerminou: number?,
 	ultimoAtaqueTipos: { [string]: number },
+	pendingParryTimestamp: number?,
 }
 
 function MaquinaDeEstados.Novo(entidade: Model)

@@ -873,6 +873,14 @@ local function podeIniciarParkour(): boolean
 		return false
 	end
 
+	if ClientBridge.LerStatusLocal then
+		local bloqueando = ClientBridge.LerStatusLocal("bloqueando")
+		local estadoAcao = ClientBridge.LerStatusLocal("estadoAcao")
+		if bloqueando or estadoAcao == "Defendendo" then
+			return false
+		end
+	end
+
 	return true
 end
 
