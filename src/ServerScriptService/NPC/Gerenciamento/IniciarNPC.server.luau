@@ -1,6 +1,6 @@
 --[[
     Script: IniciarNPC.server.luau
-    Caminho: src/ServerScriptService/NPC
+    Caminho: src/ServerScriptService/NPC/Gerenciamento
     Responsabilidade: Inicializa a infraestrutura de NPC do servidor (cria pasta no mundo, garante remotes, e expoe um RemoteEvent de Dev para o painel disparar spawn).
     Uso: Script de servidor; roda automaticamente.
     Nao faz: Nao implementa IA; apenas inicializacao e bridge externo.

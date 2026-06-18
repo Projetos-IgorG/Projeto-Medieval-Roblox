@@ -2,7 +2,7 @@
 
 --[[
     Script: GerenciadorNPC.luau
-    Caminho: src/ServerScriptService/NPC
+    Caminho: src/ServerScriptService/NPC/Gerenciamento
     Responsabilidade: API publica do sistema de NPC (SpawnNPC, DespawnNPC, Listar). Cria o Model, registra como Entidade e inscreve no SchedulerServidor.
     Uso: ModuleScript; require em qualquer codigo de servidor (DevPanel, quests, triggers).
     Nao faz: Nao implementa IA nem renderizacao; nao conhece UI.
@@ -17,7 +17,7 @@ local Especies = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChil
 
 local Construtor = require(script.Parent:WaitForChild("ConstrutorModeloNPC"))
 local Scheduler = require(script.Parent:WaitForChild("SchedulerServidor"))
-local ComportamentosFolder = script.Parent:WaitForChild("Comportamentos")
+local ComportamentosFolder = script.Parent.Parent:WaitForChild("Comportamentos")
 local Comportamento = require(ComportamentosFolder:WaitForChild("Comportamento"))
 
 -- Auto-carrega comportamentos para que se registrem.
@@ -26,7 +26,7 @@ require(ComportamentosFolder:WaitForChild("Combate"))
 require(ComportamentosFolder:WaitForChild("Animal"))
 
 local Gerenciador_Entidades =
-	require(script.Parent.Parent:WaitForChild("Entidades"):WaitForChild("GerenciadorEntidades"))
+	require(script.Parent.Parent.Parent:WaitForChild("Entidades"):WaitForChild("GerenciadorEntidades"))
 
 type OpcoesSpawn = TiposNPC.OpcoesSpawn
 type Ctx = Comportamento.ContextoNPC

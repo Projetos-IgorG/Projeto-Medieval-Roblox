@@ -2,7 +2,7 @@
 
 --[[
     Script: SchedulerServidor.luau
-    Caminho: src/ServerScriptService/NPC
+    Caminho: src/ServerScriptService/NPC/Gerenciamento
     Responsabilidade: Loop centralizado que invoca atualizar() de todos os NPCs server-side, com fatia de tempo por archetype e re-avaliacao periodica de NetworkOwnership.
     Uso: ModuleScript; require em GerenciadorNPC; chamar Inscrever/Cancelar; iniciado automaticamente.
     Nao faz: Nao decide IA; apenas distribui chamadas.
@@ -19,7 +19,7 @@ local TiposNPC = require(
 local ConfigNPC = require(
 	ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("ConfigNPC")
 )
-local Comportamento = require(script.Parent:WaitForChild("Comportamentos"):WaitForChild("Comportamento"))
+local Comportamento = require(script.Parent.Parent:WaitForChild("Comportamentos"):WaitForChild("Comportamento"))
 
 type Ctx = Comportamento.ContextoNPC
 

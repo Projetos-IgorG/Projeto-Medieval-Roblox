@@ -1,7 +1,7 @@
 --!strict
 --[[
 	Script: Spawnar.luau
-	Caminho: src/ServerScriptService/NPCs
+	Caminho: src/ServerScriptService/NPC/Gerenciamento
 	Responsabilidade: Wrapper de compatibilidade para spawnar NPC usando o novo GerenciadorNPC.
 ]]
 
@@ -9,7 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local TiposNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos"))
-local GerenciadorNPC = require(ServerScriptService:WaitForChild("NPC"):WaitForChild("GerenciadorNPC"))
+local GerenciadorNPC = require(ServerScriptService:WaitForChild("NPC"):WaitForChild("Gerenciamento"):WaitForChild("GerenciadorNPC"))
 
 local Spawnar = {}
 

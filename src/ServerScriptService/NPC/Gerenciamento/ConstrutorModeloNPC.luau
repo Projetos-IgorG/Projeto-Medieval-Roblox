@@ -2,7 +2,7 @@
 
 --[[
     Script: ConstrutorModeloNPC.luau
-    Caminho: src/ServerScriptService/NPC
+    Caminho: src/ServerScriptService/NPC/Gerenciamento
     Responsabilidade: Constroi o Model R6 de um NPC sem usar templates manuais (clona aparencia do player ou monta R6 base; para animais, clona da pasta de animais se existir).
     Uso: ModuleScript; require em servidor; chame Construir(opcoes).
     Nao faz: Nao registra a entidade nem inicia comportamento; apenas devolve o Model pronto para uso.
@@ -156,7 +156,7 @@ local function ajustarHumanoide(modelo: Model)
 	hum.HealthDisplayDistance = 120
 	hum.HealthDisplayType = Enum.HumanoidHealthDisplayType.DisplayWhenDamaged
 	hum.NameDisplayDistance = 60
-	-- Desabilita estados que nao usaremos (parkour proprio do NPC e ragdoll).
+	-- Desabilita states que nao usaremos (parkour proprio do NPC e ragdoll).
 	hum:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
 	hum:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
 	hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
