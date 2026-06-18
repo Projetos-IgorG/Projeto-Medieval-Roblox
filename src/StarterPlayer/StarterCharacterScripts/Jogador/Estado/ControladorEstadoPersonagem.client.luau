@@ -463,6 +463,7 @@ local function IniciarMonitorCarga(track: AnimationTrack)
 			track:AdjustSpeed(1.0)
 			comboState.multiplicadorDano = Modulo_Configuracoes.ObterConfiguracao("MultiplicadorDanoMaximoCarga") or 1.2
 			LimparConexaoCarga()
+			TentarAcao:FireServer("AjustarVelocidadeAnimacao", { velocidade = 1.0 })
 			DebugPrint("[ControladorEstado] Carga máxima atingida - auto release")
 		end
 	end)
@@ -536,17 +537,28 @@ local function ContinuarComboEVerificarCarga(track: AnimationTrack)
 	comboState.multiplicadorDano = 1.0
 	LimparConexaoCarga()
 
-	local aindaSegurando = ClientBridge.EstaSegurandoM1 and ClientBridge.EstaSegurandoM1()
-	if aindaSegurando then
-		comboState.carregando = true
-		local velCarga = Modulo_Configuracoes.ObterConfiguracao("VelocidadeCargaAtaque") or 0.4
-		track:AdjustSpeed(velCarga)
-		IniciarMonitorCarga(track)
-		DebugPrint("[ControladorEstado] Combo continuado: carregando próximo golpe")
-	else
-		track:AdjustSpeed(1.0)
-		DebugPrint("[ControladorEstado] Combo continuado: golpe normal")
-	end
+	comboState.token = comboState.token + 1
+	local myToken = comboState.token
+
+	track:AdjustSpeed(1.0)
+	TentarAcao:FireServer("AjustarVelocidadeAnimacao", { velocidade = 1.0 })
+	DebugPrint("[ControladorEstado] Combo continuado: golpe normal")
+
+	task.delay(0.12, function()
+		if comboState.token ~= myToken or not track or not track.IsPlaying then
+			return
+		end
+		local aindaSegurando = ClientBridge.EstaSegurandoM1 and ClientBridge.EstaSegurandoM1()
+		if aindaSegurando then
+			comboState.carregando = true
+			comboState.tempoInicioCarga = track.TimePosition
+			local velCarga = Modulo_Configuracoes.ObterConfiguracao("VelocidadeCargaAtaque") or 0.4
+			track:AdjustSpeed(velCarga)
+			IniciarMonitorCarga(track)
+			TentarAcao:FireServer("AjustarVelocidadeAnimacao", { velocidade = velCarga })
+			DebugPrint("[ControladorEstado] Combo continuado: carregando próximo golpe")
+		end
+	end)
 end
 
 local function OnMarkerJanelaCombo(ehFinal: boolean)
@@ -576,6 +588,7 @@ local function OnMarkerJanelaCombo(ehFinal: boolean)
 	end
 
 	comboState.animacaoAtiva:AdjustSpeed(combo.velocidadeJanela)
+	TentarAcao:FireServer("AjustarVelocidadeAnimacao", { velocidade = combo.velocidadeJanela })
 
 	if comboState.pendingConsume then
 		DebugPrint("[ControladorEstado] Consumo antecipado de combo (pending antes da janela)")
@@ -787,6 +800,9 @@ function ClientBridge.EstaComboAtivo()
 end
 
 function ClientBridge.PodeAtacarLeve(): boolean
+	if parkourState.ativo then
+		return false
+	end
 	local agora = tick()
 	local ultimoTerminou = comboState.ultimoComboTerminou or 0
 	local cooldown = Modulo_Configuracoes.ObterConfiguracao("CooldownComboLeve") or 0.8
@@ -893,6 +909,9 @@ local function AplicarRewindParteSolida()
 	solidHitRewindState.ativo = true
 	solidHitRewindState.tempoAlvoRetorno = ultimoTempoHitboxAtivou
 
+	-- Liberar estado de ação do jogador imediatamente ao acertar a parede
+	estadoAtual.estadoAcao = "Nenhuma"
+
 	-- Parar hitboxes imediatamente
 	GerenciadorHitboxCliente.PararTodas()
 
@@ -934,7 +953,7 @@ local function AplicarRewindParteSolida()
 				local fadeOut = Modulo_Configuracoes.ObterConfiguracao("FadeOutRewindSolido") or 0.25
 				if track and track.IsPlaying then
 					track:AdjustSpeed(0)
-					track.TimePosition = math.max(0, tempoAlvo)
+					-- Remover o snap manual de TimePosition para evitar flick visual nas articulações
 					track:Stop(fadeOut)
 				end
 				FinalizarRewindSolido(true)
@@ -1286,6 +1305,20 @@ local function IniciarImpulsoDash(direcao: string)
 		dashState.velocityConnection:Disconnect()
 	end
 
+	local lookVector = hrp.CFrame.LookVector
+	local rightVector = hrp.CFrame.RightVector
+
+	local dirVector = lookVector
+	if direcao == "Tras" then
+		dirVector = -lookVector
+	elseif direcao == "Esquerda" then
+		dirVector = -rightVector
+	elseif direcao == "Direita" then
+		dirVector = rightVector
+	end
+
+	dirVector = Vector3.new(dirVector.X, 0, dirVector.Z).Unit
+
 	dashState.velocityConnection = RunService.RenderStepped:Connect(function(_deltaTime)
 		if not dashState.animacao or not dashState.animacao.IsPlaying then
 			if dashState.velocityConnection then
@@ -1294,20 +1327,6 @@ local function IniciarImpulsoDash(direcao: string)
 			end
 			return
 		end
-
-		local lookVector = hrp.CFrame.LookVector
-		local rightVector = hrp.CFrame.RightVector
-
-		local dirVector = lookVector
-		if direcao == "Tras" then
-			dirVector = -lookVector
-		elseif direcao == "Esquerda" then
-			dirVector = -rightVector
-		elseif direcao == "Direita" then
-			dirVector = rightVector
-		end
-
-		dirVector = Vector3.new(dirVector.X, 0, dirVector.Z).Unit
 
 		local velocidadeAtual = hrp.AssemblyLinearVelocity
 		local velocidadeAlvo = dirVector * forcaDash
@@ -1809,6 +1828,7 @@ function ClientBridge.SoltouM1()
 		comboState.multiplicadorDano = 1.0 + ratio * (multMax - 1.0)
 
 		track:AdjustSpeed(1.0)
+		TentarAcao:FireServer("AjustarVelocidadeAnimacao", { velocidade = 1.0 })
 
 		DebugPrint(
 			string.format(
@@ -1853,6 +1873,7 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 			dashState.conexaoTermino:Disconnect()
 		end
 		PararImpulsoDash()
+		PararAnimacaoMov(true)
 
 		local direcao = "Frente"
 		if nomeAnimacao == "DashFrente" then
@@ -1971,17 +1992,27 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 		comboState.multiplicadorDano = 1.0
 		LimparConexaoCarga()
 
-		local aindaSegurando = ClientBridge.EstaSegurandoM1 and ClientBridge.EstaSegurandoM1()
-		if aindaSegurando then
-			comboState.carregando = true
-			local velCarga = Modulo_Configuracoes.ObterConfiguracao("VelocidadeCargaAtaque") or 0.4
-			track:AdjustSpeed(velCarga)
-			IniciarMonitorCarga(track)
-			DebugPrint("[ControladorEstado] Animação de combo iniciada (CARREGANDO)")
-		else
-			track:AdjustSpeed(velocidade)
-			DebugPrint("[ControladorEstado] Animação de combo iniciada (NORMAL)")
-		end
+		comboState.token = comboState.token + 1
+		local myToken = comboState.token
+
+		track:AdjustSpeed(velocidade)
+		DebugPrint("[ControladorEstado] Animação de combo iniciada (NORMAL)")
+
+		task.delay(0.12, function()
+			if comboState.token ~= myToken or not track or not track.IsPlaying then
+				return
+			end
+			local aindaSegurando = ClientBridge.EstaSegurandoM1 and ClientBridge.EstaSegurandoM1()
+			if aindaSegurando then
+				comboState.carregando = true
+				comboState.tempoInicioCarga = track.TimePosition
+				local velCarga = Modulo_Configuracoes.ObterConfiguracao("VelocidadeCargaAtaque") or 0.4
+				track:AdjustSpeed(velCarga)
+				IniciarMonitorCarga(track)
+				TentarAcao:FireServer("AjustarVelocidadeAnimacao", { velocidade = velCarga })
+				DebugPrint("[ControladorEstado] Carga de combo ativada após hold")
+			end
+		end)
 
 		ConfigurarMarkersCombo(track)
 		return
@@ -2035,6 +2066,10 @@ local function ObterMultiplicadorVelocidadeAnimacao(): number
 end
 
 AtualizarAnimacaoMovimento = function()
+	if movementFlags.isDashing then
+		return
+	end
+
 	if parkourState.ativo then
 		if estadoAtual.estadoAcao ~= "Parkour" then
 			estadoAtual.estadoAcao = "Parkour"
