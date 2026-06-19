@@ -147,7 +147,7 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	AceleracaoCorrendo = 20,
 	DesaceleracaoMovimento = 35,
 
-	VelocidadeBaseAnimAndando = 15,
+	VelocidadeBaseAnimAndando = 16,
 	VelocidadeBaseAnimCorrendo = 21,
 	VelocidadeBaseAnimAgachando = 11,
 	VelocidadeBaseAnimBloqueando = 6,
