@@ -124,6 +124,7 @@ Configs.DefaultConfig = {
 	DescerMinVerticalDelta = 0.5,
 	DescerMaxAltura = 10.0,
 	DescerTransitionTime = 0.35,
+	DescerGrandeTransitionTimeMultiplier = 1.4,
 
 	LateralAreaSize = Vector3.new(12.0, 7, 6.0),
 	LateralAreaUpOffset = -1.5,
@@ -198,7 +199,6 @@ local _cachedDefaultMerge = nil
 
 function Configs.invalidateCache()
 	if _cachedDefaultMerge then
-
 		for key, value in pairs(Configs.DefaultConfig) do
 			_cachedDefaultMerge[key] = value
 		end

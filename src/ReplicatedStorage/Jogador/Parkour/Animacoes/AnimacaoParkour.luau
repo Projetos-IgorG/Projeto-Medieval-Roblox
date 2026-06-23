@@ -151,11 +151,11 @@ local function obterTrack(nomeAnimacao: string): AnimationTrack?
 	return track
 end
 
-local function tocarTrack(track: AnimationTrack, nomeAnimacao: string, fadeIn: number, looped: boolean)
+local function tocarTrack(track: AnimationTrack, nomeAnimacao: string, fadeIn: number, looped: boolean, velMultiplicador: number?)
 	track.Looped = looped
 	track.Priority = obterPrioridade(nomeAnimacao, looped)
 	track:Play(fadeIn)
-	track:AdjustSpeed(obterVelocidadeTrack(nomeAnimacao, looped))
+	track:AdjustSpeed(obterVelocidadeTrack(nomeAnimacao, looped) * (velMultiplicador or 1.0))
 end
 
 function AnimacaoParkour.Inicializar(character: Model): boolean
@@ -187,7 +187,7 @@ function AnimacaoParkour.Inicializar(character: Model): boolean
 	return true
 end
 
-function AnimacaoParkour.TocarIdle(idleMode: string)
+function AnimacaoParkour.TocarIdle(idleMode: string, fadeTime: number?)
 	if not currentAnimator then
 		return
 	end
@@ -208,10 +208,10 @@ function AnimacaoParkour.TocarIdle(idleMode: string)
 
 	idleAtual = nomeIdle
 	idleTrackAtual = track
-	tocarTrack(track, nomeIdle, configAnim.FadeInIdle, true)
+	tocarTrack(track, nomeIdle, fadeTime or configAnim.FadeInIdle, true)
 end
 
-function AnimacaoParkour.TocarAcao(nomeAnimacao: string, onEvento: Callback, onCompleto: Callback): boolean
+function AnimacaoParkour.TocarAcao(nomeAnimacao: string, onEvento: Callback, onCompleto: Callback, ignorarMarker: boolean?, reverso: boolean?, velMultiplicador: number?): boolean
 	if not currentAnimator then
 		return false
 	end
@@ -253,7 +253,7 @@ function AnimacaoParkour.TocarAcao(nomeAnimacao: string, onEvento: Callback, onC
 		end
 	end
 
-	local markerName = parkourModo.eventos and parkourModo.eventos[nomeAnimacao] or nil
+	local markerName = (not ignorarMarker) and (parkourModo.eventos and parkourModo.eventos[nomeAnimacao] or nil) or nil
 	if markerName then
 		local markerConn = track:GetMarkerReachedSignal(markerName):Connect(function()
 			if tokenLocal ~= tokenAcao then
@@ -264,28 +264,70 @@ function AnimacaoParkour.TocarAcao(nomeAnimacao: string, onEvento: Callback, onC
 		table.insert(conexoesAcao, markerConn)
 	end
 
-	local stoppedConn = track.Stopped:Connect(function()
-		if tokenLocal ~= tokenAcao then
-			return
+	if reverso then
+		local speed = obterVelocidadeTrack(nomeAnimacao, false) * (velMultiplicador or 1.0)
+		if not skipPlay then
+			track.Looped = false
+			track.Priority = obterPrioridade(nomeAnimacao, false)
+			track:Play(obterFadeInAcaoPara(nomeAnimacao))
+
+			local length = track.Length
+			if length == 0 or length == nil then
+				length = 1.0
+			end
+			track.TimePosition = length
+			track:AdjustSpeed(-speed)
 		end
 
-		if markerName and not eventoExecutado then
-			executarEventoUmaVez()
+		local length = track.Length
+		if length == 0 or length == nil then
+			length = 1.0
 		end
+		local duracao = math.max(length / speed, 0.06)
 
-		limparConexoesAcao()
-		if acaoTrackAtual == track then
-			acaoTrackAtual = nil
+		task.delay(duracao, function()
+			if tokenLocal ~= tokenAcao then
+				return
+			end
+
+			limparConexoesAcao()
+			if acaoTrackAtual == track then
+				pararTrack(track, configAnim.FadeOutAcao)
+				acaoTrackAtual = nil
+			end
+
+			if markerName and not eventoExecutado then
+				executarEventoUmaVez()
+			end
+
+			if onCompleto then
+				onCompleto()
+			end
+		end)
+	else
+		local stoppedConn = track.Stopped:Connect(function()
+			if tokenLocal ~= tokenAcao then
+				return
+			end
+
+			if markerName and not eventoExecutado then
+				executarEventoUmaVez()
+			end
+
+			limparConexoesAcao()
+			if acaoTrackAtual == track then
+				acaoTrackAtual = nil
+			end
+
+			if onCompleto then
+				onCompleto()
+			end
+		end)
+		table.insert(conexoesAcao, stoppedConn)
+
+		if not skipPlay then
+			tocarTrack(track, nomeAnimacao, obterFadeInAcaoPara(nomeAnimacao), false, velMultiplicador)
 		end
-
-		if onCompleto then
-			onCompleto()
-		end
-	end)
-	table.insert(conexoesAcao, stoppedConn)
-
-	if not skipPlay then
-		tocarTrack(track, nomeAnimacao, obterFadeInAcaoPara(nomeAnimacao), false)
 	end
 
 	if not markerName then

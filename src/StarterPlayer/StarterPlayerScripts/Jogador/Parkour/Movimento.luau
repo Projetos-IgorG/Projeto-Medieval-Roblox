@@ -1244,6 +1244,10 @@ local function executarSubir(novaEdgePos, novaNormal, novaPart, config, nomeAnim
 		finalizarAcaoMantendoGrab()
 	end
 
+	local fallbackIdle = estado.GrabData and estado.GrabData.IdleMode or "IdleSuporte"
+	local idleModeNovo = idleModePreferido
+		or resolverIdleModeParaGrab(character, novaPart, novaEdgePos, novaNormal, finalConfig, fallbackIdle)
+
 	local function executarMovimentoSubir()
 		if movimentoExecutado then
 			return
@@ -1253,9 +1257,6 @@ local function executarSubir(novaEdgePos, novaNormal, novaPart, config, nomeAnim
 
 		destroyConstraints()
 
-		local fallbackIdle = estado.GrabData and estado.GrabData.IdleMode or "IdleSuporte"
-		local idleModeNovo = idleModePreferido
-			or resolverIdleModeParaGrab(character, novaPart, novaEdgePos, novaNormal, finalConfig, fallbackIdle)
 		local posAlvo, cfAlvo = calcularPosicaoGrab(novaEdgePos, novaNormal, finalConfig, idleModeNovo)
 
 		local totalTime = getScaledTransitionTime(finalConfig.SubirTransitionTime)
@@ -1306,11 +1307,17 @@ local function executarSubir(novaEdgePos, novaNormal, novaPart, config, nomeAnim
 	if confirmarAcaoPausada then
 		okAnimacao = AnimacaoParkour.ConfirmarAcaoPausada(executarMovimentoSubir, function()
 			animacaoConcluida = true
+			if finalizarNoFimDaTransicao and not transicaoConcluida then
+				AnimacaoParkour.TocarIdle(idleModeNovo, finalConfig.SubirSaltoIdleFadeOut or 0.2)
+			end
 			tentarFinalizarSubir()
 		end)
 	else
 		okAnimacao = AnimacaoParkour.TocarAcao(nome, executarMovimentoSubir, function()
 			animacaoConcluida = true
+			if finalizarNoFimDaTransicao and not transicaoConcluida then
+				AnimacaoParkour.TocarIdle(idleModeNovo, finalConfig.SubirSaltoIdleFadeOut or 0.2)
+			end
 			tentarFinalizarSubir()
 		end)
 	end
@@ -1327,7 +1334,7 @@ local function executarSubir(novaEdgePos, novaNormal, novaPart, config, nomeAnim
 	return true
 end
 
-local function executarDescer(novaEdgePos, novaNormal, novaPart, config, idleModePreferido)
+local function executarDescer(novaEdgePos, novaNormal, novaPart, config, idleModePreferido, verticalDistance)
 	local finalConfig = Configs.mergeConfig(config)
 	local character = estado.CurrentCharacter
 	if not character then
@@ -1365,6 +1372,12 @@ local function executarDescer(novaEdgePos, novaNormal, novaPart, config, idleMod
 		finalizarAcaoMantendoGrab()
 	end
 
+	local fallbackIdle = estado.GrabData and estado.GrabData.IdleMode or "IdleSuporte"
+	local idleModeNovo = idleModePreferido
+		or resolverIdleModeParaGrab(character, novaPart, novaEdgePos, novaNormal, finalConfig, fallbackIdle)
+
+	local isDistanciaGrande = verticalDistance and (verticalDistance > (finalConfig.SubirMaxAltura or 6.0))
+
 	local function executarMovimentoDescer()
 		if movimentoExecutado then
 			return
@@ -1373,11 +1386,12 @@ local function executarDescer(novaEdgePos, novaNormal, novaPart, config, idleMod
 
 		destroyConstraints()
 
-		local fallbackIdle = estado.GrabData and estado.GrabData.IdleMode or "IdleSuporte"
-		local idleModeNovo = idleModePreferido
-			or resolverIdleModeParaGrab(character, novaPart, novaEdgePos, novaNormal, finalConfig, fallbackIdle)
 		local posAlvo, cfAlvo = calcularPosicaoGrab(novaEdgePos, novaNormal, finalConfig, idleModeNovo)
-		local descerTime = getScaledTransitionTime(finalConfig.DescerTransitionTime)
+		local baseTime = finalConfig.DescerTransitionTime
+		if isDistanciaGrande then
+			baseTime = baseTime * (finalConfig.DescerGrandeTransitionTimeMultiplier or 2.0)
+		end
+		local descerTime = getScaledTransitionTime(baseTime)
 		local responsiveness = 1 / descerTime * 10
 		local descerAngVel = calcularVelocidadeAngularSuave(hrp.CFrame, cfAlvo, descerTime)
 		local alignPos = criarAlignPosition(hrp, posAlvo, responsiveness)
@@ -1405,10 +1419,28 @@ local function executarDescer(novaEdgePos, novaNormal, novaPart, config, idleMod
 		end)
 	end
 
-	local okAnimacao = AnimacaoParkour.TocarAcao("Descer", executarMovimentoDescer, function()
+	local nomeAnimacao = "Descer"
+	local reverso = false
+	local ignorarMarker = false
+
+	if idleModeNovo == "IdleSuporte" and not isDistanciaGrande then
+		nomeAnimacao = AnimacaoParkour.ObterAnimacaoSubir("IdleSuporte")
+		reverso = true
+		ignorarMarker = true
+	end
+
+	local velMultiplicador = nil
+	if isDistanciaGrande then
+		local mult = finalConfig.DescerGrandeTransitionTimeMultiplier or 2.0
+		if mult > 0 then
+			velMultiplicador = 1 / mult
+		end
+	end
+
+	local okAnimacao = AnimacaoParkour.TocarAcao(nomeAnimacao, executarMovimentoDescer, function()
 		animacaoConcluida = true
 		tentarFinalizarDescer()
-	end)
+	end, ignorarMarker, reverso, velMultiplicador)
 
 	if okAnimacao then
 		animacaoConcluida = true
@@ -1980,7 +2012,8 @@ function Movimento.TentarDescer()
 		descerResult.Normal,
 		descerResult.Part,
 		grabData.Config,
-		descerResult.IdleMode
+		descerResult.IdleMode,
+		descerResult.VerticalDistance
 	)
 	if ok then
 		dbgPrint("[Parkour] Descer para superfície abaixo | Dist:", string.format("%.1f", descerResult.VerticalDistance))
