@@ -35,10 +35,6 @@ local GeneralAnimations = {
 			RollEsquerda = "rbxassetid://80802499324784",
 			RollDireita = "rbxassetid://114879502782228",
 
-			DashTras = "rbxassetid://0000000000",
-			DashEsquerda = "rbxassetid://0000000000",
-			DashDireita = "rbxassetid://0000000000",
-
 			Stunado = "rbxassetid://104947799689111",
 
 			InteragindoAlto = "rbxassetid://139881462472225",

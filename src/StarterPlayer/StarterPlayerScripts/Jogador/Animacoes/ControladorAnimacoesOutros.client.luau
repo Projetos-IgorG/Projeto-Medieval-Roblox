@@ -90,9 +90,25 @@ local function LimparEntrada(character: Model)
 	DebugPrint("[AnimOutros] Limpou estado de:", character.Name)
 end
 
+-- ─── Auxiliar para evitar double-play com a replicação automática do Roblox ──
+local function PararTracksDuplicados(animator: Animator, animId: string, excetoTrack: AnimationTrack?)
+	for _, t in ipairs(animator:GetPlayingAnimationTracks()) do
+		if t.Animation and t.Animation.AnimationId == animId and t ~= excetoTrack then
+			t:Stop(0)
+		end
+	end
+end
+
 -- ─── Tocar animacao em outro personagem ────────────────────────────────────
 
-local function TocarAnimacaoOutro(character: Model, animId: string, nomeAnim: string, loop: boolean, velocidade: number)
+local function TocarAnimacaoOutro(
+	character: Model,
+	animId: string,
+	nomeAnim: string,
+	loop: boolean,
+	velocidade: number,
+	serverTimestamp: number?
+)
 	local entrada = ObterOuCriarEntrada(character)
 	if not entrada then
 		return
@@ -102,6 +118,12 @@ local function TocarAnimacaoOutro(character: Model, animId: string, nomeAnim: st
 		if entrada.trackAtivo and entrada.trackAtivo.IsPlaying then
 			entrada.trackAtivo:Stop(0.15)
 			entrada.trackAtivo = nil
+		end
+		-- Parar qualquer outra track de prioridade Action/Movement para forçar a parada visivel imediata
+		for _, t in ipairs(entrada.animator:GetPlayingAnimationTracks()) do
+			if t.Priority == Enum.AnimationPriority.Action or t.Priority == Enum.AnimationPriority.Movement then
+				t:Stop(0.15)
+			end
 		end
 		return
 	end
@@ -142,11 +164,34 @@ local function TocarAnimacaoOutro(character: Model, animId: string, nomeAnim: st
 
 	entrada.trackAtivo = track
 
+	-- Parar qualquer outra track com prioridade Action no animator para evitar sobreposição
+	for _, t in ipairs(entrada.animator:GetPlayingAnimationTracks()) do
+		if t.Priority == Enum.AnimationPriority.Action and t ~= track then
+			t:Stop(0.1)
+		end
+	end
+
+	-- Parar tracks duplicadas para evitar conflito com a replicação padrão do Roblox
+	PararTracksDuplicados(entrada.animator, animId, track)
+
 	track.Looped = loop
 	if not track.IsPlaying then
 		track:Play(0.15)
 	end
 	track:AdjustSpeed(velocidade)
+
+	-- Sincronização por TimePosition baseada em timestamp do servidor
+	if serverTimestamp and velocidade > 0 then
+		local atraso = workspace:GetServerTimeNow() - serverTimestamp
+		if atraso > 0 then
+			local timePosition = atraso * velocidade
+			if timePosition < track.Length then
+				track.TimePosition = timePosition
+			else
+				track:Stop(0)
+			end
+		end
+	end
 
 	DebugPrint(
 		string.format(
@@ -162,7 +207,7 @@ end
 -- ─── Handler do remote ─────────────────────────────────────────────────────
 
 TocarAnimacao.OnClientEvent:Connect(
-	function(entidade: Model, animId: string, nomeAnim: string, loop: boolean, velocidade: number)
+	function(entidade: Model, animId: string, nomeAnim: string, loop: boolean, velocidade: number, serverTimestamp: number?)
 		-- Ignorar o proprio personagem (gerenciado por ControladorEstadoPersonagem)
 		if entidade == localPlayer.Character then
 			return
@@ -176,7 +221,7 @@ TocarAnimacao.OnClientEvent:Connect(
 			return
 		end
 
-		TocarAnimacaoOutro(entidade, animId, nomeAnim or "", loop or false, velocidade or 1)
+		TocarAnimacaoOutro(entidade, animId, nomeAnim or "", loop or false, velocidade or 1, serverTimestamp)
 	end
 )
 

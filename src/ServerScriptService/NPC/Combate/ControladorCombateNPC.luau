@@ -97,6 +97,14 @@ type Estado = {
 	destruido: boolean,
 	tipoAtaqueAtual: string?,
 	disconnectHooks: { () -> () }?,
+	historicoAcoes: {
+		[number]: {
+			tipoAtaque: string,
+			indiceCombo: number,
+			swingHitFim: number,
+			jaAtingidos: { [Model]: boolean },
+		}
+	},
 }
 
 local estados: { [Model]: Estado } = {}
@@ -414,6 +422,7 @@ function Mod.Iniciar(modelo: Model): Estado?
 		swingHitInicio = 0,
 		swingHitFim = 0,
 		jaAtingidos = {},
+		historicoAcoes = {},
 		verificarAlvo = nil,
 		timings = Timings.Punhos,
 		destruido = false,
@@ -586,7 +595,6 @@ function finalizarSwing(s: Estado, token: number)
 
 	s.atacando = false
 	s.ultimoSwingFim = os.clock()
-	s.swingHitFim = 0
 	-- Reseta combo se nao houver continuacao dentro da janela.
 	local janela = s.timings.AtaqueLeve.ContinuacaoCombo
 	local indiceNoFim = s.indiceCombo
@@ -626,6 +634,22 @@ function iniciarSwing(s: Estado, cs: any, _maquina: any, token: number)
 		tipoAtaque = "AtaqueLeveFinal"
 	end
 	s.tipoAtaqueAtual = tipoAtaque
+
+	-- Registrar no histórico de ações para validação de hits tardios de jogadores lagados
+	s.historicoAcoes[s.acaoTick] = {
+		tipoAtaque = tipoAtaque,
+		indiceCombo = s.indiceCombo,
+		swingHitFim = s.swingHitFim,
+		jaAtingidos = {},
+	}
+
+	-- Limpar registros de histórico com mais de 5 segundos
+	local agora = os.clock()
+	for tKey, _ in s.historicoAcoes do
+		if agora - tKey > 5 then
+			s.historicoAcoes[tKey] = nil
+		end
+	end
 
 	-- ProcessarComboHitbox ja chama _AplicarImpulsoAtacante internamente.
 	-- Nao chamar aqui para evitar impulso duplicado.
@@ -821,7 +845,9 @@ local function processarReporteHit(
 	npcModel: Model,
 	alvoModel: Model,
 	acaoTickReportado: number,
-	parteAtingida: string?
+	parteAtingida: string?,
+	npcCFrame: CFrame?,
+	alvoCFrame: CFrame?
 )
 	-- Tipos basicos.
 	if typeof(npcModel) ~= "Instance" or not npcModel:IsA("Model") then
@@ -838,9 +864,6 @@ local function processarReporteHit(
 	if not s or s.destruido then
 		return
 	end
-	if not s.atacando then
-		return
-	end
 
 	-- Cliente so pode reportar hit no proprio personagem (anti-cheat: outro
 	-- player nao pode "pedir" dano em alguem).
@@ -848,44 +871,77 @@ local function processarReporteHit(
 		return
 	end
 
-	-- Tick precisa bater com o swing atual (com tolerancia).
-	if math.abs((s.acaoTick or 0) - acaoTickReportado) > TOLERANCIA_TICK then
+	-- Buscar dados da ação correspondente ao tick reportado no histórico
+	local acaoDados = s.historicoAcoes[acaoTickReportado]
+	if not acaoDados then
+		-- Fallback para o swing atual se estiver muito próximo (tolerância tick)
+		if math.abs((s.acaoTick or 0) - acaoTickReportado) <= TOLERANCIA_TICK then
+			acaoDados = {
+				tipoAtaque = s.tipoAtaqueAtual or "AtaqueLeve",
+				indiceCombo = s.indiceCombo,
+				swingHitFim = s.swingHitFim,
+				jaAtingidos = s.jaAtingidos,
+			}
+		else
+			warn("[NPC Combate Server] Rejecting hit: tick mismatch (no history and too far from current swing). diff =", math.abs((s.acaoTick or 0) - acaoTickReportado))
+			return
+		end
+	end
+
+	-- Janela temporal do swing (do inicio efetivo da hitbox ate o fim do golpe), compensando RTT.
+	local agora = os.clock()
+	if acaoDados.swingHitFim <= 0 then
+		warn("[NPC Combate Server] Rejecting hit: swingHitFim <= 0")
 		return
 	end
 
-	-- Janela temporal do swing (do inicio efetivo da hitbox ate o fim do golpe).
-	local agora = os.clock()
-	if s.swingHitFim <= 0 then
-		return
-	end
-	if agora < s.swingHitInicio - 0.10 or agora > s.swingHitFim + 0.80 then
+	local rttVal = jogador:GetAttribute("RTT")
+	local rtt = math.clamp(if typeof(rttVal) == "number" then rttVal else 0.0, 0, 1.5)
+	local limiteMaximo = acaoDados.swingHitFim + 0.80 + rtt
+	local limiteMinimo = acaoTickReportado - 0.05
+	if agora < limiteMinimo or agora > limiteMaximo then
+		warn(string.format("[NPC Combate Server] Rejecting hit: timing invalid. agora=%.4f, min=%.4f, max=%.4f", agora, limiteMinimo, limiteMaximo))
 		return
 	end
 
 	-- Dedup por swing.
-	if s.jaAtingidos[alvoModel] then
+	if acaoDados.jaAtingidos[alvoModel] then
+		warn("[NPC Combate Server] Rejecting hit: already hit in this swing")
 		return
 	end
 
-	-- Validacao de alvo vivo + distancia plausivel.
+	-- Validacao de alvo vivo + distancia plausivel, compensando RTT.
 	local hum = alvoModel:FindFirstChildOfClass("Humanoid")
 	if not hum or hum.Health <= 0 then
+		warn("[NPC Combate Server] Rejecting hit: target dead or missing humanoid")
 		return
 	end
 	local alcance = s.alcanceArma or 6
 	local d = distanciaModelos(s.modelo, alvoModel)
-	if d > alcance + TOLERANCIA_DISTANCIA then
+	local compensacaoDistancia = math.clamp(rtt * 16, 0, 12)
+	local limiteDistancia = alcance + TOLERANCIA_DISTANCIA + compensacaoDistancia
+	if d > limiteDistancia then
+		warn(string.format("[NPC Combate Server] Rejecting hit: distance invalid. d=%.2f, limit=%.2f", d, limiteDistancia))
 		return
 	end
 
-	s.jaAtingidos[alvoModel] = true
+	acaoDados.jaAtingidos[alvoModel] = true
 	s.modelo:SetAttribute("NPC_AcertouCombo", true)
 
 	local cs = obterCS()
-	if not cs or not cs._ProcessarHit then
-		return
+	if cs and cs._ProcessarHit then
+		pcall(
+			cs._ProcessarHit,
+			s.modelo,
+			alvoModel,
+			acaoDados.tipoAtaque or "AtaqueLeve",
+			s.danoLeve,
+			parteAtingida,
+			nil,
+			npcCFrame,
+			alvoCFrame
+		)
 	end
-	pcall(cs._ProcessarHit, s.modelo, alvoModel, s.tipoAtaqueAtual or "AtaqueLeve", s.danoLeve, parteAtingida)
 end
 
 NPC_HitReport.OnServerEvent:Connect(processarReporteHit)

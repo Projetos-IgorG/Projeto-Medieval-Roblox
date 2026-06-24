@@ -690,6 +690,21 @@ end
 -- ========== DASH (impulso rápido lateral/trás, tecla Space) ==========
 
 function MaquinaDeEstados:TenteDash(direcao: string): (boolean, string?)
+	if not Modulo_Configuracoes.EhCombate(self.dados.modoAnimacao) then
+		return false, "NaoEstaEmCombate"
+	end
+
+	local Players = game:GetService("Players")
+	local isPlayer = Players:GetPlayerFromCharacter(self.entidade) ~= nil
+	if isPlayer then
+		local statusLocal = self.entidade:FindFirstChild("StatusLocal")
+		local shiftLockValue = statusLocal and statusLocal:FindFirstChild("ShiftLockOn")
+		local shiftLockAtivo = shiftLockValue and shiftLockValue:IsA("BoolValue") and shiftLockValue.Value == true
+		if not shiftLockAtivo then
+			return false, "ForaDeShiftLock"
+		end
+	end
+
 	if self:_EstaBloqueado() then
 		return false, "EstadoBloqueante"
 	end

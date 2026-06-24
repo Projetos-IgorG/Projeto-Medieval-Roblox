@@ -395,6 +395,8 @@ end
 -- Outros clientes nao rodam hitbox para este NPC (so o do alvo).
 -- =============================================================================
 
+local sincronizarArmaVisual: (ctx: Ctx) -> ()
+
 local function ehAlvoLocal(ctx: Ctx): boolean
 	local alvoRef = ctx.modelo:GetAttribute(TiposNPC.Chaves.AlvoRef)
 	return typeof(alvoRef) == "number" and alvoRef == PLAYER_LOCAL.UserId
@@ -489,7 +491,16 @@ local function ativarHitboxMaoCliente(ctx: Ctx, mao: string, duracao: number?, a
 		end
 		-- Reporta para servidor: ele valida atacando + janela + distancia + dedup
 		-- e chama _ProcessarHit canonico.
-		NPC_HitReport:FireServer(ctx.modelo, alvo, acaoTick, raycastResult and raycastResult.Instance.Name or nil)
+		local npcHrp = ctx.modelo:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local alvoHrp = alvo:FindFirstChild("HumanoidRootPart") :: BasePart?
+		NPC_HitReport:FireServer(
+			ctx.modelo,
+			alvo,
+			acaoTick,
+			raycastResult and raycastResult.Instance.Name or nil,
+			npcHrp and npcHrp.CFrame or nil,
+			alvoHrp and alvoHrp.CFrame or nil
+		)
 	end, duracao)
 end
 
@@ -514,6 +525,10 @@ local function configurarHitboxParaSwing(ctx: Ctx, track: AnimationTrack, acaoTi
 	if not ehAlvoLocal(ctx) then
 		return
 	end
+
+	-- Garantir que as armas visuais estejam sincronizadas antes de validar
+	sincronizarArmaVisual(ctx)
+
 	-- So tem sentido se a arma estiver pronta visualmente (WeaponModel local existe).
 	if not ctx.estado.WeaponModelLocalRight and not ctx.estado.WeaponModelLocalLeft then
 		return
@@ -748,27 +763,23 @@ local function tocarAcao(ctx: Ctx)
 
 		if ehContinuacao then
 			-- Continuacao de combo: NAO reinicia a animacao. Apenas atualiza hitbox.
-			task.defer(function()
-				if ctx.estado.acaoTick == tick and not (ctx :: any).destruido then
-					if typeof(tick) == "number" then
-						configurarHitboxParaSwing(ctx, track, tick)
-					end
+			if ctx.estado.acaoTick == tick and not (ctx :: any).destruido then
+				if typeof(tick) == "number" then
+					configurarHitboxParaSwing(ctx, track, tick)
 				end
-			end)
+			end
 		else
 			-- Primeiro golpe ou animacao nao esta tocando: inicia do comeco.
 			if track.IsPlaying then
 				track:Stop(FADE_ENTRADA_ATAQUE)
 			end
-			task.defer(function()
-				if ctx.estado.acaoTick == tick and not (ctx :: any).destruido then
-					-- Configura hitbox local SOMENTE se este cliente for o alvo.
-					if typeof(tick) == "number" then
-						configurarHitboxParaSwing(ctx, track, tick)
-					end
-					track:Play(FADE_ENTRADA_ATAQUE)
+			if ctx.estado.acaoTick == tick and not (ctx :: any).destruido then
+				-- Configura hitbox local SOMENTE se este cliente for o alvo.
+				if typeof(tick) == "number" then
+					configurarHitboxParaSwing(ctx, track, tick)
 				end
-			end)
+				track:Play(FADE_ENTRADA_ATAQUE)
+			end
 		end
 	end
 end
@@ -791,7 +802,7 @@ end
 -- Sincronia de WeaponModel (NPC_ArmaPronta / NPC_ArmaEquipadaId).
 -- =============================================================================
 
-local function sincronizarArmaVisual(ctx: Ctx)
+function sincronizarArmaVisual(ctx: Ctx)
 	local pronta = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaPronta) == true
 	if pronta then
 		-- Recria se faltar qualquer mao ou se a arma equipada mudou.

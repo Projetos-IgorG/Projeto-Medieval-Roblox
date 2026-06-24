@@ -15,7 +15,7 @@ MovementConfig.ConfiguracaoGlobal = {
 	VelocidadeCorrendoNoAr = 0.4,
 	VelocidadeAndando = 10,
 	VelocidadeCorrendo = 20,
-	VelocidadeBloqueando = 6,
+	VelocidadeBloqueando = 5,
 	VelocidadeDefesaQuebrada = 3,
 	VelocidadeAgachando = 7,
 	VelocidadeAparando = 3,
@@ -23,7 +23,7 @@ MovementConfig.ConfiguracaoGlobal = {
 	VelocidadeBaseAnimAndando = 16,
 	VelocidadeBaseAnimCorrendo = 21,
 	VelocidadeBaseAnimAgachando = 11,
-	VelocidadeBaseAnimBloqueando = 6,
+	VelocidadeBaseAnimBloqueando = 10,
 }
 
 function MovementConfig.ObterConfiguracao(chave: string): any

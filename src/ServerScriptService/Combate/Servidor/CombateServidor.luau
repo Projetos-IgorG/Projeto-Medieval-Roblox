@@ -29,77 +29,7 @@ local Modulo_Knockback = require(DominioCombate:WaitForChild("KnockbackCombate")
 local MaquinaDeEstados =
 	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Estado"):WaitForChild("MaquinaEstadosJogador"))
 
-local function isParryDebugActive(): boolean
-	local attr = ReplicatedStorage:GetAttribute("ParryDebugBlock")
-	if attr ~= nil then
-		return attr == true
-	end
-	local ok, HitboxConfig = pcall(
-		require,
-		ReplicatedStorage:WaitForChild("Combate")
-			:WaitForChild("Hitbox")
-			:WaitForChild("Shapecast")
-			:WaitForChild("HitboxConfig") :: ModuleScript
-	)
-	return ok and HitboxConfig.ParryDebugBlock == true
-end
 
-local function DestruirDefesaBlock(entidade: Model)
-	local existente = entidade:FindFirstChild("DefesaBlock")
-	if existente then
-		existente:Destroy()
-	end
-end
-
-local function CriarDefesaBlock(entidade: Model, debugAtivo: boolean, prontoParaAparar: boolean)
-	local hrp = entidade:FindFirstChild("HumanoidRootPart") :: BasePart?
-	if not hrp then
-		return
-	end
-
-	local existente = entidade:FindFirstChild("DefesaBlock")
-	if existente then
-		existente:Destroy()
-	end
-
-	local block = Instance.new("Part")
-	block.Name = "DefesaBlock"
-	block.Size = Vector3.new(3.7, 5, 1.5)
-	block.CanCollide = false
-	block.CanTouch = true
-	block.CanQuery = true
-	block.Massless = true
-	block.Transparency = if debugAtivo then 0.5 else 1.0
-	block.Color = if prontoParaAparar then Color3.fromRGB(255, 255, 0) else Color3.fromRGB(0, 255, 0) -- Yellow vs Green
-	block.Material = Enum.Material.ForceField
-	block.CastShadow = false
-
-	-- Se for NPC (não tem player correspondente), solda ao Torso para acompanhar a orientação visual do cliente.
-	-- Se for player, solda ao HumanoidRootPart (já acompanha a rotação do personagem pelo controle).
-	local player = Players:GetPlayerFromCharacter(entidade)
-	local torso = entidade:FindFirstChild("Torso") :: BasePart?
-	local part0 = (player and hrp) or torso or hrp
-
-	-- Define o CFrame inicial alinhado com o part0 (frente do personagem) antes de soldar
-	block.CFrame = part0.CFrame * CFrame.new(0, 0, -1.5)
-
-	local weld = Instance.new("ManualWeld")
-	weld.Name = "DefesaBlockWeld"
-	weld.Part0 = part0
-	weld.Part1 = block
-	weld.C0 = CFrame.new(0, 0, -1.5)
-	weld.Parent = block
-
-	block.Parent = entidade
-end
-
-local function AtualizarDefesaBlock(entidade: Model, debugAtivo: boolean, prontoParaAparar: boolean)
-	local block = entidade:FindFirstChild("DefesaBlock") :: BasePart?
-	if block then
-		block.Transparency = if debugAtivo then 0.5 else 1.0
-		block.Color = if prontoParaAparar then Color3.fromRGB(255, 255, 0) else Color3.fromRGB(0, 255, 0)
-	end
-end
 
 local ControladorCombate = {}
 
@@ -167,8 +97,6 @@ function ControladorCombate.ObterMaquina(entidade: Model): any
 			ControladorCombate._SincronizarEstado(entidade)
 			if novo == "Defendendo" then
 				ControladorCombate._TocarAnimacao(entidade, "Defesa", true)
-			elseif novo ~= "Aparando" then
-				DestruirDefesaBlock(entidade)
 			end
 		end)
 
@@ -259,12 +187,12 @@ function ControladorCombate._TocarAnimacao(entidade: Model, nomeAnimacao: string
 	local animId = Modulo_Configuracoes.ObterAnimacao(modo, nomeAnimacao)
 
 	if animId then
-		TocarAnimacao:FireAllClients(entidade, animId, nomeAnimacao, loop or false, velocidade or 1)
+		TocarAnimacao:FireAllClients(entidade, animId, nomeAnimacao, loop or false, velocidade or 1, workspace:GetServerTimeNow())
 	end
 end
 
 function ControladorCombate._PararAnimacao(entidade: Model)
-	TocarAnimacao:FireAllClients(entidade, "STOP", "", false, 0)
+	TocarAnimacao:FireAllClients(entidade, "STOP", "", false, 0, workspace:GetServerTimeNow())
 end
 
 function ControladorCombate._AplicarImpulsoAtacante(entidade: Model, tipoAtaque: string)
@@ -318,37 +246,16 @@ function ControladorCombate._CriarHitbox(_atacante: Model, _tipoAtaque: string, 
 	return {}
 end
 
--- Verifica se o alvo tem um pedido de parry pendente dentro da janela de
--- compensacao de latencia. Retorna true e ativa o parry retroativamente se valido.
--- Garante exploit-safety: timestamp no futuro ou muito antigo sao rejeitados.
-local function _VerificarLagCompParry(maquinaAlvo: any): boolean
-	local ts = maquinaAlvo.dados.pendingParryTimestamp
-	if not ts then
-		return false
-	end
-	local agora = tick()
-	-- Rejeitar timestamp no futuro (tolerancia de 50ms para imprecisao de relogio)
-	if ts > agora + 0.05 then
-		DebugPrint("[Combate] LagComp: timestamp no futuro rejeitado")
-		return false
-	end
-	-- A janela considera o tempo desde que o CLIENTE apertou bloquear ate agora
-	local janelaLagComp = Modulo_Configuracoes.ObterConfiguracao("JanelaLagCompParry") or 0.45
-	if agora - ts > janelaLagComp then
-		DebugPrint(string.format("[Combate] LagComp: timestamp expirado (%.3fs > %.3fs)", agora - ts, janelaLagComp))
-		return false
-	end
-	-- O cooldown de parry ja foi validado ao armazenar o timestamp em ProcessarBloquear
-	return true
-end
-
 function ControladorCombate._ProcessarHit(
 	atacante: Model,
 	alvo: Model,
 	tipoAtaque: string,
 	danoOverride: number?,
-	parteAtingida: string?,
-	multiplicadorDano: number?
+	_parteAtingida: string?,
+	multiplicadorDano: number?,
+	atacanteCFrameCliente: CFrame?,
+	alvoCFrameCliente: CFrame?,
+	momentoHitServidor: number?
 )
 	local maquinaAtacante = maquinasDeEstado[atacante]
 	local maquinaAlvo = ControladorCombate.ObterMaquina(alvo)
@@ -357,26 +264,88 @@ function ControladorCombate._ProcessarHit(
 		return
 	end
 
-	-- ===== LAG-COMP PARRY =====
-	-- Se o alvo nao esta bloqueando no servidor mas enviou um pedido de bloquear
-	-- dentro da janela de compensacao de latencia, tratamos como bloqueio valido.
-	-- Isso cobre o cenario: cliente apertou bloquear, mas o HitboxAcerto chegou
-	-- ao servidor antes do Bloquear devido ao ping diferente entre os dois jogadores.
-	if parteAtingida == "DefesaBlock" and not maquinaAlvo:EstaBloqueando() then
-		if _VerificarLagCompParry(maquinaAlvo) then
-			DebugPrint(string.format("[Combate] LagComp: ativando bloqueio retroativo para %s", alvo.Name))
-			-- Ativar os campos que EstaBloqueando() e EstaProntoParaAparar() consultam.
-			maquinaAlvo.dados.bloqueando = true
-			maquinaAlvo.dados.estadoAcao = "Defendendo"
+	local eParry = false
+	local eBlock = false
+	local bypassed = false
+
+	if maquinaAlvo:EstaBloqueando() then
+		local hrpAtacante = atacante:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local hrpAlvo = alvo:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local anguloBlockValido = false
+		local anguloParryValido = false
+
+		if hrpAtacante and hrpAlvo then
+			-- Validar CFrames do cliente contra o servidor para evitar exploits drásticos
+			local validAtacanteCFrame = atacanteCFrameCliente
+			if validAtacanteCFrame then
+				local dist = (validAtacanteCFrame.Position - hrpAtacante.Position).Magnitude
+				if dist > 15 then
+					validAtacanteCFrame = nil
+				end
+			end
+
+			local validAlvoCFrame = alvoCFrameCliente
+			if validAlvoCFrame then
+				local dist = (validAlvoCFrame.Position - hrpAlvo.Position).Magnitude
+				if dist > 15 then
+					validAlvoCFrame = nil
+				end
+			end
+
+			local posAtacante = validAtacanteCFrame and validAtacanteCFrame.Position or hrpAtacante.Position
+			local posAlvo = validAlvoCFrame and validAlvoCFrame.Position or hrpAlvo.Position
+
+			local dir = (posAtacante - posAlvo)
+			local dirXZ = Vector3.new(dir.X, 0, dir.Z)
+			if dirXZ.Magnitude > 0 then
+				dirXZ = dirXZ.Unit
+				
+				local lookVector = validAlvoCFrame and validAlvoCFrame.LookVector or hrpAlvo.CFrame.LookVector
+				local lookXZ = Vector3.new(lookVector.X, 0, lookVector.Z)
+				if lookXZ.Magnitude > 0 then
+					lookXZ = lookXZ.Unit
+					local dot = lookXZ:Dot(dirXZ)
+
+					local limiteDefesa = Modulo_Configuracoes.ObterConfiguracao("LimiteAnguloDefesa") or 0.342 -- ~140°
+
+					anguloBlockValido = (dot >= limiteDefesa)
+					anguloParryValido = anguloBlockValido
+
+					DebugPrint(string.format("[Combate] Defesa Angulo: dot=%.3f, limiteDefesa=%.3f", dot, limiteDefesa))
+				end
+			end
+		end
+
+		if anguloBlockValido then
+			local agora = momentoHitServidor or workspace:GetServerTimeNow()
+			local momento = maquinaAlvo.dados.pendingParryTimestamp or maquinaAlvo.dados.momentoBloqueio or agora
+			local tempoDecorrido = agora - momento
+
+			local playerAlvo = Players:GetPlayerFromCharacter(alvo)
+			local rtt = (playerAlvo and (playerAlvo:GetAttribute("RTT") or 0)) or 0
+
+			local janelaParryBase = Modulo_Configuracoes.ObterConfiguracao("JanelaParry") or 0.2
+			local maxTolerancia = Modulo_Configuracoes.ObterConfiguracao("MaxToleranciaParry") or 0.25
+			local janelaParryCompensada = janelaParryBase + math.min(rtt, maxTolerancia)
+
+			DebugPrint(string.format("[Combate] Defesa Timing: decorrido=%.3fs, janelaCompensada=%.3fs (base=%.3fs, rtt=%.3fs)", tempoDecorrido, janelaParryCompensada, janelaParryBase, rtt))
+
+			if anguloParryValido and (tempoDecorrido <= janelaParryCompensada) then
+				eParry = true
+			else
+				eBlock = true
+			end
+		else
+			bypassed = true
+			DebugPrint("[Combate] Ataque ignorou defesa por estar fora do ângulo frontal (backstab/flanco)")
 		end
 	end
-	-- Limpar o timestamp pendente independente do resultado (usado uma vez por swing)
-	if parteAtingida == "DefesaBlock" then
-		maquinaAlvo.dados.pendingParryTimestamp = nil
-	end
 
-	-- ===== PARRY (defensor pronto para aparar e atingiu o bloco de defesa) =====
-	if maquinaAlvo:EstaProntoParaAparar() and maquinaAlvo:EstaBloqueando() and parteAtingida == "DefesaBlock" then
+	-- Limpar o timestamp pendente independente do resultado (usado uma vez por swing)
+	maquinaAlvo.dados.pendingParryTimestamp = nil
+
+	-- ===== PARRY =====
+	if eParry then
 		local tempoStun = Modulo_Configuracoes.ObterConfiguracao("TempoStunAparado") or 0.7
 		local tempoAparando = Modulo_Configuracoes.ObterConfiguracao("TempoAparando") or tempoStun
 
@@ -393,10 +362,8 @@ function ControladorCombate._ProcessarHit(
 			maquinaAlvo:AplicarAparando(tempoAparando)
 		end
 
-		AtualizarDefesaBlock(alvo, isParryDebugActive(), false)
-
 		-- Reseta cooldown de parry do defensor: parry bem sucedido permite aparar
-		-- o proximo ataque imediatamente. (REQ: 'Aparar resetar o proprio cooldown')
+		-- o proximo ataque imediatamente.
 		maquinaAlvo.dados.ultimoParry = 0
 
 		-- Impulso especifico de parry: metade do impulso do final de combo.
@@ -415,8 +382,8 @@ function ControladorCombate._ProcessarHit(
 		return
 	end
 
-	-- ===== BLOQUEIO (sem parry, mas atingiu o bloco de defesa) =====
-	if maquinaAlvo:EstaBloqueando() and parteAtingida == "DefesaBlock" then
+	-- ===== BLOQUEIO =====
+	if eBlock then
 		if tipoAtaque == "AtaqueLeveFinal" then
 			local tempoStun = 0.6
 
@@ -436,7 +403,6 @@ function ControladorCombate._ProcessarHit(
 			return
 		else
 			-- Ataque leve absorvido: nao tira vida, mas cada lado sente um leve impacto.
-			-- Defensor recua um pouco, atacante recua um pouco (feedback de hit).
 			local modoAtacante = maquinaAtacante:ObterModo()
 			local modoAlvo = maquinaAlvo:ObterModo()
 			Modulo_Knockback.AplicarKnockback(atacante, alvo, modoAtacante, "AtaqueLeve")
@@ -490,7 +456,7 @@ function ControladorCombate._ProcessarHit(
 				tipo = "Hit",
 				atacante = atacante,
 				multiplicador = multiplicadorDano,
-				bypassed = (maquinaAlvo:EstaBloqueando() and parteAtingida ~= "DefesaBlock"),
+				bypassed = bypassed,
 			})
 		end
 	else
@@ -516,7 +482,8 @@ function ControladorCombate.ProcessarAtacarLeveEmPe(entidade: Model, dados: any?
 	if tipoAtaque then
 		DebugPrint(string.format("[Combate] %s: AtacarLeveEmPe OK - tipo=%s", entidade.Name, tipoAtaque))
 
-		local velocidade = (typeof(dados) == "table" and typeof(dados.velocidade) == "number") and dados.velocidade or 1.0
+		local velocidade = (typeof(dados) == "table" and typeof(dados.velocidade) == "number") and dados.velocidade
+			or 1.0
 		ControladorCombate._TocarAnimacao(entidade, tipoAtaque, false, velocidade)
 
 		ControladorCombate._AplicarImpulsoAtacante(entidade, tipoAtaque)
@@ -760,18 +727,15 @@ function ControladorCombate.ProcessarBloquear(
 	-- Animação agora é iniciada de forma centralizada pelo listener AoMudarEstadoAcao
 
 	local status = entidade:FindFirstChild("Status")
-	local agora = tick()
+	local agora = workspace:GetServerTimeNow()
 	local cooldownParry = Modulo_Configuracoes.ObterConfiguracao("CooldownParry") or 2.4
 	local podeParry = (agora - (maquina.dados.ultimoParry or 0)) >= cooldownParry
 
 	if podeParry then
 		maquina.dados.prontoParaAparar = true
 		maquina.dados.ultimoParry = agora
+		maquina.dados.momentoBloqueio = agora
 
-		-- Guardar o timestamp do cliente para lag-comp: usado em _ProcessarHit
-		-- para validar parry retroativo de jogadores com latencia alta.
-		-- O timestamp e validado em _ProcessarHit; aqui apenas armazenamos se
-		-- o valor e plausivel (nao esta muito no futuro).
 		if typeof(clienteTimestamp) == "number" and clienteTimestamp <= agora + 0.1 then
 			maquina.dados.pendingParryTimestamp = clienteTimestamp
 		else
@@ -784,7 +748,6 @@ function ControladorCombate.ProcessarBloquear(
 				prontoAparar.Value = true
 			end
 		end
-		CriarDefesaBlock(entidade, isParryDebugActive(), true)
 		ControladorCombate._SincronizarEstado(entidade)
 
 		task.delay(Modulo_Configuracoes.ObterConfiguracao("JanelaParry") or 0.2, function()
@@ -797,18 +760,18 @@ function ControladorCombate.ProcessarBloquear(
 					prontoAparar.Value = false
 				end
 			end
-			AtualizarDefesaBlock(entidade, isParryDebugActive(), false)
 			ControladorCombate._SincronizarEstado(entidade)
 		end)
 	else
 		maquina.dados.prontoParaAparar = false
+		maquina.dados.momentoBloqueio = agora
+		maquina.dados.pendingParryTimestamp = agora
 		if status then
 			local prontoAparar = status:FindFirstChild("ProntoAparar")
 			if prontoAparar and prontoAparar:IsA("BoolValue") then
 				prontoAparar.Value = false
 			end
 		end
-		CriarDefesaBlock(entidade, isParryDebugActive(), false)
 		ControladorCombate._SincronizarEstado(entidade)
 	end
 
@@ -832,7 +795,6 @@ function ControladorCombate.ProcessarPararBloqueio(entidade: Model): (boolean, s
 		end
 	end
 
-	DestruirDefesaBlock(entidade)
 	ControladorCombate._PararAnimacao(entidade)
 	ControladorCombate._SincronizarEstado(entidade)
 
@@ -854,7 +816,6 @@ function ControladorCombate.ProcessarQuebrarDefesa(entidade: Model): (boolean, s
 	end
 
 	ControladorCombate._TocarAnimacao(entidade, "DefesaQuebrada")
-	DestruirDefesaBlock(entidade)
 
 	return true, nil
 end
@@ -1264,7 +1225,47 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 	end
 
 	local parteAtingida: string? = dados.parteAtingida
-	ControladorCombate._ProcessarHit(entidade, alvo, tipoAtaque, danoOverride, parteAtingida, multiplicadorDano)
+	local playerAlvo = Players:GetPlayerFromCharacter(alvo)
+	local delay = 0
+	if playerAlvo then
+		local rttVal = playerAlvo:GetAttribute("RTT")
+		local rtt = typeof(rttVal) == "number" and rttVal or 0
+		delay = math.clamp(rtt / 2, 0, 0.18)
+	end
+
+	local momentoHit = workspace:GetServerTimeNow()
+	if delay > 0.01 then
+		task.delay(delay, function()
+			if entidade.Parent and alvo.Parent then
+				local currentAlvoHumanoid = alvo:FindFirstChildOfClass("Humanoid")
+				if currentAlvoHumanoid and currentAlvoHumanoid.Health > 0 then
+					ControladorCombate._ProcessarHit(
+						entidade,
+						alvo,
+						tipoAtaque,
+						danoOverride,
+						parteAtingida,
+						multiplicadorDano,
+						dados.cframe,
+						dados.alvoCFrame,
+						momentoHit
+					)
+				end
+			end
+		end)
+	else
+		ControladorCombate._ProcessarHit(
+			entidade,
+			alvo,
+			tipoAtaque,
+			danoOverride,
+			parteAtingida,
+			multiplicadorDano,
+			dados.cframe,
+			dados.alvoCFrame,
+			momentoHit
+		)
+	end
 
 	DebugPrint(
 		string.format(
@@ -1285,7 +1286,8 @@ local MapaAcoes = {
 	AtacarLeveAgachado = ControladorCombate.ProcessarAtacarLeveAgachado,
 	Bloquear = function(entidade, dados)
 		local shiftLockAtivo = typeof(dados) == "table" and dados.shiftLock or nil
-		local clienteTimestamp = typeof(dados) == "table" and typeof(dados.timestamp) == "number" and dados.timestamp or nil
+		local clienteTimestamp = typeof(dados) == "table" and typeof(dados.timestamp) == "number" and dados.timestamp
+			or nil
 		return ControladorCombate.ProcessarBloquear(entidade, shiftLockAtivo, clienteTimestamp)
 	end,
 	PararBloqueio = ControladorCombate.ProcessarPararBloqueio,

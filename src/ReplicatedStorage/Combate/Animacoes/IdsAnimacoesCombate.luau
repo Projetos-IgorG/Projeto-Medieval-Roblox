@@ -49,6 +49,10 @@ local ActionModes = {
 			RollDireita = "rbxassetid://118967040484648",
 
 			Stunado = "rbxassetid://119175260965936",
+
+			DashTras = "rbxassetid://89889986391185",
+			DashEsquerda = "rbxassetid://77549992713022",
+			DashDireita = "rbxassetid://107316520923865",
 		},
 	},
 
@@ -90,6 +94,10 @@ local ActionModes = {
 			RollDireita = "rbxassetid://0000000000",
 
 			Stunado = "rbxassetid://111940476196229",
+
+			DashTras = "rbxassetid://0000000000",
+			DashEsquerda = "rbxassetid://0000000000",
+			DashDireita = "rbxassetid://0000000000",
 		},
 	},
 
@@ -116,6 +124,10 @@ local ActionModes = {
 			Escalando = "rbxassetid://0000000000",
 
 			Stunado = "rbxassetid://0000000000",
+
+			DashTras = "rbxassetid://0000000000",
+			DashEsquerda = "rbxassetid://0000000000",
+			DashDireita = "rbxassetid://0000000000",
 		},
 	},
 
@@ -201,6 +213,10 @@ local ActionModes = {
 			Escalando = "rbxassetid://128601601033320",
 
 			Stunado = "rbxassetid://111940476196229",
+
+			DashTras = "rbxassetid://0000000000",
+			DashEsquerda = "rbxassetid://0000000000",
+			DashDireita = "rbxassetid://0000000000",
 		},
 	},
 
@@ -235,6 +251,10 @@ local ActionModes = {
 			Escalando = "rbxassetid://128601601033320",
 
 			Stunado = "rbxassetid://111940476196229",
+
+			DashTras = "rbxassetid://0000000000",
+			DashEsquerda = "rbxassetid://0000000000",
+			DashDireita = "rbxassetid://0000000000",
 		},
 	},
 
@@ -268,6 +288,10 @@ local ActionModes = {
 			Escalando = "rbxassetid://0000000000",
 
 			Stunado = "rbxassetid://0000000000",
+
+			DashTras = "rbxassetid://0000000000",
+			DashEsquerda = "rbxassetid://0000000000",
+			DashDireita = "rbxassetid://0000000000",
 		},
 	},
 
@@ -301,6 +325,10 @@ local ActionModes = {
 			Escalando = "rbxassetid://0000000000",
 
 			Stunado = "rbxassetid://0000000000",
+
+			DashTras = "rbxassetid://0000000000",
+			DashEsquerda = "rbxassetid://0000000000",
+			DashDireita = "rbxassetid://0000000000",
 		},
 	},
 }

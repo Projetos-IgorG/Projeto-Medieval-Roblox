@@ -817,6 +817,12 @@ function ClientBridge.PodeAtacarLeve(): boolean
 	if parkourState.ativo then
 		return false
 	end
+	if comboState.conexaoMonitorReversao ~= nil then
+		return false
+	end
+	if solidHitRewindState.ativo then
+		return false
+	end
 	local agora = tick()
 	local ultimoTerminou = comboState.ultimoComboTerminou or 0
 	local cooldown = Modulo_Configuracoes.ObterConfiguracao("CooldownComboLeve") or 0.8
@@ -1013,12 +1019,19 @@ function ClientBridge.TentarCancelarAtaquePorDefesa()
 
 			track:AdjustSpeed(velReversao)
 
-			comboState.conexaoMonitorReversao = RunService.RenderStepped:Connect(function()
+			if comboState.conexaoMonitorReversao then
+				comboState.conexaoMonitorReversao:Disconnect()
+				comboState.conexaoMonitorReversao = nil
+			end
+
+			local connection
+			connection = RunService.RenderStepped:Connect(function()
 				if not track or not track.IsPlaying or track.TimePosition <= tempoInicioCurrentStrike + 0.01 then
-					local conn = comboState.conexaoMonitorReversao
-					if conn then
-						conn:Disconnect()
-						comboState.conexaoMonitorReversao = nil
+					if connection then
+						connection:Disconnect()
+						if comboState.conexaoMonitorReversao == connection then
+							comboState.conexaoMonitorReversao = nil
+						end
 					end
 					if track and track.IsPlaying then
 						track:AdjustSpeed(0)
@@ -1027,6 +1040,7 @@ function ClientBridge.TentarCancelarAtaquePorDefesa()
 					end
 				end
 			end)
+			comboState.conexaoMonitorReversao = connection
 
 			comboState.animacaoAtiva = nil
 			comboState.janelaAtiva = false
@@ -1482,22 +1496,6 @@ local function IniciarImpulsoDash(direcao: string)
 		dashState.velocityConnection:Disconnect()
 	end
 
-	local startRotation = ClientBridge.CFrameRotacaoDash or (hrp.CFrame - hrp.Position)
-	local lookVector = startRotation.LookVector
-	local rightVector = startRotation.RightVector
-
-	local dirVector
-	if direcao == "Tras" then
-		dirVector = -lookVector
-	elseif direcao == "Esquerda" then
-		dirVector = -rightVector
-	elseif direcao == "Direita" then
-		dirVector = rightVector
-	else
-		dirVector = lookVector
-	end
-
-	dirVector = Vector3.new(dirVector.X, 0, dirVector.Z).Unit
 	local tempoInicio = tick()
 
 	dashState.velocityConnection = RunService.RenderStepped:Connect(function(_deltaTime)
@@ -1526,14 +1524,32 @@ local function IniciarImpulsoDash(direcao: string)
 			return
 		end
 
-		local velocidadeAtual = hrp.AssemblyLinearVelocity
-		local velocidadeAlvo = dirVector * forcaDash
 
-		hrp.AssemblyLinearVelocity = Vector3.new(velocidadeAlvo.X, velocidadeAtual.Y, velocidadeAlvo.Z)
 
+		-- Calcula a direção do impulso relativa à rotação atual do personagem
+		local currentRotation = hrp.CFrame - hrp.Position
+		local lookVector = currentRotation.LookVector
+		local rightVector = currentRotation.RightVector
+
+		local currentDirVector
 		if direcao == "Tras" then
-			hrp.CFrame = startRotation + hrp.Position
+			currentDirVector = -lookVector
+		elseif direcao == "Esquerda" then
+			currentDirVector = -rightVector
+		elseif direcao == "Direita" then
+			currentDirVector = rightVector
+		else
+			currentDirVector = lookVector
 		end
+
+		currentDirVector = Vector3.new(currentDirVector.X, 0, currentDirVector.Z).Unit
+
+		local velocidadeAtual = hrp.AssemblyLinearVelocity
+		local velocidadeAlvo = currentDirVector * forcaDash
+
+		-- Evita qualquer impulso/velocidade para cima durante o dash (permite queda normal)
+		local velY = math.min(0, velocidadeAtual.Y)
+		hrp.AssemblyLinearVelocity = Vector3.new(velocidadeAlvo.X, velY, velocidadeAlvo.Z)
 	end)
 end
 
@@ -1890,6 +1906,11 @@ end
 local function PararAnimacaoAcao()
 	GerenciadorHitboxCliente.PararTodas()
 
+	if comboState.conexaoMonitorReversao then
+		comboState.conexaoMonitorReversao:Disconnect()
+		comboState.conexaoMonitorReversao = nil
+	end
+
 	if comboState.animacaoAtiva then
 		LimparConexoesMarkers()
 		comboState.animacaoAtiva = nil
@@ -2115,6 +2136,13 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 
 	animacaoAtualAcao = track
 
+	-- Parar qualquer outra track com prioridade Action no animator para evitar sobreposição
+	for _, t in ipairs(animator:GetPlayingAnimationTracks()) do
+		if t.Priority == Enum.AnimationPriority.Action and t ~= track then
+			t:Stop(0.1)
+		end
+	end
+
 	-- ======== ROLL (esquiva rolando no chão) ========
 	if ehRoll then
 		ClientBridge.PreRollActive = nil
@@ -2311,6 +2339,10 @@ local function TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: numb
 	local combo = Modulo_Configuracoes.ObterConfiguracaoCombo(estadoAtual.modoAnimacao)
 
 	if ehCombo and combo and nomeAnimacao then
+		if comboState.conexaoMonitorReversao then
+			comboState.conexaoMonitorReversao:Disconnect()
+			comboState.conexaoMonitorReversao = nil
+		end
 		ultimoTempoHitboxAtivou = 0
 		comboState.animacaoAtiva = track
 		comboState.janelaAtiva = false
@@ -2581,6 +2613,77 @@ AtualizarAnimacaoMovimento = function()
 	TocarAnimacaoMov(nomeAnimacao, velocidade)
 end
 
+local predicaoAtiva = nil
+
+local function PredictAnimation(nomeAnimacao: string, loop: boolean, velocidade: number)
+	-- Evitar previsões de ações se estivermos em animações de reação/stun (Aparando, Aparado, Stunado, DefesaQuebrada, Morto)
+	local acao = estadoAtual.estadoAcao
+	if acao == "Aparando" or acao == "Aparado" or acao == "Stunado" or acao == "DefesaQuebrada" or acao == "Morto" then
+		DebugPrint("[Predict] Blocked prediction: lock state active: " .. acao)
+		return
+	end
+
+	local animId = Modulo_Configuracoes.ObterIdAnimacao(estadoAtual.modoAnimacao, nomeAnimacao)
+	if not animId then
+		animId = Modulo_Configuracoes.ObterIdAnimacao("Base", nomeAnimacao)
+	end
+	if not animId then
+		return
+	end
+
+	predicaoAtiva = {
+		animId = animId,
+		nomeAnimacao = nomeAnimacao,
+		timestamp = os.clock(),
+	}
+
+	DebugPrint("[Predict] Playing predicted animation locally:", nomeAnimacao, animId)
+
+	-- Update states locally to minimize delay in speed or logic
+	if nomeAnimacao == "AtaqueLeve" or nomeAnimacao:match("^AtaqueLeve") then
+		estadoAtual.estadoAcao = "AtacandoLeve"
+	elseif nomeAnimacao == "Defesa" then
+		estadoAtual.estadoAcao = "Defendendo"
+		estadoAtual.bloqueando = true
+	elseif nomeAnimacao == "Equipar" then
+		estadoAtual.estadoAcao = "Equipando"
+	elseif nomeAnimacao == "Desequipar" then
+		estadoAtual.estadoAcao = "Desequipando"
+	elseif nomeAnimacao:match("^Roll") then
+		estadoAtual.estadoAcao = "Rolando"
+		movementFlags.isRolling = true
+	elseif nomeAnimacao:match("^Dash") then
+		estadoAtual.estadoAcao = "Dashando"
+		movementFlags.isDashing = true
+	end
+
+	TocarAnimacaoAcao(animId, loop, velocidade, nomeAnimacao)
+
+	AtualizarVelocidadeLocal()
+	SincronizarStatusLocal()
+end
+
+local function PredictStopAnimation()
+	predicaoAtiva = {
+		animId = "STOP",
+		nomeAnimacao = "STOP",
+		timestamp = os.clock(),
+	}
+	DebugPrint("[Predict] Predict stop animation locally")
+
+	if estadoAtual.estadoAcao == "Defendendo" then
+		estadoAtual.estadoAcao = "Nenhuma"
+		estadoAtual.bloqueando = false
+		PararAnimacaoAcao()
+	end
+
+	AtualizarVelocidadeLocal()
+	SincronizarStatusLocal()
+end
+
+ClientBridge.PredictAnimation = PredictAnimation
+ClientBridge.PredictStopAnimation = PredictStopAnimation
+
 local function ProcessarSincronizacao(entidade: Model, dados)
 	if entidade ~= character then
 		return
@@ -2593,10 +2696,20 @@ local function ProcessarSincronizacao(entidade: Model, dados)
 	local agachadoAnterior = estadoAtual.agachado
 	local correndoAnterior = estadoAtual.correndo
 
+	local rtt = player:GetAttribute("RTT") or 0.0
+	local threshold = math.clamp(rtt + 0.15, 0.20, 1.0)
+	local ignorarReversao = predicaoAtiva
+		and (os.clock() - predicaoAtiva.timestamp < threshold)
+		and (dados.estadoAcao == "Nenhuma" or dados.estadoAcao == "Nenhum")
+
 	estadoAtual.estadoMov = dados.estadoMov
-	estadoAtual.estadoAcao = dados.estadoAcao
+	if not ignorarReversao then
+		estadoAtual.estadoAcao = dados.estadoAcao
+		estadoAtual.bloqueando = dados.bloqueando
+	else
+		DebugPrint("[Predict] Ignored server state reset to Nenhuma (pending predicted action)")
+	end
 	estadoAtual.modoAnimacao = dados.modoAnimacao
-	estadoAtual.bloqueando = dados.bloqueando
 	estadoAtual.agachado = dados.agachado
 	estadoAtual.correndo = dados.correndo
 
@@ -2753,9 +2866,32 @@ local function ProcessarTocarAnimacao(
 	animId: string,
 	nomeAnimacao: string,
 	loop: boolean,
-	velocidade: number
+	velocidade: number,
+	serverTimestamp: number?
 )
 	if entidade ~= character then
+		return
+	end
+
+	if predicaoAtiva and predicaoAtiva.animId == animId then
+		local diff = os.clock() - predicaoAtiva.timestamp
+		if diff < 1.2 then
+			DebugPrint(string.format("[Predict] Ignored server replication for predicted animation %s (diff: %.3fs)", nomeAnimacao, diff))
+			predicaoAtiva = nil
+			return
+		end
+	end
+
+	if animId == "STOP" then
+		if predicaoAtiva and predicaoAtiva.animId == "STOP" then
+			local diff = os.clock() - predicaoAtiva.timestamp
+			if diff < 1.2 then
+				DebugPrint(string.format("[Predict] Ignored server replication for predicted STOP (diff: %.3fs)", diff))
+				predicaoAtiva = nil
+				return
+			end
+		end
+		PararAnimacaoAcao()
 		return
 	end
 
@@ -3120,10 +3256,12 @@ GerenciadorHitboxCliente.DefinirCharacter(character)
 GerenciadorHitboxCliente.DefinirCallbackHit(function(alvo, mao, raycastResult)
 	AplicarHitFreeze()
 	local hrp = character:FindFirstChild("HumanoidRootPart")
+	local alvoHrp = alvo:FindFirstChild("HumanoidRootPart")
 	TentarAcao:FireServer("HitboxAcerto", {
 		mao = mao,
 		alvo = alvo,
 		cframe = hrp and hrp.CFrame or nil,
+		alvoCFrame = alvoHrp and alvoHrp.CFrame or nil,
 		multiplicadorDano = comboState.multiplicadorDano,
 		parteAtingida = raycastResult and raycastResult.Instance.Name or nil,
 	})

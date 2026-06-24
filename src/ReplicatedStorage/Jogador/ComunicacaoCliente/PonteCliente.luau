@@ -5,76 +5,85 @@
     Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
     Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
 ]]
-local ClientBridge = {}
 
-ClientBridge.MarcarContinuarCombo = nil :: (() -> boolean)?
+export type ClientBridgeType = {
+	MarcarContinuarCombo: (() -> boolean)?,
+	EstaJanelaComboAtiva: (() -> boolean)?,
+	EstaComboAtivo: (() -> boolean)?,
+	TentarCancelarAtaquePorDefesa: (() -> (boolean, string?))?,
+	ResolverCancelPendente: (() -> ())?,
+	CancelarCancelPendente: (() -> ())?,
+	EstaEmAnimacaoEquip: (() -> boolean)?,
+	PodeAlterarTool: (() -> boolean)?,
+	OnEquipAnimacaoTerminou: ((number) -> ())?,
+	CalcularDirecaoRoll: ((boolean?) -> string)?,
+	EstaEmRoll: (() -> boolean)?,
+	PreRollActive: boolean?,
+	CFrameRotacaoRoll: CFrame?,
+	CFrameRotacaoOriginalRoll: CFrame?,
+	DirecaoMovimentoRoll: Vector3?,
+	UltimoRollTime: number,
+	CalcularDirecaoDash: (() -> string)?,
+	EstaEmDash: (() -> boolean)?,
+	PreDashActive: boolean?,
+	CFrameRotacaoDash: CFrame?,
+	UltimoDashTime: number,
+	EstaEmParkour: (() -> boolean)?,
+	EntrarParkour: (() -> ())?,
+	SairParkour: (() -> ())?,
+	AplicarImpulsoAtaque: ((string) -> ())?,
+	EstaSegurandoM1: (() -> boolean)?,
+	SoltouM1: (() -> ())?,
+	PodeAtacarLeve: (() -> boolean)?,
+	PredictAnimation: ((nomeAnimacao: string, loop: boolean, velocidade: number) -> ())?,
+	PredictStopAnimation: (() -> ())?,
+	ObterEquipamentoBraco: ((string) -> Tool?)?,
+	ObterCategoriaRightArm: (() -> string?)?,
+	ObterEquipamentoCorpo: ((string) -> Tool?)?,
+	ObterStatusLocal: (() -> Folder?)?,
+	AtualizarStatusLocal: ((string, any) -> ())?,
+	LerStatusLocal: ((string) -> any)?,
+	EstaEmPrimeiraPessoa: (() -> boolean)?,
+}
 
-ClientBridge.EstaJanelaComboAtiva = nil :: (() -> boolean)?
+local ClientBridge = {} :: ClientBridgeType
 
-ClientBridge.EstaComboAtivo = nil :: (() -> boolean)?
-
-ClientBridge.TentarCancelarAtaquePorDefesa = nil :: (() -> (boolean, string?))?
-
-ClientBridge.ResolverCancelPendente = nil :: (() -> ())?
-
-ClientBridge.CancelarCancelPendente = nil :: (() -> ())?
-
-ClientBridge.EstaEmAnimacaoEquip = nil :: (() -> boolean)?
-
-ClientBridge.PodeAlterarTool = nil :: (() -> boolean)?
-
-ClientBridge.OnEquipAnimacaoTerminou = nil :: ((number) -> ())?
-
-ClientBridge.CalcularDirecaoRoll = nil :: ((boolean?) -> string)?
-
-ClientBridge.EstaEmRoll = nil :: (() -> boolean)?
-
-ClientBridge.PreRollActive = nil :: boolean?
-
-ClientBridge.CFrameRotacaoRoll = nil :: CFrame?
-
-ClientBridge.CFrameRotacaoOriginalRoll = nil :: CFrame?
-
-ClientBridge.DirecaoMovimentoRoll = nil :: Vector3?
-
+ClientBridge.MarcarContinuarCombo = nil
+ClientBridge.EstaJanelaComboAtiva = nil
+ClientBridge.EstaComboAtivo = nil
+ClientBridge.TentarCancelarAtaquePorDefesa = nil
+ClientBridge.ResolverCancelPendente = nil
+ClientBridge.CancelarCancelPendente = nil
+ClientBridge.EstaEmAnimacaoEquip = nil
+ClientBridge.PodeAlterarTool = nil
+ClientBridge.OnEquipAnimacaoTerminou = nil
+ClientBridge.CalcularDirecaoRoll = nil
+ClientBridge.EstaEmRoll = nil
+ClientBridge.PreRollActive = nil
+ClientBridge.CFrameRotacaoRoll = nil
+ClientBridge.CFrameRotacaoOriginalRoll = nil
+ClientBridge.DirecaoMovimentoRoll = nil
 ClientBridge.UltimoRollTime = 0
-
-ClientBridge.CalcularDirecaoDash = nil :: (() -> string)?
-
-ClientBridge.EstaEmDash = nil :: (() -> boolean)?
-
-ClientBridge.PreDashActive = nil :: boolean?
-
-ClientBridge.CFrameRotacaoDash = nil :: CFrame?
-
+ClientBridge.CalcularDirecaoDash = nil
+ClientBridge.EstaEmDash = nil
+ClientBridge.PreDashActive = nil
+ClientBridge.CFrameRotacaoDash = nil
 ClientBridge.UltimoDashTime = 0
-
-ClientBridge.EstaEmParkour = nil :: (() -> boolean)?
-
-ClientBridge.EntrarParkour = nil :: (() -> ())?
-
-ClientBridge.SairParkour = nil :: (() -> ())?
-
-ClientBridge.AplicarImpulsoAtaque = nil :: ((string) -> ())?
-
-ClientBridge.EstaSegurandoM1 = nil :: (() -> boolean)?
-
-ClientBridge.SoltouM1 = nil :: (() -> ())?
-
-ClientBridge.PodeAtacarLeve = nil :: (() -> boolean)?
-
-ClientBridge.ObterEquipamentoBraco = nil :: ((string) -> Tool?)?
-
-ClientBridge.ObterCategoriaRightArm = nil :: (() -> string?)?
-
-ClientBridge.ObterEquipamentoCorpo = nil :: ((string) -> Tool?)?
-
-ClientBridge.ObterStatusLocal = nil :: (() -> Folder?)?
-
-ClientBridge.AtualizarStatusLocal = nil :: ((string, any) -> ())?
-
-ClientBridge.LerStatusLocal = nil :: ((string) -> any)?
-
-ClientBridge.EstaEmPrimeiraPessoa = nil :: (() -> boolean)?
+ClientBridge.EstaEmParkour = nil
+ClientBridge.EntrarParkour = nil
+ClientBridge.SairParkour = nil
+ClientBridge.AplicarImpulsoAtaque = nil
+ClientBridge.EstaSegurandoM1 = nil
+ClientBridge.SoltouM1 = nil
+ClientBridge.PodeAtacarLeve = nil
+ClientBridge.PredictAnimation = nil
+ClientBridge.PredictStopAnimation = nil
+ClientBridge.ObterEquipamentoBraco = nil
+ClientBridge.ObterCategoriaRightArm = nil
+ClientBridge.ObterEquipamentoCorpo = nil
+ClientBridge.ObterStatusLocal = nil
+ClientBridge.AtualizarStatusLocal = nil
+ClientBridge.LerStatusLocal = nil
+ClientBridge.EstaEmPrimeiraPessoa = nil
 
 return ClientBridge

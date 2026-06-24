@@ -298,11 +298,6 @@ local handlers = {
 	MudarDebugParry = function(_jogador, payload)
 		local ativo = payload.ativo == true
 		ReplicatedStorage:SetAttribute("ParryDebugBlock", ativo)
-		for _, desc in ipairs(workspace:GetDescendants()) do
-			if desc.Name == "DefesaBlock" and desc:IsA("BasePart") then
-				desc.Transparency = if ativo then 0.5 else 1.0
-			end
-		end
 		return true, "Debug parry definido para: " .. tostring(ativo)
 	end,
 }

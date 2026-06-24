@@ -31,6 +31,8 @@ export type ConfiguracaoGlobal = {
 
 	JanelaParry: number,
 	CooldownParry: number,
+	LimiteAnguloDefesa: number,
+	MaxToleranciaParry: number,
 
 	JanelaCombo: number,
 	VelocidadeComboEspera: number,
@@ -115,6 +117,8 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 
 	JanelaParry = 0.25,
 	CooldownParry = 1.0,
+	LimiteAnguloDefesa = 0.342,
+	MaxToleranciaParry = 0.25,
 	-- Janela de compensacao de latencia para parry: o servidor aceita um pedido
 	-- de bloquear enviado ate este tempo (s) antes de processar o HitboxAcerto.
 	-- Cobre ~200ms de ping com margem. Nao aumentar alem de 0.5s (exploit risk).
@@ -129,14 +133,14 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	JanelaCancelAtaque = 0.3,
 	CooldownCancel = 1.0,
 	TempoSegurandoM2ParaDefesa = 0.13,
-	VelocidadeReversaoCancelamento = -1.5,
+	VelocidadeReversaoCancelamento = -2.5,
 
 	CooldownComboLeve = 0.4,
 	CooldownBloqueio = 0.4,
 
 	VelocidadeAndando = 10,
 	VelocidadeCorrendo = 20,
-	VelocidadeBloqueando = 6,
+	VelocidadeBloqueando = 5,
 	VelocidadeDefesaQuebrada = 2,
 	VelocidadeAgachando = 7,
 	VelocidadeAparando = 1,
@@ -150,7 +154,7 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	VelocidadeBaseAnimAndando = 16,
 	VelocidadeBaseAnimCorrendo = 21,
 	VelocidadeBaseAnimAgachando = 11,
-	VelocidadeBaseAnimBloqueando = 6,
+	VelocidadeBaseAnimBloqueando = 10,
 
 	CooldownRoll = 1.5,
 	ForcaRoll = 45,
@@ -159,11 +163,11 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	RollCameraFixarY = true,
 
 	CooldownDash = 1.5,
-	ForcaDashLateral = 55,
-	ForcaDashTras = 50,
-	DuracaoDashLateral = 0.22,
-	DuracaoDashTras = 0.12,
-	VelocidadeAnimacaoDash = 1.0,
+	ForcaDashLateral = 40,
+	ForcaDashTras = 25,
+	DuracaoDashLateral = 0.25,
+	DuracaoDashTras = 0.15,
+	VelocidadeAnimacaoDash = 1,
 	JanelaCancelamentoDash = 0.1,
 	DashCameraFixarY = true,
 

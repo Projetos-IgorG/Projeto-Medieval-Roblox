@@ -118,13 +118,7 @@ local function limparOrientacao(ctx: Ctx)
 		end
 	end
 end
--- Cleanup de fallback: destroi DefesaBlock caso sobreviva apos pipeline.
-local function DestruirDefesaBlock(entidade: Model)
-	local existente = entidade:FindFirstChild("DefesaBlock")
-	if existente then
-		existente:Destroy()
-	end
-end
+
 
 -- Cooldown entre tentativas de bloqueio preditivo para nao spammar.
 local COOLDOWN_PREDICAO_BLOQUEIO = 0.4
@@ -343,11 +337,7 @@ local function instalarSincMaquina(ctx: Ctx, maq: any)
 			return
 		end
 
-		-- DefesaBlock agora e gerenciado pelo CombateServidor via weld.
-		-- Cleanup de fallback apenas.
-		if novo ~= "Defendendo" and novo ~= "Aparando" then
-			DestruirDefesaBlock(ctx.modelo)
-		end
+
 
 		-- Baiting/Perseguicao: apos sair de um ataque proprio, define o cooldown.
 		-- Se o NPC acertou o golpe, reduz drasticamente o cooldown para continuar pressionando.
@@ -1230,7 +1220,6 @@ local Combate: Comportamento.Comportamento = {
 		atualizarSubscricaoAlvo(ctx, nil)
 		limparOrientacao(ctx)
 		ControladorCombateNPC.PararBloqueio(ctx.modelo)
-		DestruirDefesaBlock(ctx.modelo)
 		ControladorCombateNPC.Destruir(ctx.modelo)
 		ctx.estado.maquina = nil
 		Comportamento.Helpers.LimparConexoes(ctx)

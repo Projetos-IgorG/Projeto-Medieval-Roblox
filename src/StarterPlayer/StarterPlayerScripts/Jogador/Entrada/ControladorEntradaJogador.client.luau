@@ -76,6 +76,7 @@ local estadoEquip = "idle"
 local toolAtualEquipado: Tool? = nil
 local toolPendente: Tool? = nil
 local revertendoTool = false
+local bloquearPuloTemp = false
 
 function ClientBridge.EstaEmAnimacaoEquip()
 	return estadoEquip ~= "idle"
@@ -129,12 +130,18 @@ end
 
 local function IniciarEquipar(tool: Tool, modo: string)
 	estadoEquip = "equipando"
+	if ClientBridge.PredictAnimation then
+		ClientBridge.PredictAnimation("Equipar", false, 1.0)
+	end
 	EnviarAcao("Equipar", modo)
 	DebugPrint("[EntradaJogador] Iniciando equipar:", tool.Name, "- Modo:", modo)
 end
 
 local function IniciarDesequipar(tool: Tool)
 	estadoEquip = "desequipando"
+	if ClientBridge.PredictAnimation then
+		ClientBridge.PredictAnimation("Desequipar", false, 1.0)
+	end
 	EnviarAcao("Desequipar")
 	DebugPrint("[EntradaJogador] Iniciando desequipar:", tool and tool.Name or "?")
 end
@@ -211,6 +218,9 @@ local function ProcessarMouse1Pressionado()
 	end
 
 	DebugPrint("[EntradaJogador] M1 pressionado - iniciando ataque leve")
+	if ClientBridge.PredictAnimation then
+		ClientBridge.PredictAnimation("AtaqueLeve", false, 1.0)
+	end
 	if estadoInput.agachadoAtivo then
 		EnviarAcao("AtacarLeveAgachado")
 	else
@@ -265,7 +275,11 @@ local function ProcessarMouse2Pressionado()
 
 					local shiftLockAtivo = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("ShiftLockOn")
 						or false
-					EnviarAcao("Bloquear", { shiftLock = shiftLockAtivo, timestamp = tick() })
+					-- Predict block/defense locally
+					if ClientBridge.PredictAnimation then
+						ClientBridge.PredictAnimation("Defesa", true, 1.0)
+					end
+					EnviarAcao("Bloquear", { shiftLock = shiftLockAtivo, timestamp = workspace:GetServerTimeNow() })
 				else
 					DebugPrint("[EntradaJogador] M2 solto após cancel - apenas cancelou, sem defesa")
 
@@ -282,7 +296,10 @@ local function ProcessarMouse2Pressionado()
 	estadoInput.ultimaDefesa = agora
 
 	local shiftLockAtivo = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("ShiftLockOn") or false
-	EnviarAcao("Bloquear", { shiftLock = shiftLockAtivo, timestamp = tick() })
+	if ClientBridge.PredictAnimation then
+		ClientBridge.PredictAnimation("Defesa", true, 1.0)
+	end
+	EnviarAcao("Bloquear", { shiftLock = shiftLockAtivo, timestamp = workspace:GetServerTimeNow() })
 end
 
 local function ProcessarMouse2Solto()
@@ -291,6 +308,9 @@ local function ProcessarMouse2Solto()
 	end
 
 	estadoInput.mouse2Pressionado = false
+	if ClientBridge.PredictStopAnimation then
+		ClientBridge.PredictStopAnimation()
+	end
 	EnviarAcao("PararBloqueio")
 end
 
@@ -494,6 +514,11 @@ local function ProcessarRoll()
 		direcao = ClientBridge.CalcularDirecaoRoll(true)
 	end
 
+	if ClientBridge.PredictAnimation then
+		local nomeAnim = "Roll" .. direcao
+		local velocidadeAnim = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAnimacaoRoll") or 1.0
+		ClientBridge.PredictAnimation(nomeAnim, false, velocidadeAnim)
+	end
 	EnviarAcao("Roll", direcao)
 
 	task.delay(0.5, function()
@@ -530,6 +555,20 @@ local function ProcessarDash(direcaoParam: string?)
 		return
 	end
 
+	local camera = workspace.CurrentCamera
+	local isFirstPerson = camera and (camera.Focus.Position - camera.CFrame.Position).Magnitude < 1.0 or false
+	local shiftLockAtivo = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("ShiftLockOn") or false
+	if not (shiftLockAtivo or isFirstPerson) then
+		DebugPrint("[EntradaJogador] Dash bloqueado: Fora de ShiftLock ou Primeira Pessoa")
+		return
+	end
+
+	local modoAnimacao = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("modoAnimacao") or "Base"
+	if not Modulo_Configuracoes.EhCombate(modoAnimacao) then
+		DebugPrint("[EntradaJogador] Dash bloqueado: Jogador não está em modo de combate")
+		return
+	end
+
 	local estaCorrendo = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("CorrendoOn") or false
 	local estadoMov = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("estadoMov") or "Parado"
 	if estaCorrendo or estadoMov == "Correndo" then
@@ -554,6 +593,11 @@ local function ProcessarDash(direcaoParam: string?)
 
 	local direcao = direcaoParam or "Tras"
 
+	if ClientBridge.PredictAnimation then
+		local nomeAnim = "Dash" .. direcao
+		local velocidadeAnim = Modulo_Configuracoes.ObterConfiguracao("VelocidadeAnimacaoDash") or 1.0
+		ClientBridge.PredictAnimation(nomeAnim, false, velocidadeAnim)
+	end
 	EnviarAcao("Dash", direcao)
 
 	task.delay(0.5, function()
@@ -583,7 +627,49 @@ local function ProcessarPular()
 	end
 
 	local shiftLockAtivo = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("ShiftLockOn") or false
-	if shiftLockAtivo and (direcao == "Tras" or direcao == "Esquerda" or direcao == "Direita") then
+	local modoAnimacao = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("modoAnimacao") or "Base"
+	local estaCorrendo = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("CorrendoOn") or false
+	local estadoMov = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("estadoMov") or "Parado"
+	local emParkour = ClientBridge.EstaEmParkour and ClientBridge.EstaEmParkour() or false
+	local noAr = false
+
+	local char = player.Character
+	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		local state = humanoid:GetState()
+		noAr = humanoid.FloorMaterial == Enum.Material.Air 
+			or state == Enum.HumanoidStateType.Jumping 
+			or state == Enum.HumanoidStateType.Freefall
+	end
+
+	local camera = workspace.CurrentCamera
+	local isFirstPerson = camera and (camera.Focus.Position - camera.CFrame.Position).Magnitude < 1.0 or false
+	local emShiftLockOuPrimeiraPessoa = shiftLockAtivo or isFirstPerson
+
+	local podeDarDash = emShiftLockOuPrimeiraPessoa 
+		and (direcao == "Tras" or direcao == "Esquerda" or direcao == "Direita")
+		and Modulo_Configuracoes.EhCombate(modoAnimacao)
+		and not emParkour
+		and not estaCorrendo
+		and estadoMov ~= "Correndo"
+		and not noAr
+
+	if podeDarDash then
+		-- Desabilita temporariamente o pulo do humanoid para evitar o pulo automático do Roblox
+		bloquearPuloTemp = true
+		task.delay(0.2, function()
+			bloquearPuloTemp = false
+		end)
+
+		if humanoid then
+			humanoid.Jump = false
+			humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+			task.delay(0.15, function()
+				if humanoid and humanoid.Parent then
+					humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+				end
+			end)
+		end
 		ProcessarDash(direcao)
 		return
 	end
@@ -704,6 +790,7 @@ local function ConfigurarCharacter(char)
 	toolAtualEquipado = nil
 	toolPendente = nil
 	revertendoTool = false
+	bloquearPuloTemp = false
 
 	char.ChildAdded:Connect(OnChildAdded)
 	char.ChildRemoved:Connect(OnChildRemoved)
@@ -730,5 +817,15 @@ player.CharacterAdded:Connect(ConfigurarCharacter)
 if player.Character then
 	ConfigurarCharacter(player.Character)
 end
+
+UserInputService.JumpRequest:Connect(function()
+	if bloquearPuloTemp then
+		local char = player.Character
+		local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid.Jump = false
+		end
+	end
+end)
 
 DebugPrint("[EntradaJogador] Inicializado - capturando inputs")

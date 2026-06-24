@@ -556,11 +556,10 @@ function BaseCamera:UpdateMouseBehavior()
 		end)
 	end
 
-	local isDashing = false
+	local isRolling = false
 	if ClientBridge then
-		if (ClientBridge.EstaEmRoll and ClientBridge.EstaEmRoll()) or ClientBridge.PreRollActive
-			or (ClientBridge.EstaEmDash and ClientBridge.EstaEmDash()) or ClientBridge.PreDashActive then
-			isDashing = true
+		if (ClientBridge.EstaEmRoll and ClientBridge.EstaEmRoll()) or ClientBridge.PreRollActive then
+			isRolling = true
 		end
 	end
 
@@ -572,14 +571,14 @@ function BaseCamera:UpdateMouseBehavior()
 		CameraUI.setCameraModeToastEnabled(false)
 		CameraInput.disableCameraToggleInput()
 
-		if (self.inFirstPerson or self.inMouseLockedMode) and not isDashing then
+		if (self.inFirstPerson or self.inMouseLockedMode) and not isRolling then
 			CameraUtils.setRotationTypeOverride(Enum.RotationType.CameraRelative)
 			CameraUtils.setMouseBehaviorOverride(Enum.MouseBehavior.LockCenter)
 		else
 			CameraUtils.restoreRotationType()
 
 			local rotationActivated = CameraInput.getRotationActivated()
-			if self.inMouseLockedMode and isDashing then
+			if self.inMouseLockedMode and isRolling then
 				CameraUtils.setMouseBehaviorOverride(Enum.MouseBehavior.LockCenter)
 			elseif rotationActivated then
 				CameraUtils.setMouseBehaviorOverride(Enum.MouseBehavior.LockCurrentPosition)
