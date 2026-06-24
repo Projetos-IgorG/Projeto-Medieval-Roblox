@@ -1524,8 +1524,6 @@ local function IniciarImpulsoDash(direcao: string)
 			return
 		end
 
-
-
 		-- Calcula a direção do impulso relativa à rotação atual do personagem
 		local currentRotation = hrp.CFrame - hrp.Position
 		local lookVector = currentRotation.LookVector
@@ -2866,8 +2864,7 @@ local function ProcessarTocarAnimacao(
 	animId: string,
 	nomeAnimacao: string,
 	loop: boolean,
-	velocidade: number,
-	serverTimestamp: number?
+	velocidade: number
 )
 	if entidade ~= character then
 		return
@@ -2876,7 +2873,13 @@ local function ProcessarTocarAnimacao(
 	if predicaoAtiva and predicaoAtiva.animId == animId then
 		local diff = os.clock() - predicaoAtiva.timestamp
 		if diff < 1.2 then
-			DebugPrint(string.format("[Predict] Ignored server replication for predicted animation %s (diff: %.3fs)", nomeAnimacao, diff))
+			DebugPrint(
+				string.format(
+					"[Predict] Ignored server replication for predicted animation %s (diff: %.3fs)",
+					nomeAnimacao,
+					diff
+				)
+			)
 			predicaoAtiva = nil
 			return
 		end
