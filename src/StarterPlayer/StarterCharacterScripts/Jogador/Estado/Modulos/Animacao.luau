@@ -24,6 +24,7 @@ local Esquiva -- referencia cruzada
 local animacoesCarregadas = {}
 local animacaoAtualMov: AnimationTrack? = nil
 local animacaoAtualAcao: AnimationTrack? = nil
+local nomeAnimacaoAtualAcao: string? = nil
 
 local animacaoBaseIdle: AnimationTrack? = nil
 local idBaseIdleAtual: string? = nil
@@ -82,6 +83,10 @@ end
 
 function Animacao.ObterAnimacaoAtualAcao(): AnimationTrack?
 	return animacaoAtualAcao
+end
+
+function Animacao.ObterNomeAnimacaoAtualAcao(): string?
+	return nomeAnimacaoAtualAcao
 end
 
 function Animacao.EstaAguardandoTerminoPulo(): boolean
@@ -496,6 +501,7 @@ function Animacao.PararAnimacaoAcao()
 		animacaoAtualAcao:Stop(ctx.TIMINGS.ActionFadeOut)
 		animacaoAtualAcao = nil
 	end
+	nomeAnimacaoAtualAcao = nil
 end
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -651,6 +657,7 @@ function Animacao.TocarAnimacaoAcao(animId: string, loop: boolean, velocidade: n
 	track:AdjustSpeed(velocidade)
 
 	animacaoAtualAcao = track
+	nomeAnimacaoAtualAcao = nomeAnimacao
 
 	-- Parar qualquer outra track com prioridade Action no animator para evitar sobreposição
 	for _, t in ipairs(ctx.Animator:GetPlayingAnimationTracks()) do

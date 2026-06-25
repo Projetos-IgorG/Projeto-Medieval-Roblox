@@ -132,7 +132,7 @@ local ESPERA_BAITING_MIN = 1.0
 local ESPERA_BAITING_MAX = 2.5
 
 local ATRASO_ATAQUE_APOS_PARRY = 0.2
-local JANELA_PREPARO_APOS_APARADO = 1.4
+local JANELA_PREPARO_APOS_APARADO = 2.0
 
 local INTERVALO_ROLAGEM_ORBITA = 7
 local CHANCE_ORBITA_VERDADEIRO = 0.45
@@ -454,13 +454,32 @@ local function registrarAtaqueAlvo(ctx: Ctx, alvo: Model, dados: any?)
 	if not dados then
 		return
 	end
+	local agora = os.clock()
+	local emPreparoAposAparado = (ctx.estado.prepararParryAte or 0) > agora
+
+	if emPreparoAposAparado then
+		-- Na janela de parry trade, o NPC só deve reagir no momento exato em que a hitbox do atacante iniciar
+		if not dados.hitboxAtivou then
+			return
+		end
+
+		-- Ignorar se o ataque começou antes do NPC ser aparado
+		local tParryStart = ctx.estado.prepararParryAte - JANELA_PREPARO_APOS_APARADO
+		local ultimoAtaqueAlvo = math.max(dados.ultimoAtaque or 0, dados.ultimaContinuacaoCombo or 0)
+		if ultimoAtaqueAlvo <= tParryStart then
+			return
+		end
+	end
+
 	local indice = dados.indiceCombo or 0
 	local ultimoAtaque = math.max(dados.ultimoAtaque or 0, dados.ultimaContinuacaoCombo or 0)
-	if indice == ctx.estado.ultimoIndiceComboAlvo and ultimoAtaque == ctx.estado.ultimoTempoAtaqueAlvo then
+	local chaveHitbox = string.format("%d_%f_%s", indice, ultimoAtaque, tostring(dados.hitboxAtivou))
+
+	if chaveHitbox == ctx.estado.ultimoHitboxRegistrado then
 		return
 	end
-	ctx.estado.ultimoIndiceComboAlvo = indice
-	ctx.estado.ultimoTempoAtaqueAlvo = ultimoAtaque
+	ctx.estado.ultimoHitboxRegistrado = chaveHitbox
+
 	tentarBloqueioPreditivo(ctx, alvo, false)
 end
 
@@ -560,6 +579,28 @@ local function instalarSincDanoRecebido(ctx: Ctx)
 			return
 		end
 		registrarDanoRecebido(ctx, atacante)
+	end)
+	if typeof(conn) == "RBXScriptConnection" then
+		Comportamento.Helpers.RastrearConexao(ctx, conn)
+	end
+end
+
+local function instalarSincHitboxAtivada(ctx: Ctx)
+	local cs = obterCombateServidor()
+	if not cs or not cs.AoHitboxAtivada then
+		return
+	end
+	local conn = cs.AoHitboxAtivada(function(entidade: Model, dados: any)
+		if ctx.estado.destruido or ctx.humanoide.Health <= 0 then
+			return
+		end
+		if entidade ~= ctx.estado.alvoAtual then
+			return
+		end
+		if not lerFlag(ctx.modelo, TiposNPC.Chaves.PodeDefender, false) then
+			return
+		end
+		registrarAtaqueAlvo(ctx, entidade, dados)
 	end)
 	if typeof(conn) == "RBXScriptConnection" then
 		Comportamento.Helpers.RastrearConexao(ctx, conn)
@@ -813,6 +854,13 @@ function iniciarBloqueio(ctx: Ctx)
 	if ControladorCombateNPC.EstaAtacando(ctx.modelo) then
 		return
 	end
+	local maq = ctx.estado.maquina
+	if maq then
+		local estadoAcao = if maq.ObterEstadoAcao then maq:ObterEstadoAcao() else nil
+		if estadoAcao == "Atacando" or estadoAcao == "Equipando" or estadoAcao == "Desequipando" then
+			return
+		end
+	end
 
 	-- Delega ao pipeline do player. O parry acontece naturalmente se o
 	-- cooldown interno da MaquinaDeEstados permitir.
@@ -847,13 +895,22 @@ function tentarBloqueioPreditivo(ctx: Ctx, alvo: Model, forcar: boolean?)
 	end
 	local agora = os.clock()
 	local emPreparoAposAparado = (ctx.estado.prepararParryAte or 0) > agora
-	if not forcar and not emPreparoAposAparado and (ctx.estado.cooldownPredicaoParry or 0) > agora then
+
+	if emPreparoAposAparado then
+		iniciarBloqueio(ctx)
+		return
+	end
+
+	if not forcar and (ctx.estado.cooldownPredicaoParry or 0) > agora then
 		return
 	end
 	ctx.estado.cooldownPredicaoParry = agora + COOLDOWN_PREDICAO_BLOQUEIO
 	local token = (ctx.estado.predicaoToken or 0) + 1
 	ctx.estado.predicaoToken = token
-	task.delay(ATRASO_BLOQUEIO_PREDITIVO, function()
+
+	local delay = ATRASO_BLOQUEIO_PREDITIVO
+
+	task.delay(delay, function()
 		if ctx.estado.destruido or ctx.humanoide.Health <= 0 then
 			return
 		end
@@ -957,6 +1014,7 @@ local Combate: Comportamento.Comportamento = {
 			end
 		end
 		instalarSincDanoRecebido(ctx)
+		instalarSincHitboxAtivada(ctx)
 
 		-- Comeca SEM arma equipada (modo Base, anim Idle base sem postura combate).
 		setModoCombateAttr(ctx, false)
@@ -976,11 +1034,12 @@ local Combate: Comportamento.Comportamento = {
 		local emAparado = estaAparado(ctx)
 		local stunadoLocal = (ctx.estado.stunadoAte or 0) > agora
 		local stunadoMaq = (maq and maq.EstaStunado and maq:EstaStunado()) or false
+		local emPreparoAposAparado = (ctx.estado.prepararParryAte or 0) > agora
 		if (stunadoLocal or stunadoMaq) and not emAparado then
 			pararMovimento(ctx)
 			local podeDefender = lerFlag(ctx.modelo, TiposNPC.Chaves.PodeDefender, false)
 			local cooldownBloqueioOK = (ctx.estado.cooldownBloqueio or 0) <= agora
-			if podeDefender and cooldownBloqueioOK and math.random() < CHANCE_BLOQUEIO_POR_TICK then
+			if podeDefender and cooldownBloqueioOK and not emPreparoAposAparado and math.random() < CHANCE_BLOQUEIO_POR_TICK then
 				iniciarBloqueio(ctx)
 			end
 			return
@@ -1157,11 +1216,11 @@ local Combate: Comportamento.Comportamento = {
 			local cooldownBloqueioOK = (ctx.estado.cooldownBloqueio or 0) <= agora
 			local cooldownAtaqueOK = (ctx.estado.cooldownAtaquePersonagem or 0) <= agora
 
-			if podeDefender and cooldownBloqueioOK and math.random() < CHANCE_BLOQUEIO_POR_TICK then
+			if podeDefender and cooldownBloqueioOK and not emPreparoAposAparado and math.random() < CHANCE_BLOQUEIO_POR_TICK then
 				iniciarBloqueio(ctx)
 				return
 			end
-			if podeAtacar and cooldownAtaqueOK then
+			if podeAtacar and cooldownAtaqueOK and not emPreparoAposAparado then
 				local alvoRef: Model = alvo
 				local atacou = ControladorCombateNPC.Atacar(ctx.modelo, function(): boolean
 					-- Combo segue enquanto o alvo permanece proximo (tolerancia ampla).

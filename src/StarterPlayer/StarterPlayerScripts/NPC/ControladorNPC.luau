@@ -73,6 +73,7 @@ function Controlador.novo(modelo: Model): ControladorImpl?
 		conexoes = {},
 		lod = TiposNPC.LOD.Distante,
 		estado = {},
+		destruido = false,
 	}
 
 	local self = setmetatable({
@@ -85,9 +86,11 @@ function Controlador.novo(modelo: Model): ControladorImpl?
 	}, Controlador) :: any
 
 	-- Inicializa view ja em LOD distante (sem trabalho); SchedulerCliente promovera depois.
-	local ok, err = pcall(view.iniciar, ctx)
-	if not ok then
-		warn(string.format("[NPC/Cliente] Erro em iniciar() de view '%s': %s", archetype, tostring(err)))
+	do
+		local resultado = { pcall(view.iniciar, ctx) }
+		if not resultado[1] then
+			warn(string.format("[NPC/Cliente] Erro em iniciar() de view '%s': %s", archetype, tostring(resultado[2])))
+		end
 	end
 
 	return self :: ControladorImpl
@@ -100,9 +103,11 @@ function Controlador:atualizar(dt: number, distancia: number)
 	if self.ctx.lod == TiposNPC.LOD.Distante then
 		return
 	end
-	local ok, err = pcall(self.view.atualizar, self.ctx, dt, distancia)
-	if not ok then
-		warn(string.format("[NPC/Cliente] Erro em atualizar() '%s': %s", self.archetype, tostring(err)))
+	do
+		local resultado = { pcall(self.view.atualizar, self.ctx, dt, distancia) }
+		if not resultado[1] then
+			warn(string.format("[NPC/Cliente] Erro em atualizar() '%s': %s", self.archetype, tostring(resultado[2])))
+		end
 	end
 end
 
@@ -115,9 +120,11 @@ function Controlador:definirLOD(lod: string)
 	end
 	local anterior = self.ctx.lod
 	self.ctx.lod = lod
-	local ok, err = pcall(self.view.aoLOD, self.ctx, lod, anterior)
-	if not ok then
-		warn(string.format("[NPC/Cliente] Erro em aoLOD() '%s': %s", self.archetype, tostring(err)))
+	do
+		local resultado = { pcall(self.view.aoLOD, self.ctx, lod, anterior) }
+		if not resultado[1] then
+			warn(string.format("[NPC/Cliente] Erro em aoLOD() '%s': %s", self.archetype, tostring(resultado[2])))
+		end
 	end
 end
 
@@ -126,6 +133,7 @@ function Controlador:destruir()
 		return
 	end
 	self.destruido = true
+	self.ctx.destruido = true
 	pcall(self.view.destruir, self.ctx)
 	-- Garante limpeza mesmo se a view esquecer.
 	ViewBase.LimparTudo(self.ctx)

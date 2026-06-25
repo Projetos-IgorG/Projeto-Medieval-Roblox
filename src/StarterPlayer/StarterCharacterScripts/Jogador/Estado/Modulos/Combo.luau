@@ -39,6 +39,7 @@ local comboState = {
 	conexaoCarga = nil :: RBXScriptConnection?,
 	tempoInicioCarga = nil :: number?,
 	ultimoComboTerminou = nil :: number?,
+	entrouEmCarga = false,
 }
 
 local fintaState = {
@@ -220,6 +221,7 @@ local function ContinuarComboEVerificarCarga(track: AnimationTrack)
 	ultimoTempoHitboxAtivou = 0
 	comboState.tempoInicioCarga = track.TimePosition
 	comboState.carregando = false
+	comboState.entrouEmCarga = false
 	comboState.multiplicadorDano = 1.0
 	LimparConexaoCarga()
 
@@ -233,6 +235,7 @@ local function ContinuarComboEVerificarCarga(track: AnimationTrack)
 	if aindaSegurando and tempoDecorrido >= threshold then
 		-- Se já passou tempo de hold check, começa carregando direto sem pulo de velocidade
 		comboState.carregando = true
+		comboState.entrouEmCarga = true
 		comboState.tempoInicioCarga = track.TimePosition
 		local velCarga = ctx.Modulo_Configuracoes.ObterConfiguracao("VelocidadeCargaAtaque") or 0.4
 		track:AdjustSpeed(velCarga)
@@ -253,6 +256,7 @@ local function ContinuarComboEVerificarCarga(track: AnimationTrack)
 			local aindaSegurandoDepois = ctx.ClientBridge.EstaSegurandoM1 and ctx.ClientBridge.EstaSegurandoM1()
 			if aindaSegurandoDepois then
 				comboState.carregando = true
+				comboState.entrouEmCarga = true
 				comboState.tempoInicioCarga = track.TimePosition
 				local velCarga = ctx.Modulo_Configuracoes.ObterConfiguracao("VelocidadeCargaAtaque") or 0.4
 				track:AdjustSpeed(velCarga)
@@ -619,12 +623,11 @@ function Combo.TentarFintar(): (boolean, string?)
 	end
 
 	if comboState.animacaoAtiva and comboState.animacaoAtiva.IsPlaying then
-		local tempoCarga = comboState.tempoInicioCarga or 0
-		local trackTime = comboState.animacaoAtiva.TimePosition
-		local tempoAnimacao = trackTime - tempoCarga
-		local janelaAtaque = ctx.Modulo_Configuracoes.ObterConfiguracao("JanelaCancelAtaque") or 0.15
-
-		local podeCancelar = (ultimoTempoHitboxAtivou == 0) and ((tempoAnimacao <= janelaAtaque) or comboState.carregando)
+		local isHitboxAtiva = ctx.GerenciadorHitboxCliente.MaoAtiva("Right") or ctx.GerenciadorHitboxCliente.MaoAtiva("Left")
+		
+		-- Simplificação: Permite cancelar a qualquer momento enquanto o golpe não saiu (hitbox inativa e marker não disparou)
+		local podeCancelar = (ultimoTempoHitboxAtivou == 0)
+			and not isHitboxAtiva
 		if podeCancelar then
 			local track = comboState.animacaoAtiva
 			local tempoInicioCurrentStrike = comboState.tempoInicioCarga or 0
@@ -682,6 +685,7 @@ function Combo.TentarFintar(): (boolean, string?)
 			comboState.earlyCancelExecutado = false
 			comboState.tempoInicio = 0
 			comboState.carregando = false
+			comboState.entrouEmCarga = false
 			comboState.multiplicadorDano = 1.0
 			comboState.tempoInicioCarga = nil
 
@@ -894,6 +898,7 @@ function Combo.ProcessarCombo(track: AnimationTrack, _nomeAnimacao: string, velo
 
 	comboState.tempoInicioCarga = 0
 	comboState.carregando = false
+	comboState.entrouEmCarga = false
 	comboState.multiplicadorDano = 1.0
 	LimparConexaoCarga()
 
@@ -910,6 +915,7 @@ function Combo.ProcessarCombo(track: AnimationTrack, _nomeAnimacao: string, velo
 		local aindaSegurando = ctx.ClientBridge.EstaSegurandoM1 and ctx.ClientBridge.EstaSegurandoM1()
 		if aindaSegurando then
 			comboState.carregando = true
+			comboState.entrouEmCarga = true
 			comboState.tempoInicioCarga = track.TimePosition
 			local velCarga = ctx.Modulo_Configuracoes.ObterConfiguracao("VelocidadeCargaAtaque") or 0.4
 			track:AdjustSpeed(velCarga)

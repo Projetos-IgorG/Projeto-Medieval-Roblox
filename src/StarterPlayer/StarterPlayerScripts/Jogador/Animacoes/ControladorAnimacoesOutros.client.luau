@@ -209,6 +209,12 @@ TocarAnimacao.OnClientEvent:Connect(
 		if typeof(entidade) ~= "Instance" or not entidade:IsA("Model") then
 			return
 		end
+
+		-- Ignorar NPCs (gerenciados localmente por ControladorNPC / Views)
+		if entidade:GetAttribute("NPC_Id") ~= nil then
+			return
+		end
+
 		if typeof(animId) ~= "string" then
 			return
 		end

@@ -22,6 +22,7 @@ export type ContextoView = {
 	conexoes: { RBXScriptConnection },
 	lod: LOD,
 	estado: { [string]: any },
+	destruido: boolean?,
 }
 
 export type View = {

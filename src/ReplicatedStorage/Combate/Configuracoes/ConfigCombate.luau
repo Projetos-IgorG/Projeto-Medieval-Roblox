@@ -130,7 +130,7 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	VelocidadeCorrendoNoAr = 0.4,
 
 	JanelaCancelamentoComboFinal = 0.6,
-	JanelaCancelAtaque = 0.3,
+	JanelaCancelAtaque = 0.15,
 	CooldownCancel = 1.0,
 	TempoSegurandoM2ParaDefesa = 0.13,
 	VelocidadeReversaoCancelamento = -2.5,

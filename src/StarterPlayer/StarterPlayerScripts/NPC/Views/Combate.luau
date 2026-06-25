@@ -396,6 +396,7 @@ end
 -- =============================================================================
 
 local sincronizarArmaVisual: (ctx: Ctx) -> ()
+local aplicarLocomocao: (ctx: Ctx) -> ()
 
 local function ehAlvoLocal(ctx: Ctx): boolean
 	local alvoRef = ctx.modelo:GetAttribute(TiposNPC.Chaves.AlvoRef)
@@ -548,7 +549,7 @@ local function configurarHitboxParaSwing(ctx: Ctx, track: AnimationTrack, acaoTi
 	ctx.estado.hitboxMarkerDisparado = false
 
 	local function swingValido(): boolean
-		return not (ctx :: any).destruido
+		return not ctx.destruido
 			and ctx.estado.swingHitToken == token
 			and ctx.estado.acaoTick == acaoTick
 			and ehAlvoLocal(ctx)
@@ -600,7 +601,7 @@ local function configurarHitboxParaSwing(ctx: Ctx, track: AnimationTrack, acaoTi
 	local delayTempo = t.AtrasoHit + 0.15
 
 	task.delay(delayTempo, function()
-		if not (ctx :: any).destruido
+		if not ctx.destruido
 			and ctx.estado.swingHitToken == token
 			and ctx.estado.acaoTick == acaoTick
 			and ehAlvoLocal(ctx)
@@ -658,6 +659,11 @@ local function tocarEstado(ctx: Ctx)
 				local indoAtacar = estado == TiposNPC.Estado.Atacando
 				trackReacao:Stop(if indoAtacar then FADE_REACAO_PARA_ATAQUE else FADE_REACAO_OUT)
 			end
+			-- Reaplica locomocao ao sair de reacao para evitar que o NPC
+			-- fique na pose padrao do Roblox (sem nenhuma animacao tocando).
+			if estado ~= TiposNPC.Estado.Atacando then
+				aplicarLocomocao(ctx)
+			end
 		end
 		return
 	end
@@ -712,6 +718,9 @@ local function tocarAcao(ctx: Ctx)
 			prev:Stop(FADE_SAIDA_ATAQUE)
 		end
 		cancelarHitboxSwing(ctx)
+		-- Reaplica locomocao para evitar que o NPC fique sem animacao
+		-- (pose padrao do Roblox) apos sair de um ataque ou reacao.
+		aplicarLocomocao(ctx)
 	elseif acao == TiposNPC.Acao.Equipar then
 		local track = carregarTrack(ctx, "Equipar")
 		if not track then
@@ -727,6 +736,11 @@ local function tocarAcao(ctx: Ctx)
 			conn:Disconnect()
 		end
 		ctx.estado.equipStoppedConn = track.Stopped:Connect(function()
+			local currentConn = ctx.estado.equipStoppedConn
+			if currentConn then
+				currentConn:Disconnect()
+				ctx.estado.equipStoppedConn = nil
+			end
 			if ctx.estado.equipStoppedToken ~= equipToken then
 				return
 			end
@@ -747,6 +761,11 @@ local function tocarAcao(ctx: Ctx)
 			conn:Disconnect()
 		end
 		ctx.estado.equipStoppedConn = track.Stopped:Connect(function()
+			local currentConn = ctx.estado.equipStoppedConn
+			if currentConn then
+				currentConn:Disconnect()
+				ctx.estado.equipStoppedConn = nil
+			end
 			if ctx.estado.equipStoppedToken ~= equipToken then
 				return
 			end
@@ -758,23 +777,23 @@ local function tocarAcao(ctx: Ctx)
 			return
 		end
 		track.Looped = false
-		local indice = ctx.modelo:GetAttribute(TiposNPC.Chaves.AcaoIndice) :: number?
-		local ehContinuacao = track.IsPlaying and typeof(indice) == "number" and indice > 1
 
-		if ehContinuacao then
-			-- Continuacao de combo: NAO reinicia a animacao. Apenas atualiza hitbox.
-			if ctx.estado.acaoTick == tick and not (ctx :: any).destruido then
+		-- Se a animacao de ataque JA esta tocando, e continuacao de combo.
+		-- Todos os golpes (1->4) estao na mesma animacao em sequencia de
+		-- keyframes, entao a animacao deve continuar rodando sem reiniciar.
+		-- Nao dependemos de NPC_AcaoIndice aqui pois existe race condition
+		-- na replicacao: o AcaoTick pode disparar antes do AcaoIndice atualizar,
+		-- causando um Stop->Play indevido que mistura a animacao consigo mesma.
+		if track.IsPlaying then
+			-- Combo em andamento: so atualiza hitbox, sem tocar na animacao.
+			if ctx.estado.acaoTick == tick and not ctx.destruido then
 				if typeof(tick) == "number" then
 					configurarHitboxParaSwing(ctx, track, tick)
 				end
 			end
 		else
-			-- Primeiro golpe ou animacao nao esta tocando: inicia do comeco.
-			if track.IsPlaying then
-				track:Stop(FADE_ENTRADA_ATAQUE)
-			end
-			if ctx.estado.acaoTick == tick and not (ctx :: any).destruido then
-				-- Configura hitbox local SOMENTE se este cliente for o alvo.
+			-- Primeiro golpe ou novo combo (animacao nao esta tocando).
+			if ctx.estado.acaoTick == tick and not ctx.destruido then
 				if typeof(tick) == "number" then
 					configurarHitboxParaSwing(ctx, track, tick)
 				end
@@ -788,7 +807,7 @@ end
 -- Locomocao (NPC_LocomocaoNome / NPC_LocomocaoVelocidade).
 -- =============================================================================
 
-local function aplicarLocomocao(ctx: Ctx)
+function aplicarLocomocao(ctx: Ctx)
 	local nomeAttr = ctx.modelo:GetAttribute(TiposNPC.Chaves.LocomocaoNome) :: string?
 	local vel = ctx.modelo:GetAttribute(TiposNPC.Chaves.LocomocaoVelocidade) :: number?
 	local nome: string = (nomeAttr ~= nil and nomeAttr ~= "") and nomeAttr or "Idle"
@@ -896,6 +915,12 @@ local Combate: ViewBase.View = {
 			cancelarHitboxSwing(ctx)
 			destruirWeaponModelsLocais(ctx)
 			restaurarOrientacaoVisual(ctx)
+
+			local conn = ctx.estado.equipStoppedConn
+			if conn and conn.Connected then
+				conn:Disconnect()
+			end
+			ctx.estado.equipStoppedConn = nil
 		else
 			-- Recarrega tudo ao reaproximar.
 			aplicarTudoAgora(ctx)
@@ -906,6 +931,13 @@ local Combate: ViewBase.View = {
 		cancelarHitboxSwing(ctx)
 		destruirWeaponModelsLocais(ctx)
 		restaurarOrientacaoVisual(ctx)
+
+		local conn = ctx.estado.equipStoppedConn
+		if conn and conn.Connected then
+			conn:Disconnect()
+		end
+		ctx.estado.equipStoppedConn = nil
+
 		ViewBase.LimparTudo(ctx)
 	end,
 }

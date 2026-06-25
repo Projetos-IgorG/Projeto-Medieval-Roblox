@@ -78,18 +78,52 @@ function Sincronizacao.PredictAnimation(nomeAnimacao: string, loop: boolean, vel
 end
 
 function Sincronizacao.PredictStopAnimation()
+	local acao = ctx.EstadoAtual.estadoAcao
+	local nomeAnim = Animacao.ObterNomeAnimacaoAtualAcao()
+	if
+		acao == "Aparando"
+		or acao == "Aparado"
+		or acao == "Stunado"
+		or acao == "DefesaQuebrada"
+		or nomeAnim == "Aparar"
+		or nomeAnim == "Aparado"
+		or nomeAnim == "Stunado"
+		or nomeAnim == "DefesaQuebrada"
+	then
+		ctx.EstadoAtual.bloqueando = false
+		Movimento.SincronizarStatusLocal()
+		return
+	end
+
+	-- Salvaguarda: não interromper ações contínuas/one-shot que não devem ser canceladas por soltar M2 (ataque, esquivas, equips)
+	if acao == "Atacando" or acao == "Rolando" or acao == "Dashando" or acao == "Equipando" or acao == "Desequipando" then
+		return
+	end
+
+	if nomeAnim and (
+		nomeAnim:match("^Ataque")
+		or nomeAnim:match("^Roll")
+		or nomeAnim:match("^Dash")
+		or nomeAnim == "Equipar"
+		or nomeAnim == "Desequipar"
+	) then
+		return
+	end
+
+	local ultimoNome = predicaoAtiva and predicaoAtiva.nomeAnimacao
 	predicaoAtiva = {
 		animId = "STOP",
 		nomeAnimacao = "STOP",
+		ultimoNomeAnimacao = ultimoNome,
 		timestamp = os.clock(),
 	}
 	ctx.DebugPrint("[Predict] Predict stop animation locally")
 
-	if ctx.EstadoAtual.estadoAcao == "Defendendo" then
+	if ctx.EstadoAtual.estadoAcao == "Defendendo" or ctx.EstadoAtual.bloqueando then
 		ctx.EstadoAtual.estadoAcao = "Nenhuma"
 		ctx.EstadoAtual.bloqueando = false
-		Animacao.PararAnimacaoAcao()
 	end
+	Animacao.PararAnimacaoAcao()
 
 	Movimento.AtualizarVelocidadeLocal()
 	Movimento.SincronizarStatusLocal()
@@ -245,12 +279,17 @@ function Sincronizacao.ProcessarTocarAnimacao(
 		return
 	end
 
-	if predicaoAtiva and predicaoAtiva.animId == animId then
+	if predicaoAtiva then
 		local diff = os.clock() - predicaoAtiva.timestamp
 		if diff < 1.2 then
-			ctx.DebugPrint(string.format("[Predict] Ignored server replication for predicted animation %s (diff: %.3fs)", nomeAnimacao, diff))
-			predicaoAtiva = nil
-			return
+			if predicaoAtiva.animId == animId then
+				ctx.DebugPrint(string.format("[Predict] Ignored server replication for predicted animation %s (diff: %.3fs)", nomeAnimacao, diff))
+				predicaoAtiva = nil
+				return
+			elseif predicaoAtiva.animId == "STOP" and (predicaoAtiva.ultimoNomeAnimacao == nomeAnimacao or nomeAnimacao == "Defesa") then
+				ctx.DebugPrint(string.format("[Predict] Ignored server replication for action %s because it was predicted to STOP (diff: %.3fs)", nomeAnimacao, diff))
+				return
+			end
 		end
 	end
 

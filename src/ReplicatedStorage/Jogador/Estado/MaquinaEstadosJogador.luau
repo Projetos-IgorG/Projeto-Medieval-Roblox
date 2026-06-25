@@ -115,6 +115,7 @@ export type DadosEstado = {
 
 	hitboxAtivou: boolean?,
 	velocidadeAnimacao: number?,
+	ultimoStunTimestamp: number?,
 }
 
 function MaquinaDeEstados.Novo(entidade: Model)
@@ -156,6 +157,7 @@ function MaquinaDeEstados.Novo(entidade: Model)
 		ultimoComboTerminou = 0,
 		hitboxAtivou = false,
 		velocidadeAnimacao = 1.0,
+		ultimoStunTimestamp = 0,
 	} :: DadosEstado
 
 	-- Listas de listeners (multiplos subscribers, retornam disconnect).
@@ -785,6 +787,7 @@ function MaquinaDeEstados:AplicarStun(duracao: number)
 	self.dados.bloqueando = false
 	self.dados.prontoParaAparar = false
 	self.dados.indiceCombo = 0
+	self.dados.ultimoStunTimestamp = os.clock()
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Stunado)
 
 	task.delay(duracao, function()
@@ -803,6 +806,7 @@ function MaquinaDeEstados:QuebrarDefesa(duracao: number)
 	self.dados.stunado = true
 	self.dados.bloqueando = false
 	self.dados.prontoParaAparar = false
+	self.dados.ultimoStunTimestamp = os.clock()
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.DefesaQuebrada)
 
 	task.delay(duracao, function()
@@ -817,6 +821,7 @@ function MaquinaDeEstados:AplicarAparado(duracao: number)
 	self.dados.stunado = true
 	self.dados.bloqueando = false
 	self.dados.indiceCombo = 0
+	self.dados.ultimoStunTimestamp = os.clock()
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Aparado)
 
 	task.delay(duracao, function()

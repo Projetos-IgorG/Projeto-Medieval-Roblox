@@ -206,6 +206,14 @@ local function ProcessarMouse1Pressionado()
 		return
 	end
 
+	local estaDefendendo = (estadoAcao == "Defendendo") 
+		or (ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("bloqueando") == true)
+		or estadoInput.mouse2Pressionado
+	if estaDefendendo and estadoAcao ~= "Aparando" then
+		DebugPrint("[EntradaJogador] M1 ignorado - jogador defendendo/bloqueando")
+		return
+	end
+
 	estadoInput.mouse1Pressionado = true
 	estadoInput.tempoMouse1 = os.clock()
 
@@ -261,9 +269,6 @@ local function ProcessarMouse2Pressionado()
 		return
 	end
 
-	estadoInput.mouse2Pressionado = true
-	estadoInput.tempoMouse2 = agora
-
 	local estadoAcao = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("estadoAcao") or "Nenhuma"
 	if estadoAcao == "Rolando" or estadoAcao == "Dashando" then
 		DebugPrint("[EntradaJogador] M2 ignorado - jogador em esquiva (roll/dash)")
@@ -274,16 +279,23 @@ local function ProcessarMouse2Pressionado()
 		if ClientBridge.TentarFintar then
 			local cancelou, tipoAtaque = ClientBridge.TentarFintar()
 			if cancelou then
+				estadoInput.mouse2Pressionado = true
+				estadoInput.tempoMouse2 = agora
 				DebugPrint("[EntradaJogador] Ataque fintado:", tipoAtaque)
 
 				EnviarAcao("Fintar", tipoAtaque)
 			else
 				DebugPrint("[EntradaJogador] Tentativa de finta falhou (cooldown ou fora da janela) - ignorando M2")
+				estadoInput.mouse2Pressionado = false
 			end
+		else
+			estadoInput.mouse2Pressionado = false
 		end
 		return
 	end
 
+	estadoInput.mouse2Pressionado = true
+	estadoInput.tempoMouse2 = agora
 	estadoInput.ultimaDefesa = agora
 
 	local shiftLockAtivo = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("ShiftLockOn") or false
@@ -614,6 +626,11 @@ local function ProcessarDash(direcaoParam: string?)
 end
 
 local function ProcessarPular()
+	local estadoAcao = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("estadoAcao") or "Nenhuma"
+	local estaBloqueando = (estadoAcao == "Defendendo") or (ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("bloqueando") == true)
+	if estaBloqueando then
+		return
+	end
 
 	if estadoInput.agachadoAtivo then
 		estadoInput.agachadoAtivo = false
@@ -658,6 +675,7 @@ local function ProcessarPular()
 		and not estaCorrendo
 		and estadoMov ~= "Correndo"
 		and not noAr
+		and not estaBloqueando
 
 	if podeDarDash then
 		-- Desabilita temporariamente o pulo do humanoid para evitar o pulo automático do Roblox
@@ -824,7 +842,9 @@ if player.Character then
 end
 
 UserInputService.JumpRequest:Connect(function()
-	if bloquearPuloTemp then
+	local estadoAcao = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("estadoAcao") or "Nenhuma"
+	local estaBloqueando = (estadoAcao == "Defendendo") or (ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("bloqueando") == true)
+	if bloquearPuloTemp or estaBloqueando then
 		local char = player.Character
 		local humanoid = char and char:FindFirstChildOfClass("Humanoid")
 		if humanoid then

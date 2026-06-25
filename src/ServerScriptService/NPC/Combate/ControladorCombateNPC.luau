@@ -103,7 +103,7 @@ type Estado = {
 			indiceCombo: number,
 			swingHitFim: number,
 			jaAtingidos: { [Model]: boolean },
-		}
+		},
 	},
 }
 
@@ -871,6 +871,26 @@ local function processarReporteHit(
 		return
 	end
 
+	-- Verificar se o ataque do NPC foi interrompido por um stun/parry/hit
+	local cs = obterCS()
+	if cs and cs.ObterMaquina then
+		local ok, maquina = pcall(cs.ObterMaquina, npcModel)
+		if ok and maquina and maquina.dados then
+			local ultimoAtaque = maquina.dados.ultimoAtaque or 0
+			local ultimoStun = maquina.dados.ultimoStunTimestamp or 0
+			if ultimoStun > ultimoAtaque then
+				warn(
+					string.format(
+						"[NPC Combate Server] Rejecting hit on player: NPC attack was interrupted by stun (stun=%.3f, ataque=%.3f)",
+						ultimoStun,
+						ultimoAtaque
+					)
+				)
+				return
+			end
+		end
+	end
+
 	-- Buscar dados da ação correspondente ao tick reportado no histórico
 	local acaoDados = s.historicoAcoes[acaoTickReportado]
 	if not acaoDados then
@@ -883,7 +903,10 @@ local function processarReporteHit(
 				jaAtingidos = s.jaAtingidos,
 			}
 		else
-			warn("[NPC Combate Server] Rejecting hit: tick mismatch (no history and too far from current swing). diff =", math.abs((s.acaoTick or 0) - acaoTickReportado))
+			warn(
+				"[NPC Combate Server] Rejecting hit: tick mismatch (no history and too far from current swing). diff =",
+				math.abs((s.acaoTick or 0) - acaoTickReportado)
+			)
 			return
 		end
 	end
@@ -900,11 +923,18 @@ local function processarReporteHit(
 	local limiteMaximo = acaoDados.swingHitFim + 0.80 + rtt
 	local limiteMinimo = acaoTickReportado - 0.05
 	if agora < limiteMinimo or agora > limiteMaximo then
-		warn(string.format("[NPC Combate Server] Rejecting hit: timing invalid. agora=%.4f, min=%.4f, max=%.4f", agora, limiteMinimo, limiteMaximo))
+		warn(
+			string.format(
+				"[NPC Combate Server] Rejecting hit: timing invalid. agora=%.4f, min=%.4f, max=%.4f",
+				agora,
+				limiteMinimo,
+				limiteMaximo
+			)
+		)
 		return
 	end
 
-	-- Dedup por swing.
+	-- Debug por swing.
 	if acaoDados.jaAtingidos[alvoModel] then
 		warn("[NPC Combate Server] Rejecting hit: already hit in this swing")
 		return
@@ -921,14 +951,19 @@ local function processarReporteHit(
 	local compensacaoDistancia = math.clamp(rtt * 16, 0, 12)
 	local limiteDistancia = alcance + TOLERANCIA_DISTANCIA + compensacaoDistancia
 	if d > limiteDistancia then
-		warn(string.format("[NPC Combate Server] Rejecting hit: distance invalid. d=%.2f, limit=%.2f", d, limiteDistancia))
+		warn(
+			string.format(
+				"[NPC Combate Server] Rejecting hit: distance invalid. d=%.2f, limit=%.2f",
+				d,
+				limiteDistancia
+			)
+		)
 		return
 	end
 
 	acaoDados.jaAtingidos[alvoModel] = true
 	s.modelo:SetAttribute("NPC_AcertouCombo", true)
 
-	local cs = obterCS()
 	if cs and cs._ProcessarHit then
 		pcall(
 			cs._ProcessarHit,
