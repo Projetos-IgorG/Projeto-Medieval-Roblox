@@ -6,7 +6,7 @@
     Nao faz: Nao implementa logica diretamente; delega tudo aos modulos em Modulos/.
     Modulos: Animacao, Combo, Equipamento, Esquiva, Sincronizacao, Movimento
 ]]
-local DEBUG_ENABLED = true
+local DEBUG_ENABLED = false
 
 local function DebugPrint(...)
 	if DEBUG_ENABLED then
