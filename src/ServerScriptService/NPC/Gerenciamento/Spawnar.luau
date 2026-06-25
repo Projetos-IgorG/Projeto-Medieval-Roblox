@@ -60,8 +60,8 @@ function Spawnar.SpawnarNPC(opts: OpcoesSpawn): (Model?, string?)
 		hostil = opts.hostil == true,
 		podeAndar = true,
 		podeAtacar = true,
-		podeDefender = (archetype == "Combate"),
-		podeParry = (archetype == "Combate"),
+		podeDefender = true,
+		podeParry = true,
 	}
 
 	local registro = GerenciadorNPC.SpawnNPC(opcoes)

@@ -2438,8 +2438,8 @@ end
 local capacidadesNPC = {
 	podeAndar = true,
 	podeAtacar = true,
-	podeDefender = false,
-	podeParry = false,
+	podeDefender = true,
+	podeParry = true,
 }
 
 local DEBUG = false

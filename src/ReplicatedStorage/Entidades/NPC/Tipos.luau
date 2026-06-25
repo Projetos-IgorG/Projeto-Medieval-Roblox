@@ -63,7 +63,7 @@ export type OpcoesSpawn = {
 	nome: string?,
 	-- Hostil = pode atacar players. So usado por archetype "Combate".
 	hostil: boolean?,
-	-- Capacidades opcionais (default: andar=true, atacar=true, defender=false, parry=false).
+	-- Capacidades opcionais (default: andar=true, atacar=true, defender=true, parry=true).
 	podeAndar: boolean?,
 	podeAtacar: boolean?,
 	podeDefender: boolean?,

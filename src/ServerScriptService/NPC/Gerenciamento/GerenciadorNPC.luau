@@ -126,11 +126,11 @@ function Gerenciador.SpawnNPC(opcoes: OpcoesSpawn): TiposNPC.RegistroNPC?
 	modelo:SetAttribute(TiposNPC.Chaves.Estado, TiposNPC.Estado.Idle)
 	modelo:SetAttribute(TiposNPC.Chaves.Hostil, opcoes.hostil == true)
 	modelo:SetAttribute(TiposNPC.Chaves.AlvoRef, 0)
-	-- Flags de capacidade. Default: andar e atacar SIM; defender e parry NAO.
+	-- Flags de capacidade. Default: andar, atacar, defender e parry SIM.
 	local podeAndar = if opcoes.podeAndar == nil then true else opcoes.podeAndar == true
 	local podeAtacar = if opcoes.podeAtacar == nil then true else opcoes.podeAtacar == true
-	local podeDefender = opcoes.podeDefender == true
-	local podeParry = opcoes.podeParry == true and podeDefender
+	local podeDefender = if opcoes.podeDefender == nil then true else opcoes.podeDefender == true
+	local podeParry = (if opcoes.podeParry == nil then true else opcoes.podeParry == true) and podeDefender
 	modelo:SetAttribute(TiposNPC.Chaves.PodeAndar, podeAndar)
 	modelo:SetAttribute(TiposNPC.Chaves.PodeAtacar, podeAtacar)
 	modelo:SetAttribute(TiposNPC.Chaves.PodeDefender, podeDefender)
