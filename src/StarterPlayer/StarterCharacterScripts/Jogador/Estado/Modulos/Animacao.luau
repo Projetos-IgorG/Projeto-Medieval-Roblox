@@ -721,7 +721,7 @@ function Animacao.AtualizarAnimacaoMovimento()
 		Parado = "Idle",
 		Andando = "Andando",
 		Correndo = "Correndo",
-		Pulando = "Pulando",
+		Pulando = "Caindo",
 		Caindo = "Caindo",
 		Escalando = "Escalando",
 		Nadando = "Nadando",

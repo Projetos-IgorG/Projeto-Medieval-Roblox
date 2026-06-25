@@ -71,6 +71,7 @@ export type ConfiguracaoGlobal = {
 	VelocidadeAnimacaoRoll: number,
 	JanelaCancelamentoRoll: number,
 	RollCameraFixarY: boolean,
+	TempoDestravaRotacaoRoll: number,
 
 	CooldownDash: number,
 	ForcaDashLateral: number,
@@ -159,8 +160,9 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	CooldownRoll = 1.5,
 	ForcaRoll = 45,
 	VelocidadeAnimacaoRoll = 1.0,
-	JanelaCancelamentoRoll = 0.3,
+	JanelaCancelamentoRoll = 0.35,
 	RollCameraFixarY = true,
+	TempoDestravaRotacaoRoll = 0.2,
 
 	CooldownDash = 1.5,
 	ForcaDashLateral = 40,

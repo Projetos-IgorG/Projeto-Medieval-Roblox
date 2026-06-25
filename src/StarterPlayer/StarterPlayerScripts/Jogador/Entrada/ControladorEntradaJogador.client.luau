@@ -81,6 +81,8 @@ local toolAtualEquipado: Tool? = nil
 local toolPendente: Tool? = nil
 local revertendoTool = false
 local bloquearPuloTemp = false
+local blockJumpUntilRelease = false
+local spaceOrButtonAHeld = false
 
 function ClientBridge.EstaEmAnimacaoEquip()
 	return estadoEquip ~= "idle"
@@ -293,12 +295,16 @@ local function ProcessarMouse2Pressionado()
 		end
 		return
 	end
+	local shiftLockAtivo = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("ShiftLockOn") or false
+	if not shiftLockAtivo then
+		DebugPrint("[EntradaJogador] M2 ignorado - ShiftLock não está ativo")
+		return
+	end
 
 	estadoInput.mouse2Pressionado = true
 	estadoInput.tempoMouse2 = agora
 	estadoInput.ultimaDefesa = agora
 
-	local shiftLockAtivo = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("ShiftLockOn") or false
 	if ClientBridge.PredictAnimation then
 		ClientBridge.PredictAnimation("Defesa", true, 1.0)
 	end
@@ -504,6 +510,10 @@ local function ProcessarRoll()
 		return
 	end
 
+	if spaceOrButtonAHeld then
+		blockJumpUntilRelease = true
+	end
+
 	-- Salva a rotação original do boneco antes do roll começar
 	local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
 	if hrp and humanoid then
@@ -601,6 +611,8 @@ local function ProcessarDash(direcaoParam: string?)
 		return
 	end
 
+	blockJumpUntilRelease = true
+
 	-- Salva a rotação original do boneco antes do dash começar
 	local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
 	if hrp and humanoid then
@@ -628,6 +640,12 @@ end
 local function ProcessarPular()
 	local estadoAcao = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("estadoAcao") or "Nenhuma"
 	local estaBloqueando = (estadoAcao == "Defendendo") or (ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("bloqueando") == true)
+	local estaEsquivando = (estadoAcao == "Rolando") or (estadoAcao == "Dashando")
+	if estaEsquivando then
+		blockJumpUntilRelease = true
+		return
+	end
+
 	if estaBloqueando then
 		return
 	end
@@ -737,13 +755,20 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		return
 	end
 
-	if input.KeyCode == Enum.KeyCode.Space then
-		ProcessarPular()
+	if input.KeyCode == Enum.KeyCode.Space or input.KeyCode == Enum.KeyCode.ButtonA then
+		spaceOrButtonAHeld = true
+		if input.KeyCode == Enum.KeyCode.Space then
+			ProcessarPular()
+		end
 		return
 	end
 end)
 
 UserInputService.InputEnded:Connect(function(input, _gameProcessed)
+	if input.KeyCode == Enum.KeyCode.Space or input.KeyCode == Enum.KeyCode.ButtonA then
+		spaceOrButtonAHeld = false
+		blockJumpUntilRelease = false
+	end
 
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		ProcessarMouse2Solto()
@@ -814,6 +839,8 @@ local function ConfigurarCharacter(char)
 	toolPendente = nil
 	revertendoTool = false
 	bloquearPuloTemp = false
+	blockJumpUntilRelease = false
+	spaceOrButtonAHeld = false
 
 	char.ChildAdded:Connect(OnChildAdded)
 	char.ChildRemoved:Connect(OnChildRemoved)
@@ -844,7 +871,8 @@ end
 UserInputService.JumpRequest:Connect(function()
 	local estadoAcao = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("estadoAcao") or "Nenhuma"
 	local estaBloqueando = (estadoAcao == "Defendendo") or (ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("bloqueando") == true)
-	if bloquearPuloTemp or estaBloqueando then
+	local estaEsquivando = (estadoAcao == "Rolando") or (estadoAcao == "Dashando")
+	if bloquearPuloTemp or estaBloqueando or estaEsquivando or blockJumpUntilRelease then
 		local char = player.Character
 		local humanoid = char and char:FindFirstChildOfClass("Humanoid")
 		if humanoid then

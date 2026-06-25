@@ -189,7 +189,17 @@ local function IniciarImpulsoRoll(direcao: string)
 
 		hrp.AssemblyLinearVelocity = Vector3.new(velocidadeAlvo.X, velocidadeAtual.Y, velocidadeAlvo.Z)
 
-		hrp.CFrame = currentRotation + hrp.Position
+		local tempoRestante = 999
+		local track = rollState.animacao
+		if track and track.Length > 0 then
+			local speed = if track.Speed > 0 then track.Speed else 1
+			tempoRestante = (track.Length - track.TimePosition) / speed
+		end
+
+		local tempoDestrava = ctx.Modulo_Configuracoes.ObterConfiguracao("TempoDestravaRotacaoRoll") or 0.15
+		if tempoRestante > tempoDestrava then
+			hrp.CFrame = currentRotation + hrp.Position
+		end
 	end)
 end
 

@@ -659,16 +659,16 @@ function Combo.TentarFintar(): (boolean, string?)
 					end
 
 					local aindaDefendendo = ctx.ClientBridge.EstaSegurandoM2 and ctx.ClientBridge.EstaSegurandoM2()
-					if aindaDefendendo then
-						ctx.DebugPrint("[Combo] Finta concluída - Jogador segurando M2, transição para Defesa")
+					local shiftLockAtivo = ctx.ClientBridge.LerStatusLocal and ctx.ClientBridge.LerStatusLocal("ShiftLockOn") or false
+					if aindaDefendendo and shiftLockAtivo then
+						ctx.DebugPrint("[Combo] Finta concluída - Jogador segurando M2 e ShiftLock ativo, transição para Defesa")
 						Combo.CancelarFintaPendente()
 						if ctx.ClientBridge.PredictAnimation then
 							ctx.ClientBridge.PredictAnimation("Defesa", true, 1.0)
 						end
-						local shiftLockAtivo = ctx.ClientBridge.LerStatusLocal and ctx.ClientBridge.LerStatusLocal("ShiftLockOn") or false
 						ctx.TentarAcao:FireServer("Bloquear", { shiftLock = shiftLockAtivo, timestamp = workspace:GetServerTimeNow() })
 					else
-						ctx.DebugPrint("[Combo] Finta concluída - sem M2, voltando ao Idle")
+						ctx.DebugPrint("[Combo] Finta concluída - sem M2 ou sem ShiftLock, voltando ao Idle")
 						Combo.ResolverFintaPendente()
 					end
 				end

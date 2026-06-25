@@ -1456,7 +1456,7 @@ local MapaAcoes = {
 	AtacarEmPe = ControladorCombate.ProcessarAtacarEmPe,
 	AtacarAgachado = ControladorCombate.ProcessarAtacarAgachado,
 	Bloquear = function(entidade, dados)
-		local shiftLockAtivo = typeof(dados) == "table" and dados.shiftLock or nil
+		local shiftLockAtivo = if typeof(dados) == "table" and typeof(dados.shiftLock) == "boolean" then dados.shiftLock else nil
 		local clienteTimestamp = typeof(dados) == "table" and typeof(dados.timestamp) == "number" and dados.timestamp
 			or nil
 		return ControladorCombate.ProcessarBloquear(entidade, shiftLockAtivo, clienteTimestamp)

@@ -36,7 +36,7 @@ local ActionModes = {
 			CorrendoDireita = "rbxassetid://125396593531220",
 			CorrendoEsquerda = "rbxassetid://87283295811902",
 
-			Pulando = "rbxassetid://93655898591525",
+			Pulando = "rbxassetid://93655898591525", -- "rbxassetid://117966230491995",
 			Caindo = "rbxassetid://110317645536592",
 			Escalando = "rbxassetid://112833263522484",
 
@@ -53,6 +53,43 @@ local ActionModes = {
 			DashTras = "rbxassetid://89889986391185",
 			DashEsquerda = "rbxassetid://77549992713022",
 			DashDireita = "rbxassetid://107316520923865",
+		},
+	},
+
+	UmaMao = {
+		tipo = "Combate",
+		aplicaImpulso = true,
+		aplicaKnockback = true,
+		temCombo = true,
+		configCombo = {
+			velocidadeJanela = 0.4,
+		},
+		animacoes = {
+
+			Ataque = "rbxassetid://0000000000",
+			Defesa = "rbxassetid://0000000000",
+			DefesaQuebrada = "rbxassetid://0000000000",
+			Aparar = "rbxassetid://0000000000",
+			Aparado = "rbxassetid://0000000000",
+
+			Equipar = "rbxassetid://0000000000",
+			Desequipar = "rbxassetid://0000000000",
+
+			Idle = "rbxassetid://0000000000",
+			Andando = "rbxassetid://0000000000",
+			AndandoDireita = "rbxassetid://0000000000",
+			AndandoEsquerda = "rbxassetid://0000000000",
+			Correndo = "rbxassetid://0000000000",
+
+			Pulando = "rbxassetid://0000000000",
+			Caindo = "rbxassetid://0000000000",
+			Escalando = "rbxassetid://0000000000",
+
+			Stunado = "rbxassetid://0000000000",
+
+			DashTras = "rbxassetid://0000000000",
+			DashEsquerda = "rbxassetid://0000000000",
+			DashDireita = "rbxassetid://0000000000",
 		},
 	},
 
@@ -180,43 +217,6 @@ local ActionModes = {
 			Escalando = "rbxassetid://0000000000",
 
 			Stunado = "rbxassetid://0000000000",
-		},
-	},
-
-	UmaMao = {
-		tipo = "Combate",
-		aplicaImpulso = true,
-		aplicaKnockback = true,
-		temCombo = true,
-		configCombo = {
-			velocidadeJanela = 0.4,
-		},
-		animacoes = {
-
-			Ataque = "rbxassetid://122280944254589",
-			Defesa = "rbxassetid://127751906771957",
-			DefesaQuebrada = "rbxassetid://94588265013910",
-			Aparar = "rbxassetid://139881462472225",
-			Aparado = "rbxassetid://94588265013910",
-
-			Equipar = "rbxassetid://115099251307406",
-			Desequipar = "rbxassetid://119300191293903",
-
-			Idle = "rbxassetid://97506647521728",
-			Andando = "rbxassetid://101405606853852",
-			AndandoDireita = "rbxassetid://109982570649734",
-			AndandoEsquerda = "rbxassetid://99089536362364",
-			Correndo = "rbxassetid://105489781294318",
-
-			Pulando = "rbxassetid://126513416555386",
-			Caindo = "rbxassetid://120023331153028",
-			Escalando = "rbxassetid://128601601033320",
-
-			Stunado = "rbxassetid://111940476196229",
-
-			DashTras = "rbxassetid://0000000000",
-			DashEsquerda = "rbxassetid://0000000000",
-			DashDireita = "rbxassetid://0000000000",
 		},
 	},
 
