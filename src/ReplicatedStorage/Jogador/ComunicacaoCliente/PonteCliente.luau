@@ -10,9 +10,9 @@ export type ClientBridgeType = {
 	MarcarContinuarCombo: (() -> boolean)?,
 	EstaJanelaComboAtiva: (() -> boolean)?,
 	EstaComboAtivo: (() -> boolean)?,
-	TentarCancelarAtaquePorDefesa: (() -> (boolean, string?))?,
-	ResolverCancelPendente: (() -> ())?,
-	CancelarCancelPendente: (() -> ())?,
+	TentarFintar: (() -> (boolean, string?))?,
+	ResolverFintaPendente: (() -> ())?,
+	CancelarFintaPendente: (() -> ())?,
 	EstaEmAnimacaoEquip: (() -> boolean)?,
 	PodeAlterarTool: (() -> boolean)?,
 	OnEquipAnimacaoTerminou: ((number) -> ())?,
@@ -33,10 +33,12 @@ export type ClientBridgeType = {
 	SairParkour: (() -> ())?,
 	AplicarImpulsoAtaque: ((string) -> ())?,
 	EstaSegurandoM1: (() -> boolean)?,
+	EstaSegurandoM2: (() -> boolean)?,
 	SoltouM1: (() -> ())?,
-	PodeAtacarLeve: (() -> boolean)?,
+	PodeAtacar: (() -> boolean)?,
 	PredictAnimation: ((nomeAnimacao: string, loop: boolean, velocidade: number) -> ())?,
 	PredictStopAnimation: (() -> ())?,
+	PredictCancel: (() -> ())?,
 	ObterEquipamentoBraco: ((string) -> Tool?)?,
 	ObterCategoriaRightArm: (() -> string?)?,
 	ObterEquipamentoCorpo: ((string) -> Tool?)?,
@@ -51,9 +53,9 @@ local ClientBridge = {} :: ClientBridgeType
 ClientBridge.MarcarContinuarCombo = nil
 ClientBridge.EstaJanelaComboAtiva = nil
 ClientBridge.EstaComboAtivo = nil
-ClientBridge.TentarCancelarAtaquePorDefesa = nil
-ClientBridge.ResolverCancelPendente = nil
-ClientBridge.CancelarCancelPendente = nil
+ClientBridge.TentarFintar = nil
+ClientBridge.ResolverFintaPendente = nil
+ClientBridge.CancelarFintaPendente = nil
 ClientBridge.EstaEmAnimacaoEquip = nil
 ClientBridge.PodeAlterarTool = nil
 ClientBridge.OnEquipAnimacaoTerminou = nil
@@ -74,10 +76,12 @@ ClientBridge.EntrarParkour = nil
 ClientBridge.SairParkour = nil
 ClientBridge.AplicarImpulsoAtaque = nil
 ClientBridge.EstaSegurandoM1 = nil
+ClientBridge.EstaSegurandoM2 = nil
 ClientBridge.SoltouM1 = nil
-ClientBridge.PodeAtacarLeve = nil
+ClientBridge.PodeAtacar = nil
 ClientBridge.PredictAnimation = nil
 ClientBridge.PredictStopAnimation = nil
+ClientBridge.PredictCancel = nil
 ClientBridge.ObterEquipamentoBraco = nil
 ClientBridge.ObterCategoriaRightArm = nil
 ClientBridge.ObterEquipamentoCorpo = nil

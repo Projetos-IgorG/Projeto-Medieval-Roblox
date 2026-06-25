@@ -71,6 +71,10 @@ function ClientBridge.EstaSegurandoM1()
 	return estadoInput.mouse1Pressionado
 end
 
+function ClientBridge.EstaSegurandoM2()
+	return estadoInput.mouse2Pressionado
+end
+
 
 local estadoEquip = "idle"
 local toolAtualEquipado: Tool? = nil
@@ -196,8 +200,14 @@ local function ProcessarMouse1Pressionado()
 		return
 	end
 
+	local estadoAcao = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("estadoAcao") or "Nenhuma"
+	if estadoAcao == "Rolando" or estadoAcao == "Dashando" then
+		DebugPrint("[EntradaJogador] M1 ignorado - jogador em esquiva (roll/dash)")
+		return
+	end
+
 	estadoInput.mouse1Pressionado = true
-	estadoInput.tempoMouse1 = tick()
+	estadoInput.tempoMouse1 = os.clock()
 
 	local comboAtivo = ClientBridge.EstaComboAtivo and ClientBridge.EstaComboAtivo()
 	local janelaAtiva = ClientBridge.EstaJanelaComboAtiva and ClientBridge.EstaJanelaComboAtiva()
@@ -206,25 +216,25 @@ local function ProcessarMouse1Pressionado()
 		if ClientBridge.MarcarContinuarCombo then
 			local marcou = ClientBridge.MarcarContinuarCombo()
 			if marcou then
-				EnviarAcao("AtacarLeveEmPe")
+				EnviarAcao("AtacarEmPe")
 				return
 			end
 		end
 	end
 
-	if ClientBridge.PodeAtacarLeve and not ClientBridge.PodeAtacarLeve() then
+	if ClientBridge.PodeAtacar and not ClientBridge.PodeAtacar() then
 		DebugPrint("[EntradaJogador] M1 ignorado - ataque em cooldown pós-combo")
 		return
 	end
 
-	DebugPrint("[EntradaJogador] M1 pressionado - iniciando ataque leve")
+	DebugPrint("[EntradaJogador] M1 pressionado - iniciando ataque")
 	if ClientBridge.PredictAnimation then
-		ClientBridge.PredictAnimation("AtaqueLeve", false, 1.0)
+		ClientBridge.PredictAnimation("Ataque", false, 1.0)
 	end
 	if estadoInput.agachadoAtivo then
-		EnviarAcao("AtacarLeveAgachado")
+		EnviarAcao("AtacarAgachado")
 	else
-		EnviarAcao("AtacarLeveEmPe")
+		EnviarAcao("AtacarEmPe")
 	end
 end
 
@@ -246,7 +256,7 @@ local function ProcessarMouse2Pressionado()
 		return
 	end
 
-	local agora = tick()
+	local agora = os.clock()
 	if (agora - estadoInput.ultimaDefesa) < Configuracao.CooldownDefesa then
 		return
 	end
@@ -254,43 +264,24 @@ local function ProcessarMouse2Pressionado()
 	estadoInput.mouse2Pressionado = true
 	estadoInput.tempoMouse2 = agora
 
-	if ClientBridge.TentarCancelarAtaquePorDefesa then
-		local cancelou, tipoAtaque = ClientBridge.TentarCancelarAtaquePorDefesa()
-		if cancelou then
-			DebugPrint("[EntradaJogador] Ataque cancelado por defesa:", tipoAtaque)
+	local estadoAcao = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("estadoAcao") or "Nenhuma"
+	if estadoAcao == "Rolando" or estadoAcao == "Dashando" then
+		DebugPrint("[EntradaJogador] M2 ignorado - jogador em esquiva (roll/dash)")
+		return
+	end
 
-			EnviarAcao("CancelarAtaquePorDefesa", tipoAtaque)
+	if estadoAcao == "Atacando" then
+		if ClientBridge.TentarFintar then
+			local cancelou, tipoAtaque = ClientBridge.TentarFintar()
+			if cancelou then
+				DebugPrint("[EntradaJogador] Ataque fintado:", tipoAtaque)
 
-			local tempoParaDefesa = Modulo_Configuracoes.ObterConfiguracao("TempoSegurandoM2ParaDefesa") or 0.15
-
-			task.delay(tempoParaDefesa, function()
-
-				if estadoInput.mouse2Pressionado then
-					DebugPrint("[EntradaJogador] M2 ainda pressionado após cancel - iniciando defesa")
-
-					if ClientBridge.CancelarCancelPendente then
-						ClientBridge.CancelarCancelPendente()
-					end
-					estadoInput.ultimaDefesa = tick()
-
-					local shiftLockAtivo = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("ShiftLockOn")
-						or false
-					-- Predict block/defense locally
-					if ClientBridge.PredictAnimation then
-						ClientBridge.PredictAnimation("Defesa", true, 1.0)
-					end
-					EnviarAcao("Bloquear", { shiftLock = shiftLockAtivo, timestamp = workspace:GetServerTimeNow() })
-				else
-					DebugPrint("[EntradaJogador] M2 solto após cancel - apenas cancelou, sem defesa")
-
-					if ClientBridge.ResolverCancelPendente then
-						ClientBridge.ResolverCancelPendente()
-					end
-				end
-			end)
-
-			return
+				EnviarAcao("Fintar", tipoAtaque)
+			else
+				DebugPrint("[EntradaJogador] Tentativa de finta falhou (cooldown ou fora da janela) - ignorando M2")
+			end
 		end
+		return
 	end
 
 	estadoInput.ultimaDefesa = agora
@@ -476,6 +467,12 @@ local function ProcessarRoll()
 		end
 	end
 
+	local estadoAcao = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("estadoAcao") or "Nenhuma"
+	if estadoAcao == "Atacando" then
+		DebugPrint("[EntradaJogador] Roll bloqueado: Jogador atacando")
+		return
+	end
+
 	if ClientBridge.EstaEmParkour and ClientBridge.EstaEmParkour() then
 		DebugPrint("[EntradaJogador] Roll bloqueado: Jogador em parkour")
 		return
@@ -487,10 +484,11 @@ local function ProcessarRoll()
 	end
 
 	local cooldownRoll = Modulo_Configuracoes.ObterConfiguracao("CooldownRoll") or 1.5
-	local agora = tick()
+	local agora = os.clock()
 	local ultimoRoll = ClientBridge.UltimoRollTime or 0
-	if (agora - ultimoRoll) < cooldownRoll then
-		DebugPrint("[EntradaJogador] Roll bloqueado: Cooldown ativo")
+	local ultimoDash = ClientBridge.UltimoDashTime or 0
+	if (agora - ultimoRoll) < cooldownRoll or (agora - ultimoDash) < cooldownRoll then
+		DebugPrint("[EntradaJogador] Roll bloqueado: Cooldown ativo (Roll/Dash compartilhado)")
 		return
 	end
 
@@ -545,6 +543,12 @@ local function ProcessarDash(direcaoParam: string?)
 		end
 	end
 
+	local estadoAcao = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("estadoAcao") or "Nenhuma"
+	if estadoAcao == "Atacando" then
+		DebugPrint("[EntradaJogador] Dash bloqueado: Jogador atacando")
+		return
+	end
+
 	if ClientBridge.EstaEmParkour and ClientBridge.EstaEmParkour() then
 		DebugPrint("[EntradaJogador] Dash bloqueado: Jogador em parkour")
 		return
@@ -577,10 +581,11 @@ local function ProcessarDash(direcaoParam: string?)
 	end
 
 	local cooldownDash = Modulo_Configuracoes.ObterConfiguracao("CooldownDash") or 1.5
-	local agora = tick()
+	local agora = os.clock()
 	local ultimoDash = ClientBridge.UltimoDashTime or 0
-	if (agora - ultimoDash) < cooldownDash then
-		DebugPrint("[EntradaJogador] Dash bloqueado: Cooldown ativo")
+	local ultimoRoll = ClientBridge.UltimoRollTime or 0
+	if (agora - ultimoDash) < cooldownDash or (agora - ultimoRoll) < cooldownDash then
+		DebugPrint("[EntradaJogador] Dash bloqueado: Cooldown ativo (Roll/Dash compartilhado)")
 		return
 	end
 

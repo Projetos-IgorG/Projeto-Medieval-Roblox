@@ -7,7 +7,7 @@
         de combate do NPC. O servidor usa estes valores para agendar hitbox e
         liberacao de combo SEM precisar de Animator nem MarkerReachedSignal
         (toda a animacao acontece no cliente; servidor so cuida da logica).
-    Uso: ModuleScript; require(TimingsAtaqueNPC).Punhos.AtaqueLeve etc.
+    Uso: ModuleScript; require(TimingsAtaqueNPC).Punhos.Ataque etc.
     Nao faz: Nao toca animacoes; somente fornece dados.
 ]]
 
@@ -23,13 +23,13 @@ Timings.Punhos = {
 	Desequipar = {
 		Duracao = 0.45,
 	},
-	-- AtaqueLeve: 1 swing.
+	-- Ataque: 1 swing.
 	-- AtrasoHit = quando ativar hitbox apos inicio do swing.
 	-- DuracaoHit = quanto tempo a hitbox fica ativa.
 	-- Duracao = quando o swing termina (libera proximo combo).
-	-- ContinuacaoCombo = janela apos Duracao em que outra chamada AtacarLeve
+	-- ContinuacaoCombo = janela apos Duracao em que outra chamada Atacar
 	--     conta como continuacao (incrementa indice).
-	AtaqueLeve = {
+	Ataque = {
 		AtrasoHit = 0.20,
 		DuracaoHit = 0.30,
 		Duracao = 0.65,

@@ -84,7 +84,7 @@ local function ConectarToolActivated(tool: Tool)
 	local conexoes = {}
 
 	local activated = tool.Activated:Connect(function()
-		local agora = tick()
+		local agora = os.clock()
 		if (agora - ultimoEquipar) < DEBOUNCE_EQUIPAR then
 			DebugPrint("[EquipamentoController] Debounce: equipar muito rápido")
 			return
@@ -216,7 +216,7 @@ local function ConectarSlotClick(uiName: string, slotButton: ImageButton)
 	end
 
 	slotButton.MouseButton1Click:Connect(function()
-		local agora = tick()
+		local agora = os.clock()
 		if (agora - ultimoDesequipar) < DEBOUNCE_DESEQUIPAR then
 			DebugPrint("[EquipamentoController] Debounce: desequipar muito rápido")
 			return

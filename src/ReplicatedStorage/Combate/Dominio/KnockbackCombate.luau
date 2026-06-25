@@ -71,7 +71,7 @@ end
 function Modulo_Knockback.ObterMagnitudeKnockback(tipoAtaque: string): number
 	local config = Modulo_Configuracoes.ConfiguracaoGlobal
 
-	if tipoAtaque == "AtaqueLeveFinal" then
+	if tipoAtaque == "AtaqueFinal" then
 		return 25
 	end
 

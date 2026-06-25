@@ -81,10 +81,10 @@ export type ConfiguracaoGlobal = {
 	JanelaCancelamentoDash: number,
 	DashCameraFixarY: boolean,
 
-	MagnitudeImpulsoAtaqueLeve: number,
+	MagnitudeImpulsoAtaque: number,
 	MagnitudeImpulsoAtaqueFinal: number,
 	MagnitudeImpulsoParry: number,
-	DuracaoImpulsoAtaqueLeve: number,
+	DuracaoImpulsoAtaque: number,
 	DuracaoImpulsoAtaqueFinal: number,
 
 	MagnitudeKnockbackLeve: number,
@@ -159,7 +159,7 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	CooldownRoll = 1.5,
 	ForcaRoll = 45,
 	VelocidadeAnimacaoRoll = 1.0,
-	JanelaCancelamentoRoll = 0.2,
+	JanelaCancelamentoRoll = 0.3,
 	RollCameraFixarY = true,
 
 	CooldownDash = 1.5,
@@ -168,13 +168,13 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	DuracaoDashLateral = 0.25,
 	DuracaoDashTras = 0.15,
 	VelocidadeAnimacaoDash = 1,
-	JanelaCancelamentoDash = 0.1,
-	DashCameraFixarY = true,
+	JanelaCancelamentoDash = 0.37,
+	DashCameraFixarY = false,
 
-	MagnitudeImpulsoAtaqueLeve = 20,
+	MagnitudeImpulsoAtaque = 20,
 	MagnitudeImpulsoAtaqueFinal = 25,
 	MagnitudeImpulsoParry = 25,
-	DuracaoImpulsoAtaqueLeve = 0.1,
+	DuracaoImpulsoAtaque = 0.1,
 	DuracaoImpulsoAtaqueFinal = 0.1,
 
 	MagnitudeKnockbackLeve = 15,
@@ -244,6 +244,8 @@ function Modulo_Configuracoes.ObterAnimacao(nomeModo: string, nomeAnimacao: stri
 	return nil
 end
 
+local _chavesNaoEncontradas: { [string]: boolean } = {}
+
 function Modulo_Configuracoes.ObterConfiguracao(chave: string): any
 	if not chave or type(chave) ~= "string" then
 		warn("[Modulo_Configuracoes] Chave de configuração inválida: " .. tostring(chave))
@@ -251,7 +253,8 @@ function Modulo_Configuracoes.ObterConfiguracao(chave: string): any
 	end
 
 	local valor = Modulo_Configuracoes.ConfiguracaoGlobal[chave]
-	if valor == nil then
+	if valor == nil and not _chavesNaoEncontradas[chave] then
+		_chavesNaoEncontradas[chave] = true
 		warn("[Modulo_Configuracoes] Configuração não encontrada: " .. chave)
 	end
 
@@ -305,9 +308,9 @@ end
 
 function Modulo_Configuracoes.ObterTipoAtaquePorIndice(_nomeModo: string, indice: number): string
 	if indice >= 4 then
-		return "AtaqueLeveFinal"
+		return "AtaqueFinal"
 	end
-	return "AtaqueLeve"
+	return "Ataque"
 end
 
 function Modulo_Configuracoes.ObterTodasAnimacoes(): { string }

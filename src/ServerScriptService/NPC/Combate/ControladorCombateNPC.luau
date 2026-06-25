@@ -5,17 +5,17 @@
 	Caminho: src/ServerScriptService/NPC/Combate
 	Responsabilidade: Camada de combate de NPCs no servidor.
 	    Delega TODAS as acoes ao CombateServidor usando o MESMO pipeline do
-	    player: ProcessarAtacarLeveEmPe, ProcessarBloquear, ProcessarPararBloqueio,
+	    player: ProcessarAtacarEmPe, ProcessarBloquear, ProcessarPararBloqueio,
 	    ProcessarEquipar, ProcessarDesequipar. Sincroniza atributos NPC_Acao/
 	    NPC_Estado/NPC_AcaoTick via hooks nos eventos da MaquinaDeEstados.
 	    Recebe reportes de hit do CLIENTE do alvo (RemoteEvent NPC_HitReport),
 	    valida (NPC realmente atacando, alvo proximo, dedup por swing) e
 	    delega o dano canonico ao CombateServidor._ProcessarHit.
 	Uso: ModuleScript; require e use a mesma API publica:
-	    (Iniciar/EquiparArma/DesequiparArma/AtacarLeve/PararAtaque/
+	    (Iniciar/EquiparArma/DesequiparArma/Atacar/PararAtaque/
 	     Bloquear/PararBloqueio/TocarLocomocao/EstaArmaPronta/EstaAtacando/
 	     EstaEquipando/EstaBloqueando/ObterAlcanceArmaEquipada/Destruir).
-	Funcoes principais: Iniciar, EquiparArma, DesequiparArma, AtacarLeve,
+	Funcoes principais: Iniciar, EquiparArma, DesequiparArma, Atacar,
 	    Bloquear, PararBloqueio, TocarLocomocao, PararAtaque, Destruir
 ]]
 
@@ -292,7 +292,7 @@ local function mapearEstadoAcaoParaNPCEstado(estadoAcao: string, dados: any): st
 		return TiposNPC.Estado.DefesaQuebrada
 	elseif estadoAcao == "Defendendo" then
 		return TiposNPC.Estado.Defendendo
-	elseif estadoAcao == "AtacandoLeve" then
+	elseif estadoAcao == "Atacando" then
 		return TiposNPC.Estado.Atacando
 	end
 	-- Para "Nenhuma", verificar se esta bloqueando (transicao parcial).
@@ -307,8 +307,8 @@ local function mapearEstadoAcaoParaNPCAcao(estadoAcao: string): string
 		return TiposNPC.Acao.Equipar
 	elseif estadoAcao == "Desequipando" then
 		return TiposNPC.Acao.Desequipar
-	elseif estadoAcao == "AtacandoLeve" then
-		return TiposNPC.Acao.AtaqueLeve
+	elseif estadoAcao == "Atacando" then
+		return TiposNPC.Acao.Ataque
 	end
 	return TiposNPC.Acao.Idle
 end
@@ -596,7 +596,7 @@ function finalizarSwing(s: Estado, token: number)
 	s.atacando = false
 	s.ultimoSwingFim = os.clock()
 	-- Reseta combo se nao houver continuacao dentro da janela.
-	local janela = s.timings.AtaqueLeve.ContinuacaoCombo
+	local janela = s.timings.Ataque.ContinuacaoCombo
 	local indiceNoFim = s.indiceCombo
 	task.delay(janela, function()
 		if s.destruido or s.comboToken ~= token then
@@ -623,15 +623,15 @@ function iniciarSwing(s: Estado, cs: any, _maquina: any, token: number)
 		return
 	end
 
-	local t = s.timings.AtaqueLeve
-	setAcao(s, TiposNPC.Acao.AtaqueLeve, s.indiceCombo)
+	local t = s.timings.Ataque
+	setAcao(s, TiposNPC.Acao.Ataque, s.indiceCombo)
 	s.swingHitInicio = s.acaoTick + t.AtrasoHit
 	s.swingHitFim = s.acaoTick + t.Duracao
 	table.clear(s.jaAtingidos)
 
-	local tipoAtaque = "AtaqueLeve"
+	local tipoAtaque = "Ataque"
 	if s.indiceCombo >= 4 then
-		tipoAtaque = "AtaqueLeveFinal"
+		tipoAtaque = "AtaqueFinal"
 	end
 	s.tipoAtaqueAtual = tipoAtaque
 
@@ -665,7 +665,7 @@ function iniciarSwing(s: Estado, cs: any, _maquina: any, token: number)
 	end)
 end
 
-function Mod.AtacarLeve(modelo: Model, verificarAlvo: (() -> boolean)?): boolean
+function Mod.Atacar(modelo: Model, verificarAlvo: (() -> boolean)?): boolean
 	local s = estados[modelo]
 	if not s then
 		return false
@@ -688,7 +688,7 @@ function Mod.AtacarLeve(modelo: Model, verificarAlvo: (() -> boolean)?): boolean
 
 	if s.atacando then
 		s.verificarAlvo = verificarAlvo
-		local duracao = s.timings.AtaqueLeve.Duracao
+		local duracao = s.timings.Ataque.Duracao
 		if agora >= s.swingHitInicio - 0.05 and agora <= s.acaoTick + duracao then
 			maquina.dados.continuarCombo = true
 			return true
@@ -708,7 +708,7 @@ function Mod.AtacarLeve(modelo: Model, verificarAlvo: (() -> boolean)?): boolean
 
 	-- Delega ao pipeline do player: valida estado, toca animacao, aplica
 	-- impulso e seta WalkSpeed automaticamente.
-	local ok, tipoAtaque = cs.ProcessarAtacarLeveEmPe(modelo)
+	local ok, tipoAtaque = cs.ProcessarAtacarEmPe(modelo)
 	if not ok then
 		return false
 	end
@@ -877,7 +877,7 @@ local function processarReporteHit(
 		-- Fallback para o swing atual se estiver muito próximo (tolerância tick)
 		if math.abs((s.acaoTick or 0) - acaoTickReportado) <= TOLERANCIA_TICK then
 			acaoDados = {
-				tipoAtaque = s.tipoAtaqueAtual or "AtaqueLeve",
+				tipoAtaque = s.tipoAtaqueAtual or "Ataque",
 				indiceCombo = s.indiceCombo,
 				swingHitFim = s.swingHitFim,
 				jaAtingidos = s.jaAtingidos,
@@ -934,7 +934,7 @@ local function processarReporteHit(
 			cs._ProcessarHit,
 			s.modelo,
 			alvoModel,
-			acaoDados.tipoAtaque or "AtaqueLeve",
+			acaoDados.tipoAtaque or "Ataque",
 			s.danoLeve,
 			parteAtingida,
 			nil,

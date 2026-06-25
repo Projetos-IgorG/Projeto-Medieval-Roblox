@@ -4,7 +4,7 @@
 	Script: Combate.luau
 	Caminho: src/StarterPlayer/StarterPlayerScripts/NPC/Views
 	Responsabilidade: View completa do NPC de combate - cliente-fat. Toca TODAS
-	    as animacoes (Idle, Andando*, Correndo*, Equipar, Desequipar, AtaqueLeve,
+	    as animacoes (Idle, Andando*, Correndo*, Equipar, Desequipar, Ataque,
 	    Aparando, Aparado, Stunado, DefesaQuebrada, Defendendo) localmente.
 	    Tambem clona o WeaponModel visual da arma equipada localmente, com
 	    Motor6D, ao detectar NPC_ArmaPronta=true. Servidor NAO replica visual
@@ -538,7 +538,7 @@ local function configurarHitboxParaSwing(ctx: Ctx, track: AnimationTrack, acaoTi
 	destruirHitboxesLocais(ctx)
 
 	local timings = obterTimingsAtaque(ctx)
-	local t = timings.AtaqueLeve
+	local t = timings.Ataque
 	local indiceSwing = ctx.modelo:GetAttribute(TiposNPC.Chaves.AcaoIndice) :: number?
 	local maoIndice = maoPorIndice(indiceSwing)
 
@@ -675,8 +675,8 @@ local function tocarEstado(ctx: Ctx)
 	-- Para outras tracks de reacao (NAO para locomocao - locomocao continua por baixo).
 	for outro, t in ctx.tracks do
 		if outro ~= entry.nome and not LOCOMOCAO_NAMES[outro] and t.IsPlaying then
-			-- Nao para AtaqueLeve/Equipar/Desequipar aqui - eles tem sua propria gestao.
-			if outro == "AtaqueLeve" or outro == "Equipar" or outro == "Desequipar" then
+			-- Nao para Ataque/Equipar/Desequipar aqui - eles tem sua propria gestao.
+			if outro == "Ataque" or outro == "Equipar" or outro == "Desequipar" then
 				continue
 			end
 			t:Stop(FADE_REACAO_OUT)
@@ -688,7 +688,7 @@ local function tocarEstado(ctx: Ctx)
 end
 
 -- =============================================================================
--- Acao (NPC_Acao: Idle / AtaqueLeve / Equipar / Desequipar).
+-- Acao (NPC_Acao: Idle / Ataque / Equipar / Desequipar).
 -- =============================================================================
 
 local function tocarAcao(ctx: Ctx)
@@ -707,7 +707,7 @@ local function tocarAcao(ctx: Ctx)
 
 	if acao == TiposNPC.Acao.Idle then
 		-- Para tracks de acao se ainda tocando.
-		local prev = ctx.tracks["AtaqueLeve"]
+		local prev = ctx.tracks["Ataque"]
 		if prev and prev.IsPlaying then
 			prev:Stop(FADE_SAIDA_ATAQUE)
 		end
@@ -752,8 +752,8 @@ local function tocarAcao(ctx: Ctx)
 			end
 			EquipAnimacaoTerminou:FireServer(ctx.modelo)
 		end)
-	elseif acao == TiposNPC.Acao.AtaqueLeve then
-		local track = carregarTrack(ctx, "AtaqueLeve")
+	elseif acao == TiposNPC.Acao.Ataque then
+		local track = carregarTrack(ctx, "Ataque")
 		if not track then
 			return
 		end

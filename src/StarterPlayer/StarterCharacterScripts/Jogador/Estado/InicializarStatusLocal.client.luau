@@ -20,6 +20,15 @@ local StatusLocalManager = require(ReplicatedStorage:WaitForChild("Jogador"):Wai
 
 local _statusLocal = StatusLocalManager.CriarStatusLocal(character)
 
+-- Sincronizar ShiftLockOn com o servidor
+local shiftLockOn = _statusLocal:WaitForChild("ShiftLockOn") :: BoolValue
+local MudarShiftLock = ReplicatedStorage:WaitForChild("Remotos"):WaitForChild("MudarShiftLock") :: RemoteEvent
+
+shiftLockOn.Changed:Connect(function(val)
+	MudarShiftLock:FireServer(val)
+end)
+MudarShiftLock:FireServer(shiftLockOn.Value)
+
 local function ObterStatusLocal(): Folder?
 	return StatusLocalManager.ObterStatusLocal(character)
 end

@@ -53,11 +53,11 @@ end
 function Modulo_Impulso.ObterMagnitudeImpulso(tipoAtaque: string): number
 	local config = Modulo_Configuracoes.ConfiguracaoGlobal
 
-	if tipoAtaque == "AtaqueLeveFinal" then
+	if tipoAtaque == "AtaqueFinal" then
 		return 25
 	end
 
-	return config.MagnitudeImpulsoAtaqueLeve or 20
+	return config.MagnitudeImpulsoAtaque or 20
 end
 
 function Modulo_Impulso.ModoPermiteImpulso(modoAnimacao: string): boolean
@@ -143,7 +143,7 @@ function Modulo_Impulso.AplicarImpulsoParry(defensor: Model, atacante: Model): R
 	end
 
 	local config = Modulo_Configuracoes.ConfiguracaoGlobal
-	local magnitudeFinalCombo = Modulo_Impulso.ObterMagnitudeImpulso("AtaqueLeveFinal")
+	local magnitudeFinalCombo = Modulo_Impulso.ObterMagnitudeImpulso("AtaqueFinal")
 	local magnitude = config.MagnitudeImpulsoParry or (magnitudeFinalCombo * 0.5)
 
 	local defensorRoot = defensor:FindFirstChild("HumanoidRootPart") :: BasePart

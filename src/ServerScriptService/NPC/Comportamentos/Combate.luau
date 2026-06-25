@@ -310,7 +310,7 @@ local function mapearEstadoMaquina(estadoAcao: string): string?
 		return TiposNPC.Estado.Aparando
 	elseif estadoAcao == "DefesaQuebrada" then
 		return TiposNPC.Estado.DefesaQuebrada
-	elseif estadoAcao == "AtacandoLeve" then
+	elseif estadoAcao == "Atacando" then
 		return TiposNPC.Estado.Atacando
 	elseif estadoAcao == "Defendendo" then
 		return TiposNPC.Estado.Defendendo
@@ -341,7 +341,7 @@ local function instalarSincMaquina(ctx: Ctx, maq: any)
 
 		-- Baiting/Perseguicao: apos sair de um ataque proprio, define o cooldown.
 		-- Se o NPC acertou o golpe, reduz drasticamente o cooldown para continuar pressionando.
-		if anterior == "AtacandoLeve" then
+		if anterior == "Atacando" then
 			local acertou = ctx.modelo:GetAttribute("NPC_AcertouCombo") == true
 			local espera
 			if acertou then
@@ -411,7 +411,7 @@ end
 -- =============================================================================
 
 local function ehEstadoAtaque(estadoAcao: string): boolean
-	return estadoAcao == "AtacandoLeve"
+	return estadoAcao == "Atacando"
 end
 
 local function obterMaquinaAlvo(alvo: Model): any?
@@ -443,7 +443,7 @@ local function alvoMantemComboLeve(ctx: Ctx): boolean
 	if not dados then
 		return false
 	end
-	if dados.estadoAcao ~= "AtacandoLeve" then
+	if dados.estadoAcao ~= "Atacando" then
 		return false
 	end
 	local indice = dados.indiceCombo or 0
@@ -883,7 +883,7 @@ function tentarAtaqueRiposte(ctx: Ctx)
 			return
 		end
 		local alvoRef = ctx.estado.alvoAtual
-		ControladorCombateNPC.AtacarLeve(ctx.modelo, function(): boolean
+		ControladorCombateNPC.Atacar(ctx.modelo, function(): boolean
 			local vivo, hrp = alvoVivoComHRP(alvoRef)
 			if not vivo or not hrp then
 				return false
@@ -1132,7 +1132,7 @@ local Combate: Comportamento.Comportamento = {
 			local dentroCombo = distancia <= alcance * 1.5
 			if dentroCombo and podeAtacar then
 				local alvoRef: Model = alvo
-				ControladorCombateNPC.AtacarLeve(ctx.modelo, function(): boolean
+				ControladorCombateNPC.Atacar(ctx.modelo, function(): boolean
 					if not alvoRef or not alvoRef.Parent then
 						return false
 					end
@@ -1163,7 +1163,7 @@ local Combate: Comportamento.Comportamento = {
 			end
 			if podeAtacar and cooldownAtaqueOK then
 				local alvoRef: Model = alvo
-				local atacou = ControladorCombateNPC.AtacarLeve(ctx.modelo, function(): boolean
+				local atacou = ControladorCombateNPC.Atacar(ctx.modelo, function(): boolean
 					-- Combo segue enquanto o alvo permanece proximo (tolerancia ampla).
 					if not alvoRef or not alvoRef.Parent then
 						return false

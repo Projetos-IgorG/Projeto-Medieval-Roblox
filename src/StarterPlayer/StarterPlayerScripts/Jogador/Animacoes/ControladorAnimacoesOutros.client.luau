@@ -90,15 +90,6 @@ local function LimparEntrada(character: Model)
 	DebugPrint("[AnimOutros] Limpou estado de:", character.Name)
 end
 
--- ─── Auxiliar para evitar double-play com a replicação automática do Roblox ──
-local function PararTracksDuplicados(animator: Animator, animId: string, excetoTrack: AnimationTrack?)
-	for _, t in ipairs(animator:GetPlayingAnimationTracks()) do
-		if t.Animation and t.Animation.AnimationId == animId and t ~= excetoTrack then
-			t:Stop(0)
-		end
-	end
-end
-
 -- ─── Tocar animacao em outro personagem ────────────────────────────────────
 
 local function TocarAnimacaoOutro(
@@ -164,15 +155,16 @@ local function TocarAnimacaoOutro(
 
 	entrada.trackAtivo = track
 
-	-- Parar qualquer outra track com prioridade Action no animator para evitar sobreposição
+	-- Parar tracks de Action duplicadas e tracks com mesmo animId em um único passo
 	for _, t in ipairs(entrada.animator:GetPlayingAnimationTracks()) do
-		if t.Priority == Enum.AnimationPriority.Action and t ~= track then
-			t:Stop(0.1)
+		if t ~= track then
+			if t.Priority == Enum.AnimationPriority.Action then
+				t:Stop(0.1)
+			elseif t.Animation and t.Animation.AnimationId == animId then
+				t:Stop(0)
+			end
 		end
 	end
-
-	-- Parar tracks duplicadas para evitar conflito com a replicação padrão do Roblox
-	PararTracksDuplicados(entrada.animator, animId, track)
 
 	track.Looped = loop
 	if not track.IsPlaying then

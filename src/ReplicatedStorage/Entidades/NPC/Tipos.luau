@@ -96,12 +96,12 @@ TiposNPC.Chaves = {
 	ModoCombate = "NPC_ModoCombate",
 	-- Visual / replicacao client-fat. Servidor NAO toca animacoes; apenas seta
 	-- estes attributes e a View no cliente reage tocando as anims localmente.
-	-- Acao = qual anim de combate o NPC esta executando agora (Idle/AtaqueLeve/Equipar/Desequipar).
+	-- Acao = qual anim de combate o NPC esta executando agora (Idle/Ataque/Equipar/Desequipar).
 	Acao = "NPC_Acao",
-	-- Indice do combo atual (1..4) para AtaqueLeve. Usado para escolher variante visual.
+	-- Indice do combo atual (1..4) para Ataque. Usado para escolher variante visual.
 	AcaoIndice = "NPC_AcaoIndice",
 	-- Timestamp (os.clock no servidor) toda vez que Acao/Indice mudam. Permite ao
-	-- cliente detectar "mesmo Acao = AtaqueLeve, mas eh um novo swing".
+	-- cliente detectar "mesmo Acao = Ataque, mas eh um novo swing".
 	AcaoTick = "NPC_AcaoTick",
 	-- Nome da locomocao atual (Idle/Andando/Correndo/...). View aplica fade entre tracks.
 	LocomocaoNome = "NPC_LocomocaoNome",
@@ -116,7 +116,7 @@ TiposNPC.Chaves = {
 -- Acoes de combate replicadas via NPC_Acao. View no cliente escolhe a animacao.
 TiposNPC.Acao = {
 	Idle = "Idle",
-	AtaqueLeve = "AtaqueLeve",
+	Ataque = "Ataque",
 	Equipar = "Equipar",
 	Desequipar = "Desequipar",
 }

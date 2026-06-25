@@ -388,7 +388,7 @@ local function refreshLocalCombatMovementSpeed(changedKey: string)
 	end
 
 	local estadoAcao = readString("estadoAcao")
-	if estadoAcao == "AtacandoLeve" then
+	if estadoAcao == "Atacando" then
 		hum.WalkSpeed = (ModConfCombate.ObterConfiguracao("VelocidadeBloqueando") or 8) * 1.5
 		return
 	end

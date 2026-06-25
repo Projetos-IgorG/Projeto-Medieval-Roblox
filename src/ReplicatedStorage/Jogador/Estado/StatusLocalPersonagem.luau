@@ -31,6 +31,7 @@ function StatusLocalManager.CriarStatusLocal(char: Model)
 	createValue("BoolValue", "ShiftLockOn", false)
 	createValue("BoolValue", "AgachadoOn", false)
 	createValue("BoolValue", "CorrendoOn", false)
+	createValue("StringValue", "estadoAcao", "Nenhuma")
 
 	return folder
 end
@@ -54,12 +55,23 @@ end
 
 function StatusLocalManager.LerStatusLocal(character: Model?, nome: string): any
 	local folder = StatusLocalManager.ObterStatusLocal(character)
-	if not folder then return nil end
-
-	local obj = folder:FindFirstChild(nome)
-	if obj and (obj:IsA("StringValue") or obj:IsA("BoolValue") or obj:IsA("NumberValue")) then
-		return (obj :: any).Value
+	if folder then
+		local obj = folder:FindFirstChild(nome)
+		if obj and (obj:IsA("StringValue") or obj:IsA("BoolValue") or obj:IsA("NumberValue")) then
+			return (obj :: any).Value
+		end
 	end
+
+	if character then
+		local serverFolder = character:FindFirstChild("Status")
+		if serverFolder then
+			local obj = serverFolder:FindFirstChild(nome)
+			if obj and (obj:IsA("StringValue") or obj:IsA("BoolValue") or obj:IsA("NumberValue") or obj:IsA("IntValue")) then
+				return (obj :: any).Value
+			end
+		end
+	end
+
 	return nil
 end
 

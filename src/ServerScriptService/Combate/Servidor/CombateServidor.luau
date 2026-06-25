@@ -29,12 +29,37 @@ local Modulo_Knockback = require(DominioCombate:WaitForChild("KnockbackCombate")
 local MaquinaDeEstados =
 	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Estado"):WaitForChild("MaquinaEstadosJogador"))
 
-
-
 local ControladorCombate = {}
 
 local maquinasDeEstado: { [Model]: any } = {}
 local danoAplicadoEvent = Instance.new("BindableEvent")
+
+-- Rate-limiting: máximo de ações por segundo por jogador (throttle silencioso)
+local RATE_LIMIT_MAX_ACOES = 20
+local RATE_LIMIT_JANELA = 1.0
+local rateLimitData: { [Player]: { contagem: number, ultimoReset: number } } = {}
+
+local function VerificarRateLimit(jogador: Player): boolean
+	local agora = os.clock()
+	local dados = rateLimitData[jogador]
+	if not dados then
+		dados = { contagem = 0, ultimoReset = agora }
+		rateLimitData[jogador] = dados
+	end
+
+	if agora - dados.ultimoReset >= RATE_LIMIT_JANELA then
+		dados.contagem = 0
+		dados.ultimoReset = agora
+	end
+
+	dados.contagem = dados.contagem + 1
+	return dados.contagem <= RATE_LIMIT_MAX_ACOES
+end
+
+-- Limpar rate-limit data ao sair
+Players.PlayerRemoving:Connect(function(jogador)
+	rateLimitData[jogador] = nil
+end)
 
 local Remotos = ReplicatedStorage:WaitForChild("Remotos")
 local TentarAcao = Remotos:WaitForChild("TentarAcao")
@@ -46,9 +71,9 @@ local DanoDebugVisual = Remotos:WaitForChild("DanoDebugVisual") :: RemoteEvent
 
 local function DeterminarTipoAtaque(indice: number): string
 	if indice >= 4 then
-		return "AtaqueLeveFinal"
+		return "AtaqueFinal"
 	end
-	return "AtaqueLeve"
+	return "Ataque"
 end
 
 local function EhGolpeFinal(indice: number): boolean
@@ -187,7 +212,14 @@ function ControladorCombate._TocarAnimacao(entidade: Model, nomeAnimacao: string
 	local animId = Modulo_Configuracoes.ObterAnimacao(modo, nomeAnimacao)
 
 	if animId then
-		TocarAnimacao:FireAllClients(entidade, animId, nomeAnimacao, loop or false, velocidade or 1, workspace:GetServerTimeNow())
+		TocarAnimacao:FireAllClients(
+			entidade,
+			animId,
+			nomeAnimacao,
+			loop or false,
+			velocidade or 1,
+			workspace:GetServerTimeNow()
+		)
 	end
 end
 
@@ -239,13 +271,6 @@ function ControladorCombate._AplicarKnockback(alvo: Model, atacante: Model, tipo
 	end
 end
 
--- Funções de bloco de defesa movidas para o topo do arquivo
-
-function ControladorCombate._CriarHitbox(_atacante: Model, _tipoAtaque: string, _cframeCliente: CFrame?)
-	warn("[ControladorCombate] _CriarHitbox está deprecado. Use ShapecastHitbox no cliente.")
-	return {}
-end
-
 function ControladorCombate._ProcessarHit(
 	atacante: Model,
 	alvo: Model,
@@ -281,6 +306,21 @@ function ControladorCombate._ProcessarHit(
 				local dist = (validAtacanteCFrame.Position - hrpAtacante.Position).Magnitude
 				if dist > 15 then
 					validAtacanteCFrame = nil
+				else
+					-- Validar rotação: LookVector do cliente não pode divergir mais que ~60° do servidor
+					local clientLook = validAtacanteCFrame.LookVector
+					local serverLook = hrpAtacante.CFrame.LookVector
+					local clientXZ = Vector3.new(clientLook.X, 0, clientLook.Z)
+					local serverXZ = Vector3.new(serverLook.X, 0, serverLook.Z)
+					if clientXZ.Magnitude > 0.001 and serverXZ.Magnitude > 0.001 then
+						local lookDot = clientXZ.Unit:Dot(serverXZ.Unit)
+						if lookDot < 0.5 then -- cos(60°) = 0.5
+							DebugPrint(
+								string.format("[Combate] CFrame atacante rotação rejeitada: dot=%.3f", lookDot)
+							)
+							validAtacanteCFrame = nil
+						end
+					end
 				end
 			end
 
@@ -289,6 +329,19 @@ function ControladorCombate._ProcessarHit(
 				local dist = (validAlvoCFrame.Position - hrpAlvo.Position).Magnitude
 				if dist > 15 then
 					validAlvoCFrame = nil
+				else
+					-- Validar rotação do alvo também
+					local clientLook = validAlvoCFrame.LookVector
+					local serverLook = hrpAlvo.CFrame.LookVector
+					local clientXZ = Vector3.new(clientLook.X, 0, clientLook.Z)
+					local serverXZ = Vector3.new(serverLook.X, 0, serverLook.Z)
+					if clientXZ.Magnitude > 0.001 and serverXZ.Magnitude > 0.001 then
+						local lookDot = clientXZ.Unit:Dot(serverXZ.Unit)
+						if lookDot < 0.5 then
+							DebugPrint(string.format("[Combate] CFrame alvo rotação rejeitada: dot=%.3f", lookDot))
+							validAlvoCFrame = nil
+						end
+					end
 				end
 			end
 
@@ -299,7 +352,7 @@ function ControladorCombate._ProcessarHit(
 			local dirXZ = Vector3.new(dir.X, 0, dir.Z)
 			if dirXZ.Magnitude > 0 then
 				dirXZ = dirXZ.Unit
-				
+
 				local lookVector = validAlvoCFrame and validAlvoCFrame.LookVector or hrpAlvo.CFrame.LookVector
 				local lookXZ = Vector3.new(lookVector.X, 0, lookVector.Z)
 				if lookXZ.Magnitude > 0 then
@@ -328,7 +381,15 @@ function ControladorCombate._ProcessarHit(
 			local maxTolerancia = Modulo_Configuracoes.ObterConfiguracao("MaxToleranciaParry") or 0.25
 			local janelaParryCompensada = janelaParryBase + math.min(rtt, maxTolerancia)
 
-			DebugPrint(string.format("[Combate] Defesa Timing: decorrido=%.3fs, janelaCompensada=%.3fs (base=%.3fs, rtt=%.3fs)", tempoDecorrido, janelaParryCompensada, janelaParryBase, rtt))
+			DebugPrint(
+				string.format(
+					"[Combate] Defesa Timing: decorrido=%.3fs, janelaCompensada=%.3fs (base=%.3fs, rtt=%.3fs)",
+					tempoDecorrido,
+					janelaParryCompensada,
+					janelaParryBase,
+					rtt
+				)
+			)
 
 			if anguloParryValido and (tempoDecorrido <= janelaParryCompensada) then
 				eParry = true
@@ -384,7 +445,7 @@ function ControladorCombate._ProcessarHit(
 
 	-- ===== BLOQUEIO =====
 	if eBlock then
-		if tipoAtaque == "AtaqueLeveFinal" then
+		if tipoAtaque == "AtaqueFinal" then
 			local tempoStun = 0.6
 
 			maquinaAlvo:QuebrarDefesa(tempoStun)
@@ -405,8 +466,8 @@ function ControladorCombate._ProcessarHit(
 			-- Ataque leve absorvido: nao tira vida, mas cada lado sente um leve impacto.
 			local modoAtacante = maquinaAtacante:ObterModo()
 			local modoAlvo = maquinaAlvo:ObterModo()
-			Modulo_Knockback.AplicarKnockback(atacante, alvo, modoAtacante, "AtaqueLeve")
-			Modulo_Knockback.AplicarKnockback(alvo, atacante, modoAlvo, "AtaqueLeve")
+			Modulo_Knockback.AplicarKnockback(atacante, alvo, modoAtacante, "Ataque")
+			Modulo_Knockback.AplicarKnockback(alvo, atacante, modoAlvo, "Ataque")
 			DebugPrint(string.format("[Combate] %s bloqueou ataque de %s", alvo.Name, atacante.Name))
 
 			local danoBase = danoOverride
@@ -464,10 +525,10 @@ function ControladorCombate._ProcessarHit(
 	end
 end
 
-function ControladorCombate.ProcessarAtacarLeveEmPe(entidade: Model, dados: any?): (boolean, string?)
+function ControladorCombate.ProcessarAtacarEmPe(entidade: Model, dados: any?): (boolean, string?)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
-	local sucesso, tipoAtaque, motivo = maquina:TenteAtacarLeveEmPe()
+	local sucesso, tipoAtaque, motivo = maquina:TenteAtacarEmPe()
 
 	if not sucesso then
 		if motivo == "ComboContinuado" then
@@ -475,12 +536,12 @@ function ControladorCombate.ProcessarAtacarLeveEmPe(entidade: Model, dados: any?
 			return true, nil
 		end
 
-		DebugPrint(string.format("[Combate] %s: AtacarLeveEmPe FALHOU - %s", entidade.Name, motivo or "?"))
+		DebugPrint(string.format("[Combate] %s: AtacarEmPe FALHOU - %s", entidade.Name, motivo or "?"))
 		return false, motivo
 	end
 
 	if tipoAtaque then
-		DebugPrint(string.format("[Combate] %s: AtacarLeveEmPe OK - tipo=%s", entidade.Name, tipoAtaque))
+		DebugPrint(string.format("[Combate] %s: AtacarEmPe OK - tipo=%s", entidade.Name, tipoAtaque))
 
 		local velocidade = (typeof(dados) == "table" and typeof(dados.velocidade) == "number") and dados.velocidade
 			or 1.0
@@ -504,7 +565,7 @@ function ControladorCombate.ProcessarComboHitbox(entidade: Model, dados: any): (
 
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
-	if maquina:ObterEstadoAcao() ~= "AtacandoLeve" then
+	if maquina:ObterEstadoAcao() ~= "Atacando" then
 		DebugPrint(string.format("[Combate] %s: ComboHitbox ignorado - não está atacando", entidade.Name))
 		return false, "NaoAtacando"
 	end
@@ -514,13 +575,14 @@ function ControladorCombate.ProcessarComboHitbox(entidade: Model, dados: any): (
 	DebugPrint(string.format("[Combate] %s: ComboHitbox golpe %d - tipo=%s", entidade.Name, indiceGolpe, tipoAtaque))
 
 	maquina:AvancarGolpeCombo(indiceGolpe)
+	maquina.dados.hitboxAtivou = true
 
 	ControladorCombate._AplicarImpulsoAtacante(entidade, tipoAtaque)
 
 	if EhGolpeFinal(indiceGolpe) then
 		local tempoFinal = Modulo_Configuracoes.ObterConfiguracao("JanelaCancelamentoComboFinal") or 0.6
 		task.delay(tempoFinal, function()
-			if maquina:ObterEstadoAcao() == "AtacandoLeve" then
+			if maquina:ObterEstadoAcao() == "Atacando" then
 				maquina:CompletarAcao()
 				ControladorCombate._SincronizarEstado(entidade)
 			end
@@ -533,12 +595,16 @@ end
 function ControladorCombate.ProcessarComboContinuado(entidade: Model, proximoIndice: number): (boolean, string?)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
-	if maquina:ObterEstadoAcao() ~= "AtacandoLeve" then
+	if maquina:ObterEstadoAcao() ~= "Atacando" then
 		return false, "NaoAtacando"
 	end
 
 	maquina:DesativarJanelaCombo()
-	maquina.dados.ultimaContinuacaoCombo = tick()
+	local agora = os.clock()
+	maquina.dados.ultimaContinuacaoCombo = agora
+	maquina.dados.ultimoAtaque = agora
+	maquina.dados.hitboxAtivou = false
+	maquina.dados.velocidadeAnimacao = 1.0
 
 	DebugPrint(string.format("[Combate] %s: Combo continuado para golpe %d", entidade.Name, proximoIndice))
 
@@ -548,7 +614,7 @@ end
 function ControladorCombate.ProcessarComboTerminou(entidade: Model)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
-	if maquina:ObterEstadoAcao() == "AtacandoLeve" then
+	if maquina:ObterEstadoAcao() == "Atacando" then
 		maquina:CompletarAcao()
 		ControladorCombate._PararAnimacao(entidade)
 		ControladorCombate._SincronizarEstado(entidade)
@@ -562,7 +628,7 @@ end
 function ControladorCombate.ProcessarComboEarlyCancel(entidade: Model)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
-	if maquina:ObterEstadoAcao() == "AtacandoLeve" then
+	if maquina:ObterEstadoAcao() == "Atacando" then
 		maquina:CompletarAcao()
 
 		local humanoid = entidade:FindFirstChildOfClass("Humanoid")
@@ -595,7 +661,6 @@ function ControladorCombate.ProcessarRollEarlyCancel(entidade: Model)
 			end
 		end
 
-		ControladorCombate._PararAnimacao(entidade)
 		ControladorCombate._SincronizarEstado(entidade)
 
 		DebugPrint(string.format("[Combate] %s: Roll early cancel executado", entidade.Name))
@@ -620,7 +685,6 @@ function ControladorCombate.ProcessarDashEarlyCancel(entidade: Model)
 			end
 		end
 
-		ControladorCombate._PararAnimacao(entidade)
 		ControladorCombate._SincronizarEstado(entidade)
 
 		DebugPrint(string.format("[Combate] %s: Dash early cancel executado", entidade.Name))
@@ -629,19 +693,34 @@ function ControladorCombate.ProcessarDashEarlyCancel(entidade: Model)
 	return true, nil
 end
 
-function ControladorCombate.ProcessarCancelarAtaquePorDefesa(entidade: Model, tipoAtaque: string)
+function ControladorCombate.ProcessarFintar(entidade: Model, tipoAtaque: string)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
 	local estadoAcao = maquina:ObterEstadoAcao()
 
-	local podeCancel = (tipoAtaque == "AtaqueLeve" and estadoAcao == "AtacandoLeve")
+	-- Validar se a finta está dentro da janela de windup/carga
+	local tempoAtaque = maquina.dados.ultimoAtaque or 0
+	local agora = os.clock()
+
+	local player = Players:GetPlayerFromCharacter(entidade)
+	local rtt = (player and (player:GetAttribute("RTT") or 0)) or 0
+	local tolerancia = math.clamp(rtt, 0, 0.25)
+
+	-- Se a hitbox já ativou, não pode fintar de jeito nenhum
+	local hitboxAtivou = maquina.dados.hitboxAtivou == true
+
+	-- Sanity check de tempo limite da finta (cobre tempo máximo de carga + swing inicial + tolerância de lag)
+	local limiteWindow = 1.2 + tolerancia
+	local dentroDaJanela = (agora - tempoAtaque) <= limiteWindow
+
+	local podeCancel = (tipoAtaque == "Ataque" and estadoAcao == "Atacando" and dentroDaJanela and not hitboxAtivou)
 
 	if podeCancel then
 		maquina:CompletarAcao()
 
 		local cooldownCompleto = Modulo_Configuracoes.ObterConfiguracao("CooldownComboLeve") or 0.4
-		local cooldownCancel = 0.1
-		maquina.dados.ultimoComboTerminou = tick() - cooldownCompleto + cooldownCancel
+		local cooldownFinta = 0.1
+		maquina.dados.ultimoComboTerminou = os.clock() - cooldownCompleto + cooldownFinta
 
 		local humanoid = entidade:FindFirstChildOfClass("Humanoid")
 		if humanoid then
@@ -651,7 +730,9 @@ function ControladorCombate.ProcessarCancelarAtaquePorDefesa(entidade: Model, ti
 		ControladorCombate._PararAnimacao(entidade)
 		ControladorCombate._SincronizarEstado(entidade)
 
-		DebugPrint(string.format("[Combate] %s: Ataque '%s' cancelado por defesa", entidade.Name, tipoAtaque))
+		DebugPrint(string.format("[Combate] %s: Ataque '%s' fintado", entidade.Name, tipoAtaque))
+	else
+		DebugPrint(string.format("[Combate] %s: Finta REJEITADA - estado=%s, hitboxAtivou=%s, tempoDecor=%f, maxJanela=%f", entidade.Name, estadoAcao, tostring(hitboxAtivou), (agora - tempoAtaque), limiteWindow))
 	end
 
 	return true, nil
@@ -664,28 +745,30 @@ function ControladorCombate.ProcessarAjustarVelocidadeAnimacao(entidade: Model, 
 	end
 
 	local estadoAcao = maquina:ObterEstadoAcao()
-	if estadoAcao ~= "AtacandoLeve" then
+	if estadoAcao ~= "Atacando" then
 		return false, "NaoAtacando"
 	end
 
 	if typeof(dados) == "table" and typeof(dados.velocidade) == "number" then
+		maquina.dados.velocidadeAnimacao = dados.velocidade
 		local animId = ""
-		TocarAnimacao:FireAllClients(entidade, animId, "", false, dados.velocidade)
+		local serverTimestamp = workspace:GetServerTimeNow()
+		TocarAnimacao:FireAllClients(entidade, animId, "", false, dados.velocidade, serverTimestamp)
 	end
 
 	return true, nil
 end
 
-function ControladorCombate.ProcessarAtacarLeveAgachado(entidade: Model, dados: any?): (boolean, string?)
+function ControladorCombate.ProcessarAtacarAgachado(entidade: Model, dados: any?): (boolean, string?)
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
-	local sucesso, tipoAtaque, motivo = maquina:TenteAtacarLeveAgachado()
+	local sucesso, tipoAtaque, motivo = maquina:TenteAtacarAgachado()
 
 	if not sucesso then
 		return false, motivo
 	end
 
-	tipoAtaque = tipoAtaque or "AtaqueLeve"
+	tipoAtaque = tipoAtaque or "Ataque"
 
 	local velocidade = (typeof(dados) == "table" and typeof(dados.velocidade) == "number") and dados.velocidade or 1.0
 	ControladorCombate._TocarAnimacao(entidade, tipoAtaque, false, velocidade)
@@ -727,19 +810,20 @@ function ControladorCombate.ProcessarBloquear(
 	-- Animação agora é iniciada de forma centralizada pelo listener AoMudarEstadoAcao
 
 	local status = entidade:FindFirstChild("Status")
-	local agora = workspace:GetServerTimeNow()
+	local agoraServerTime = workspace:GetServerTimeNow()
+	local agoraClock = os.clock()
 	local cooldownParry = Modulo_Configuracoes.ObterConfiguracao("CooldownParry") or 2.4
-	local podeParry = (agora - (maquina.dados.ultimoParry or 0)) >= cooldownParry
+	local podeParry = (agoraClock - (maquina.dados.ultimoParry or 0)) >= cooldownParry
 
 	if podeParry then
 		maquina.dados.prontoParaAparar = true
-		maquina.dados.ultimoParry = agora
-		maquina.dados.momentoBloqueio = agora
+		maquina.dados.ultimoParry = agoraClock
+		maquina.dados.momentoBloqueio = agoraServerTime
 
-		if typeof(clienteTimestamp) == "number" and clienteTimestamp <= agora + 0.1 then
+		if typeof(clienteTimestamp) == "number" and clienteTimestamp <= agoraServerTime + 0.1 then
 			maquina.dados.pendingParryTimestamp = clienteTimestamp
 		else
-			maquina.dados.pendingParryTimestamp = agora
+			maquina.dados.pendingParryTimestamp = agoraServerTime
 		end
 
 		if status then
@@ -764,8 +848,8 @@ function ControladorCombate.ProcessarBloquear(
 		end)
 	else
 		maquina.dados.prontoParaAparar = false
-		maquina.dados.momentoBloqueio = agora
-		maquina.dados.pendingParryTimestamp = agora
+		maquina.dados.momentoBloqueio = agoraServerTime
+		maquina.dados.pendingParryTimestamp = agoraServerTime
 		if status then
 			local prontoAparar = status:FindFirstChild("ProntoAparar")
 			if prontoAparar and prontoAparar:IsA("BoolValue") then
@@ -1151,7 +1235,7 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 	local maquina = ControladorCombate.ObterMaquina(entidade)
 
 	local estadoAcao = maquina:ObterEstadoAcao()
-	local emAtaque = estadoAcao == "AtacandoLeve" or estadoAcao == "AtacandoLeveAgachado"
+	local emAtaque = estadoAcao == "Atacando" or estadoAcao == "AtacandoAgachado"
 
 	if not emAtaque then
 		DebugPrint(
@@ -1196,8 +1280,8 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 		end
 	end
 
-	local tipoAtaque = "AtaqueLeve"
-	if estadoAcao == "AtacandoLeve" then
+	local tipoAtaque = "Ataque"
+	if estadoAcao == "Atacando" then
 		local indiceCombo = maquina.dados.indiceCombo or 1
 		tipoAtaque = DeterminarTipoAtaque(indiceCombo)
 	end
@@ -1234,9 +1318,23 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 	end
 
 	local momentoHit = workspace:GetServerTimeNow()
+	local swingToken = maquina.dados.indiceCombo or 0 -- Token de swing para evitar race condition
 	if delay > 0.01 then
 		task.delay(delay, function()
 			if entidade.Parent and alvo.Parent then
+				-- Verificar se o atacante ainda está no mesmo swing
+				local maqAtual = ControladorCombate.ObterMaquina(entidade)
+				if maqAtual and (maqAtual.dados.indiceCombo or 0) ~= swingToken then
+					DebugPrint(
+						string.format(
+							"[Combate] Hit buffer descartado: swing mudou (%d -> %d)",
+							swingToken,
+							maqAtual.dados.indiceCombo or 0
+						)
+					)
+					return
+				end
+
 				local currentAlvoHumanoid = alvo:FindFirstChildOfClass("Humanoid")
 				if currentAlvoHumanoid and currentAlvoHumanoid.Health > 0 then
 					ControladorCombate._ProcessarHit(
@@ -1282,8 +1380,8 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 end
 
 local MapaAcoes = {
-	AtacarLeveEmPe = ControladorCombate.ProcessarAtacarLeveEmPe,
-	AtacarLeveAgachado = ControladorCombate.ProcessarAtacarLeveAgachado,
+	AtacarEmPe = ControladorCombate.ProcessarAtacarEmPe,
+	AtacarAgachado = ControladorCombate.ProcessarAtacarAgachado,
 	Bloquear = function(entidade, dados)
 		local shiftLockAtivo = typeof(dados) == "table" and dados.shiftLock or nil
 		local clienteTimestamp = typeof(dados) == "table" and typeof(dados.timestamp) == "number" and dados.timestamp
@@ -1329,8 +1427,8 @@ local MapaAcoes = {
 		return ControladorCombate.ProcessarHitboxAcerto(entidade, dados)
 	end,
 
-	CancelarAtaquePorDefesa = function(entidade, dados)
-		return ControladorCombate.ProcessarCancelarAtaquePorDefesa(entidade, dados)
+	Fintar = function(entidade, dados)
+		return ControladorCombate.ProcessarFintar(entidade, dados)
 	end,
 	AjustarVelocidadeAnimacao = function(entidade, dados)
 		return ControladorCombate.ProcessarAjustarVelocidadeAnimacao(entidade, dados)
@@ -1348,6 +1446,11 @@ function ControladorCombate.ProcessarAcao(entidade: Model, acao: string, dados: 
 end
 
 TentarAcao.OnServerEvent:Connect(function(player, acao, dados)
+	-- Rate-limiting silencioso: ignora ações excedentes sem penalidade
+	if not VerificarRateLimit(player) then
+		return
+	end
+
 	local character = player.Character
 	if not character then
 		return
