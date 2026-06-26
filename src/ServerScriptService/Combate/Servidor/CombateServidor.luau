@@ -358,7 +358,44 @@ function ControladorCombate._ProcessarHit(
 			if dirXZ.Magnitude > 0 then
 				dirXZ = dirXZ.Unit
 
-				local lookVector = validAlvoCFrame and validAlvoCFrame.LookVector or hrpAlvo.CFrame.LookVector
+				local lookVector: Vector3
+				local npcAlvoRef = alvo:GetAttribute("NPC_AlvoRef")
+				if npcAlvoRef and typeof(npcAlvoRef) == "number" and npcAlvoRef ~= 0 then
+					local posAlvoFocado: Vector3? = nil
+					if npcAlvoRef > 0 then
+						for _, player in ipairs(Players:GetPlayers()) do
+							if player.UserId == npcAlvoRef then
+								local char = player.Character
+								local targetHrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+								if targetHrp then
+									posAlvoFocado = targetHrp.Position
+								end
+								break
+							end
+						end
+					else
+						local procurado = -npcAlvoRef
+						local pastaNPCs = workspace:FindFirstChild("NPCs") or workspace
+						for _, m in ipairs(pastaNPCs:GetDescendants()) do
+							if m:IsA("Model") and m:GetAttribute("NPC_Id") == procurado then
+								local targetHrp = m:FindFirstChild("HumanoidRootPart") :: BasePart?
+								if targetHrp then
+									posAlvoFocado = targetHrp.Position
+								end
+								break
+							end
+						end
+					end
+
+					if posAlvoFocado then
+						lookVector = (posAlvoFocado - posAlvo)
+					else
+						lookVector = validAlvoCFrame and validAlvoCFrame.LookVector or hrpAlvo.CFrame.LookVector
+					end
+				else
+					lookVector = validAlvoCFrame and validAlvoCFrame.LookVector or hrpAlvo.CFrame.LookVector
+				end
+
 				local lookXZ = Vector3.new(lookVector.X, 0, lookVector.Z)
 				if lookXZ.Magnitude > 0 then
 					lookXZ = lookXZ.Unit
