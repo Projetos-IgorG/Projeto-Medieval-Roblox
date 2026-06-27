@@ -14,7 +14,7 @@ local ActionModes = {
 		aplicaKnockback = true,
 		temCombo = true,
 		configCombo = {
-			velocidadeJanela = 0.4,
+			velocidadeJanela = 0.3,
 			divideDano = true,
 		},
 		animacoes = {
@@ -62,7 +62,7 @@ local ActionModes = {
 		aplicaKnockback = true,
 		temCombo = true,
 		configCombo = {
-			velocidadeJanela = 0.4,
+			velocidadeJanela = 0.3,
 		},
 		animacoes = {
 			Idle = "rbxassetid://125678807327806",
