@@ -2,34 +2,37 @@
 --[[
 	Script: init.luau
 	Caminho: src/ReplicatedStorage/Jogador/Aparencia/UnificacaoFacial
-	Responsabilidade: Substitui dynamic heads por seus equivalentes classicos 2D usando o modulo Facial Unification (v1.4) do Dogutsune.
+	Responsabilidade: Substitui dynamic heads por seus equivalentes classicos 2D usando o modulo Facial Unification (v1.5) do Dogutsune.
 	Uso: ModuleScript; consumido pelo servidor (precisa de CreateHumanoidModelFromDescriptionAsync e ApplyDescriptionAsync).
 	Nao faz: Nao escuta eventos de Players nem aplica conversao automaticamente; quem chama decide quando converter.
-	Funcoes principais: ConvertFromHumanoidDescription, ConvertAnimatedHead
+	Funcoes principais: ConvertFromHumanoidDescription, ConvertAnimatedHead, GetHeadShape
 ]]
 
 local EXCLUDED_ACCESSORIES = {
-	Enum.AccessoryType.Face;
-	Enum.AccessoryType.Eyebrow;
-	Enum.AccessoryType.Eyelash;
+	Enum.AccessoryType.Eyebrow,
+	Enum.AccessoryType.Eyelash,
 }
 
 local Players = game:GetService("Players")
-local ToHatModule : ModuleScript = script:WaitForChild("ToHat")
+local ToHatModule: ModuleScript = script:WaitForChild("ToHat")
 local TO_HAT = require(ToHatModule)
-local ToFaceModule : ModuleScript = script:WaitForChild("ToFace")
+local ToFaceModule: ModuleScript = script:WaitForChild("ToFace")
 local TO_FACE = require(ToFaceModule)
+local HeadShapesModule: ModuleScript = script:WaitForChild("HeadShapes")
+local HEAD_SHAPES = require(HeadShapesModule) :: { [string]: number }
 
-local DescHolder = Instance.new("HumanoidDescription")
-DescHolder.HeadScale = 1
-DescHolder.WidthScale = 1
-DescHolder.DepthScale = 1
-DescHolder.HeightScale = 1
-DescHolder.BodyTypeScale = 0
-DescHolder.ProportionScale = 0
+local Desc = Instance.new("HumanoidDescription")
+Desc.HeadScale = 1
+Desc.WidthScale = 1
+Desc.DepthScale = 1
+Desc.HeightScale = 1
+Desc.BodyTypeScale = 0
+Desc.ProportionScale = 0
 
-local function CreateRetexture(name : string, hatId : number, texture : number) : Accoutrement?
+local function CreateRetexture(name: string, hatId: number, texture: number): Accoutrement?
 	local textureID = `rbxassetid://{texture}`
+
+	local DescHolder = Desc:Clone()
 	DescHolder.HatAccessory = tostring(hatId)
 
 	local R15 = Players:CreateHumanoidModelFromDescriptionAsync(DescHolder, Enum.HumanoidRigType.R15)
@@ -50,9 +53,15 @@ local function CreateRetexture(name : string, hatId : number, texture : number) 
 	return hat
 end
 
+local function ReturnHeadFromShape(headShape: string): number
+	assert(headShape, "Expected HeadShape string but got nil instead!")
+	local id = HEAD_SHAPES[headShape]
+	return id or 0
+end
+
 local FacialU = {}
 
-local function RemoveFaceAccessories(humanoidDescription : HumanoidDescription)
+local function RemoveFaceAccessories(humanoidDescription: HumanoidDescription)
 	local getAccessories = humanoidDescription:GetAccessories(true)
 	local setAccessories = {}
 	for _, v in pairs(getAccessories) do
@@ -65,14 +74,37 @@ local function RemoveFaceAccessories(humanoidDescription : HumanoidDescription)
 	humanoidDescription:SetAccessories(setAccessories, true)
 end
 
-function FacialU:ConvertFromHumanoidDescription(humanoidDescription : HumanoidDescription, useDefaultHead : boolean?): (boolean, Accoutrement?)
-	assert(humanoidDescription, "Expected HumanoidDescription but got nil instead, please provide a humanoid description!")
+function FacialU:GetHeadShape(humanoidDescription: HumanoidDescription): string
+	assert(
+		humanoidDescription,
+		"Expected HumanoidDescription but got nil instead, please provide a humanoid description!"
+	)
+	local shape = ""
+
+	for _, bodyPart in pairs(humanoidDescription:GetChildren()) do
+		if bodyPart and bodyPart:IsA("BodyPartDescription") and bodyPart.HeadShape ~= "" then
+			shape = bodyPart.HeadShape
+			break
+		end
+	end
+
+	return shape
+end
+
+function FacialU:ConvertFromHumanoidDescription(
+	humanoidDescription: HumanoidDescription,
+	useDefaultHead: boolean?
+): (boolean, Accoutrement?)
+	assert(
+		humanoidDescription,
+		"Expected HumanoidDescription but got nil instead, please provide a humanoid description!"
+	)
 
 	useDefaultHead = useDefaultHead or false
 
 	local ID = humanoidDescription.Head
 	local removeFaceStuff = false
-	local hatToCopy : Accoutrement?
+	local hatToCopy: Accoutrement?
 
 	if TO_HAT[ID] then
 		hatToCopy = CreateRetexture(TO_HAT[ID].Name, TO_HAT[ID].OriginalHat, TO_HAT[ID].Texture)
@@ -80,8 +112,14 @@ function FacialU:ConvertFromHumanoidDescription(humanoidDescription : HumanoidDe
 		removeFaceStuff = true
 	elseif TO_FACE[ID] then
 		humanoidDescription.Face = TO_FACE[ID].Face
-		humanoidDescription.Head = useDefaultHead and 0 or TO_FACE[ID].Head
 		removeFaceStuff = true
+
+		if useDefaultHead then
+			humanoidDescription.Head = 0
+		else
+			local name = self:GetHeadShape(humanoidDescription)
+			humanoidDescription.Head = (name and name ~= "") and ReturnHeadFromShape(name) or TO_FACE[ID].Head or 0
+		end
 	end
 
 	if removeFaceStuff then
@@ -98,7 +136,11 @@ function FacialU:ConvertFromHumanoidDescription(humanoidDescription : HumanoidDe
 	return removeFaceStuff, hatToCopy
 end
 
-function FacialU:ConvertAnimatedHead(humanoid : Humanoid, useDefaultHead : boolean?, forceClassicFallback : boolean?) : boolean
+function FacialU:ConvertAnimatedHead(
+	humanoid: Humanoid,
+	useDefaultHead: boolean?,
+	forceClassicFallback: boolean?
+): boolean
 	assert(humanoid, "Expected Humanoid but got nil instead!")
 	useDefaultHead = useDefaultHead or false
 	forceClassicFallback = forceClassicFallback == true
@@ -127,7 +169,7 @@ function FacialU:ConvertAnimatedHead(humanoid : Humanoid, useDefaultHead : boole
 	return false
 end
 
-local Attribution : ModuleScript = script:FindFirstChild("Attribution")
+local Attribution: ModuleScript = script:FindFirstChild("Attribution")
 if Attribution and Attribution:IsA("ModuleScript") then
 	require(Attribution)
 end

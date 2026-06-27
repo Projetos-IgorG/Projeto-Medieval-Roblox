@@ -7,7 +7,7 @@
 	Funcoes principais: UpToDate
 ]]
 local DEV = false
-local VERSION = "v1.4"
+local VERSION = "v1.5"
 
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
@@ -39,7 +39,9 @@ if DEV or not RunService:IsStudio() then
 end
 
 if not UpToDate() then
-	warn("⚠️ Facial Unification has a new version! You can check the official DevForum post at: https://devforum.roblox.com/t/4312162")
+	warn(
+		"⚠️ Facial Unification is not the same version as the model! You can check the official DevForum post at: https://devforum.roblox.com/t/4312162"
+	)
 end
 
 return {}
