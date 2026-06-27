@@ -282,16 +282,21 @@ local function CriarJointArmaServerSide(player: Player, slot: string)
 	local toolNaMao = character:FindFirstChildOfClass("Tool")
 
 	if not cache then
-		local ehPunhos = toolNaMao
-			and LerTipoDados(toolNaMao) == "ArmasEquipadas"
-			and LerModoDados(toolNaMao) == "Punhos"
-		if ehPunhos then
-			dadosEquipamento[player][slot] = { acessoriosClonados = {} }
-			cache = dadosEquipamento[player][slot]
-		else
-			DebugPrint("[ServicoEquipamento] Sem cache para criar joint no slot:", slot)
-			return
+		if toolNaMao and LerTipoDados(toolNaMao) == "ArmasEquipadas" then
+			local dados = ToolBuilder.ExtrairDados(toolNaMao)
+			if dados then
+				dadosEquipamento[player][slot] = {
+					dados = dados,
+					acessoriosClonados = {},
+				}
+				cache = dadosEquipamento[player][slot]
+			end
 		end
+	end
+
+	if not cache then
+		DebugPrint("[ServicoEquipamento] Sem cache para criar joint no slot:", slot)
+		return
 	end
 
 	if toolNaMao and LerTipoDados(toolNaMao) ~= "ArmasEquipadas" then
@@ -300,7 +305,7 @@ local function CriarJointArmaServerSide(player: Player, slot: string)
 	end
 
 	local toolEquipada
-	if toolNaMao and LerModoDados(toolNaMao) == "Punhos" then
+	if toolNaMao and LerTipoDados(toolNaMao) == "ArmasEquipadas" then
 		toolEquipada = toolNaMao
 	else
 		local slotOV = ObterSlotOV(player, slot)
