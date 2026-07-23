@@ -18,6 +18,7 @@ end
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local CatalogoItens = require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
 
 local Combate = ReplicatedStorage:WaitForChild("Combate")
 local DominioCombate = Combate:WaitForChild("Dominio")
@@ -1362,10 +1363,10 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 
 	if hrpAtacante and hrpAlvo then
 		local alcanceMaximo = 8
-		local dadosTool = tool:FindFirstChild("Dados")
-		local alcanceValue = dadosTool and dadosTool:FindFirstChild("Alcance")
-		if alcanceValue and (alcanceValue:IsA("NumberValue") or alcanceValue:IsA("IntValue")) then
-			alcanceMaximo = (alcanceValue :: any).Value
+		local id = tool:GetAttribute("Id")
+		local catalogData = id and CatalogoItens.Get(id)
+		if catalogData and catalogData.Alcance then
+			alcanceMaximo = catalogData.Alcance
 		end
 
 		local distancia = (hrpAtacante.Position - hrpAlvo.Position).Magnitude

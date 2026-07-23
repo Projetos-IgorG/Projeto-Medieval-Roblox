@@ -18,8 +18,10 @@ local function DebugPrint(...)
 end
 
 local Modulos = ReplicatedStorage
-local ToolBuilder = require(Modulos:WaitForChild("Equipamentos"):WaitForChild("ConstrutorFerramentas"))
-local ModEquip = require(Modulos:WaitForChild("Equipamentos"):WaitForChild("ValidacaoEquipamentos"))
+local ToolBuilder = require(Modulos:WaitForChild("SistemaItens"):WaitForChild("ConstrutorTools") :: ModuleScript)
+local ModEquip = require(Modulos:WaitForChild("SistemaItens"):WaitForChild("ValidacaoEquipamentos") :: ModuleScript)
+local CatalogoItens =
+	require(Modulos:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens") :: ModuleScript)
 
 local function OcultarComponentesTool(tool: Tool)
 	for _, desc in ipairs(tool:GetDescendants()) do
@@ -29,7 +31,9 @@ local function OcultarComponentesTool(tool: Tool)
 			desc.CanTouch = false
 			desc.CanQuery = false
 			desc.Massless = true
-			desc.Anchored = true
+			-- NAO ancorar: se a Part for o Handle, o Roblox solda o braco nele.
+			-- Se estiver ancorado, o braco (e o personagem) fica preso no lugar.
+			desc.Anchored = false
 		elseif desc:IsA("Decal") or desc:IsA("Texture") then
 			desc.Transparency = 1
 		elseif desc:IsA("ParticleEmitter") or desc:IsA("Trail") or desc:IsA("Beam") or desc:IsA("Light") then
@@ -65,28 +69,110 @@ local function PrepararCloneAcessorio(clone: Accessory): boolean
 	return true
 end
 
+-- Welda manualmente o acessorio no character (suporta R15 via attachments e R6 via fallback)
+local function AdicionarAcessorioManual(character: Model, clone: Accessory)
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local handle = clone:FindFirstChild("Handle")
+	if not handle or not handle:IsA("BasePart") then
+		return
+	end
+
+	-- 1. Tentar achar o attachment correspondente no character
+	local attachmentNaMochila = handle:FindFirstChildOfClass("Attachment")
+	local attachmentNoChar = nil
+	if attachmentNaMochila then
+		attachmentNoChar = character:FindFirstChild(attachmentNaMochila.Name, true)
+	end
+
+	if attachmentNoChar and attachmentNoChar:IsA("Attachment") then
+		-- Encontrou attachment correspondente! Weld igual o Roblox faz
+		local targetPart = attachmentNoChar.Parent :: BasePart
+		
+		clone:SetAttribute("Equipamento", true)
+		clone.Parent = character
+		
+		-- Alinha CFrame do Handle do Acessorio com o Attachment do Character
+		handle.CFrame = targetPart.CFrame * attachmentNoChar.CFrame * attachmentNaMochila.CFrame:Inverse()
+		
+		local weld = Instance.new("Weld")
+		weld.Name = "AccessoryWeld"
+		weld.Part0 = handle
+		weld.Part1 = targetPart
+		weld.C0 = attachmentNaMochila.CFrame
+		weld.C1 = attachmentNoChar.CFrame
+		weld.Parent = handle
+	else
+		-- 2. Se nao encontrou attachment (caso do R6 sem attachments especificos),
+		-- identifica a parte do corpo baseada no nome do acessorio ou do Slot
+		local targetPartName = "Torso"
+		local lowerName = clone.Name:lower()
+		if lowerName:find("bracodireito") or lowerName:find("rightarm") then
+			targetPartName = "Right Arm"
+		elseif lowerName:find("bracoesquerdo") or lowerName:find("leftarm") then
+			targetPartName = "Left Arm"
+		elseif lowerName:find("pernadireita") or lowerName:find("rightleg") then
+			targetPartName = "Right Leg"
+		elseif lowerName:find("pernaesquerda") or lowerName:find("leftleg") then
+			targetPartName = "Left Leg"
+		elseif lowerName:find("cabeca") or lowerName:find("head") then
+			targetPartName = "Head"
+		end
+
+		local targetPart = character:FindFirstChild(targetPartName)
+		if targetPart and targetPart:IsA("BasePart") then
+			clone:SetAttribute("Equipamento", true)
+			clone.Parent = character
+			
+			-- Alinha CFrame ao centro da parte (offset zero para armadura R6 moldada)
+			handle.CFrame = targetPart.CFrame
+			
+			local weld = Instance.new("Weld")
+			weld.Name = "AccessoryWeld"
+			weld.Part0 = handle
+			weld.Part1 = targetPart
+			weld.C0 = CFrame.new()
+			weld.C1 = CFrame.new()
+			weld.Parent = handle
+		else
+			-- Fallback para humanoid:AddAccessory caso seja R15 padrão
+			if humanoid then
+				clone:SetAttribute("Equipamento", true)
+				humanoid:AddAccessory(clone)
+			end
+		end
+	end
+end
+
+
 local function LerModoDados(tool: Instance): string?
-	local dadosF = tool:FindFirstChild("Dados")
-	if not dadosF then
+	local id = tool:GetAttribute("Id")
+	if typeof(id) ~= "string" then
 		return nil
 	end
-	local modoV = dadosF:FindFirstChild("modoAnimacao")
-	if modoV then
-		return modoV.Value
-	end
-	return nil
+	local dados = CatalogoItens.Get(id)
+	return dados and dados.ModoAnimacao
 end
 
 local function LerTipoDados(tool: Instance): string?
-	local dadosF = tool:FindFirstChild("Dados")
-	if not dadosF then
-		return nil
+	local id = tool:GetAttribute("Id")
+	if typeof(id) ~= "string" then
+		return tool:GetAttribute("Tipo") :: string?
 	end
-	local tipoV = dadosF:FindFirstChild("Tipo")
-	if tipoV then
-		return tipoV.Value
+	local dados = CatalogoItens.Get(id)
+	if dados then
+		-- Mapeia os tipos do catálogo novo para os esperados pelo jogo
+		if dados.Tipo == "Tool" then
+			if dados.Subtipo == "Arma" then
+				return "Armas"
+			elseif dados.Subtipo == "Ferramenta" then
+				return "Ferramentas"
+			end
+		elseif dados.Tipo == "Equipment" then
+			return "Armaduras"
+		end
+		return dados.Tipo
 	end
-	return nil
+	return tool:GetAttribute("Tipo") :: string?
 end
 
 local ServicoEquipamento = {}
@@ -121,6 +207,10 @@ local function ObterHumanoid(player: Player): Humanoid?
 		return nil
 	end
 	return character:FindFirstChildOfClass("Humanoid")
+end
+
+local function ObterBackpack(player: Player): any
+	return player:FindFirstChildOfClass("Backpack") :: any
 end
 
 local function InicializarCache(player: Player)
@@ -173,14 +263,9 @@ local function BuscarFlechasBackpack(player: Player): Tool?
 			local tipo = ModEquip.LerTipo(child)
 
 			if tipo == "Materiais" then
-				local dados = child:FindFirstChild("Dados")
-				if dados then
-					local idValue = dados:FindFirstChild("Id")
-					if idValue and idValue:IsA("StringValue") then
-						if string.find(string.lower(idValue.Value), "flecha") then
-							return child
-						end
-					end
+				local id = child:GetAttribute("Id")
+				if typeof(id) == "string" and string.find(string.lower(id), "flecha") then
+					return child
 				end
 			end
 		end
@@ -190,16 +275,10 @@ local function BuscarFlechasBackpack(player: Player): Tool?
 end
 
 local function ConsumirTool(tool: Tool, dados: any): any
-	local quantidade = dados.Quantidade or 1
+	local quantidade = tool:GetAttribute("Quantidade") or 1
 	if quantidade > 1 then
-		local dadosFolder = tool:FindFirstChild("Dados")
-		if dadosFolder then
-			local qtdValue = dadosFolder:FindFirstChild("Quantidade")
-			if qtdValue then
-				qtdValue.Value = quantidade - 1
-				DebugPrint("[ServicoEquipamento] Quantidade decrementada para:", quantidade - 1)
-			end
-		end
+		tool:SetAttribute("Quantidade", quantidade - 1)
+		DebugPrint("[ServicoEquipamento] Quantidade decrementada para:", quantidade - 1)
 		dados.Quantidade = 1
 	else
 		tool:Destroy()
@@ -216,7 +295,6 @@ local SLOT_PARA_BRACO: { [string]: string } = {
 local function PrepararModelArma(model: Model)
 	for _, desc in ipairs(model:GetDescendants()) do
 		if desc:IsA("BasePart") then
-
 			desc.Transparency = if desc.Name == "HitboxPart" then 1 else 0
 			desc.Anchored = false
 			desc.CanCollide = false
@@ -238,6 +316,57 @@ local SLOT_SUFIXO: { [string]: string } = {
 	LeftArm = "Left",
 }
 
+-- Monta um Model temporario contendo os filhos da Tool (estrutura flat).
+-- A Tool tem Handle, Lamina, HitboxPart, etc., todos como filhos diretos.
+-- Clona o tool inteiro para preservar WeldConstraints entre as partes (ex: Lamina presa no Handle).
+-- O HitboxPart é mantido pois é necessário para a inicialização da hitbox de combate.
+-- Apenas scripts, prompts de proximidade e configurações são removidos do clone visual.
+local function MontarModelVisualDaTool(tool: Tool): Model?
+	local handle = tool:FindFirstChild("Handle") :: BasePart
+	if not handle or not handle:IsA("BasePart") then
+		DebugPrint("[ServicoEquipamento] Tool sem Handle:", tool.Name)
+		return nil
+	end
+
+	local cloneTool = tool:Clone()
+	local modelVisual = Instance.new("Model")
+	modelVisual.Name = "WeaponVisual"
+
+	local hasWeaponModel = cloneTool:FindFirstChild("WeaponModel") ~= nil
+
+	-- Move todos os filhos uteis (incluindo HitboxPart e WeldConstraints) do clone para o Model
+	for _, filho in ipairs(cloneTool:GetChildren()) do
+		if filho:IsA("Script") or filho:IsA("LocalScript") or filho:IsA("ProximityPrompt") or filho:IsA("Configuration") then
+			filho:Destroy()
+		elseif filho:IsA("Model") and filho.Name == "WeaponModel" then
+			-- Descompacta os filhos do WeaponModel (ex: no Punhos) para ficarem flat no root
+			for _, subFilho in ipairs(filho:GetChildren()) do
+				if not (subFilho:IsA("Script") or subFilho:IsA("LocalScript") or subFilho:IsA("ProximityPrompt") or subFilho:IsA("Configuration")) then
+					subFilho.Parent = modelVisual
+				end
+			end
+			filho:Destroy()
+		else
+			if hasWeaponModel and filho.Name == "Handle" then
+				-- Se temos um WeaponModel, o root Handle é sobressalente/placeholder do Roblox, então removemos
+				filho:Destroy()
+			else
+				filho.Parent = modelVisual
+			end
+		end
+	end
+	cloneTool:Destroy()
+
+	if not modelVisual:FindFirstChild("Handle") then
+		modelVisual:Destroy()
+		DebugPrint("[ServicoEquipamento] Handle nao encontrado ao montar model visual de:", tool.Name)
+		return nil
+	end
+
+	return modelVisual
+end
+
+
 local function CriarJointParaBraco(
 	weaponModel: Model,
 	armPart: BasePart,
@@ -253,7 +382,8 @@ local function CriarJointParaBraco(
 	armaClone.Name = "WeaponModel" .. sufixo
 	local handleClone = armaClone:FindFirstChild("Handle") :: BasePart
 	assert(handleClone, "[ServicoEquipamento] WeaponModel sem Handle!")
-	handleClone.Name = "Handle" .. sufixo
+	-- Mantém o nome original como "Handle" para compatibilidade com animações
+	handleClone.Name = "Handle"
 
 	armaClone.Parent = character
 
@@ -282,7 +412,7 @@ local function CriarJointArmaServerSide(player: Player, slot: string)
 	local toolNaMao = character:FindFirstChildOfClass("Tool")
 
 	if not cache then
-		if toolNaMao and LerTipoDados(toolNaMao) == "ArmasEquipadas" then
+		if toolNaMao and LerTipoDados(toolNaMao) == "Armas" then
 			local dados = ToolBuilder.ExtrairDados(toolNaMao)
 			if dados then
 				dadosEquipamento[player][slot] = {
@@ -299,13 +429,13 @@ local function CriarJointArmaServerSide(player: Player, slot: string)
 		return
 	end
 
-	if toolNaMao and LerTipoDados(toolNaMao) ~= "ArmasEquipadas" then
-		DebugPrint("[ServicoEquipamento] Tool na mão não é ArmasEquipadas, ignorando:", toolNaMao.Name)
+	if toolNaMao and LerTipoDados(toolNaMao) ~= "Armas" then
+		DebugPrint("[ServicoEquipamento] Tool na mão não é Armas, ignorando:", toolNaMao.Name)
 		return
 	end
 
 	local toolEquipada
-	if toolNaMao and LerTipoDados(toolNaMao) == "ArmasEquipadas" then
+	if toolNaMao and LerTipoDados(toolNaMao) == "Armas" then
 		toolEquipada = toolNaMao
 	else
 		local slotOV = ObterSlotOV(player, slot)
@@ -319,22 +449,23 @@ local function CriarJointArmaServerSide(player: Player, slot: string)
 		return
 	end
 
-	local weaponModel = toolEquipada:FindFirstChild("WeaponModel")
-	if not weaponModel or not weaponModel:IsA("Model") then
-		DebugPrint("[ServicoEquipamento] WeaponModel não encontrado em", toolEquipada.Name)
+	-- Monta o Model visual a partir dos filhos flat da Tool (sem WeaponModel wrapper)
+	local weaponModel = MontarModelVisualDaTool(toolEquipada)
+	if not weaponModel then
+		DebugPrint("[ServicoEquipamento] Nao foi possivel montar model visual de:", toolEquipada.Name)
 		return
 	end
 
 	local handleOriginal = weaponModel:FindFirstChild("Handle")
 	if not handleOriginal or not handleOriginal:IsA("BasePart") then
-		DebugPrint("[ServicoEquipamento] Handle não encontrado dentro de WeaponModel em", toolEquipada.Name)
+		weaponModel:Destroy()
+		DebugPrint("[ServicoEquipamento] Handle nao encontrado no model visual de:", toolEquipada.Name)
 		return
 	end
 
 	local ehPunhos = LerModoDados(toolEquipada) == "Punhos"
 
 	if ehPunhos then
-
 		local rightArm = character:FindFirstChild("Right Arm") :: BasePart
 		local leftArm = character:FindFirstChild("Left Arm") :: BasePart
 		if not rightArm or not leftArm then
@@ -353,13 +484,13 @@ local function CriarJointArmaServerSide(player: Player, slot: string)
 
 		local cloneDir, jointDir = CriarJointParaBraco(weaponModel, rightArm, "RightArm", character)
 		local cloneEsq, jointEsq = CriarJointParaBraco(weaponModel, leftArm, "LeftArm", character)
+		weaponModel:Destroy() -- model temporario, ja clonado
 
 		cache.armaModels = { cloneDir, cloneEsq }
 		cache.armaJoints = { jointDir, jointEsq }
 
 		DebugPrint("[ServicoEquipamento] Punhos: joints criados para ambos os braços")
 	else
-
 		local nomeBraco = SLOT_PARA_BRACO[slot]
 		if not nomeBraco then
 			warn("[ServicoEquipamento] Slot desconhecido para braço:", slot)
@@ -380,6 +511,7 @@ local function CriarJointArmaServerSide(player: Player, slot: string)
 		end
 
 		local armaClone, joint = CriarJointParaBraco(weaponModel, armPart, slot, character)
+		weaponModel:Destroy() -- model temporario, ja clonado
 
 		cache.armaModel = armaClone
 		cache.armaJoint = joint
@@ -425,7 +557,6 @@ local function RemoverJointArmaServerSide(player: Player, slot: string)
 end
 
 local function ValidarCondicoesBasicas(player: Player): (boolean, string?)
-
 	local agora = tick()
 	local ultima = ultimaAcao[player]
 	if ultima and (agora - ultima) < COOLDOWN_EQUIPAMENTO then
@@ -466,7 +597,11 @@ local function ValidarPosseTool(player: Player, tool: Tool): boolean
 end
 
 function ServicoEquipamento:ProcessarEquiparArma(player: Player, tool: Tool)
-	DebugPrint("[ServicoEquipamento] ProcessarEquiparArma para:", player.Name, "- Tool:", tool.Name)
+	if DEBUG_ENABLED then
+		print("[Equip:SERVIDOR] 🗡️ EquiparArma recebido")
+		print("  Jogador:", player.Name, "| Tool:", tool.Name)
+		print("  Id:", tostring(tool:GetAttribute("Id")))
+	end
 
 	local valido, motivo = ValidarCondicoesBasicas(player)
 	if not valido then
@@ -475,7 +610,7 @@ function ServicoEquipamento:ProcessarEquiparArma(player: Player, tool: Tool)
 	end
 
 	if not ValidarPosseTool(player, tool) then
-		warn("[ServicoEquipamento] Anti-exploit: Tool não pertence ao player:", player.Name)
+		warn("[ServicoEquipamento] Anti-exploit: Tool nao pertence ao player:", player.Name)
 		return
 	end
 
@@ -485,18 +620,25 @@ function ServicoEquipamento:ProcessarEquiparArma(player: Player, tool: Tool)
 		return
 	end
 
-	if dados.Tipo ~= "Armas" then
-		warn("[ServicoEquipamento] Tool não é do tipo Armas:", dados.Tipo)
+	-- O catalogo define Tipo="Tool" + Subtipo="Arma" para armas.
+	-- "Armas" nunca aparece como Tipo; a verificacao correta e pelo par Tipo+Subtipo.
+	if dados.Tipo ~= "Tool" or dados.Subtipo ~= "Arma" then
+		warn("[ServicoEquipamento] Tool nao e uma arma (Tipo:", dados.Tipo, "Subtipo:", dados.Subtipo, ")")
 		return
 	end
 
 	local categoria = dados.Categoria
 	if not categoria or not ModEquip.ValidarCategoria(categoria) then
-		warn("[ServicoEquipamento] Categoria inválida:", tostring(categoria))
+		warn("[ServicoEquipamento] Categoria invalida:", tostring(categoria))
 		return
 	end
 
 	local slotDestino = ModEquip.ObterSlotDestino(categoria)
+	if DEBUG_ENABLED then
+		print("  Subtipo:", dados.Subtipo, "| Categoria:", categoria)
+		print("  Slot destino inicial:", tostring(slotDestino))
+	end
+
 	local _, bracos, _, equipAtivos = ObterEquipamento(player)
 	if not bracos or not equipAtivos then
 		return
@@ -508,7 +650,6 @@ function ServicoEquipamento:ProcessarEquiparArma(player: Player, tool: Tool)
 	local humanoid = ObterHumanoid(player)
 
 	if slotDestino == "RightArm" then
-
 		if SlotOcupado(player, "RightArm") and categoria == "ArmasUmaMao" then
 			local categoriaDir = ObterCategoriaRightArm(player)
 			if categoriaDir == "ArmasUmaMao" then
@@ -549,12 +690,20 @@ function ServicoEquipamento:ProcessarEquiparArma(player: Player, tool: Tool)
 
 		dados = ConsumirTool(tool, dados)
 
-		local armaEquipada = ToolBuilder.CriarArmaEquipada(dados, player.Backpack)
+		local armaEquipada = ToolBuilder.CriarTool(dados.Id, dados)
 		if not armaEquipada then
-			warn("[ServicoEquipamento] Falha ao criar ArmaEquipada! Restaurando tool original.")
-			ToolBuilder.CriarTool(dados, player.Backpack)
+			warn("[ServicoEquipamento] Falha ao criar Tool! Restaurando tool original.")
+			local backpack = ObterBackpack(player)
+			if backpack then
+				ToolBuilder.EmpilharNoContainer(backpack, dados.Id, dados)
+			end
 			dadosEquipamento[player].RightArm = nil
 			return
+		end
+		OcultarComponentesTool(armaEquipada) -- Torna o tool placeholder invisivel
+		local backpack = ObterBackpack(player)
+		if backpack then
+			armaEquipada.Parent = backpack
 		end
 
 		local rightArmOV = bracos:FindFirstChild("RightArm") :: ObjectValue
@@ -562,7 +711,11 @@ function ServicoEquipamento:ProcessarEquiparArma(player: Player, tool: Tool)
 			rightArmOV.Value = armaEquipada
 		end
 
-		DebugPrint("[ServicoEquipamento] Arma equipada no RightArm:", armaEquipada.Name)
+		if DEBUG_ENABLED then
+			print("[Equip:SERVIDOR] ✅ Arma equipada com sucesso!")
+			print("  Slot: RightArm (Mao Direita) | Tool:", armaEquipada.Name)
+			print("  Categoria:", categoria)
+		end
 
 		if categoria == "Arcos" then
 			local flechas = BuscarFlechasBackpack(player)
@@ -578,7 +731,6 @@ function ServicoEquipamento:ProcessarEquiparArma(player: Player, tool: Tool)
 		local categoriaDir = ObterCategoriaRightArm(player)
 
 		if (categoria :: string) == "Escudos" then
-
 			if categoriaDir == "Arcos" then
 				warn("[ServicoEquipamento] Conflito: Escudo + Arco. Desequipando arco primeiro.")
 				self:ProcessarDesequiparSlot(player, "RightArm")
@@ -589,10 +741,8 @@ function ServicoEquipamento:ProcessarEquiparArma(player: Player, tool: Tool)
 				return
 			end
 		elseif categoria == "ArmasUmaMao" then
-
 			if not categoriaDir or categoriaDir ~= "ArmasUmaMao" then
 				if not SlotOcupado(player, "RightArm") then
-
 					dadosEquipamento[player].RightArm = {
 						dados = dados,
 						acessoriosClonados = {},
@@ -604,11 +754,19 @@ function ServicoEquipamento:ProcessarEquiparArma(player: Player, tool: Tool)
 
 					dados = ConsumirTool(tool, dados)
 
-					local armaEquipada = ToolBuilder.CriarArmaEquipada(dados, player.Backpack)
+					local armaEquipada = ToolBuilder.CriarTool(dados.Id, dados)
 					if not armaEquipada then
-						ToolBuilder.CriarTool(dados, player.Backpack)
+						warn("[ServicoEquipamento] Falha ao criar Tool! Restaurando tool original.")
+						local backpack = ObterBackpack(player)
+						if backpack then
+							ToolBuilder.EmpilharNoContainer(backpack, dados.Id, dados)
+						end
 						dadosEquipamento[player].RightArm = nil
 						return
+					end
+					local backpack = ObterBackpack(player)
+					if backpack then
+						armaEquipada.Parent = backpack
 					end
 
 					local rightArmOV = bracos:FindFirstChild("RightArm") :: ObjectValue
@@ -660,24 +818,18 @@ function ServicoEquipamento:_EquiparItemNaEsquerda(player: Player, tool: Tool, t
 		humanoid:UnequipTools()
 	end
 
-	local quantidade = dados.Quantidade or 1
+	local quantidade = tool:GetAttribute("Quantidade") or 1
 	if quantidade > 1 then
-		local dadosFolderTool = tool:FindFirstChild("Dados")
-		if dadosFolderTool then
-			local qtdValue = dadosFolderTool:FindFirstChild("Quantidade")
-			if qtdValue then
-				qtdValue.Value = quantidade - 1
-				DebugPrint("[ServicoEquipamento] Quantidade decrementada para (esquerda):", quantidade - 1)
-			end
-		end
+		tool:SetAttribute("Quantidade", quantidade - 1)
+		DebugPrint("[ServicoEquipamento] Quantidade decrementada para (esquerda):", quantidade - 1)
 
 		dados.Quantidade = 1
-		local copiaTool
-		if tipoEsq == "SegundaArma" then
-			copiaTool = ToolBuilder.CriarArmaEquipada(dados, equipAtivos)
-		else
-			copiaTool = ToolBuilder.CriarTool(dados, equipAtivos)
-			OcultarComponentesTool(copiaTool)
+		local copiaTool = ToolBuilder.CriarTool(dados.Id, dados)
+		if copiaTool then
+			copiaTool.Parent = equipAtivos
+			if tipoEsq ~= "SegundaArma" then
+				OcultarComponentesTool(copiaTool)
+			end
 		end
 		if copiaTool then
 			copiaTool.CanBeDropped = false
@@ -688,20 +840,20 @@ function ServicoEquipamento:_EquiparItemNaEsquerda(player: Player, tool: Tool, t
 		end
 	else
 		if tipoEsq == "SegundaArma" then
-
 			tool:Destroy()
 			dados.Quantidade = 1
-			local armaEquipada = ToolBuilder.CriarArmaEquipada(dados, equipAtivos)
+			local armaEquipada = ToolBuilder.CriarTool(dados.Id, dados)
 			if not armaEquipada then
-				warn("[ServicoEquipamento] Falha ao criar ArmaEquipada para esquerda")
+				warn("[ServicoEquipamento] Falha ao criar Tool para esquerda")
 				dadosEquipamento[player].LeftArm = nil
 				return
 			end
+			OcultarComponentesTool(armaEquipada) -- Torna o tool placeholder invisivel
+			armaEquipada.Parent = equipAtivos
 			armaEquipada.CanBeDropped = false
 			tool = armaEquipada
-			DebugPrint("[ServicoEquipamento] SegundaArma convertida para ArmaEquipada:", armaEquipada.Name)
+			DebugPrint("[ServicoEquipamento] SegundaArma convertida para Tool:", armaEquipada.Name)
 		else
-
 			tool.CanBeDropped = false
 			tool.Parent = equipAtivos
 			OcultarComponentesTool(tool)
@@ -721,7 +873,11 @@ function ServicoEquipamento:_EquiparItemNaEsquerda(player: Player, tool: Tool, t
 end
 
 function ServicoEquipamento:ProcessarEquiparArmadura(player: Player, tool: Tool)
-	DebugPrint("[ServicoEquipamento] ProcessarEquiparArmadura para:", player.Name, "- Tool:", tool.Name)
+	if DEBUG_ENABLED then
+		print("[Equip:SERVIDOR] 🛡️ EquiparArmadura recebido")
+		print("  Jogador:", player.Name, "| Tool:", tool.Name)
+		print("  Id:", tostring(tool:GetAttribute("Id")))
+	end
 
 	local valido, motivo = ValidarCondicoesBasicas(player)
 	if not valido then
@@ -740,15 +896,27 @@ function ServicoEquipamento:ProcessarEquiparArmadura(player: Player, tool: Tool)
 		return
 	end
 
-	if dados.Tipo ~= "Armaduras" then
-		warn("[ServicoEquipamento] Tool não é do tipo Armaduras:", dados.Tipo)
+	-- O catalogo define Tipo="Equipment" para todos os equipamentos de corpo.
+	-- "Armaduras" nunca aparece como Tipo; a verificacao correta e Tipo=="Equipment".
+	if dados.Tipo ~= "Equipment" then
+		warn(
+			"[ServicoEquipamento] Tool nao e um equipamento de corpo (Tipo:",
+			dados.Tipo,
+			"Subtipo:",
+			dados.Subtipo,
+			")"
+		)
 		return
 	end
 
 	local slot = dados.Slot
 	if not slot or not ModEquip.ValidarSlotCorpo(slot) then
-		warn("[ServicoEquipamento] Slot de corpo inválido:", tostring(slot))
+		warn("[ServicoEquipamento] Slot de corpo invalido:", tostring(slot))
 		return
+	end
+
+	if DEBUG_ENABLED then
+		print("  Subtipo:", tostring(dados.Subtipo), "| Slot de corpo:", slot)
 	end
 
 	local _, _, corpo, equipAtivos = ObterEquipamento(player)
@@ -783,18 +951,13 @@ function ServicoEquipamento:ProcessarEquiparArmadura(player: Player, tool: Tool)
 	local quantidade = dados.Quantidade or 1
 	local toolParaEquipar = tool
 	if quantidade > 1 then
-		local dadosFolderTool = tool:FindFirstChild("Dados")
-		if dadosFolderTool then
-			local qtdValue = dadosFolderTool:FindFirstChild("Quantidade")
-			if qtdValue then
-				qtdValue.Value = quantidade - 1
-				DebugPrint("[ServicoEquipamento] Quantidade de armadura decrementada para:", quantidade - 1)
-			end
-		end
+		tool:SetAttribute("Quantidade", quantidade - 1)
+		DebugPrint("[ServicoEquipamento] Quantidade de armadura decrementada para:", quantidade - 1)
 
 		dados.Quantidade = 1
-		local copiaTool = ToolBuilder.CriarTool(dados, equipAtivos)
+		local copiaTool = ToolBuilder.CriarTool(dados.Id, dados)
 		if copiaTool then
+			copiaTool.Parent = equipAtivos
 			copiaTool.CanBeDropped = false
 			toolParaEquipar = copiaTool
 			DebugPrint("[ServicoEquipamento] Cópia de armadura criada no EquipamentosAtivos")
@@ -814,16 +977,24 @@ function ServicoEquipamento:ProcessarEquiparArmadura(player: Player, tool: Tool)
 	local character = player.Character
 	if character and humanoid then
 		local acessoriosClonados = {}
+		local totalFilhos = 0
+		local totalAcessorios = 0
 		for _, child in ipairs(toolParaEquipar:GetChildren()) do
+			totalFilhos += 1
 			if child:IsA("Accessory") then
+				totalAcessorios += 1
 				local clone = child:Clone()
 				if PrepararCloneAcessorio(clone) then
-					humanoid:AddAccessory(clone)
+					AdicionarAcessorioManual(character, clone)
 					table.insert(acessoriosClonados, clone)
 					DebugPrint("[ServicoEquipamento] Acessório clonado:", clone.Name)
+				else
+					DebugPrint("[ServicoEquipamento] PrepararCloneAcessorio falhou para:", child.Name)
 				end
+
 			end
 		end
+		DebugPrint("[ServicoEquipamento] Armadura - filhos do tool:", totalFilhos, "| Accessory encontrados:", totalAcessorios, "| clonados com sucesso:", #acessoriosClonados)
 		dadosEquipamento[player][slot].acessoriosClonados = acessoriosClonados
 	end
 
@@ -832,7 +1003,11 @@ function ServicoEquipamento:ProcessarEquiparArmadura(player: Player, tool: Tool)
 		slotOV.Value = toolParaEquipar
 	end
 
-	DebugPrint("[ServicoEquipamento] Armadura equipada no slot:", slot, "- Tool:", toolParaEquipar.Name)
+	if DEBUG_ENABLED then
+		print("[Equip:SERVIDOR] ✅ Armadura equipada com sucesso!")
+		print("  Slot:", slot, "| Tool:", toolParaEquipar.Name)
+		print("  Subtipo:", tostring(dados.Subtipo))
+	end
 end
 
 function ServicoEquipamento:ProcessarDesequiparSlot(player: Player, slotName: string)
@@ -869,11 +1044,10 @@ function ServicoEquipamento:ProcessarDesequiparSlot(player: Player, slotName: st
 		end
 
 		if cache and cache.dados then
-			local toolRecriado = ToolBuilder.CriarTool(cache.dados, player.Backpack)
-			if toolRecriado then
-				DebugPrint("[ServicoEquipamento] Tool original recriado:", toolRecriado.Name)
-			else
-				warn("[ServicoEquipamento] Falha ao recriar Tool original!")
+			local backpack = ObterBackpack(player)
+			if backpack then
+				ToolBuilder.EmpilharNoContainer(backpack, cache.dados.Id, cache.dados)
+				DebugPrint("[ServicoEquipamento] Tool original devolvido (empilhado) ao Backpack")
 			end
 		end
 
@@ -901,8 +1075,11 @@ function ServicoEquipamento:ProcessarDesequiparSlot(player: Player, slotName: st
 
 		if toolEquipado and toolEquipado.Parent then
 			if cache and cache.dados then
-				ToolBuilder.CriarTool(cache.dados, player.Backpack)
-				DebugPrint("[ServicoEquipamento] Item devolvido ao Backpack:", cache.tipoEsquerda or "desconhecido")
+				local backpack = ObterBackpack(player)
+				if backpack then
+					ToolBuilder.EmpilharNoContainer(backpack, cache.dados.Id, cache.dados)
+					DebugPrint("[ServicoEquipamento] Item devolvido (empilhado) ao Backpack")
+				end
 			end
 			toolEquipado:Destroy()
 		end
@@ -929,11 +1106,10 @@ function ServicoEquipamento:ProcessarDesequiparSlot(player: Player, slotName: st
 			toolEquipado:Destroy()
 
 			if dadosArmadura then
-				local toolRecriado = ToolBuilder.CriarTool(dadosArmadura, player.Backpack)
-				if toolRecriado then
-					DebugPrint("[ServicoEquipamento] Armadura devolvida ao Backpack:", toolRecriado.Name)
-				else
-					warn("[ServicoEquipamento] Falha ao recriar armadura no Backpack!")
+				local backpack = ObterBackpack(player)
+				if backpack then
+					ToolBuilder.EmpilharNoContainer(backpack, dadosArmadura.Id, dadosArmadura)
+					DebugPrint("[ServicoEquipamento] Armadura devolvida (empilhada) ao Backpack")
 				end
 			end
 		end

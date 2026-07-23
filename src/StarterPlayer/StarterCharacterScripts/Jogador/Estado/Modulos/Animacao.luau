@@ -13,6 +13,9 @@
 local RunService = game:GetService("RunService")
 
 local Animacao = {}
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CatalogoItens =
+	require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
 
 local ctx
 local Movimento -- referencia cruzada
@@ -143,10 +146,7 @@ end
 -- ═══════════════════════════════════════════════════════════════════
 
 local function obterModoAnimacaoEfetivoParaIdle(): string
-	if ctx.EstadoAtual.modoAnimacao ~= "Base" then
-		return ctx.EstadoAtual.modoAnimacao
-	end
-	if ctx.EstadoAtual.estadoAcao == "Desequipando" then
+	if not ctx.EstadoAtual then
 		return ctx.EstadoAtual.modoAnimacao
 	end
 	local ObterToolEquipado = Equipamento and Equipamento.ObterToolEquipado
@@ -154,17 +154,39 @@ local function obterModoAnimacaoEfetivoParaIdle(): string
 		return ctx.EstadoAtual.modoAnimacao
 	end
 	local tool = ObterToolEquipado()
-	local dados = tool and tool:FindFirstChild("Dados")
-	if not dados then
+	if not tool then
 		return ctx.EstadoAtual.modoAnimacao
 	end
-	local tipoValue = dados:FindFirstChild("Tipo")
-	if not tipoValue or not tipoValue:IsA("StringValue") or tipoValue.Value ~= "ArmasEquipadas" then
+
+	-- Só usa o modo de animação da arma se ela estiver devidamente equipada nos slots ativos (Bracos)
+	local estaEquipada = false
+	if ctx.ClientBridge and ctx.ClientBridge.ObterEquipamentoBraco then
+		local armaDireita = ctx.ClientBridge.ObterEquipamentoBraco("RightArm")
+		local armaEsquerda = ctx.ClientBridge.ObterEquipamentoBraco("LeftArm")
+		if (armaDireita == tool) or (armaEsquerda == tool) then
+			estaEquipada = true
+		end
+	end
+
+	if not estaEquipada then
 		return ctx.EstadoAtual.modoAnimacao
 	end
-	local modoValue = dados:FindFirstChild("modoAnimacao") or dados:FindFirstChild("Modo")
-	if modoValue and modoValue:IsA("StringValue") and modoValue.Value ~= "" then
-		return modoValue.Value
+
+	local id = tool:GetAttribute("Id")
+	local catalogData = id and CatalogoItens.Get(id)
+	if not catalogData then
+		return ctx.EstadoAtual.modoAnimacao
+	end
+
+	local tipo = catalogData.Tipo
+	local subtipo = catalogData.Subtipo
+	if not (tipo == "Tool" and subtipo == "Arma") then
+		return ctx.EstadoAtual.modoAnimacao
+	end
+
+	local modoAnimacao = catalogData.ModoAnimacao
+	if modoAnimacao and modoAnimacao ~= "" then
+		return modoAnimacao
 	end
 	return ctx.EstadoAtual.modoAnimacao
 end
@@ -918,7 +940,10 @@ function Animacao.AtualizarDirecaoAnimacao(deltaTime: number)
 		return
 	end
 
-	if (ctx.EstadoAtual.estadoMov == "Andando" or ctx.EstadoAtual.estadoMov == "Correndo") and not ctx.EstadoAtual.agachado then
+	if
+		(ctx.EstadoAtual.estadoMov == "Andando" or ctx.EstadoAtual.estadoMov == "Correndo")
+		and not ctx.EstadoAtual.agachado
+	then
 		local tipoLateral, velocidadeLateral = CalcularMovimentoLateral()
 		local emAnimacaoLateral = (
 			ultimaAnimacaoMovNome == "AndandoDireita"

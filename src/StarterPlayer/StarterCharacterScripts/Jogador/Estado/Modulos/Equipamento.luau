@@ -58,15 +58,13 @@ local function ClonarAcessorioParaJogador()
 		return
 	end
 
-	local dadosFolder = tool:FindFirstChild("Dados")
-	if dadosFolder then
-		local tipoValue = dadosFolder:FindFirstChild("Tipo")
-		if not tipoValue or tipoValue.Value ~= "ArmasEquipadas" then
-			ctx.DebugPrint("[Equipamento] Tool não é ArmasEquipadas, ignorando:", tool.Name)
-			return
-		end
-	else
-		ctx.DebugPrint("[Equipamento] Tool sem Dados, ignorando:", tool.Name)
+	local id = tool:GetAttribute("Id")
+	_ = id -- reservado para uso futuro (ex: verificar categoria pelo catálogo)
+
+	-- Estrutura flat: Handle, Lamina, HitboxPart sao filhos diretos do Tool (sem WeaponModel wrapper)
+	-- Valida apenas que existe um Handle valido para o servidor criar o joint
+	if not tool:FindFirstChild("Handle") then
+		ctx.DebugPrint("[Equipamento] Tool sem Handle, ignorando joint:", tool.Name)
 		return
 	end
 
@@ -215,13 +213,7 @@ function Equipamento.ProcessarEquip(track: AnimationTrack, nomeAnimacao: string)
 		OnEquipAnimacaoTerminou()
 	end)
 
-	ctx.DebugPrint(
-		"[Equipamento] Animação de",
-		nomeAnimacao,
-		"iniciada (direção:",
-		equipAnimState.direcao,
-		")"
-	)
+	ctx.DebugPrint("[Equipamento] Animação de", nomeAnimacao, "iniciada (direção:", equipAnimState.direcao, ")")
 end
 
 -- ═══════════════════════════════════════════════════════════════════

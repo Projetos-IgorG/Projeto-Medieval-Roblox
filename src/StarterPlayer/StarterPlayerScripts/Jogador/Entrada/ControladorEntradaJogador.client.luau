@@ -23,6 +23,7 @@ end
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CatalogoItens = require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
 
 local ClientBridge =
 	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
@@ -32,7 +33,7 @@ local player = Players.LocalPlayer
 local Modulo_Configuracoes =
 	require(ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Configuracoes"):WaitForChild("ConfigCombate"))
 local ModEquip =
-	require(ReplicatedStorage:WaitForChild("Equipamentos"):WaitForChild("ValidacaoEquipamentos"))
+	require(ReplicatedStorage:WaitForChild("SistemaItens"):WaitForChild("ValidacaoEquipamentos"))
 
 local Remotos = ReplicatedStorage:WaitForChild("Remotos")
 local TentarAcao = Remotos:WaitForChild("TentarAcao")
@@ -97,15 +98,11 @@ local function ObterModoDoTool(tool: Tool): string?
 		return nil
 	end
 
-	local modoBase = nil
-	local dados = tool:FindFirstChild("Dados")
-	if dados and dados:IsA("Folder") then
-		local modoValue = dados:FindFirstChild("modoAnimacao")
-		if modoValue and modoValue:IsA("StringValue") and modoValue.Value ~= "" and modoValue.Value ~= "Base" then
-			modoBase = modoValue.Value
-		end
-	else
+	local id = tool:GetAttribute("Id")
+	local catalogData = id and CatalogoItens.Get(id)
+	local modoBase = catalogData and catalogData.ModoAnimacao
 
+	if not modoBase then
 		local modoValue = tool:FindFirstChild("modoAnimacao")
 		if modoValue and modoValue:IsA("StringValue") and modoValue.Value ~= "" and modoValue.Value ~= "Base" then
 			modoBase = modoValue.Value
@@ -337,21 +334,36 @@ local function ProcessarQuebrarDefesa()
 	EnviarAcaoComDebounce("QuebrarDefesa")
 end
 
+local function IsAlreadyEquipped(tool: Tool): boolean
+	local char = player.Character
+	if not char then return false end
+	local equipamento = char:FindFirstChild("Equipamento")
+	if not equipamento then return false end
+	local bracos = equipamento:FindFirstChild("Bracos")
+	if not bracos then return false end
+	local rightArm = bracos:FindFirstChild("RightArm") :: ObjectValue
+	local leftArm = bracos:FindFirstChild("LeftArm") :: ObjectValue
+	return (rightArm and rightArm.Value == tool) or (leftArm and leftArm.Value == tool)
+end
+
 local function ProcessarToolEquipado(tool: Tool)
 
 	if revertendoTool then
 		return
 	end
 
-	local dadosFolder = tool:FindFirstChild("Dados")
-	if dadosFolder then
-		local tipoValue = dadosFolder:FindFirstChild("Tipo")
-		if tipoValue and tipoValue:IsA("StringValue") then
-			local tipo = tipoValue.Value
-			if tipo == "Armas" or tipo == "Armaduras" then
-				DebugPrint("[EntradaJogador] Tool de equipamento ignorado (EquipamentoController cuida):", tool.Name)
-				return
-			end
+	local id = tool:GetAttribute("Id")
+	local catalogData = id and CatalogoItens.Get(id)
+	if catalogData then
+		local tipo = catalogData.Tipo
+		if tipo == "Tool" and catalogData.Subtipo == "Arma" then
+			tipo = "Armas"
+		elseif tipo == "Equipment" then
+			tipo = "Armaduras"
+		end
+		if (tipo == "Armas" or tipo == "Armaduras") and not IsAlreadyEquipped(tool) then
+			DebugPrint("[EntradaJogador] Tool de equipamento ignorado (EquipamentoController cuida):", tool.Name)
+			return
 		end
 	end
 
@@ -797,13 +809,9 @@ local function OnChildAdded(child)
 			local humanoid = char:FindFirstChild("Humanoid") :: Humanoid?
 			if humanoid and humanoid.Health <= 0 then
 
-				local dados = child:FindFirstChild("Dados")
-				local temModo = false
-				if dados and dados:IsA("Folder") then
-					temModo = dados:FindFirstChild("modoAnimacao") ~= nil
-				else
-					temModo = child:FindFirstChild("modoAnimacao") ~= nil
-				end
+				local id = child:GetAttribute("Id")
+				local catalogData = id and CatalogoItens.Get(id)
+				local temModo = (catalogData and catalogData.ModoAnimacao ~= nil) or child:FindFirstChild("modoAnimacao") ~= nil
 				if temModo then
 					humanoid:UnequipTools()
 					DebugPrint("[EntradaJogador] Tool desequipado automaticamente (jogador morto):", child.Name)

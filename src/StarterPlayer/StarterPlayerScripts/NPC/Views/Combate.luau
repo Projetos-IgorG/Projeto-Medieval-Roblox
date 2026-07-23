@@ -16,6 +16,8 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local CatalogoItens = require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
+local ConstrutorTools = require(ReplicatedStorage:WaitForChild("SistemaItens"):WaitForChild("ConstrutorTools"))
 
 local TiposNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos"))
 local IdsCombate =
@@ -267,29 +269,11 @@ end
 -- equipada e ancora aos bracos do NPC via Motor6D LOCAL. Nada disso replica.
 -- =============================================================================
 
-local function obterPastaArmas(): Instance?
-	local equip = ReplicatedStorage:FindFirstChild("Equipamentos")
-	local modelos = equip and equip:FindFirstChild("Modelos")
-	return modelos and modelos:FindFirstChild("ArmasEquipadas")
-end
-
 local function encontrarTemplateArma(id: string?): Tool?
 	if not id or id == "" then
 		return nil
 	end
-	local pasta = obterPastaArmas()
-	if not pasta then
-		return nil
-	end
-	local direto = pasta:FindFirstChild(id)
-	if direto and direto:IsA("Tool") then
-		return direto
-	end
-	local equipada = pasta:FindFirstChild(id .. "-equipada")
-	if equipada and equipada:IsA("Tool") then
-		return equipada
-	end
-	return nil
+	return ConstrutorTools.CriarTool(id)
 end
 
 local function destruirWeaponModelMao(ctx: Ctx, mao: string)
@@ -337,7 +321,8 @@ local function criarWeaponModelMao(ctx: Ctx, template: Model, mao: string)
 		clone:Destroy()
 		return
 	end
-	handle.Name = "Handle" .. mao
+	-- Mantém o nome original como "Handle" para compatibilidade com animações
+	handle.Name = "Handle"
 
 	for _, d in clone:GetDescendants() do
 		if d:IsA("Script") or d:IsA("LocalScript") or d:IsA("ProximityPrompt") then
@@ -509,14 +494,10 @@ local function obterTimingsAtaque(ctx: Ctx): typeof(Timings.Punhos)
 	local idArma = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId) :: string?
 	local timings = Timings.Punhos
 	if idArma then
-		local pasta = obterPastaArmas()
-		local tool = pasta and (pasta:FindFirstChild(idArma) or pasta:FindFirstChild(idArma .. "-equipada"))
-		if tool then
-			local dados = tool:FindFirstChild("Dados")
-			local modoVal = dados and dados:FindFirstChild("modoAnimacao")
-			if modoVal and modoVal:IsA("StringValue") and modoVal.Value ~= "" then
-				timings = Timings.ObterPorArma(modoVal.Value)
-			end
+		local catalogData = CatalogoItens.Get(idArma)
+		local modo = catalogData and catalogData.ModoAnimacao
+		if modo and modo ~= "" then
+			timings = Timings.ObterPorArma(modo)
 		end
 	end
 	return timings

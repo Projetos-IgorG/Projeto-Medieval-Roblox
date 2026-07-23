@@ -21,6 +21,8 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
+local CatalogoItens =
+	require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
 
 local Combate = ReplicatedStorage:WaitForChild("Combate")
 local Timings = require(Combate:WaitForChild("Configuracoes"):WaitForChild("TimingsAtaqueNPC"))
@@ -51,15 +53,6 @@ local function obterCS(): any?
 	end
 	return nil
 end
-
-local ATRIBUTOS_ARMA_NPC = {
-	"NPC_ArmaEquipadaId",
-	"NPC_ArmaVisualId",
-	"NPC_ArmaDanoId",
-	"NPC_ArmaId",
-}
-
-local TEMPLATE_ARMA_PADRAO: Tool? = nil
 
 -- Tolerancia (segundos) entre acaoTick reportado e armazenado (clock skew).
 local TOLERANCIA_TICK = 0.4
@@ -115,99 +108,80 @@ local Mod = {}
 -- Helpers de leitura da arma equipada.
 -- =============================================================================
 
-local function obterPastaArmasEquipadas(): Instance?
-	local equipamentos = ReplicatedStorage:FindFirstChild("Equipamentos")
-	local modelos = equipamentos and equipamentos:FindFirstChild("Modelos")
-	return modelos and modelos:FindFirstChild("ArmasEquipadas")
-end
-
-local function obterDadosTool(tool: Tool?): Folder?
-	local dados = tool and tool:FindFirstChild("Dados")
-	if dados and dados:IsA("Folder") then
-		return dados
-	end
-	return nil
+local function obterDadosTool(tool: Tool?)
+	local id = tool and tool:GetAttribute("Id")
+	return id and CatalogoItens.Get(id)
 end
 
 local function lerStringDados(tool: Tool?, nome: string): string?
+	local id = tool and tool:GetAttribute("Id")
+	if typeof(id) == "string" and nome == "Id" then
+		return id
+	end
 	local dados = obterDadosTool(tool)
-	local value = dados and dados:FindFirstChild(nome)
-	if value and value:IsA("StringValue") and value.Value ~= "" then
-		return value.Value
+	if dados then
+		if nome == "modoAnimacao" then
+			return dados.ModoAnimacao
+		elseif nome == "Tipo" then
+			if dados.Tipo == "Tool" then
+				if dados.Subtipo == "Arma" then
+					return "Armas"
+				elseif dados.Subtipo == "Ferramenta" then
+					return "Ferramentas"
+				end
+			end
+			return dados.Tipo
+		end
+		return dados[nome]
 	end
 	return nil
 end
 
 local function lerNumberDados(tool: Tool?, nome: string): number?
 	local dados = obterDadosTool(tool)
-	local value = dados and dados:FindFirstChild(nome)
-	if value and value:IsA("NumberValue") and value.Value > 0 then
-		return value.Value
+	if dados then
+		if nome == "Dano" then
+			return dados.Dano or dados.StatBase
+		end
+		return dados[nome]
 	end
 	return nil
 end
 
 local function ehArmaEquipada(tool: Tool?): boolean
-	return lerStringDados(tool, "Tipo") == "ArmasEquipadas"
+	if not tool then
+		return false
+	end
+	local id = tool:GetAttribute("Id")
+	local dados = id and CatalogoItens.Get(id)
+	if dados then
+		return dados.Tipo == "Tool" and dados.Subtipo == "Arma"
+	end
+	return tool:GetAttribute("Tipo") == "Armas"
 end
 
-local function obterTemplateArmaPadrao(): Tool?
-	if TEMPLATE_ARMA_PADRAO and TEMPLATE_ARMA_PADRAO.Parent then
-		return TEMPLATE_ARMA_PADRAO
-	end
-	local pasta = obterPastaArmasEquipadas()
-	local tool = pasta and pasta:FindFirstChild("punhos")
-	if tool and tool:IsA("Tool") then
-		TEMPLATE_ARMA_PADRAO = tool
-		return tool
-	end
-	return nil
-end
+local DADOS_PUNHOS = {
+	Nome = "Punhos",
+	Dano = 4,
+	Alcance = 4,
+	ModoAnimacao = "Punhos",
+}
 
-local function encontrarTemplateArmaPorId(id: string?): Tool?
-	if not id or id == "" then
-		return nil
-	end
-	local pasta = obterPastaArmasEquipadas()
-	if not pasta then
-		return nil
-	end
-	local direto = pasta:FindFirstChild(id)
-	if direto and direto:IsA("Tool") then
-		return direto
-	end
-	local equipada = pasta:FindFirstChild(id .. "-equipada")
-	if equipada and equipada:IsA("Tool") then
-		return equipada
-	end
-	for _, child in pasta:GetChildren() do
-		if child:IsA("Tool") then
-			local dadosId = lerStringDados(child, "Id")
-			if dadosId == id then
-				return child
-			end
+local function obterDadosArmaNPC(modelo: Model): any
+	local idArma = modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId) :: string?
+	if idArma and idArma ~= "" then
+		local dados = CatalogoItens.Get(idArma)
+		if dados then
+			return dados
 		end
 	end
-	return nil
+	return DADOS_PUNHOS
 end
 
 local function encontrarToolArmaNoModelo(modelo: Model): Tool?
 	for _, child in modelo:GetChildren() do
 		if child:IsA("Tool") and ehArmaEquipada(child) then
 			return child
-		end
-	end
-	return nil
-end
-
-local function encontrarToolArmaPorAtributo(modelo: Model): Tool?
-	for _, nomeAtributo in ATRIBUTOS_ARMA_NPC do
-		local valor = modelo:GetAttribute(nomeAtributo)
-		if typeof(valor) == "string" then
-			local tool = encontrarTemplateArmaPorId(valor)
-			if tool then
-				return tool
-			end
 		end
 	end
 	return nil
@@ -233,11 +207,15 @@ local function resolverArmaEquipada(s: Estado): Tool?
 	if toolNoModelo then
 		return registrarArmaEquipada(s, toolNoModelo)
 	end
-	local toolPorAtributo = encontrarToolArmaPorAtributo(s.modelo)
-	if toolPorAtributo then
-		return registrarArmaEquipada(s, toolPorAtributo)
-	end
-	return registrarArmaEquipada(s, obterTemplateArmaPadrao())
+	-- Se não tem tool física, lê do atributo de ID da arma ou usa punhos
+	local dados = obterDadosArmaNPC(s.modelo)
+	s.armaEquipada = nil -- Sem tool física
+	s.alcanceArma = dados.Alcance or 4
+	s.danoLeve = dados.Dano or dados.StatBase or 4
+	local modo = dados.ModoAnimacao or "Punhos"
+	s.timings = Timings.ObterPorArma(modo)
+
+	return nil
 end
 
 -- =============================================================================
@@ -484,12 +462,10 @@ function Mod.EquiparArma(modelo: Model)
 	s.armaEquipada = nil -- Força nova resolução
 	resolverArmaEquipada(s)
 
-	local idArma = s.armaEquipada and lerStringDados(s.armaEquipada, "Id")
-	if idArma then
-		s.modelo:SetAttribute(TiposNPC.Chaves.ArmaEquipadaId, idArma)
-	end
-
-	local modo = lerStringDados(s.armaEquipada, "modoAnimacao") or "Punhos"
+	local idArma = (s.armaEquipada and lerStringDados(s.armaEquipada, "Id"))
+		or s.modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId)
+	local dadosArma = idArma and CatalogoItens.Get(idArma)
+	local modo = (dadosArma and dadosArma.ModoAnimacao) or "Punhos"
 	local cs = obterCS()
 	if not cs then
 		return
