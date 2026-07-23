@@ -19,7 +19,7 @@ function EquipmentHelpers.LerTipo(tool: Tool): string?
 		end
 		return dados.Tipo
 	end
-	return tool:GetAttribute("Tipo")
+	return tool:GetAttribute("Tipo") :: string?
 end
 
 function EquipmentHelpers.LerNome(tool: Tool): string
