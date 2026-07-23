@@ -11,6 +11,12 @@ local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 
+local DEBUG = false
+
+if not DEBUG then
+	return
+end
+
 local function createLabelGui()
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "DebugAnimationUI"

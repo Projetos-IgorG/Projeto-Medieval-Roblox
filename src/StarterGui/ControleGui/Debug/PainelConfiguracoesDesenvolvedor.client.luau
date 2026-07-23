@@ -17,7 +17,7 @@ local playerGui = player:WaitForChild("PlayerGui")
 local Modulos = ReplicatedStorage
 
 local ParkourConfigs = require(
-	script.Parent.Parent
+	player:WaitForChild("PlayerScripts")
 		:WaitForChild("Jogador")
 		:WaitForChild("Parkour")
 		:WaitForChild("Configuracoes")
@@ -37,7 +37,7 @@ local CompositorAmbiente = require(AmbienteReplicado:WaitForChild("CompositorAmb
 local AplicadorAmbiente = require(AmbienteReplicado:WaitForChild("AplicadorAmbiente"))
 local ExtratorAmbiente = require(AmbienteReplicado:WaitForChild("ExtratorAmbiente"))
 local ConfiguracaoTempo = require(AmbienteReplicado:WaitForChild("ConfiguracaoTempo"))
-local EquipamentosModelos = Modulos:WaitForChild("Equipamentos"):WaitForChild("Modelos")
+local EquipamentosModelos = Modulos:WaitForChild("Modelos"):WaitForChild("Itens")
 
 local EntidadesPasta = Modulos:WaitForChild("Entidades")
 local LeitorEntidade = require(EntidadesPasta:WaitForChild("LeitorEntidade"))

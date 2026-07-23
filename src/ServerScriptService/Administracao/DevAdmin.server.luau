@@ -10,7 +10,8 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local ToolBuilder = require(ReplicatedStorage:WaitForChild("Equipamentos"):WaitForChild("ConstrutorFerramentas"))
+local ToolBuilder = require(ReplicatedStorage:WaitForChild("SistemaItens"):WaitForChild("ConstrutorTools"))
+local CatalogoItens = require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
 local ServicosAmbiente = script.Parent.Parent:WaitForChild("Mundo"):WaitForChild("Ambiente")
 local ServicoTempoMundo = require(ServicosAmbiente:WaitForChild("ServicoTempoMundo"))
 local ServicoAmbienteMundo = require(ServicosAmbiente:WaitForChild("ServicoAmbienteMundo"))
@@ -119,9 +120,9 @@ local function procurarFilho(container, nome)
 end
 
 local function encontrarTemplateTool(categoria, nomeTool)
-	local equipamentos = ReplicatedStorage:FindFirstChild("Equipamentos")
-	local modelos = equipamentos and equipamentos:FindFirstChild("Modelos")
-	if not modelos then
+	local modelos = ReplicatedStorage:FindFirstChild("Modelos")
+	local itens = modelos and modelos:FindFirstChild("Itens")
+	if not itens then
 		return nil
 	end
 
@@ -135,12 +136,12 @@ local function encontrarTemplateTool(categoria, nomeTool)
 		nomeTemplate = DEFAULT_TOOL_NAME
 	end
 
-	local pastaCategoria = modelos:FindFirstChild(nomeCategoria)
+	local pastaCategoria = itens:FindFirstChild(nomeCategoria)
 	if pastaCategoria then
 		return procurarFilho(pastaCategoria, nomeTemplate)
 	end
 
-	for _, pasta in ipairs(modelos:GetChildren()) do
+	for _, pasta in ipairs(itens:GetChildren()) do
 		local encontrado = procurarFilho(pasta, nomeTemplate)
 		if encontrado then
 			return encontrado
@@ -158,30 +159,46 @@ local function criarTool(jogador, payload, destino)
 	end
 
 	local quantidade = math.clamp(math.floor(tonumber(payload.quantidade) or 1), 1, 20)
-	local dados = ToolBuilder.ExtrairDados(template)
-	if not dados then
-		return false, "Dados da tool nao encontrados"
+	
+	-- Encontra a definicao no CatalogoItens correspondente ao template
+	local dados = nil
+	local templateNameLower = string.lower(template.Name)
+	for id, item in pairs(CatalogoItens.Todos()) do
+		if string.lower(item.Modelo or "") == templateNameLower or id == templateNameLower or string.lower(item.Nome or "") == templateNameLower then
+			dados = item
+			break
+		end
 	end
-	dados.Quantidade = quantidade
 
-	local toolCriada = nil
+	if not dados then
+		return false, "Item nao encontrado no catalogo para o template " .. template.Name
+	end
+
+	local salvo = {
+		Id = dados.Id,
+		Quantidade = quantidade,
+	}
+
 	if destino == "Mundo" then
 		local cframe = obterCFrameNaFrente(alvo, tonumber(payload.distancia) or 8)
-		toolCriada = ToolBuilder.CriarToolNoMundo(dados, cframe)
+		local toolCriada = ToolBuilder.CriarToolNoMundo(dados.Id, salvo, cframe)
+		if not toolCriada then
+			return false, "Falha ao criar tool no mundo"
+		end
+		return true, string.format("Tool criada no mundo: %s (x%d)", toolCriada.Name, quantidade)
 	else
 		local mochila = alvo:FindFirstChildOfClass("Backpack") or alvo:WaitForChild("Backpack", 5)
 		if not mochila then
 			return false, "Backpack do alvo nao encontrado"
 		end
-		toolCriada = ToolBuilder.CriarTool(dados, mochila)
+		local sucesso = ToolBuilder.EmpilharNoContainer(mochila, dados.Id, salvo)
+		if not sucesso then
+			return false, "Falha ao adicionar tool na mochila"
+		end
+		return true, string.format("Tool dada: %s (x%d)", dados.Nome, quantidade)
 	end
-
-	if not toolCriada then
-		return false, "Falha ao criar tool"
-	end
-
-	return true, string.format("Tool criada: %s (x%d)", toolCriada.Name, quantidade)
 end
+
 
 local function curarJogador(jogador, payload)
 	local alvo = encontrarJogador(payload.alvo, jogador) or jogador
