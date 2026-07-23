@@ -11,7 +11,6 @@ local ProximityColors = {}
 local COLOR_MAP = {
 	Ferramentas = Color3.fromRGB(149, 149, 149),
 	Armas = Color3.fromRGB(149, 149, 149),
-	ArmasEquipadas = Color3.fromRGB(149, 149, 149),
 	Armaduras = Color3.fromRGB(149, 149, 149),
 	Materiais = Color3.fromRGB(167, 116, 96),
 	Comidas = Color3.fromRGB(186, 174, 104),

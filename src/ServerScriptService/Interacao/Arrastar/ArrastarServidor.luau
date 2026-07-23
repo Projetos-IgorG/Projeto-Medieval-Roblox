@@ -98,14 +98,14 @@ local function EhArrastavel(objeto)
 	if objeto:IsA("Tool") then
 		local dados = objeto:FindFirstChild("Dados")
 		if dados and dados:IsA("Folder") then
-			local draggableValue = dados:FindFirstChild("Draggable")
+			local draggableValue = dados:FindFirstChild("Arrastavel")
 			if draggableValue and draggableValue:IsA("BoolValue") then
 				return draggableValue.Value == true
 			end
 		end
-		return false
+		return objeto:GetAttribute("Arrastavel") == true
 	end
-	return objeto:GetAttribute("Draggable") == true
+	return objeto:GetAttribute("Arrastavel") == true
 end
 
 local function ObterPeso(objeto)
@@ -259,7 +259,7 @@ local function ValidarAlvo(player, objeto)
 		return false
 	end
 	if not EhArrastavel(objeto) then
-		DebugPrint("Alvo inválido: não tem atributo Draggable")
+		DebugPrint("Alvo inválido: não tem atributo Arrastavel")
 		return false
 	end
 	local partePrincipal = ObterPartePrincipal(objeto)

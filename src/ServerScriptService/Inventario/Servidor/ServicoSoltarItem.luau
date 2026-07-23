@@ -12,7 +12,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local PhysicsService = game:GetService("PhysicsService")
 
-local ToolBuilder = require(ReplicatedStorage:WaitForChild("Equipamentos"):WaitForChild("ConstrutorFerramentas"))
+local ToolBuilder = require(ReplicatedStorage:WaitForChild("SistemaItens"):WaitForChild("ConstrutorTools"))
+local CatalogoItens = require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
 
 local ALTURA_DROP = 2
 local DISTANCIA_FRENTE = 3
@@ -120,14 +121,14 @@ local function ProcessarDrop(player, toolNome, quantidade)
 		return
 	end
 
-	local dadosFolder = tool:FindFirstChild("Dados")
-	if dadosFolder then
-		local tipoValue = dadosFolder:FindFirstChild("Tipo")
-		if tipoValue and tipoValue.Value == "ArmasEquipadas" then
-			warn("[ServicoDrop] Tentativa de dropar Tool do tipo 'ArmasEquipadas' bloqueada!")
-			return
-		end
+	local id = tool:GetAttribute("Id")
+	local catalogData = id and CatalogoItens.Get(id)
+	if not catalogData then
+		warn("[ServicoDrop] Item não encontrado no catálogo:", id)
+		return
 	end
+
+
 
 	local itemData = ToolBuilder.ExtrairDados(tool)
 	if not itemData then
@@ -140,7 +141,7 @@ local function ProcessarDrop(player, toolNome, quantidade)
 	local quantidadeAtual = itemData.Quantidade or 1
 	if quantidade < quantidadeAtual then
 
-		ToolBuilder.AtualizarQuantidade(tool, quantidadeAtual - quantidade)
+		tool:SetAttribute("Quantidade", quantidadeAtual - quantidade)
 		itemData.Quantidade = quantidade
 		DebugLog("Dropando quantidade parcial:", quantidade, "Restando:", quantidadeAtual - quantidade)
 	else
@@ -149,14 +150,14 @@ local function ProcessarDrop(player, toolNome, quantidade)
 		tool:Destroy()
 	end
 
-	local cframeDrop = CalcularPosicaoDrop(character, itemData.Tipo)
+	local cframeDrop = CalcularPosicaoDrop(character, catalogData.Tipo)
 	if not cframeDrop then
 		warn("[ServicoDrop] ERRO: Não foi possível calcular posição de drop!")
 		return
 	end
 
-	DebugLog("Criando Tool no mundo usando ToolBuilder...")
-	local toolNoMundo = ToolBuilder.CriarToolNoMundo(itemData, cframeDrop)
+	DebugLog("Criando Tool no mundo usando ConstrutorTools...")
+	local toolNoMundo = ToolBuilder.CriarToolNoMundo(id, itemData, cframeDrop)
 
 	if toolNoMundo then
 

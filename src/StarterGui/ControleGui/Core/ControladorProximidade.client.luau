@@ -12,6 +12,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
 local ProximityColors = require(ReplicatedStorage:WaitForChild("Interacao"):WaitForChild("Proximidade"):WaitForChild("Configuracoes"):WaitForChild("CoresProximidade"))
+local CatalogoItens = require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
 
 local player = Players.LocalPlayer
 local screenGui = Instance.new("ScreenGui")
@@ -116,17 +117,19 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 		local tipoFinal = nil
 		local adornee = promptInstance.Parent
 		if adornee then
-			local tool = adornee:FindFirstAncestorOfClass("Tool")
-			if not tool and adornee:IsA("Tool") then
-				tool = adornee
-			end
-			if tool then
-				local dadosFolder = tool:FindFirstChild("Dados")
-				if dadosFolder then
-					local tipoValue = dadosFolder:FindFirstChild("Tipo")
-					if tipoValue and tipoValue:IsA("StringValue") then
-						tipoFinal = tipoValue.Value
+			local root = adornee:IsA("Model") and adornee or adornee.Parent
+			local id = root and root:GetAttribute("Id")
+			local catalogData = id and CatalogoItens.Get(id)
+			if catalogData then
+				tipoFinal = catalogData.Tipo
+				if tipoFinal == "Tool" then
+					if catalogData.Subtipo == "Arma" then
+						tipoFinal = "Armas"
+					elseif catalogData.Subtipo == "Ferramenta" then
+						tipoFinal = "Ferramentas"
 					end
+				elseif tipoFinal == "Equipment" then
+					tipoFinal = "Armaduras"
 				end
 			end
 		end

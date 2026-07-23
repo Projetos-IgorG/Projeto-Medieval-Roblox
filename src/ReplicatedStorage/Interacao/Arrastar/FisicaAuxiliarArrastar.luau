@@ -1,11 +1,6 @@
---[[
-    Script: FisicaAuxiliarArrastar.luau
-    Caminho: src/ReplicatedStorage/Interacao/Arrastar
-    Responsabilidade: Calcula auxiliares fisicos usados pelo sistema de arrastar objetos.
-    Uso: ModuleScript; use require(caminho) e chame as funcoes ou tabelas retornadas.
-    Nao faz: Nao roda sozinho nem cria fluxo de jogo por conta propria; depende dos scripts que importam este modulo.
-    Funcoes principais: ObterPartePrincipal, EhArrastavel, ObterPeso, EncontrarObjetoArrastavel
-]]
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CatalogoItens = require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
+
 local FisicaHelpers = {}
 
 function FisicaHelpers.ObterPartePrincipal(objeto: Instance): BasePart?
@@ -20,36 +15,29 @@ function FisicaHelpers.ObterPartePrincipal(objeto: Instance): BasePart?
 end
 
 function FisicaHelpers.EhArrastavel(objeto: Instance): boolean
-	if objeto:IsA("Tool") then
-		local dados = objeto:FindFirstChild("Dados")
-		if dados and dados:IsA("Folder") then
-			local draggableValue = dados:FindFirstChild("Draggable")
-			if draggableValue and draggableValue:IsA("BoolValue") then
-				return draggableValue.Value == true
-			end
-		end
-		return false
+	local attr = objeto:GetAttribute("Arrastavel")
+	if attr ~= nil then
+		return attr == true
 	end
-
-	return objeto:GetAttribute("Draggable") == true
+	local id = objeto:GetAttribute("Id")
+	local dados = id and CatalogoItens.Get(id)
+	if dados and dados.Arrastavel ~= nil then
+		return dados.Arrastavel == true
+	end
+	return false
 end
 
 function FisicaHelpers.ObterPeso(objeto: Instance): number
-	if objeto:IsA("Tool") then
-		local dados = objeto:FindFirstChild("Dados")
-		if dados and dados:IsA("Folder") then
-			local pesoValue = dados:FindFirstChild("Peso")
-			if pesoValue and pesoValue:IsA("NumberValue") then
-				local p = pesoValue.Value
-				if typeof(p) == "number" and p > 0 then
-					if p < 1 then
-						p = 0.8
-					end
-					return p
-				end
+	local id = objeto:GetAttribute("Id")
+	local dados = id and CatalogoItens.Get(id)
+	if dados then
+		local p = dados.Peso
+		if typeof(p) == "number" and p > 0 then
+			if p < 1 then
+				p = 0.8
 			end
+			return p
 		end
-		return 1.0
 	end
 
 	local peso = objeto:GetAttribute("Peso")
