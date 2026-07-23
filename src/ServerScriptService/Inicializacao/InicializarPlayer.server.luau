@@ -60,12 +60,13 @@ end
 local function RemoverAcessoriosNaoHair(character : Model)
 	for _, child in ipairs(character:GetChildren()) do
 		if child:IsA("Accessory") then
-			if not EhAcessorioDeCabelo(child) then
+			if not EhAcessorioDeCabelo(child) and child:GetAttribute("Equipamento") ~= true then
 				child:Destroy()
 			end
 		end
 	end
 end
+
 
 local function SanearDescricaoAcessorios(humanoid : Humanoid) : boolean
 	local ok, mudouOuErro = pcall(function()
@@ -382,10 +383,14 @@ end
 local function ConectarBloqueioAcessorios(character : Model) : RBXScriptConnection
 	return character.ChildAdded:Connect(function(child)
 		if child:IsA("Accessory") and not EhAcessorioDeCabelo(child) then
+			if child:GetAttribute("Equipamento") == true then
+				return
+			end
 			child:Destroy()
 		end
 	end)
 end
+
 
 -- Vigia persistente: se o Head fisico for substituido a qualquer momento por uma
 -- versao dinamica (caso raro em que ApplyDescription do engine vence o guardiao),

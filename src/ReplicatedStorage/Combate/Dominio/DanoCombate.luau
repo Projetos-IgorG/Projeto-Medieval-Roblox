@@ -8,8 +8,9 @@
     Nao faz: Nao dispara acoes por conta propria; apenas calcula regras para o script chamador.
     Funcoes principais: ValidarEstruturaTool, ValidarAtacante, ValidarAlvo, ObterDanoBase, ObterMultiplicador, CalcularDano
 ]]
-local PASTA_DADOS = "Dados"
-local PROP_DANO = "Dano"
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CatalogoItens =
+	require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
 local CHAVE_VIDA_ENTIDADE = "Ent_Vida"
 
 local MULTIPLICADORES_DANO: { [string]: number } = {
@@ -49,18 +50,19 @@ function Modulo_Dano.ValidarEstruturaTool(tool: Tool): (boolean, string?)
 		return false, "Objeto não é um Tool"
 	end
 
-	local dados = tool:FindFirstChild(PASTA_DADOS)
+	local id = tool:GetAttribute("Id")
+	if not id then
+		return false, "Tool sem attribute 'Id'"
+	end
+
+	local dados = CatalogoItens.Get(id)
 	if not dados then
-		return false, "Tool sem pasta '" .. PASTA_DADOS .. "'"
+		return false, "Item não encontrado no catálogo: " .. tostring(id)
 	end
 
-	local danoValue = dados:FindFirstChild(PROP_DANO)
-	if not danoValue then
-		return false, "Pasta Dados sem propriedade '" .. PROP_DANO .. "'"
-	end
-
-	if not (danoValue:IsA("NumberValue") or danoValue:IsA("IntValue")) then
-		return false, "Propriedade Dano não é numérica (NumberValue ou IntValue)"
+	local danoVal = dados.Dano or dados.StatBase
+	if not danoVal or typeof(danoVal) ~= "number" then
+		return false, "Item no catálogo sem propriedade 'Dano' ou 'StatBase' numérica"
 	end
 
 	return true, nil
@@ -124,14 +126,9 @@ function Modulo_Dano.ObterDanoBase(tool: Tool): number?
 		return nil
 	end
 
-	local dados = tool:FindFirstChild(PASTA_DADOS)
-	local danoValue = dados and dados:FindFirstChild(PROP_DANO)
-
-	if danoValue and (danoValue:IsA("NumberValue") or danoValue:IsA("IntValue")) then
-		return (danoValue :: any).Value
-	end
-
-	return nil
+	local id = tool:GetAttribute("Id")
+	local dados = id and CatalogoItens.Get(id)
+	return dados and (dados.Dano or dados.StatBase)
 end
 
 function Modulo_Dano.ObterMultiplicador(tipoAtaque: string): number
@@ -144,7 +141,6 @@ function Modulo_Dano.CalcularDano(danoBase: number, tipoAtaque: string): number
 end
 
 function Modulo_Dano.AplicarDano(tool: Tool, atacante: Player | Model, alvo: Model, tipoAtaque: string): ResultadoDano
-
 	local toolValido, toolErro = Modulo_Dano.ValidarEstruturaTool(tool)
 	if not toolValido then
 		return {
@@ -208,7 +204,6 @@ function Modulo_Dano.AplicarDanoComValor(
 	tipoAtaque: string,
 	danoBase: number
 ): ResultadoDano
-
 	local atacanteValido, atacanteErro = Modulo_Dano.ValidarAtacante(atacante)
 	if not atacanteValido then
 		return {
