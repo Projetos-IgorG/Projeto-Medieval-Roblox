@@ -22,7 +22,7 @@ export type BaseCharacterControllerType = {
 	moveVector: Vector3,
 	moveVectorIsCameraRelative: boolean,
 	isJumping: boolean,
-	_connectionUtil: any
+	_connectionUtil: any,
 }
 
 local ZERO_VECTOR3: Vector3 = Vector3.new()

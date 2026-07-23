@@ -20,13 +20,13 @@ local Config = {
 	MaxDistance = 120,
 	DefaultDuration = 1.0,
 
-	DamageColor = Color3.fromRGB(255, 75, 75),       -- Vermelho vibrante para acerto
-	BypassedColor = Color3.fromRGB(220, 220, 220),    -- Cinza para bypass (hit pelas costas/lado)
-	BlockColor = Color3.fromRGB(50, 150, 255),       -- Azul para bloqueio normal
-	ParryColor = Color3.fromRGB(255, 200, 50),       -- Amarelo/Dourado para parry
-	BlockBrokenColor = Color3.fromRGB(180, 80, 255),  -- Roxo para quebra de guarda
-	ChargedColor = Color3.fromRGB(255, 130, 0),      -- Laranja para ataque segurado
-	WhiteColor = Color3.fromRGB(255, 255, 255),        -- Branco para texto geral
+	DamageColor = Color3.fromRGB(255, 75, 75), -- Vermelho vibrante para acerto
+	BypassedColor = Color3.fromRGB(220, 220, 220), -- Cinza para bypass (hit pelas costas/lado)
+	BlockColor = Color3.fromRGB(50, 150, 255), -- Azul para bloqueio normal
+	ParryColor = Color3.fromRGB(255, 200, 50), -- Amarelo/Dourado para parry
+	BlockBrokenColor = Color3.fromRGB(180, 80, 255), -- Roxo para quebra de guarda
+	ChargedColor = Color3.fromRGB(255, 130, 0), -- Laranja para ataque segurado
+	WhiteColor = Color3.fromRGB(255, 255, 255), -- Branco para texto geral
 	TagColor = Color3.fromRGB(240, 240, 240),
 
 	MainStrokeTransparency = 0.15,
@@ -82,7 +82,15 @@ local function makeBillboard(adornee: BasePart): BillboardGui
 	return gui
 end
 
-local function makeText(parent: Instance, text: string, color: Color3, font: Enum.Font, size: UDim2, position: UDim2, strokeTransparency: number): (TextLabel, UIScale)
+local function makeText(
+	parent: Instance,
+	text: string,
+	color: Color3,
+	font: Enum.Font,
+	size: UDim2,
+	position: UDim2,
+	strokeTransparency: number
+): (TextLabel, UIScale)
 	local label = Instance.new("TextLabel")
 	label.BackgroundTransparency = 1
 	label.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -106,22 +114,25 @@ local function makeText(parent: Instance, text: string, color: Color3, font: Enu
 	return label, scale
 end
 
-local function animateText(label: TextLabel, scaleObject: UIScale, endPosition: UDim2, duration: number, growScale: number)
+local function animateText(
+	label: TextLabel,
+	scaleObject: UIScale,
+	endPosition: UDim2,
+	duration: number,
+	growScale: number
+)
 	local popTween = TweenService:Create(
 		scaleObject,
 		TweenInfo.new(0.15, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
 		{ Scale = growScale }
 	)
 
-	local moveFadeTween = TweenService:Create(
-		label,
-		TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-		{
+	local moveFadeTween =
+		TweenService:Create(label, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			Position = endPosition,
 			TextTransparency = 1,
 			TextStrokeTransparency = 1,
-		}
-	)
+		})
 
 	popTween:Play()
 	moveFadeTween:Play()
@@ -171,7 +182,7 @@ local function Show(targetCharacter: Model, damage: number, info: any)
 	local tipo = info.tipo
 	local multiplicador = info.multiplicador or 1.0
 	local bypassed = info.bypassed == true
-	
+
 	local mainColor = Config.DamageColor
 	local mainText = ""
 	local tags = {}

@@ -84,7 +84,6 @@ function VRCamera:Update(timeDelta)
 
 		if self:IsInFirstPerson() then
 			if VRService.AvatarGestures then
-
 				newCameraCFrame, newCameraFocus =
 					self:UpdateImmersionCamera(timeDelta, newCameraCFrame, newCameraFocus, lastSubjPos, subjectPosition)
 			else
@@ -210,14 +209,12 @@ function VRCamera:UpdateImmersionCamera(timeDelta, newCameraCFrame, _newCameraFo
 
 		newCameraCFrame = subjectCFrame
 	else
-
 		if humanoid.Sit then
 			newCameraCFrame = subjectCFrame
 			if (newCameraCFrame.Position - curCamera.CFrame.Position).Magnitude > 0.01 then
 				self:StartVREdgeBlur(PlayersService.LocalPlayer)
 			end
 		else
-
 			local torsoRotation = self.controlModule:GetEstimatedVRTorsoFrame()
 			self.characterOrientation.CFrame = curCamera.CFrame * torsoRotation
 
@@ -245,14 +242,12 @@ function VRCamera:UpdateImmersionCamera(timeDelta, newCameraCFrame, _newCameraFo
 
 				newCameraCFrame = curCamera.CFrame.Rotation + goalCameraPosition
 			else
-
 				newCameraCFrame = curCamera.CFrame.Rotation
 					+ Vector3.new(curCamera.CFrame.Position.X, subjectPosition.Y, curCamera.CFrame.Position.Z)
 			end
 
 			local yawDelta = self:getRotation(timeDelta)
 			if math.abs(yawDelta) > 0 then
-
 				local vrHeadOffset = VRService:GetUserCFrame(Enum.UserCFrame.Head)
 				vrHeadOffset = vrHeadOffset.Rotation + vrHeadOffset.Position * curCamera.HeadScale
 				local VRheadWorld = newCameraCFrame * vrHeadOffset
@@ -282,7 +277,6 @@ function VRCamera:UpdateThirdPersonComfortTransform(
 	end
 
 	if lastSubjPos ~= nil and self.lastCameraFocus ~= nil then
-
 		local subjectDelta = lastSubjPos - subjectPosition
 		local moveVector = self.controlModule:GetMoveVector()
 
@@ -297,7 +291,6 @@ function VRCamera:UpdateThirdPersonComfortTransform(
 		end
 
 		if isMoving and not self.needsReset then
-
 			newCameraFocus = self.lastCameraFocus
 
 			self.VRCameraFocusFrozen = true

@@ -101,7 +101,6 @@ function CameraUtils.getLooseBoundingSphere(parts: { BasePart })
 		local pDist = (p - sc).Magnitude
 
 		if pDist > sr then
-
 			sc = sc + (pDist - sr) * 0.5 * (p - sc).Unit
 
 			sr = (pDist + sr) * 0.5

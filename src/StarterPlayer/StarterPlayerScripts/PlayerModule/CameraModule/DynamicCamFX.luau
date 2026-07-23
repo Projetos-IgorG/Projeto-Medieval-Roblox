@@ -121,7 +121,6 @@ function DynamicCamFX.Update(
 
 	local isOnGround = hum.FloorMaterial ~= Enum.Material.Air
 	if not isOnGround then
-
 		currentVel = lerpDt(currentVel, 0, Settings.VelocidadeSuavizacao, dt)
 		currentLean = lerpDt(currentLean, 0, Settings.LeanSuavizacao, dt)
 		drift = lerpDt(drift, 0, Settings.DriftSuavizacao, dt)

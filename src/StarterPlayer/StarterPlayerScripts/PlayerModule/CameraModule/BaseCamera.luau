@@ -166,7 +166,6 @@ function BaseCamera:_setUpConfigurations()
 end
 
 function BaseCamera:OnCharacterAdded(_char)
-
 	self.resetCameraAngle = self.resetCameraAngle or self:GetEnabled()
 	self.humanoidRootPart = nil
 end
@@ -184,7 +183,6 @@ function BaseCamera:GetHumanoidRootPart(): BasePart
 end
 
 function BaseCamera:GetBodyPartToFollow(humanoid: Humanoid, _isDead: boolean)
-
 	if humanoid:GetState() == Enum.HumanoidStateType.Dead then
 		local character = humanoid.Parent
 		if character and character:IsA("Model") then
@@ -249,7 +247,6 @@ function BaseCamera:GetSubjectCFrame(): CFrame
 	elseif cameraSubject:IsA("BasePart") then
 		result = cameraSubject.CFrame
 	elseif cameraSubject:IsA("Model") then
-
 		if cameraSubject.PrimaryPart then
 			result = cameraSubject.PrimaryPart.CFrame
 		else
@@ -399,7 +396,6 @@ function BaseCamera:GetSubjectPosition(): Vector3?
 			end
 		end
 	else
-
 		return nil
 	end
 
@@ -410,7 +406,6 @@ function BaseCamera:GetSubjectPosition(): Vector3?
 end
 
 function BaseCamera:OnCurrentCameraChanged()
-
 	if self.cameraSubjectChangedConn then
 		self.cameraSubjectChangedConn:Disconnect()
 		self.cameraSubjectChangedConn = nil
@@ -426,7 +421,6 @@ function BaseCamera:OnCurrentCameraChanged()
 end
 
 function BaseCamera:OnPlayerCameraPropertyChange()
-
 	self:SetCameraToSubjectDistance(self.currentSubjectDistance)
 end
 
@@ -435,7 +429,6 @@ function BaseCamera:InputTranslationToCameraAngleChange(translationVector, sensi
 end
 
 function BaseCamera:GamepadZoomPress()
-
 	local dist = self:GetCameraToSubjectDistance()
 
 	local max = player.CameraMaxZoomDistance
@@ -450,7 +443,6 @@ function BaseCamera:GamepadZoomPress()
 		if zoom < player.CameraMinZoomDistance then
 			zoom = player.CameraMinZoomDistance
 			if FFlagUserFixGamepadMaxZoom then
-
 				if max == zoom then
 					break
 				end
@@ -590,7 +582,6 @@ function BaseCamera:UpdateMouseBehavior()
 end
 
 function BaseCamera:UpdateForDistancePropertyChange()
-
 	self:SetCameraToSubjectDistance(self.currentSubjectDistance)
 end
 
@@ -617,7 +608,6 @@ function BaseCamera:SetCameraToSubjectDistance(desiredSubjectDistance: number): 
 end
 
 function BaseCamera:SetCameraType(cameraType)
-
 	self.cameraType = cameraType
 end
 
@@ -653,9 +643,7 @@ function BaseCamera:InFirstPerson(): boolean
 	return self.inFirstPerson
 end
 
-function BaseCamera:SetPrimeiraPessoa(_ativo: boolean)
-
-end
+function BaseCamera:SetPrimeiraPessoa(_ativo: boolean) end
 
 function BaseCamera:EnterFirstPerson()
 	self.inFirstPerson = true

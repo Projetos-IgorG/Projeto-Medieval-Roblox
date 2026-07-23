@@ -96,17 +96,26 @@ function Sincronizacao.PredictStopAnimation()
 	end
 
 	-- Salvaguarda: não interromper ações contínuas/one-shot que não devem ser canceladas por soltar M2 (ataque, esquivas, equips)
-	if acao == "Atacando" or acao == "Rolando" or acao == "Dashando" or acao == "Equipando" or acao == "Desequipando" then
+	if
+		acao == "Atacando"
+		or acao == "Rolando"
+		or acao == "Dashando"
+		or acao == "Equipando"
+		or acao == "Desequipando"
+	then
 		return
 	end
 
-	if nomeAnim and (
-		nomeAnim:match("^Ataque")
-		or nomeAnim:match("^Roll")
-		or nomeAnim:match("^Dash")
-		or nomeAnim == "Equipar"
-		or nomeAnim == "Desequipar"
-	) then
+	if
+		nomeAnim
+		and (
+			nomeAnim:match("^Ataque")
+			or nomeAnim:match("^Roll")
+			or nomeAnim:match("^Dash")
+			or nomeAnim == "Equipar"
+			or nomeAnim == "Desequipar"
+		)
+	then
 		return
 	end
 
@@ -283,11 +292,26 @@ function Sincronizacao.ProcessarTocarAnimacao(
 		local diff = os.clock() - predicaoAtiva.timestamp
 		if diff < 1.2 then
 			if predicaoAtiva.animId == animId then
-				ctx.DebugPrint(string.format("[Predict] Ignored server replication for predicted animation %s (diff: %.3fs)", nomeAnimacao, diff))
+				ctx.DebugPrint(
+					string.format(
+						"[Predict] Ignored server replication for predicted animation %s (diff: %.3fs)",
+						nomeAnimacao,
+						diff
+					)
+				)
 				predicaoAtiva = nil
 				return
-			elseif predicaoAtiva.animId == "STOP" and (predicaoAtiva.ultimoNomeAnimacao == nomeAnimacao or nomeAnimacao == "Defesa") then
-				ctx.DebugPrint(string.format("[Predict] Ignored server replication for action %s because it was predicted to STOP (diff: %.3fs)", nomeAnimacao, diff))
+			elseif
+				predicaoAtiva.animId == "STOP"
+				and (predicaoAtiva.ultimoNomeAnimacao == nomeAnimacao or nomeAnimacao == "Defesa")
+			then
+				ctx.DebugPrint(
+					string.format(
+						"[Predict] Ignored server replication for action %s because it was predicted to STOP (diff: %.3fs)",
+						nomeAnimacao,
+						diff
+					)
+				)
 				return
 			end
 		end
@@ -298,14 +322,22 @@ function Sincronizacao.ProcessarTocarAnimacao(
 			local diff = os.clock() - predicaoAtiva.timestamp
 			if predicaoAtiva.animId == "STOP" then
 				if diff < 1.2 then
-					ctx.DebugPrint(string.format("[Predict] Ignored server replication for predicted STOP (diff: %.3fs)", diff))
+					ctx.DebugPrint(
+						string.format("[Predict] Ignored server replication for predicted STOP (diff: %.3fs)", diff)
+					)
 					return
 				end
 			elseif predicaoAtiva.animId ~= "STOP" then
 				-- Se prevemos uma animação real (tipo Ataque ou Defesa) muito recentemente,
 				-- ignoramos o STOP antigo que veio do servidor (ex: término do Dash anterior)
 				if diff < 1.0 then
-					ctx.DebugPrint(string.format("[Predict] Ignored server STOP because a new prediction %s is active (diff: %.3fs)", predicaoAtiva.nomeAnimacao, diff))
+					ctx.DebugPrint(
+						string.format(
+							"[Predict] Ignored server STOP because a new prediction %s is active (diff: %.3fs)",
+							predicaoAtiva.nomeAnimacao,
+							diff
+						)
+					)
 					return
 				end
 			end

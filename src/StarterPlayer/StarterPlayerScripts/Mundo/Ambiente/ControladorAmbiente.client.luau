@@ -58,7 +58,6 @@ local function distanciaCircularMinutos(a: number, b: number): number
 end
 
 local function deltaCircularMinutos(de: number, ate: number): number
-
 	local diff = ConfiguracaoTempo.NormalizarMinutos(ate) - ConfiguracaoTempo.NormalizarMinutos(de)
 	if diff > ConfiguracaoTempo.MinutosPorDia / 2 then
 		diff -= ConfiguracaoTempo.MinutosPorDia
@@ -98,7 +97,8 @@ local function iniciarTransicaoSuaveAte(novoMinutos: number)
 		return
 	end
 
-	local duracaoConfig = tonumber(lerValor("DuracaoTransicaoHorario", ConfiguracaoTempo.DuracaoTransicaoHorarioPadrao)) or 2.5
+	local duracaoConfig = tonumber(lerValor("DuracaoTransicaoHorario", ConfiguracaoTempo.DuracaoTransicaoHorarioPadrao))
+		or 2.5
 
 	local fatorDistancia = math.clamp(math.abs(delta) / 360, 0.3, 1.6)
 	transicaoTempoInicio = os.clock()
@@ -175,7 +175,6 @@ local pausadoAmbValor = EstadoMundo:FindFirstChild("AmbientePausado")
 if pausadoAmbValor and pausadoAmbValor:IsA("BoolValue") then
 	pausadoAmbValor.Changed:Connect(function(novo)
 		if not novo then
-
 			aplicarAmbiente(true)
 		end
 	end)

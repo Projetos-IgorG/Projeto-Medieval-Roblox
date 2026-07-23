@@ -70,10 +70,8 @@ function OrbitalCamera:LoadOrCreateNumberValueParameter(name: string, valueType,
 	local valueObj = script:FindFirstChild(name)
 
 	if valueObj and valueObj:IsA(valueType) then
-
 		self.externalProperties[name] = valueObj.Value
 	elseif self.externalProperties[name] ~= nil then
-
 		valueObj = Instance.new(valueType)
 		valueObj.Name = name
 		valueObj.Parent = script
@@ -106,7 +104,6 @@ function OrbitalCamera:SetAndBoundsCheckAzimuthValues()
 end
 
 function OrbitalCamera:SetAndBoundsCheckElevationValues()
-
 	local minElevationDeg = math.max(self.externalProperties["MinElevation"], MIN_ALLOWED_ELEVATION_DEG)
 	local maxElevationDeg = math.min(self.externalProperties["MaxElevation"], MAX_ALLOWED_ELEVATION_DEG)
 
@@ -124,7 +121,6 @@ function OrbitalCamera:SetAndBoundsCheckDistanceValues()
 end
 
 function OrbitalCamera:LoadNumberValueParameters()
-
 	self:LoadOrCreateNumberValueParameter("InitialElevation", "NumberValue", nil)
 	self:LoadOrCreateNumberValueParameter("InitialDistance", "NumberValue", nil)
 
@@ -230,7 +226,6 @@ function OrbitalCamera:Update(dt: number): (CFrame, CFrame)
 	local subjectPosition = self:GetSubjectPosition()
 
 	if subjectPosition and player and camera then
-
 		if self.gamepadDollySpeedMultiplier ~= 1 then
 			self:SetCameraToSubjectDistance(self.currentSubjectDistance * self.gamepadDollySpeedMultiplier)
 		end

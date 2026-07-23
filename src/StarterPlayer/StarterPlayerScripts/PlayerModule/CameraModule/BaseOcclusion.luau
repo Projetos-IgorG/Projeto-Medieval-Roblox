@@ -26,7 +26,6 @@ function BaseOcclusion:CharacterRemoving(_char: Model, _player: Player) end
 function BaseOcclusion:OnCameraSubjectChanged(_newSubject) end
 
 function BaseOcclusion:GetOcclusionMode(): Enum.DevCameraOcclusionMode?
-
 	warn("BaseOcclusion GetOcclusionMode must be overridden by derived classes")
 	return nil
 end

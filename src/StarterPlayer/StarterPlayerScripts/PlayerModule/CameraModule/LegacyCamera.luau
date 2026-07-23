@@ -39,7 +39,6 @@ function LegacyCamera:SetCameraToSubjectDistance(desiredSubjectDistance)
 end
 
 function LegacyCamera:Update(dt: number): (CFrame?, CFrame?)
-
 	if not self.cameraType then
 		return nil, nil
 	end
@@ -90,7 +89,6 @@ function LegacyCamera:Update(dt: number): (CFrame?, CFrame?)
 				cameraLook = diffVector.unit
 
 				if self.lastDistanceToSubject and self.lastDistanceToSubject == self:GetCameraToSubjectDistance() then
-
 					local newDistanceToSubject = diffVector.magnitude
 					self:SetCameraToSubjectDistance(newDistanceToSubject)
 				end
@@ -105,7 +103,6 @@ function LegacyCamera:Update(dt: number): (CFrame?, CFrame?)
 			self.lastDistanceToSubject = distanceToSubject
 		end
 	else
-
 		return camera.CFrame, camera.Focus
 	end
 

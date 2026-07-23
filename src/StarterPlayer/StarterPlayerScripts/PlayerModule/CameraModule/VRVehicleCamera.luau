@@ -121,7 +121,6 @@ function VRVehicleCamera:_StepRotation(dt, vdotz): CFrame
 	local pitchDeadzoneAngle = math.rad(VehicleCameraConfig.pitchDeadzoneAngle)
 
 	if os.clock() - self.lastPanTick > VehicleCameraConfig.autocorrectDelay then
-
 		local autocorrectResponse = mapClamp(
 			vdotz,
 			VehicleCameraConfig.autocorrectMinCarSpeed,
@@ -142,7 +141,6 @@ function VRVehicleCamera:_StepRotation(dt, vdotz): CFrame
 		end
 
 		if math.abs(sanitizeAngle(pitchBaseAngle - pitchSpring.pos)) <= pitchDeadzoneAngle then
-
 			pitchSpring.goal = pitchSpring.pos
 		else
 			pitchSpring.goal = pitchBaseAngle
@@ -321,7 +319,6 @@ function VRVehicleCamera:UpdateStepRotation(dt)
 		local rotatedCamera = focus * CFrame.Angles(0, -yawDelta, 0) * cameraOffset
 
 		if not UserGameSettings.VRSmoothRotationEnabled then
-
 			local headOffset = VRService:GetUserCFrame(Enum.UserCFrame.Head)
 
 			headOffset = headOffset.Rotation + headOffset.Position * camera.HeadScale
@@ -377,7 +374,6 @@ function VRVehicleCamera:UpdateComfortCamera(dt)
 	assert(cameraSubject:IsA("VehicleSeat"), "VRVehicleCamera subject must be a VehicleSeat")
 
 	if not FFlagUserVRVehicleCamera then
-
 		dt = worldDt
 		worldDt = 0
 	end
@@ -404,12 +400,10 @@ function VRVehicleCamera:UpdateComfortCamera(dt)
 	local cf = nil
 
 	if not FFlagUserVRVehicleCamera then
-
 		self:UpdateFadeFromBlack(dt)
 	end
 
 	if not self:IsInFirstPerson() then
-
 		focus = CFrame.new(subjectCFrame * localOffset) * processedRotation
 		cf = focus * CFrame.new(0, 0, zoom)
 
@@ -423,7 +417,6 @@ function VRVehicleCamera:UpdateComfortCamera(dt)
 		curCameraDir = curCameraDir.Unit
 		local cameraDot = curCameraDir:Dot(camera.CFrame.LookVector)
 		if cameraDot > TP_FOLLOW_ANGLE_DOT and curCameraDist < TP_FOLLOW_DIST and not self.needsReset then
-
 			focus = self.lastCameraFocus
 
 			local cameraFocusP = focus.p
@@ -432,7 +425,6 @@ function VRVehicleCamera:UpdateComfortCamera(dt)
 			local newLookVector = self:CalculateNewLookVectorFromArg(cameraLookVector, Vector2.new(0, 0))
 			cf = CFrame.new(cameraFocusP - (zoom * newLookVector), cameraFocusP)
 		else
-
 			self.lastCameraFocus = self:GetVRFocus(subjectCFrame.Position, dt)
 			self.needsReset = false
 			self:StartFadeFromBlack()
@@ -443,7 +435,6 @@ function VRVehicleCamera:UpdateComfortCamera(dt)
 			self:UpdateEdgeBlur(localPlayer, dt)
 		end
 	else
-
 		local dir = Vector3.new(processedRotation.LookVector.X, 0, processedRotation.LookVector.Z).Unit
 		local planarRotation = CFrame.new(processedRotation.Position, dir)
 

@@ -722,9 +722,9 @@ local function atualizarEquipados()
 	local leftWeapon = nil
 
 	if character then
-		local equipamento = character:FindFirstChild("Equipamento")
-		if equipamento then
-			local bracos = equipamento:FindFirstChild("Bracos")
+		local equipamentoFolder = character:FindFirstChild("Equipamento")
+		if equipamentoFolder then
+			local bracos = equipamentoFolder:FindFirstChild("Bracos")
 			if bracos then
 				local rightArm = bracos:FindFirstChild("RightArm") :: ObjectValue
 				local leftArm = bracos:FindFirstChild("LeftArm") :: ObjectValue
@@ -770,9 +770,9 @@ local function aoPersonagem(character)
 	end)
 
 	-- Sincroniza armas equipadas nos slots da hotbar
-	local equipamento = character:WaitForChild("Equipamento", 10)
-	if equipamento then
-		local bracos = equipamento:WaitForChild("Bracos", 5)
+	local equipamentoFolder = character:WaitForChild("Equipamento", 10)
+	if equipamentoFolder then
+		local bracos = equipamentoFolder:WaitForChild("Bracos", 5)
 		if bracos then
 			local rightArm = bracos:WaitForChild("RightArm", 5)
 			local leftArm = bracos:WaitForChild("LeftArm", 5)
@@ -814,7 +814,7 @@ if player.Character then
 end
 
 -- Dispara a atualização do Viewport apenas uma vez quando a aparência do jogador estiver totalmente carregada
-player.CharacterAppearanceLoaded:Connect(function(character)
+player.CharacterAppearanceLoaded:Connect(function(_)
 	atualizarViewport()
 end)
 

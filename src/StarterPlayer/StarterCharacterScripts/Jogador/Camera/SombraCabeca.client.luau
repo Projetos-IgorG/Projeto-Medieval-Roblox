@@ -15,11 +15,13 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
-local ClientBridge = require(
-	ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente")
-)
+local ClientBridge =
+	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
 local ProjetorSombra = require(
-	ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Camera"):WaitForChild("Sombra"):WaitForChild("ProjetorSombra")
+	ReplicatedStorage:WaitForChild("Jogador")
+		:WaitForChild("Camera")
+		:WaitForChild("Sombra")
+		:WaitForChild("ProjetorSombra")
 )
 
 local projector: Model = Instance.new("Model")
@@ -55,7 +57,9 @@ local function createShadowClone(part: BasePart): BasePart
 end
 
 local function registerPart(part: BasePart)
-	if registry[part] then return end
+	if registry[part] then
+		return
+	end
 	registry[part] = createShadowClone(part)
 end
 
@@ -95,13 +99,17 @@ local function cleanup()
 end
 
 local function activate()
-	if wasActive then return end
+	if wasActive then
+		return
+	end
 	wasActive = true
 	projector.Parent = camera
 end
 
 local function deactivate()
-	if not wasActive then return end
+	if not wasActive then
+		return
+	end
 	wasActive = false
 	projector.Parent = nil
 end
@@ -112,9 +120,7 @@ local function update()
 		return
 	end
 
-	local emPrimeiraPessoa = ClientBridge.EstaEmPrimeiraPessoa
-		and ClientBridge.EstaEmPrimeiraPessoa()
-		or false
+	local emPrimeiraPessoa = ClientBridge.EstaEmPrimeiraPessoa and ClientBridge.EstaEmPrimeiraPessoa() or false
 
 	if not emPrimeiraPessoa then
 		deactivate()
@@ -127,7 +133,6 @@ local function update()
 		if realPart.Parent and realPart:IsDescendantOf(activeChar) then
 			shadowClone.CFrame = realPart.CFrame
 		else
-
 			shadowClone:Destroy()
 			registry[realPart] = nil
 		end

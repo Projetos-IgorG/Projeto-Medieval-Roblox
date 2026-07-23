@@ -30,8 +30,8 @@ local POINT_REACHED_THRESHOLD = 1
 local OFFTRACK_TIME_THRESHOLD = 2
 local THUMBSTICK_DEADZONE = 0.22
 
-local ZERO_VECTOR3 = Vector3.new(0,0,0)
-local XZ_VECTOR3 = Vector3.new(1,0,1)
+local ZERO_VECTOR3 = Vector3.new(0, 0, 0)
+local XZ_VECTOR3 = Vector3.new(1, 0, 1)
 local HEIGHT_OFFSET = Vector3.new(0, 100, 0)
 
 local raycastParams = RaycastParams.new()
@@ -108,11 +108,13 @@ function VRNavigation:GetLocalHumanoid()
 end
 
 function VRNavigation:HasBothHandControllers()
-	return VRService:GetUserCFrameEnabled(Enum.UserCFrame.RightHand) and VRService:GetUserCFrameEnabled(Enum.UserCFrame.LeftHand)
+	return VRService:GetUserCFrameEnabled(Enum.UserCFrame.RightHand)
+		and VRService:GetUserCFrameEnabled(Enum.UserCFrame.LeftHand)
 end
 
 function VRNavigation:HasAnyHandControllers()
-	return VRService:GetUserCFrameEnabled(Enum.UserCFrame.RightHand) or VRService:GetUserCFrameEnabled(Enum.UserCFrame.LeftHand)
+	return VRService:GetUserCFrameEnabled(Enum.UserCFrame.RightHand)
+		or VRService:GetUserCFrameEnabled(Enum.UserCFrame.LeftHand)
 end
 
 function VRNavigation:IsMobileVR()
@@ -124,7 +126,6 @@ function VRNavigation:HasGamepad()
 end
 
 function VRNavigation:ShouldUseNavigationLaser()
-
 	if self:IsMobileVR() then
 		return true
 	else
@@ -262,8 +263,9 @@ function VRNavigation:BindJumpAction(active)
 	if active then
 		if not self.isJumpBound then
 			self.isJumpBound = true
-			ContextActionService:BindActionAtPriority("VRJumpAction", (function() return self:OnJumpAction() end), false,
-				self.CONTROL_ACTION_PRIORITY, Enum.KeyCode.ButtonA)
+			ContextActionService:BindActionAtPriority("VRJumpAction", function()
+				return self:OnJumpAction()
+			end, false, self.CONTROL_ACTION_PRIORITY, Enum.KeyCode.ButtonA)
 		end
 	else
 		if self.isJumpBound then
@@ -274,10 +276,12 @@ function VRNavigation:BindJumpAction(active)
 end
 
 function VRNavigation:ControlCharacterGamepad(_actionName, inputState, inputObject)
-	if inputObject.KeyCode ~= Enum.KeyCode.Thumbstick1 then return end
+	if inputObject.KeyCode ~= Enum.KeyCode.Thumbstick1 then
+		return
+	end
 
 	if inputState == Enum.UserInputState.Cancel then
-		self.moveVector =  ZERO_VECTOR3
+		self.moveVector = ZERO_VECTOR3
 		return
 	end
 
@@ -301,7 +305,7 @@ function VRNavigation:ControlCharacterGamepad(_actionName, inputState, inputObje
 			self.moveLatch = true
 		end
 	else
-		self.moveVector =  ZERO_VECTOR3
+		self.moveVector = ZERO_VECTOR3
 
 		if self:ShouldUseNavigationLaser() then
 			self:BindJumpAction(false)
@@ -363,11 +367,16 @@ function VRNavigation:OnHeartbeat(dt)
 			end
 		else
 			if FFlagUserRaycastUpdateAPI then
-				raycastParams.FilterDescendantsInstances = { (game.Players.LocalPlayer :: Player).Character, workspace.CurrentCamera}
+				raycastParams.FilterDescendantsInstances =
+					{ (game.Players.LocalPlayer :: Player).Character, workspace.CurrentCamera }
 				local raycastResult = workspace:Raycast(currentPosition - Vector3.yAxis, moveDir * 3, raycastParams)
 
 				if raycastResult then
-					raycastResult = workspace:Raycast(raycastResult.Position + moveDir * 0.5 + HEIGHT_OFFSET, -HEIGHT_OFFSET, raycastParams)
+					raycastResult = workspace:Raycast(
+						raycastResult.Position + moveDir * 0.5 + HEIGHT_OFFSET,
+						-HEIGHT_OFFSET,
+						raycastParams
+					)
 
 					local heightDifference = raycastResult.Position.Y - currentPosition.Y
 					if heightDifference < 6 and heightDifference > -2 then
@@ -379,10 +388,15 @@ function VRNavigation:OnHeartbeat(dt)
 					(game.Players.LocalPlayer :: Player).Character,
 					workspace.CurrentCamera,
 				}
-				local obstructResult = workspace:Raycast(currentPosition - Vector3.new(0, 1, 0), moveDir * 3, raycastParams)
+				local obstructResult =
+					workspace:Raycast(currentPosition - Vector3.new(0, 1, 0), moveDir * 3, raycastParams)
 
 				if obstructResult then
-					local jumpCheckResult = workspace:Raycast(obstructResult.Position + moveDir * 0.5 + HEIGHT_OFFSET, -HEIGHT_OFFSET, raycastParams)
+					local jumpCheckResult = workspace:Raycast(
+						obstructResult.Position + moveDir * 0.5 + HEIGHT_OFFSET,
+						-HEIGHT_OFFSET,
+						raycastParams
+					)
 
 					if jumpCheckResult then
 						local heightDifference = jumpCheckResult.Position.Y - currentPosition.Y
@@ -423,20 +437,22 @@ function VRNavigation:OnUserCFrameEnabled()
 end
 
 function VRNavigation:Enable(enable)
-
 	self.moveVector = ZERO_VECTOR3
 	self.isJumping = false
 
 	if enable then
-		self.navigationRequestedConn = VRService.NavigationRequested:Connect(function(destinationCFrame, inputUserCFrame)
-			self:OnNavigationRequest(destinationCFrame, inputUserCFrame)
-		end)
+		self.navigationRequestedConn = VRService.NavigationRequested:Connect(
+			function(destinationCFrame, inputUserCFrame)
+				self:OnNavigationRequest(destinationCFrame, inputUserCFrame)
+			end
+		)
 		self.heartbeatConn = RunService.Heartbeat:Connect(function(dt)
 			self:OnHeartbeat(dt)
 		end)
 
-		ContextActionService:BindAction("MoveThumbstick", (function(actionName, inputState, inputObject) return self:ControlCharacterGamepad(actionName, inputState, inputObject) end),
-			false, self.CONTROL_ACTION_PRIORITY, Enum.KeyCode.Thumbstick1)
+		ContextActionService:BindAction("MoveThumbstick", function(actionName, inputState, inputObject)
+			return self:ControlCharacterGamepad(actionName, inputState, inputObject)
+		end, false, self.CONTROL_ACTION_PRIORITY, Enum.KeyCode.Thumbstick1)
 		ContextActionService:BindActivate(Enum.UserInputType.Gamepad1, Enum.KeyCode.ButtonR2)
 
 		self.userCFrameEnabledConn = VRService.UserCFrameEnabled:Connect(function()
@@ -449,7 +465,6 @@ function VRNavigation:Enable(enable)
 
 		self.enabled = true
 	else
-
 		self:StopFollowingPath()
 
 		ContextActionService:UnbindAction("MoveThumbstick")

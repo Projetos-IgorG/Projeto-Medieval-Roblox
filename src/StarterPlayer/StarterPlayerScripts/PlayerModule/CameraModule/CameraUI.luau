@@ -15,7 +15,6 @@ local initialized = false
 local CameraUI: any = {}
 
 do
-
 	function CameraUI.setCameraModeToastEnabled(enabled: boolean)
 		if not enabled and not initialized then
 			return

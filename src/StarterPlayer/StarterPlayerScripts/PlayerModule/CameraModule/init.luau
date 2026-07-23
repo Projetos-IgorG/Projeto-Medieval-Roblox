@@ -67,15 +67,17 @@ local DynamicCamFX = require(script:WaitForChild("DynamicCamFX"))
 local ZoomController = require(script:WaitForChild("ZoomController"))
 
 local ConfigJogador = require(
-	ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Camera"):WaitForChild("Configuracoes"):WaitForChild("ConfigCamera")
+	ReplicatedStorage:WaitForChild("Jogador")
+		:WaitForChild("Camera")
+		:WaitForChild("Configuracoes")
+		:WaitForChild("ConfigCamera")
 )
 
 local ClientBridge =
 	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
 
-local Modulo_Configuracoes = require(
-	ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Configuracoes"):WaitForChild("ConfigCombate")
-)
+local Modulo_Configuracoes =
+	require(ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Configuracoes"):WaitForChild("ConfigCombate"))
 
 local dashCamState = {
 	ativo = false,
@@ -106,9 +108,13 @@ local function getCachedEstadoMov(): string
 		return val.Value
 	end
 	local character = Players.LocalPlayer.Character
-	if not character then return "Parado" end
+	if not character then
+		return "Parado"
+	end
 	local statusLocal = character:FindFirstChild("StatusLocal")
-	if not statusLocal then return "Parado" end
+	if not statusLocal then
+		return "Parado"
+	end
 	local estadoVal = statusLocal:FindFirstChild("estadoMov")
 	if estadoVal and estadoVal:IsA("StringValue") then
 		cachedEstadoMov = estadoVal :: StringValue
@@ -168,17 +174,24 @@ local primeiraPessoaState = {
 }
 
 local function updateShiftLockStatus(isLocked: boolean)
-
-	if isLocked == lastShiftLockSet then return end
+	if isLocked == lastShiftLockSet then
+		return
+	end
 
 	local boolVal = cachedShiftLockBool
 	if not boolVal or not boolVal.Parent then
 		local character = Players.LocalPlayer.Character
-		if not character then return end
+		if not character then
+			return
+		end
 		local statusLocal = character:FindFirstChild("StatusLocal")
-		if not statusLocal then return end
+		if not statusLocal then
+			return
+		end
 		local found = statusLocal:FindFirstChild("ShiftLockOn")
-		if not found or not found:IsA("BoolValue") then return end
+		if not found or not found:IsA("BoolValue") then
+			return
+		end
 		boolVal = found :: BoolValue
 		cachedShiftLockBool = boolVal
 	end
@@ -235,8 +248,9 @@ local function entrarPrimeiraPessoa(cameraModule: any)
 	end
 
 	primeiraPessoaState.shiftLockAntesDePrimeiraPessoa = mouseController
-		and mouseController.GetIsMouseLocked
-		and mouseController:GetIsMouseLocked() or false
+			and mouseController.GetIsMouseLocked
+			and mouseController:GetIsMouseLocked()
+		or false
 
 	if controller.GetCameraToSubjectDistance then
 		primeiraPessoaState.zoomAnterior = controller:GetCameraToSubjectDistance()
@@ -509,7 +523,6 @@ function CameraModule:GetCameraMovementModeFromSettings(): Enum.ComputerCameraMo
 	end
 
 	if devMode == Enum.DevComputerCameraMovementMode.UserChoice then
-
 		return userMode
 	end
 
@@ -560,7 +573,6 @@ function CameraModule:ActivateOcclusionModule(occlusionMode: Enum.DevCameraOcclu
 		end
 
 		if prevOcclusionModule then
-
 			if prevOcclusionModule ~= self.activeOcclusionModule then
 				prevOcclusionModule:Enable(false)
 			else
@@ -569,12 +581,10 @@ function CameraModule:ActivateOcclusionModule(occlusionMode: Enum.DevCameraOcclu
 		end
 
 		if occlusionMode == Enum.DevCameraOcclusionMode.Invisicam then
-
 			if Players.LocalPlayer.Character then
 				self.activeOcclusionModule:CharacterAdded(Players.LocalPlayer.Character, Players.LocalPlayer)
 			end
 		else
-
 			for _, player in Players:GetPlayers() do
 				if player and player.Character then
 					self.activeOcclusionModule:CharacterAdded(player.Character, player)
@@ -604,7 +614,6 @@ function CameraModule:ShouldUseVehicleCamera(): boolean
 end
 
 function CameraModule:ActivateCameraController()
-
 	local legacyCameraType = (workspace.CurrentCamera :: Camera).CameraType
 	local cameraMovementMode = self:GetCameraMovementModeFromSettings()
 	local newCameraCreator = nil
@@ -618,7 +627,6 @@ function CameraModule:ActivateCameraController()
 	elseif legacyCameraType == Enum.CameraType.Custom then
 		cameraMovementMode = self:GetCameraMovementModeFromSettings()
 	elseif legacyCameraType == Enum.CameraType.Track then
-
 		cameraMovementMode = Enum.ComputerCameraMovementMode.Classic
 	elseif legacyCameraType == Enum.CameraType.Follow then
 		cameraMovementMode = Enum.ComputerCameraMovementMode.Follow
@@ -679,7 +687,6 @@ function CameraModule:ActivateCameraController()
 	end
 
 	if self.activeCameraController then
-
 		if self.activeCameraController ~= newCameraController then
 			self.activeCameraController:Enable(false)
 			self.activeCameraController = newCameraController
@@ -688,7 +695,6 @@ function CameraModule:ActivateCameraController()
 			self.activeCameraController:Enable(true)
 		end
 	elseif newCameraController ~= nil then
-
 		self.activeCameraController = newCameraController
 		assert(self.activeCameraController, "Strict typing check")
 
@@ -696,7 +702,6 @@ function CameraModule:ActivateCameraController()
 	end
 
 	if self.activeCameraController then
-
 		self.activeCameraController:SetCameraMovementMode(cameraMovementMode)
 
 		self.activeCameraController:SetCameraType(legacyCameraType)
@@ -756,9 +761,7 @@ end
 
 function CameraModule:OnLocalPlayerCameraPropertyChanged(propertyName: string)
 	if propertyName == "CameraMode" then
-
 		if Players.LocalPlayer.CameraMode == Enum.CameraMode.LockFirstPerson then
-
 			if not self.activeCameraController or self.activeCameraController:GetModuleName() ~= "ClassicCamera" then
 				self:ActivateCameraController()
 			end
@@ -767,7 +770,6 @@ function CameraModule:OnLocalPlayerCameraPropertyChanged(propertyName: string)
 				self.activeCameraController:UpdateForDistancePropertyChange()
 			end
 		elseif Players.LocalPlayer.CameraMode == Enum.CameraMode.Classic then
-
 			self:ActivateCameraController()
 		else
 			warn("Unhandled value for property player.CameraMode: ", Players.LocalPlayer.CameraMode)
@@ -795,16 +797,13 @@ end
 
 function CameraModule:Update(dt)
 	if self.activeCameraController then
-
 		if primeiraPessoaState.ativo then
 			local zoomDelta = CameraInput.getZoomDelta()
 			if zoomDelta > 0 then
-
 				sairPrimeiraPessoa(self)
 
 				CameraInput.resetInputForFrameEnd()
 			end
-
 		end
 
 		if primeiraPessoaState.cursorDesbloqueado then
@@ -855,7 +854,6 @@ function CameraModule:Update(dt)
 					if isRollOrDash then
 						local hrpY = (hrp :: BasePart).Position.Y
 						if not dashCamState.ativo then
-
 							dashCamState.ativo = true
 							dashCamState.offsetY = currentCamera.CFrame.Position.Y - hrpY
 						end
@@ -876,7 +874,6 @@ function CameraModule:Update(dt)
 		end
 
 		if self.activeTransparencyController then
-
 			local fpTransicaoCompleta = isInFirstPerson
 				and self.activeCameraController
 				and self.activeCameraController.transicaoPrimeiraPessoaAlpha
@@ -900,7 +897,6 @@ function CameraModule:OnCharacterAdded(char: Model, player: Player)
 	end
 
 	if player == Players.LocalPlayer then
-
 		cachedEstadoMov = nil
 		cachedShiftLockBool = nil
 		lastShiftLockSet = nil
@@ -923,7 +919,6 @@ end
 
 function CameraModule:OnPlayerAdded(player: Player)
 	if FFlagUserPlayerConnectionMemoryLeak then
-
 		if self.connectionUtil then
 			self.connectionUtil:trackConnection(
 				`{player.UserId}CharacterAdded`,
@@ -949,7 +944,6 @@ function CameraModule:OnPlayerAdded(player: Player)
 end
 
 function CameraModule:OnPlayerRemoving(player: Player)
-
 	if self.connectionUtil then
 		self.connectionUtil:disconnect(`{player.UserId}CharacterAdded`)
 		self.connectionUtil:disconnect(`{player.UserId}CharacterRemoving`)

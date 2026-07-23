@@ -71,7 +71,6 @@ do
 	local K_DEADZONE = 0.1
 
 	function thumbstickCurve(x)
-
 		local fDeadzone = (math.abs(x) - K_DEADZONE) / (1 - K_DEADZONE)
 
 		local fCurve = (math.exp(K_CURVATURE * fDeadzone) - 1) / (math.exp(K_CURVATURE) - 1)
@@ -90,7 +89,6 @@ local function adjustTouchPitchSensitivity(delta: Vector2): Vector2
 	local pitch = camera.CFrame:ToEulerAnglesYXZ()
 
 	if delta.Y * pitch >= 0 then
-
 		return delta
 	end
 
@@ -270,7 +268,6 @@ do
 
 		local touchBegan, touchChanged, touchEnded, resetTouchState
 		do
-
 			local touches: { [InputObject]: boolean? } = {}
 			local dynamicThumbstickInput: InputObject?
 			local lastPinchDiameter: number?
@@ -280,7 +277,6 @@ do
 				assert(input.UserInputState == Enum.UserInputState.Begin, "Expected Begin input state")
 
 				if dynamicThumbstickInput == nil and isInDynamicThumbstickArea(input.Position) and not sunk then
-
 					dynamicThumbstickInput = input
 					return
 				end

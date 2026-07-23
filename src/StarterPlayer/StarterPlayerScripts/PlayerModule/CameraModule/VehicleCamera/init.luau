@@ -102,7 +102,6 @@ function VehicleCamera:_StepRotation(dt, vdotz): CFrame
 	local pitchDeadzoneAngle = math.rad(VehicleCameraConfig.pitchDeadzoneAngle)
 
 	if os.clock() - self.lastPanTick > VehicleCameraConfig.autocorrectDelay then
-
 		local autocorrectResponse = mapClamp(
 			vdotz,
 			VehicleCameraConfig.autocorrectMinCarSpeed,
@@ -123,7 +122,6 @@ function VehicleCamera:_StepRotation(dt, vdotz): CFrame
 		end
 
 		if math.abs(sanitizeAngle(pitchBaseAngle - pitchSpring.pos)) <= pitchDeadzoneAngle then
-
 			pitchSpring.goal = pitchSpring.pos
 		else
 			pitchSpring.goal = pitchBaseAngle
@@ -197,8 +195,6 @@ function VehicleCamera:Update()
 	return cf, focus
 end
 
-function VehicleCamera:ApplyVRTransform()
-
-end
+function VehicleCamera:ApplyVRTransform() end
 
 return VehicleCamera

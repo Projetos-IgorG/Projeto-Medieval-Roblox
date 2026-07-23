@@ -21,12 +21,15 @@ type ConnectionUtilClass = {
 	disconnectAll: (self: ConnectionUtil) -> (),
 }
 
-export type ConnectionUtil = typeof(setmetatable({} :: {
+export type ConnectionUtil = typeof(setmetatable(
+	{} :: {
 
-	_connections: {[string]: () -> ()},
-}, {} :: ConnectionUtilClass))
+		_connections: { [string]: () -> () },
+	},
+	{} :: ConnectionUtilClass
+))
 
-local ConnectionUtil: ConnectionUtilClass = {} :: ConnectionUtilClass;
+local ConnectionUtil: ConnectionUtilClass = {} :: ConnectionUtilClass
 ConnectionUtil.__index = ConnectionUtil
 
 function ConnectionUtil.new()

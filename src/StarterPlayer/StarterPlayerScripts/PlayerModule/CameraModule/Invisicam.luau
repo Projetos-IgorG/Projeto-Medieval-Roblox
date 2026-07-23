@@ -247,7 +247,6 @@ function Invisicam:CharacterOutlineBehavior(castPoints)
 			local raycastResult = workspace:Raycast(centerPoint + offset, -3 * offset, includeParams)
 
 			if raycastResult then
-
 				local position = raycastResult.Position
 				castPoints[#castPoints + 1] = position + 0.2 * (centerPoint - position).unit
 			end
@@ -259,7 +258,6 @@ function Invisicam:CharacterOutlineBehavior(castPoints)
 			local result = workspace:Raycast(centerPoint + offset, -3 * offset, raycastParams)
 
 			if result and result.Instance then
-
 				local hitPoint = result.Position
 				castPoints[#castPoints + 1] = hitPoint + 0.2 * (centerPoint - hitPoint).unit
 			end
@@ -399,7 +397,6 @@ function Invisicam:CheckTorsoReference()
 end
 
 function Invisicam:CharacterAdded(char: Model, player: Player)
-
 	if player ~= PlayersService.LocalPlayer then
 		return
 	end
@@ -468,7 +465,6 @@ function Invisicam:Cleanup()
 end
 
 function Invisicam:Update(_dt: number, desiredCameraCFrame: CFrame, desiredCameraFocus: CFrame): (CFrame, CFrame)
-
 	if not self.enabled or not self.char then
 		return desiredCameraCFrame, desiredCameraFocus
 	end
@@ -480,10 +476,8 @@ function Invisicam:Update(_dt: number, desiredCameraCFrame: CFrame, desiredCamer
 		if humanoid and humanoid.RootPart then
 			self.humanoidRootPart = humanoid.RootPart
 		else
-
 			self.humanoidRootPart = self.char:FindFirstChild("HumanoidRootPart")
 			if not self.humanoidRootPart then
-
 				return desiredCameraCFrame, desiredCameraFocus
 			end
 		end
@@ -503,7 +497,6 @@ function Invisicam:Update(_dt: number, desiredCameraCFrame: CFrame, desiredCamer
 	if not self.torsoPart then
 		self:CheckTorsoReference()
 		if not self.torsoPart then
-
 			return desiredCameraCFrame, desiredCameraFocus
 		end
 	end
@@ -529,7 +522,6 @@ function Invisicam:Update(_dt: number, desiredCameraCFrame: CFrame, desiredCamer
 	local perPartTransparencyOtherHits = TARGET_TRANSPARENCY
 
 	if USE_STACKING_TRANSPARENCY then
-
 		local headPoint = self.headPart and self.headPart.CFrame.Position or castPoints[1]
 		local torsoPoint = self.torsoPart and self.torsoPart.CFrame.Position or castPoints[2]
 		hitParts = self.camera:GetPartsObscuringTarget({ headPoint, torsoPoint }, ignoreList)
@@ -582,7 +574,6 @@ function Invisicam:Update(_dt: number, desiredCameraCFrame: CFrame, desiredCamer
 
 	for hitPart, originalLTM in pairs(self.savedHits) do
 		if currentHits[hitPart] then
-
 			hitPart.LocalTransparencyModifier = (hitPart.Transparency < 1)
 					and ((partTargetTransparency[hitPart] - hitPart.Transparency) / (1.0 - hitPart.Transparency))
 				or 0

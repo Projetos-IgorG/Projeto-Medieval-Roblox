@@ -18,7 +18,8 @@ end
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
-local CatalogoItens = require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
+local CatalogoItens =
+	require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
 
 local Combate = ReplicatedStorage:WaitForChild("Combate")
 local DominioCombate = Combate:WaitForChild("Dominio")
@@ -594,7 +595,9 @@ function ControladorCombate.ProcessarAtacarEmPe(entidade: Model, dados: any?): (
 			if maquina:ObterEstadoAcao() == "Atacando" and maquina.dados.ultimoAtaque == momentoAtaque then
 				maquina:CompletarAcao()
 				ControladorCombate._SincronizarEstado(entidade)
-				DebugPrint(string.format("[Combate] %s: Timeout de ataque (fallback) - voltando para Nenhuma", entidade.Name))
+				DebugPrint(
+					string.format("[Combate] %s: Timeout de ataque (fallback) - voltando para Nenhuma", entidade.Name)
+				)
 			end
 		end)
 
@@ -670,7 +673,9 @@ function ControladorCombate.ProcessarComboContinuado(entidade: Model, proximoInd
 		if maquina:ObterEstadoAcao() == "Atacando" and maquina.dados.ultimoAtaque == momentoAtaque then
 			maquina:CompletarAcao()
 			ControladorCombate._SincronizarEstado(entidade)
-			DebugPrint(string.format("[Combate] %s: Timeout de ataque (fallback) - voltando para Nenhuma", entidade.Name))
+			DebugPrint(
+				string.format("[Combate] %s: Timeout de ataque (fallback) - voltando para Nenhuma", entidade.Name)
+			)
 		end
 	end)
 
@@ -794,14 +799,17 @@ function ControladorCombate.ProcessarFintar(entidade: Model, tipoAtaque: string)
 
 		DebugPrint(string.format("[Combate] %s: Ataque '%s' fintado", entidade.Name, tipoAtaque))
 	else
-		DebugPrint(string.format("[Combate] %s: Finta REJEITADA - estado=%s, hitboxAtivou=%s, tempoDecor=%f, carregando=%s, momentoLiberacaoCarga=%s", 
-			entidade.Name, 
-			estadoAcao, 
-			tostring(hitboxAtivou), 
-			tempoDecorre, 
-			tostring(maquina.dados.carregando), 
-			tostring(maquina.dados.momentoLiberacaoCarga)
-		))
+		DebugPrint(
+			string.format(
+				"[Combate] %s: Finta REJEITADA - estado=%s, hitboxAtivou=%s, tempoDecor=%f, carregando=%s, momentoLiberacaoCarga=%s",
+				entidade.Name,
+				estadoAcao,
+				tostring(hitboxAtivou),
+				tempoDecorre,
+				tostring(maquina.dados.carregando),
+				tostring(maquina.dados.momentoLiberacaoCarga)
+			)
+		)
 	end
 
 	return true, nil
@@ -858,7 +866,9 @@ function ControladorCombate.ProcessarAtacarAgachado(entidade: Model, dados: any?
 		if maquina:ObterEstadoAcao() == "Atacando" and maquina.dados.ultimoAtaque == momentoAtaque then
 			maquina:CompletarAcao()
 			ControladorCombate._SincronizarEstado(entidade)
-			DebugPrint(string.format("[Combate] %s: Timeout de ataque (fallback) - voltando para Nenhuma", entidade.Name))
+			DebugPrint(
+				string.format("[Combate] %s: Timeout de ataque (fallback) - voltando para Nenhuma", entidade.Name)
+			)
 		end
 	end)
 
@@ -1347,7 +1357,14 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 	local ultimoAtaque = maquina.dados.ultimoAtaque or 0
 	local ultimoStun = maquina.dados.ultimoStunTimestamp or 0
 	if ultimoStun > ultimoAtaque then
-		DebugPrint(string.format("[Combate] %s: HitboxAcerto ignorado - ataque interrompido por stun (stun=%.3f, ataque=%.3f)", entidade.Name, ultimoStun, ultimoAtaque))
+		DebugPrint(
+			string.format(
+				"[Combate] %s: HitboxAcerto ignorado - ataque interrompido por stun (stun=%.3f, ataque=%.3f)",
+				entidade.Name,
+				ultimoStun,
+				ultimoAtaque
+			)
+		)
 		return false, "AtaqueInterrompido"
 	end
 
@@ -1442,7 +1459,14 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 				local uAtaque = maqAtual and maqAtual.dados.ultimoAtaque or 0
 				local uStun = maqAtual and maqAtual.dados.ultimoStunTimestamp or 0
 				if uStun > uAtaque then
-					DebugPrint(string.format("[Combate] %s: Hit buffer descartado - ataque interrompido por stun (stun=%.3f, ataque=%.3f)", entidade.Name, uStun, uAtaque))
+					DebugPrint(
+						string.format(
+							"[Combate] %s: Hit buffer descartado - ataque interrompido por stun (stun=%.3f, ataque=%.3f)",
+							entidade.Name,
+							uStun,
+							uAtaque
+						)
+					)
 					return
 				end
 
@@ -1494,7 +1518,9 @@ local MapaAcoes = {
 	AtacarEmPe = ControladorCombate.ProcessarAtacarEmPe,
 	AtacarAgachado = ControladorCombate.ProcessarAtacarAgachado,
 	Bloquear = function(entidade, dados)
-		local shiftLockAtivo = if typeof(dados) == "table" and typeof(dados.shiftLock) == "boolean" then dados.shiftLock else nil
+		local shiftLockAtivo = if typeof(dados) == "table" and typeof(dados.shiftLock) == "boolean"
+			then dados.shiftLock
+			else nil
 		local clienteTimestamp = typeof(dados) == "table" and typeof(dados.timestamp) == "number" and dados.timestamp
 			or nil
 		return ControladorCombate.ProcessarBloquear(entidade, shiftLockAtivo, clienteTimestamp)

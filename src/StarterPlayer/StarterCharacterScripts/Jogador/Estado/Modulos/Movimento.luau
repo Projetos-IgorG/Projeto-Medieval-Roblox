@@ -336,7 +336,9 @@ function Movimento.OnStateChanged(_oldState, newState)
 			ctx.EstadoAtual.estadoMov = "Correndo"
 			local animMov = Animacao.ObterAnimacaoAtualMov()
 			if animMov then
-				local emCombate = (ctx.EstadoAtual.estadoAcao == "Atacando" or ctx.EstadoAtual.estadoAcao == "Defendendo")
+				local emCombate = (
+					ctx.EstadoAtual.estadoAcao == "Atacando" or ctx.EstadoAtual.estadoAcao == "Defendendo"
+				)
 				if not emCombate then
 					Animacao.DefinirVelocidadeMovimento(1)
 				end

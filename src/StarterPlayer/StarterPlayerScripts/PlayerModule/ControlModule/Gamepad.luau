@@ -11,7 +11,7 @@
 local UserInputService = game:GetService("UserInputService")
 local ContextActionService = game:GetService("ContextActionService")
 
-local ZERO_VECTOR3 = Vector3.new(0,0,0)
+local ZERO_VECTOR3 = Vector3.new(0, 0, 0)
 local NONE = Enum.UserInputType.None
 local thumbstickDeadzone = 0.2
 
@@ -24,7 +24,7 @@ function Gamepad.new(CONTROL_ACTION_PRIORITY)
 
 	self.CONTROL_ACTION_PRIORITY = CONTROL_ACTION_PRIORITY
 
-	self.forwardValue  = 0
+	self.forwardValue = 0
 	self.backwardValue = 0
 	self.leftValue = 0
 	self.rightValue = 0
@@ -37,11 +37,10 @@ end
 
 function Gamepad:Enable(enable: boolean): boolean
 	if enable == self.enabled then
-
 		return true
 	end
 
-	self.forwardValue  = 0
+	self.forwardValue = 0
 	self.backwardValue = 0
 	self.leftValue = 0
 	self.rightValue = 0
@@ -54,7 +53,6 @@ function Gamepad:Enable(enable: boolean): boolean
 			self:BindContextActions()
 			self:ConnectGamepadConnectionListeners()
 		else
-
 			return false
 		end
 	else
@@ -79,9 +77,7 @@ function Gamepad:GetHighestPriorityGamepad()
 end
 
 function Gamepad:BindContextActions()
-
 	if self.activeGamepad == NONE then
-
 		return false
 	end
 
@@ -91,7 +87,6 @@ function Gamepad:BindContextActions()
 	end
 
 	local handleThumbstickInput = function(_actionName, inputState, inputObject)
-
 		if inputState == Enum.UserInputState.Cancel then
 			self.moveVector = ZERO_VECTOR3
 			return Enum.ContextActionResult.Sink
@@ -100,10 +95,12 @@ function Gamepad:BindContextActions()
 		if self.activeGamepad ~= inputObject.UserInputType then
 			return Enum.ContextActionResult.Pass
 		end
-		if inputObject.KeyCode ~= Enum.KeyCode.Thumbstick1 then return end
+		if inputObject.KeyCode ~= Enum.KeyCode.Thumbstick1 then
+			return
+		end
 
 		if inputObject.Position.magnitude > thumbstickDeadzone then
-			self.moveVector  =  Vector3.new(inputObject.Position.X, 0, -inputObject.Position.Y)
+			self.moveVector = Vector3.new(inputObject.Position.X, 0, -inputObject.Position.Y)
 		else
 			self.moveVector = ZERO_VECTOR3
 		end
@@ -111,10 +108,20 @@ function Gamepad:BindContextActions()
 	end
 
 	ContextActionService:BindActivate(self.activeGamepad, Enum.KeyCode.ButtonR2)
-	ContextActionService:BindActionAtPriority("jumpAction", handleJumpAction, false,
-		self.CONTROL_ACTION_PRIORITY, Enum.KeyCode.ButtonA)
-	ContextActionService:BindActionAtPriority("moveThumbstick", handleThumbstickInput, false,
-		self.CONTROL_ACTION_PRIORITY, Enum.KeyCode.Thumbstick1)
+	ContextActionService:BindActionAtPriority(
+		"jumpAction",
+		handleJumpAction,
+		false,
+		self.CONTROL_ACTION_PRIORITY,
+		Enum.KeyCode.ButtonA
+	)
+	ContextActionService:BindActionAtPriority(
+		"moveThumbstick",
+		handleThumbstickInput,
+		false,
+		self.CONTROL_ACTION_PRIORITY,
+		Enum.KeyCode.Thumbstick1
+	)
 
 	return true
 end
@@ -128,23 +135,19 @@ function Gamepad:UnbindContextActions()
 end
 
 function Gamepad:OnNewGamepadConnected()
-
 	local bestGamepad: Enum.UserInputType = self:GetHighestPriorityGamepad()
 
 	if bestGamepad == self.activeGamepad then
-
 		return
 	end
 
 	if bestGamepad == NONE then
-
 		warn("Gamepad:OnNewGamepadConnected found no connected gamepads")
 		self:UnbindContextActions()
 		return
 	end
 
 	if self.activeGamepad ~= NONE then
-
 		self:UnbindContextActions()
 	end
 
@@ -167,11 +170,9 @@ function Gamepad:OnCurrentGamepadDisconnected()
 	end
 
 	if bestGamepad == NONE then
-
 		self:UnbindContextActions()
 		self.activeGamepad = NONE
 	else
-
 		self.activeGamepad = bestGamepad
 		ContextActionService:BindActivate(self.activeGamepad, Enum.KeyCode.ButtonR2)
 	end
@@ -187,7 +188,6 @@ function Gamepad:ConnectGamepadConnectionListeners()
 			self:OnCurrentGamepadDisconnected()
 		end
 	end)
-
 end
 
 function Gamepad:DisconnectGamepadConnectionListeners()

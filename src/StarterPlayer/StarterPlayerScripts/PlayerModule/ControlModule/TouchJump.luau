@@ -33,12 +33,15 @@ type TouchJumpClass = {
 	_setupConfigurations: (self: TouchJump) -> (),
 }
 
-export type TouchJump = typeof(setmetatable({} :: {
+export type TouchJump = typeof(setmetatable(
+	{} :: {
 
-	_connectionUtil: any,
+		_connectionUtil: any,
 
-	_active: boolean
-}, {} :: TouchJumpClass))
+		_active: boolean,
+	},
+	{} :: TouchJumpClass
+))
 
 local BaseCharacterController = require(script.Parent:WaitForChild("BaseCharacterController"))
 local TouchJump = setmetatable({}, BaseCharacterController)
@@ -107,7 +110,12 @@ end
 
 function TouchJump:UpdateEnabled()
 	local humanoid = CharacterUtil.getChild("Humanoid", "Humanoid")
-	if humanoid and self.externallyEnabled and ((humanoid.UseJumpPower and humanoid.JumpPower > 0) or (not humanoid.UseJumpPower and humanoid.JumpHeight > 0)) and humanoid:GetStateEnabled(Enum.HumanoidStateType.Jumping) then
+	if
+		humanoid
+		and self.externallyEnabled
+		and ((humanoid.UseJumpPower and humanoid.JumpPower > 0) or (not humanoid.UseJumpPower and humanoid.JumpHeight > 0))
+		and humanoid:GetStateEnabled(Enum.HumanoidStateType.Jumping)
+	then
 		self:EnableButton(true)
 	else
 		self:EnableButton(false)
@@ -133,7 +141,6 @@ function TouchJump:_setupConfigurations()
 		self._connectionUtil:trackConnection(
 			CONNECTIONS.HUMANOID_STATE_ENABLED_CHANGED,
 			humanoid.StateEnabledChanged:Connect(function(state, isEnabled)
-
 				if state == Enum.HumanoidStateType.Jumping and isEnabled ~= self._active then
 					update()
 				end
@@ -148,7 +155,9 @@ function TouchJump:Enable(enable, parentFrame)
 		self.parentUIFrame = parentFrame
 	end
 
-	if self.externallyEnabled == enable then return end
+	if self.externallyEnabled == enable then
+		return
+	end
 	self.externallyEnabled = enable
 
 	self:UpdateEnabled()
@@ -189,8 +198,8 @@ function TouchJump:Create()
 		local jumpButtonSize = isSmallScreen and 70 or 120
 
 		self.jumpButton.Size = UDim2.fromOffset(jumpButtonSize, jumpButtonSize)
-		self.jumpButton.Position = isSmallScreen and UDim2.new(1, -(jumpButtonSize*1.5-10), 1, -jumpButtonSize - 20) or
-			UDim2.new(1, -(jumpButtonSize*1.5-10), 1, -jumpButtonSize * 1.75)
+		self.jumpButton.Position = isSmallScreen and UDim2.new(1, -(jumpButtonSize * 1.5 - 10), 1, -jumpButtonSize - 20)
+			or UDim2.new(1, -(jumpButtonSize * 1.5 - 10), 1, -jumpButtonSize * 1.75)
 	end
 
 	ResizeJumpButton()
@@ -198,9 +207,11 @@ function TouchJump:Create()
 
 	self.touchObject = nil
 	self.jumpButton.InputBegan:connect(function(inputObject)
-
-		if self.touchObject or inputObject.UserInputType ~= Enum.UserInputType.Touch
-			or inputObject.UserInputState ~= Enum.UserInputState.Begin then
+		if
+			self.touchObject
+			or inputObject.UserInputType ~= Enum.UserInputType.Touch
+			or inputObject.UserInputState ~= Enum.UserInputState.Begin
+		then
 			return
 		end
 

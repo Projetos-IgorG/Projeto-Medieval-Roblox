@@ -8,7 +8,7 @@
     Nao faz: Nao implementa regras de gameplay do projeto; apenas apoia camera, controle e compatibilidade do jogador.
     Funcoes principais: new, GetIsJumping, Enable, OnInputEnded, FadeThumbstick, FadeThumbstickFrame
 ]]
-local ZERO_VECTOR3 = Vector3.new(0,0,0)
+local ZERO_VECTOR3 = Vector3.new(0, 0, 0)
 local TOUCH_CONTROLS_SHEET = "rbxasset://textures/ui/Input/TouchControlsSheetV2.png"
 
 local DYNAMIC_THUMBSTICK_ACTION_NAME = "DynamicThumbstickAction"
@@ -21,7 +21,7 @@ local MIDDLE_TRANSPARENCIES = {
 	1 - 0.50,
 	1 - 0.40,
 	1 - 0.30,
-	1 - 0.25
+	1 - 0.25,
 }
 local NUM_MIDDLE_IMAGES = #MIDDLE_TRANSPARENCIES
 
@@ -41,14 +41,16 @@ local ContextActionService = game:GetService("ContextActionService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
-local FFlagUserDynamicThumbstickMoveOverButtons do
+local FFlagUserDynamicThumbstickMoveOverButtons
+do
 	local success, result = pcall(function()
 		return UserSettings():IsUserFeatureEnabled("UserDynamicThumbstickMoveOverButtons2")
 	end)
 	FFlagUserDynamicThumbstickMoveOverButtons = success and result
 end
 
-local FFlagUserDynamicThumbstickSafeAreaUpdate do
+local FFlagUserDynamicThumbstickSafeAreaUpdate
+do
 	local success, result = pcall(function()
 		return UserSettings():IsUserFeatureEnabled("UserDynamicThumbstickSafeAreaUpdate")
 	end)
@@ -105,12 +107,15 @@ function DynamicThumbstick:GetIsJumping()
 end
 
 function DynamicThumbstick:Enable(enable: boolean?, uiParentFrame): boolean?
-	if enable == nil then return false end
+	if enable == nil then
+		return false
+	end
 	enable = enable and true or false
-	if self.enabled == enable then return true end
+	if self.enabled == enable then
+		return true
+	end
 
 	if enable then
-
 		if not self.thumbstickFrame then
 			self:Create(uiParentFrame)
 		end
@@ -141,7 +146,9 @@ function DynamicThumbstick:FadeThumbstick(visible: boolean?)
 	if not visible and self.moveTouchObject then
 		return
 	end
-	if self.isFirstTouch then return end
+	if self.isFirstTouch then
+		return
+	end
 
 	if self.startImageFadeTween then
 		self.startImageFadeTween:Cancel()
@@ -156,25 +163,33 @@ function DynamicThumbstick:FadeThumbstick(visible: boolean?)
 	end
 
 	if visible then
-		self.startImageFadeTween = TweenService:Create(self.startImage, ThumbstickFadeTweenInfo, { ImageTransparency = 0 })
+		self.startImageFadeTween =
+			TweenService:Create(self.startImage, ThumbstickFadeTweenInfo, { ImageTransparency = 0 })
 		self.startImageFadeTween:Play()
 
-		self.endImageFadeTween = TweenService:Create(self.endImage, ThumbstickFadeTweenInfo, { ImageTransparency = 0.2 })
+		self.endImageFadeTween =
+			TweenService:Create(self.endImage, ThumbstickFadeTweenInfo, { ImageTransparency = 0.2 })
 		self.endImageFadeTween:Play()
 
 		for i = 1, #self.middleImages do
-			self.middleImageFadeTweens[i] = TweenService:Create(self.middleImages[i], ThumbstickFadeTweenInfo, { ImageTransparency = MIDDLE_TRANSPARENCIES[i] })
+			self.middleImageFadeTweens[i] = TweenService:Create(
+				self.middleImages[i],
+				ThumbstickFadeTweenInfo,
+				{ ImageTransparency = MIDDLE_TRANSPARENCIES[i] }
+			)
 			self.middleImageFadeTweens[i]:Play()
 		end
 	else
-		self.startImageFadeTween = TweenService:Create(self.startImage, ThumbstickFadeTweenInfo, { ImageTransparency = 1 })
+		self.startImageFadeTween =
+			TweenService:Create(self.startImage, ThumbstickFadeTweenInfo, { ImageTransparency = 1 })
 		self.startImageFadeTween:Play()
 
 		self.endImageFadeTween = TweenService:Create(self.endImage, ThumbstickFadeTweenInfo, { ImageTransparency = 1 })
 		self.endImageFadeTween:Play()
 
 		for i = 1, #self.middleImages do
-			self.middleImageFadeTweens[i] = TweenService:Create(self.middleImages[i], ThumbstickFadeTweenInfo, { ImageTransparency = 1 })
+			self.middleImageFadeTweens[i] =
+				TweenService:Create(self.middleImages[i], ThumbstickFadeTweenInfo, { ImageTransparency = 1 })
 			self.middleImageFadeTweens[i]:Play()
 		end
 	end
@@ -203,13 +218,15 @@ function DynamicThumbstick:DoFadeInBackground()
 	local hasFadedBackgroundInOrientation = false
 
 	if playerGui then
-		if playerGui.CurrentScreenOrientation == Enum.ScreenOrientation.LandscapeLeft or
-			playerGui.CurrentScreenOrientation == Enum.ScreenOrientation.LandscapeRight then
-				hasFadedBackgroundInOrientation = self.hasFadedBackgroundInLandscape
-				self.hasFadedBackgroundInLandscape = true
+		if
+			playerGui.CurrentScreenOrientation == Enum.ScreenOrientation.LandscapeLeft
+			or playerGui.CurrentScreenOrientation == Enum.ScreenOrientation.LandscapeRight
+		then
+			hasFadedBackgroundInOrientation = self.hasFadedBackgroundInLandscape
+			self.hasFadedBackgroundInLandscape = true
 		elseif playerGui.CurrentScreenOrientation == Enum.ScreenOrientation.Portrait then
-				hasFadedBackgroundInOrientation = self.hasFadedBackgroundInPortrait
-				self.hasFadedBackgroundInPortrait = true
+			hasFadedBackgroundInOrientation = self.hasFadedBackgroundInPortrait
+			self.hasFadedBackgroundInPortrait = true
 		end
 	end
 
@@ -227,9 +244,8 @@ function DynamicThumbstick:DoMove(direction: Vector3)
 	if inputAxisMagnitude < self.radiusOfDeadZone then
 		currentMoveVector = ZERO_VECTOR3
 	else
-		currentMoveVector = currentMoveVector.Unit*(
-			1 - math.max(0, (self.radiusOfMaxSpeed - currentMoveVector.Magnitude)/self.radiusOfMaxSpeed)
-		)
+		currentMoveVector = currentMoveVector.Unit
+			* (1 - math.max(0, (self.radiusOfMaxSpeed - currentMoveVector.Magnitude) / self.radiusOfMaxSpeed))
 		currentMoveVector = Vector3.new(currentMoveVector.X, 0, currentMoveVector.Y)
 	end
 
@@ -287,12 +303,12 @@ function DynamicThumbstick:BindContextActions()
 
 		if self.isFirstTouch then
 			self.isFirstTouch = false
-			local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out,0,false,0)
-			TweenService:Create(self.startImage, tweenInfo, {Size = UDim2.new(0, 0, 0, 0)}):Play()
+			local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0)
+			TweenService:Create(self.startImage, tweenInfo, { Size = UDim2.new(0, 0, 0, 0) }):Play()
 			TweenService:Create(
 				self.endImage,
 				tweenInfo,
-				{Size = UDim2.fromOffset(self.thumbstickSize, self.thumbstickSize), ImageColor3 = Color3.new(0,0,0)}
+				{ Size = UDim2.fromOffset(self.thumbstickSize, self.thumbstickSize), ImageColor3 = Color3.new(0, 0, 0) }
 			):Play()
 		end
 
@@ -377,12 +393,15 @@ function DynamicThumbstick:BindContextActions()
 		handleInput,
 		false,
 		DYNAMIC_THUMBSTICK_ACTION_PRIORITY,
-		Enum.UserInputType.Touch)
+		Enum.UserInputType.Touch
+	)
 
 	if FFlagUserDynamicThumbstickMoveOverButtons then
-		self.TouchMovedCon = UserInputService.TouchMoved:Connect(function(inputObject: InputObject, _gameProcessedEvent: boolean)
-			inputChanged(inputObject)
-		end)
+		self.TouchMovedCon = UserInputService.TouchMoved:Connect(
+			function(inputObject: InputObject, _gameProcessedEvent: boolean)
+				inputChanged(inputObject)
+			end
+		)
 	end
 end
 
@@ -414,8 +433,8 @@ function DynamicThumbstick:Create(parentFrame: GuiBase2d)
 			self.thumbstickFrame.Size = UDim2.new(1, safeInset, 0.4, safeInset)
 			self.thumbstickFrame.Position = UDim2.new(0, -safeInset, 0.6, 0)
 		else
-			self.thumbstickFrame.Size = UDim2.new(0.4, safeInset, 2/3, safeInset)
-			self.thumbstickFrame.Position = UDim2.new(0, -safeInset, 1/3, 0)
+			self.thumbstickFrame.Size = UDim2.new(0.4, safeInset, 2 / 3, safeInset)
+			self.thumbstickFrame.Position = UDim2.new(0, -safeInset, 1 / 3, 0)
 		end
 	end
 
@@ -433,7 +452,7 @@ function DynamicThumbstick:Create(parentFrame: GuiBase2d)
 	self.startImage.Visible = true
 	self.startImage.BackgroundTransparency = 1
 	self.startImage.Image = TOUCH_CONTROLS_SHEET
-	self.startImage.ImageRectOffset = Vector2.new(1,1)
+	self.startImage.ImageRectOffset = Vector2.new(1, 1)
 	self.startImage.ImageRectSize = Vector2.new(144, 144)
 	self.startImage.ImageColor3 = Color3.new(0, 0, 0)
 	self.startImage.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -445,8 +464,8 @@ function DynamicThumbstick:Create(parentFrame: GuiBase2d)
 	self.endImage.Visible = true
 	self.endImage.BackgroundTransparency = 1
 	self.endImage.Image = TOUCH_CONTROLS_SHEET
-	self.endImage.ImageRectOffset = Vector2.new(1,1)
-	self.endImage.ImageRectSize =  Vector2.new(144, 144)
+	self.endImage.ImageRectOffset = Vector2.new(1, 1)
+	self.endImage.ImageRectSize = Vector2.new(144, 144)
 	self.endImage.AnchorPoint = Vector2.new(0.5, 0.5)
 	self.endImage.ZIndex = 10
 	self.endImage.Parent = self.thumbstickFrame
@@ -457,7 +476,7 @@ function DynamicThumbstick:Create(parentFrame: GuiBase2d)
 		self.middleImages[i].Visible = false
 		self.middleImages[i].BackgroundTransparency = 1
 		self.middleImages[i].Image = TOUCH_CONTROLS_SHEET
-		self.middleImages[i].ImageRectOffset = Vector2.new(1,1)
+		self.middleImages[i].ImageRectOffset = Vector2.new(1, 1)
 		self.middleImages[i].ImageRectSize = Vector2.new(144, 144)
 		self.middleImages[i].ImageTransparency = MIDDLE_TRANSPARENCIES[i]
 		self.middleImages[i].AnchorPoint = Vector2.new(0.5, 0.5)
@@ -492,7 +511,8 @@ function DynamicThumbstick:Create(parentFrame: GuiBase2d)
 			self.radiusOfMaxSpeed = RADIUS_OF_MAX_SPEED
 		end
 
-		self.startImage.Position = UDim2.new(0, self.thumbstickRingSize * 3.3 + safeInset, 1, -self.thumbstickRingSize * 2.8 - safeInset)
+		self.startImage.Position =
+			UDim2.new(0, self.thumbstickRingSize * 3.3 + safeInset, 1, -self.thumbstickRingSize * 2.8 - safeInset)
 		self.startImage.Size = UDim2.fromOffset(self.thumbstickRingSize * 3.7, self.thumbstickRingSize * 3.7)
 
 		self.endImage.Position = self.startImage.Position
@@ -534,16 +554,19 @@ function DynamicThumbstick:Create(parentFrame: GuiBase2d)
 		if self.tweenInAlphaStart ~= nil then
 			local delta = tick() - self.tweenInAlphaStart
 			local fadeInTime = (self.fadeInAndOutHalfDuration * 2 * self.fadeInAndOutBalance)
-			self.thumbstickFrame.BackgroundTransparency = 1 - FADE_IN_OUT_MAX_ALPHA*math.min(delta/fadeInTime, 1)
+			self.thumbstickFrame.BackgroundTransparency = 1 - FADE_IN_OUT_MAX_ALPHA * math.min(delta / fadeInTime, 1)
 			if delta > fadeInTime then
 				self.tweenOutAlphaStart = tick()
 				self.tweenInAlphaStart = nil
 			end
 		elseif self.tweenOutAlphaStart ~= nil then
 			local delta = tick() - self.tweenOutAlphaStart
-			local fadeOutTime = (self.fadeInAndOutHalfDuration * 2) - (self.fadeInAndOutHalfDuration * 2 * self.fadeInAndOutBalance)
-			self.thumbstickFrame.BackgroundTransparency = 1 - FADE_IN_OUT_MAX_ALPHA + FADE_IN_OUT_MAX_ALPHA*math.min(delta/fadeOutTime, 1)
-			if delta > fadeOutTime  then
+			local fadeOutTime = (self.fadeInAndOutHalfDuration * 2)
+				- (self.fadeInAndOutHalfDuration * 2 * self.fadeInAndOutBalance)
+			self.thumbstickFrame.BackgroundTransparency = 1
+				- FADE_IN_OUT_MAX_ALPHA
+				+ FADE_IN_OUT_MAX_ALPHA * math.min(delta / fadeOutTime, 1)
+			if delta > fadeOutTime then
 				self.tweenOutAlphaStart = nil
 			end
 		end
@@ -568,8 +591,9 @@ function DynamicThumbstick:Create(parentFrame: GuiBase2d)
 	end
 
 	local playerGuiChangedConn = nil
-	local originalScreenOrientationWasLandscape =	playerGui.CurrentScreenOrientation == Enum.ScreenOrientation.LandscapeLeft or
-													playerGui.CurrentScreenOrientation == Enum.ScreenOrientation.LandscapeRight
+	local originalScreenOrientationWasLandscape = playerGui.CurrentScreenOrientation
+			== Enum.ScreenOrientation.LandscapeLeft
+		or playerGui.CurrentScreenOrientation == Enum.ScreenOrientation.LandscapeRight
 
 	local function longShowBackground()
 		self.fadeInAndOutHalfDuration = 2.5
@@ -578,9 +602,16 @@ function DynamicThumbstick:Create(parentFrame: GuiBase2d)
 	end
 
 	playerGuiChangedConn = playerGui:GetPropertyChangedSignal("CurrentScreenOrientation"):Connect(function()
-		if (originalScreenOrientationWasLandscape and playerGui.CurrentScreenOrientation == Enum.ScreenOrientation.Portrait) or
-			(not originalScreenOrientationWasLandscape and playerGui.CurrentScreenOrientation ~= Enum.ScreenOrientation.Portrait) then
-
+		if
+			(
+				originalScreenOrientationWasLandscape
+				and playerGui.CurrentScreenOrientation == Enum.ScreenOrientation.Portrait
+			)
+			or (
+				not originalScreenOrientationWasLandscape
+				and playerGui.CurrentScreenOrientation ~= Enum.ScreenOrientation.Portrait
+			)
+		then
 			playerGuiChangedConn:disconnect()
 			longShowBackground()
 

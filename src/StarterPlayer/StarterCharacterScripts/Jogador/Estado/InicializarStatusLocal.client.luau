@@ -16,7 +16,8 @@ local ClientBridge =
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
-local StatusLocalManager = require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Estado"):WaitForChild("StatusLocalPersonagem"))
+local StatusLocalManager =
+	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Estado"):WaitForChild("StatusLocalPersonagem"))
 
 local _statusLocal = StatusLocalManager.CriarStatusLocal(character)
 

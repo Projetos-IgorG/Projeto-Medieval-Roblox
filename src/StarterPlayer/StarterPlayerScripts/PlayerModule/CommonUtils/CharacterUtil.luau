@@ -14,31 +14,31 @@ local CommonUtils = script.Parent
 local ConnectionUtil = require(CommonUtils:WaitForChild("ConnectionUtil"))
 
 local CONNECTIONS = {
-    LOCAL_PLAYER = "LOCAL_PLAYER",
-    ON_LOCAL_PLAYER = "ON_LOCAL_PLAYER",
-    CHARACTER_ADDED = "CHARACTER_ADDED",
-    ON_CHARACTER = "ON_CHARACTER",
-    CHARACTER_CHILD_ADDED = "CHARACTER_CHILD_ADDED",
+	LOCAL_PLAYER = "LOCAL_PLAYER",
+	ON_LOCAL_PLAYER = "ON_LOCAL_PLAYER",
+	CHARACTER_ADDED = "CHARACTER_ADDED",
+	ON_CHARACTER = "ON_CHARACTER",
+	CHARACTER_CHILD_ADDED = "CHARACTER_CHILD_ADDED",
 }
 export type CharacterUtilClass = {
 
-    getLocalPlayer: () -> Player?,
+	getLocalPlayer: () -> Player?,
 
-    onLocalPlayer: (func: (Player) -> ()) -> RBXScriptConnection,
+	onLocalPlayer: (func: (Player) -> ()) -> RBXScriptConnection,
 
-    getCharacter: () -> Model?,
+	getCharacter: () -> Model?,
 
-    onCharacter: (func: (Model) -> ()) -> RBXScriptConnection,
+	onCharacter: (func: (Model) -> ()) -> RBXScriptConnection,
 
-    getChild: (name: string, className: string) -> Instance?,
+	getChild: (name: string, className: string) -> Instance?,
 
-    onChild: (name: string, className: string, func: (Instance) -> ()) -> RBXScriptConnection,
+	onChild: (name: string, className: string, func: (Instance) -> ()) -> RBXScriptConnection,
 
-    _connectionUtil: ConnectionUtil.ConnectionUtil,
+	_connectionUtil: ConnectionUtil.ConnectionUtil,
 
-    _boundEvents: {[string]: BindableEvent},
+	_boundEvents: { [string]: BindableEvent },
 
-    _getOrCreateBoundEvent: (name: string) -> BindableEvent,
+	_getOrCreateBoundEvent: (name: string) -> BindableEvent,
 }
 
 local CharacterUtil: CharacterUtilClass = {} :: CharacterUtilClass
@@ -47,34 +47,34 @@ CharacterUtil._connectionUtil = ConnectionUtil.new()
 CharacterUtil._boundEvents = {}
 
 function CharacterUtil.getLocalPlayer()
-    return Players.LocalPlayer
+	return Players.LocalPlayer
 end
 
 function CharacterUtil.onLocalPlayer(func)
-    local localPlayer = CharacterUtil.getLocalPlayer()
-    if localPlayer then
-        func(localPlayer)
-    end
+	local localPlayer = CharacterUtil.getLocalPlayer()
+	if localPlayer then
+		func(localPlayer)
+	end
 
 	CharacterUtil._connectionUtil:trackConnection(
 		CONNECTIONS.LOCAL_PLAYER,
 		Players:GetPropertyChangedSignal("LocalPlayer"):Connect(function()
-            local updatedLocalPlayer = CharacterUtil.getLocalPlayer()
-            assert(updatedLocalPlayer, "LocalPlayer should exist when LocalPlayer property changes")
-            CharacterUtil._getOrCreateBoundEvent(CONNECTIONS.LOCAL_PLAYER):Fire(updatedLocalPlayer)
+			local updatedLocalPlayer = CharacterUtil.getLocalPlayer()
+			assert(updatedLocalPlayer, "LocalPlayer should exist when LocalPlayer property changes")
+			CharacterUtil._getOrCreateBoundEvent(CONNECTIONS.LOCAL_PLAYER):Fire(updatedLocalPlayer)
 		end)
 	)
 
-    local boundEvent = CharacterUtil._getOrCreateBoundEvent(CONNECTIONS.LOCAL_PLAYER)
-    return boundEvent.Event:Connect(func)
+	local boundEvent = CharacterUtil._getOrCreateBoundEvent(CONNECTIONS.LOCAL_PLAYER)
+	return boundEvent.Event:Connect(func)
 end
 
 function CharacterUtil.getCharacter()
-    local localPlayer = CharacterUtil.getLocalPlayer()
-    if not localPlayer then
-        return nil
-    end
-    return localPlayer.Character
+	local localPlayer = CharacterUtil.getLocalPlayer()
+	if not localPlayer then
+		return nil
+	end
+	return localPlayer.Character
 end
 
 function CharacterUtil.onCharacter(func)
@@ -91,27 +91,27 @@ function CharacterUtil.onCharacter(func)
 				CONNECTIONS.CHARACTER_ADDED,
 
 				localPlayer.CharacterAdded:Connect(function(newCharacter)
-                    assert(newCharacter, "CharacterAdded must provide a character")
+					assert(newCharacter, "CharacterAdded must provide a character")
 					CharacterUtil._getOrCreateBoundEvent(CONNECTIONS.CHARACTER_ADDED):Fire(newCharacter)
 				end)
 			)
 		end)
 	)
 
-    local boundEvent = CharacterUtil._getOrCreateBoundEvent(CONNECTIONS.CHARACTER_ADDED)
-    return boundEvent.Event:Connect(func)
+	local boundEvent = CharacterUtil._getOrCreateBoundEvent(CONNECTIONS.CHARACTER_ADDED)
+	return boundEvent.Event:Connect(func)
 end
 
 function CharacterUtil.getChild(name: string, className: string)
-    local character = CharacterUtil.getCharacter()
-    if not character then
-        return nil
-    end
-    local child = character:FindFirstChild(name)
-    if child and child:IsA(className) then
-        return child
-    end
-    return nil
+	local character = CharacterUtil.getCharacter()
+	if not character then
+		return nil
+	end
+	local child = character:FindFirstChild(name)
+	if child and child:IsA(className) then
+		return child
+	end
+	return nil
 end
 
 function CharacterUtil.onChild(name: string, className: string, func)
@@ -136,15 +136,15 @@ function CharacterUtil.onChild(name: string, className: string, func)
 		end)
 	)
 
-    local boundEvent = CharacterUtil._getOrCreateBoundEvent(CONNECTIONS.CHARACTER_CHILD_ADDED .. name .. className)
-    return boundEvent.Event:Connect(func)
+	local boundEvent = CharacterUtil._getOrCreateBoundEvent(CONNECTIONS.CHARACTER_CHILD_ADDED .. name .. className)
+	return boundEvent.Event:Connect(func)
 end
 
 function CharacterUtil._getOrCreateBoundEvent(name: string)
-    if not CharacterUtil._boundEvents[name] then
-        CharacterUtil._boundEvents[name] = Instance.new("BindableEvent")
-    end
-    return CharacterUtil._boundEvents[name]
+	if not CharacterUtil._boundEvents[name] then
+		CharacterUtil._boundEvents[name] = Instance.new("BindableEvent")
+	end
+	return CharacterUtil._boundEvents[name]
 end
 
 return CharacterUtil

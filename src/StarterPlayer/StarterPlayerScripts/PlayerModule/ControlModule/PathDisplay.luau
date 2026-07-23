@@ -67,7 +67,8 @@ local function renderPoint(point: Vector3, _isLast): ImageHandleAdornment?
 	end
 
 	local pointInstance = retrieveFromPool()
-	raycastParams.FilterDescendantsInstances = { (game.Players.LocalPlayer :: Player).Character :: Model, workspace.CurrentCamera :: Camera }
+	raycastParams.FilterDescendantsInstances =
+		{ (game.Players.LocalPlayer :: Player).Character :: Model, workspace.CurrentCamera :: Camera }
 	local raycastResult = workspace:Raycast(point + Vector3.new(0, 2, 0), Vector3.new(0, -8, 0), raycastParams)
 	if not raycastResult then
 		return nil
@@ -80,7 +81,7 @@ local function renderPoint(point: Vector3, _isLast): ImageHandleAdornment?
 end
 
 function PathDisplay.setCurrentPoints(points)
-	if typeof(points) == 'table' then
+	if typeof(points) == "table" then
 		currentPoints = points
 	else
 		currentPoints = {}
@@ -118,7 +119,6 @@ function PathDisplay.renderPath()
 		if currentIdx < 2 then
 			break
 		else
-
 			local toNextPoint = nextPoint - currentPoint
 			local distToNextPoint = toNextPoint.magnitude
 

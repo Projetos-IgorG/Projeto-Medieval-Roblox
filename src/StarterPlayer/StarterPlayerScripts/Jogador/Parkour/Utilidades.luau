@@ -123,11 +123,7 @@ function Utilidades.getSurfaceFrame(position, normal)
 end
 
 function Utilidades.firstBlockingPartInBox(cframe, size, ignoreList, shouldIgnorePart)
-	local parts = Workspace:GetPartBoundsInBox(
-		cframe,
-		size,
-		Utilidades.createOverlapParams(ignoreList, 0)
-	)
+	local parts = Workspace:GetPartBoundsInBox(cframe, size, Utilidades.createOverlapParams(ignoreList, 0))
 
 	for _, part in ipairs(parts) do
 		if not shouldIgnorePart or not shouldIgnorePart(part) then

@@ -21,9 +21,17 @@ _meshIncludeRayParams.IgnoreWater = true
 
 local _grabOverlapIgnore = table.create(2)
 
-local ClientBridge = require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
-local AnimacaoParkour = require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Parkour"):WaitForChild("Animacoes"):WaitForChild("AnimacaoParkour"))
-local CameraBypass = require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Camera"):WaitForChild("Estado"):WaitForChild("BypassCamera"))
+local ClientBridge =
+	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
+local AnimacaoParkour = require(
+	ReplicatedStorage:WaitForChild("Jogador")
+		:WaitForChild("Parkour")
+		:WaitForChild("Animacoes")
+		:WaitForChild("AnimacaoParkour")
+)
+local CameraBypass = require(
+	ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Camera"):WaitForChild("Estado"):WaitForChild("BypassCamera")
+)
 
 local CAMERA_BYPASS_BOX_SIZE = Vector3.new(5, 5, 5)
 
@@ -96,9 +104,7 @@ local function drawIdleDecisionVisual(decisionDebug, idleMode, finalConfig)
 	end
 
 	local supportDebug = decisionDebug.SupportDebug
-	local idleColor = idleMode == "IdleSuporte"
-		and Color3.fromRGB(90, 255, 120)
-		or Color3.fromRGB(255, 160, 70)
+	local idleColor = idleMode == "IdleSuporte" and Color3.fromRGB(90, 255, 120) or Color3.fromRGB(255, 160, 70)
 
 	if supportDebug and supportDebug.Rays then
 		for _, rayData in ipairs(supportDebug.Rays) do
@@ -108,9 +114,7 @@ local function drawIdleDecisionVisual(decisionDebug, idleMode, finalConfig)
 					endPoint = rayData.HitPosition
 				end
 
-				local rayColor = rayData.Hit
-					and Color3.fromRGB(60, 230, 120)
-					or Color3.fromRGB(255, 120, 60)
+				local rayColor = rayData.Hit and Color3.fromRGB(60, 230, 120) or Color3.fromRGB(255, 120, 60)
 
 				Debug.DrawLine(rayData.Origin, endPoint, rayColor)
 
@@ -172,7 +176,12 @@ local function traceIdleDecision(source, idleAnterior, idleNovo, decisionDebug, 
 	local blockerName = "nil"
 	if decisionDebug and decisionDebug.Blocker and decisionDebug.Blocker:IsA("BasePart") then
 		blockerName = decisionDebug.Blocker.Name
-	elseif decisionDebug and decisionDebug.SupportDebug and decisionDebug.SupportDebug.Blocker and decisionDebug.SupportDebug.Blocker:IsA("BasePart") then
+	elseif
+		decisionDebug
+		and decisionDebug.SupportDebug
+		and decisionDebug.SupportDebug.Blocker
+		and decisionDebug.SupportDebug.Blocker:IsA("BasePart")
+	then
 		blockerName = decisionDebug.SupportDebug.Blocker.Name
 	end
 
@@ -319,7 +328,12 @@ local function getValidGrabData()
 			grabData.Part = nil
 			grabData.LocalEdgePosition = nil
 			grabData.LocalNormal = nil
-		elseif grabData.LocalEdgePosition and grabData.LocalNormal and typeof(grabData.Part) == "Instance" and grabData.Part:IsA("BasePart") then
+		elseif
+			grabData.LocalEdgePosition
+			and grabData.LocalNormal
+			and typeof(grabData.Part) == "Instance"
+			and grabData.Part:IsA("BasePart")
+		then
 			grabData.EdgePosition = grabData.Part.CFrame:PointToWorldSpace(grabData.LocalEdgePosition)
 			local fallbackLook = nil
 			if estado.CurrentCharacter then
@@ -516,8 +530,7 @@ end
 local function criarAlignPosition(hrp, targetPosition, responsiveness)
 	local align = Instance.new("AlignPosition")
 	align.Mode = Enum.PositionAlignmentMode.OneAttachment
-	align.Attachment0 = hrp:FindFirstChild("RootAttachment")
-		or hrp:FindFirstChildOfClass("Attachment")
+	align.Attachment0 = hrp:FindFirstChild("RootAttachment") or hrp:FindFirstChildOfClass("Attachment")
 	align.Position = targetPosition
 	align.MaxForce = 100000
 	align.MaxVelocity = math.huge
@@ -541,8 +554,7 @@ end
 local function criarAlignOrientation(hrp, targetCFrame, responsiveness, maxAngularVelocity)
 	local align = Instance.new("AlignOrientation")
 	align.Mode = Enum.OrientationAlignmentMode.OneAttachment
-	align.Attachment0 = hrp:FindFirstChild("RootAttachment")
-		or hrp:FindFirstChildOfClass("Attachment")
+	align.Attachment0 = hrp:FindFirstChild("RootAttachment") or hrp:FindFirstChildOfClass("Attachment")
 	align.CFrame = targetCFrame
 	align.MaxTorque = 100000
 	align.Responsiveness = responsiveness or 40
@@ -557,8 +569,7 @@ end
 
 local function criarLinearVelocity(hrp, velocity, duracao)
 	local lv = Instance.new("LinearVelocity")
-	lv.Attachment0 = hrp:FindFirstChild("RootAttachment")
-		or hrp:FindFirstChildOfClass("Attachment")
+	lv.Attachment0 = hrp:FindFirstChild("RootAttachment") or hrp:FindFirstChildOfClass("Attachment")
 	lv.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
 	lv.MaxForce = 100000
 	lv.VectorVelocity = velocity
@@ -589,8 +600,7 @@ end
 local function criarAlignPositionDoisPontos(hrp, targetAttachment, rigido, responsiveness)
 	local align = Instance.new("AlignPosition")
 	align.Mode = Enum.PositionAlignmentMode.TwoAttachment
-	align.Attachment0 = hrp:FindFirstChild("RootAttachment")
-		or hrp:FindFirstChildOfClass("Attachment")
+	align.Attachment0 = hrp:FindFirstChild("RootAttachment") or hrp:FindFirstChildOfClass("Attachment")
 	align.Attachment1 = targetAttachment
 	align.RigidityEnabled = rigido == true
 	align.ReactionForceEnabled = true
@@ -607,8 +617,7 @@ end
 local function criarAlignOrientationDoisPontos(hrp, targetAttachment, rigido, responsiveness)
 	local align = Instance.new("AlignOrientation")
 	align.Mode = Enum.OrientationAlignmentMode.TwoAttachment
-	align.Attachment0 = hrp:FindFirstChild("RootAttachment")
-		or hrp:FindFirstChildOfClass("Attachment")
+	align.Attachment0 = hrp:FindFirstChild("RootAttachment") or hrp:FindFirstChildOfClass("Attachment")
 	align.Attachment1 = targetAttachment
 	align.RigidityEnabled = rigido == true
 	if not rigido then
@@ -639,7 +648,15 @@ local function obterOffsetsGrab(finalConfig)
 	return finalConfig.GrabVerticalOffset, finalConfig.GrabSurfaceOffset
 end
 
-local function resolverIdleModeParaGrab(character, part, edgePosition, normal, finalConfig, fallbackIdleMode, debugSource)
+local function resolverIdleModeParaGrab(
+	character,
+	part,
+	edgePosition,
+	normal,
+	finalConfig,
+	fallbackIdleMode,
+	debugSource
+)
 	if character and part and edgePosition and normal then
 		local idleMode, blocker, supportDebug = Analisador.ResolveIdleMode({
 			Character = character,
@@ -656,9 +673,9 @@ local function resolverIdleModeParaGrab(character, part, edgePosition, normal, f
 				idleDebug = {
 					Source = debugSource or "ResolveIdleMode",
 					Reason = supportDebug
-						and (idleMode == "IdleSuporte"
-							and ("LegSupportDetected(" .. tostring(sHit) .. "/" .. tostring(sRay) .. ")")
-							or ("NoLegSupport(" .. tostring(sHit) .. "/" .. tostring(sRay) .. ")"))
+							and (idleMode == "IdleSuporte" and ("LegSupportDetected(" .. tostring(sHit) .. "/" .. tostring(
+								sRay
+							) .. ")") or ("NoLegSupport(" .. tostring(sHit) .. "/" .. tostring(sRay) .. ")"))
 						or "ForcedSuspensoTag",
 					FallbackIdle = fallbackIdleMode,
 					Blocker = blocker,
@@ -713,14 +730,15 @@ local function resolveStableIdleMode(grabData, idleCandidate, finalConfig, decis
 		grabData.PendingIdleCount = (grabData.PendingIdleCount or 0) + 1
 	end
 
-	local requiredConfirmations = candidateIdle == "IdleSuporte"
-		and confirmationsToSupport
-		or confirmationsToSuspenso
+	local requiredConfirmations = candidateIdle == "IdleSuporte" and confirmationsToSupport or confirmationsToSuspenso
 
 	if (grabData.PendingIdleCount or 0) < requiredConfirmations then
 		if decisionDebug then
-			decisionDebug.Gate = "CandidateAccum(" .. tostring(grabData.PendingIdleCount or 0)
-				.. "/" .. tostring(requiredConfirmations) .. ")"
+			decisionDebug.Gate = "CandidateAccum("
+				.. tostring(grabData.PendingIdleCount or 0)
+				.. "/"
+				.. tostring(requiredConfirmations)
+				.. ")"
 		end
 		return currentIdle, false
 	end
@@ -729,8 +747,11 @@ local function resolveStableIdleMode(grabData, idleCandidate, finalConfig, decis
 	local elapsed = now - (grabData.LastIdleSwitchAt or 0)
 	if elapsed < minSwitchInterval then
 		if decisionDebug then
-			decisionDebug.Gate = "MinIntervalGate(" .. string.format("%.2f", elapsed)
-				.. "/" .. string.format("%.2f", minSwitchInterval) .. ")"
+			decisionDebug.Gate = "MinIntervalGate("
+				.. string.format("%.2f", elapsed)
+				.. "/"
+				.. string.format("%.2f", minSwitchInterval)
+				.. ")"
 		end
 		return currentIdle, false
 	end
@@ -755,9 +776,7 @@ local function calcularPosicaoGrab(edgePosition, normal, config, _idleMode)
 	end
 	flatNormal = flatNormal.Unit
 
-	local posicao = edgePosition
-		+ Vector3.yAxis * verticalOffset
-		+ flatNormal * surfaceOffset
+	local posicao = edgePosition + Vector3.yAxis * verticalOffset + flatNormal * surfaceOffset
 
 	local lookTarget = posicao - flatNormal
 	local orientacao = CFrame.lookAt(posicao, lookTarget, Vector3.yAxis)
@@ -822,7 +841,9 @@ local function calcularPosicaoGrabSegura(character, hrp, edgePosition, normal, p
 		local blocker = nil
 
 		for _, hitPart in ipairs(touching) do
-			if hitPart:IsA("BasePart") and not hitPart:IsDescendantOf(character)
+			if
+				hitPart:IsA("BasePart")
+				and not hitPart:IsDescendantOf(character)
 				and not Utilidades.isParkourIgnoredPart(hitPart, finalConfig.MinPartHeight)
 			then
 				blocker = hitPart
@@ -861,7 +882,10 @@ local function getLateralDirection(normal, direcao)
 end
 
 local function podeIniciarParkour(): boolean
-	if (ClientBridge.EstaEmRoll and ClientBridge.EstaEmRoll()) or (ClientBridge.EstaEmDash and ClientBridge.EstaEmDash()) then
+	if
+		(ClientBridge.EstaEmRoll and ClientBridge.EstaEmRoll())
+		or (ClientBridge.EstaEmDash and ClientBridge.EstaEmDash())
+	then
 		return false
 	end
 
@@ -1014,24 +1038,14 @@ local function executarAgarrar(result, config)
 	local alignPos = criarAlignPosition(hrp, posAlvo, grabResponsiveness)
 	local alignOri = criarAlignOrientation(hrp, cfAlvo, grabResponsiveness, grabAngVel)
 	local grabReachDistance = math.max(finalConfig.GrabFinalReachDistance or 0.2, 0.03)
-	local grabSnapTimeout = math.max(
-		finalConfig.GrabFinalSnapTimeout or (grabTransitionTime + 0.25),
-		grabTransitionTime
-	)
+	local grabSnapTimeout =
+		math.max(finalConfig.GrabFinalSnapTimeout or (grabTransitionTime + 0.25), grabTransitionTime)
 	local grabMinSettleTime = math.max(finalConfig.GrabMinSettleTime or math.min(grabTransitionTime, 0.1), 0)
 
 	zeroAssemblyVelocity(hrp)
 	setHeadCollisionDuringParkour(character, true)
 
-	setGrabData(
-		result.EdgePosition,
-		result.Normal,
-		grabPart,
-		result.IdleMode,
-		nil,
-		finalConfig,
-		hrp.CFrame.LookVector
-	)
+	setGrabData(result.EdgePosition, result.Normal, grabPart, result.IdleMode, nil, finalConfig, hrp.CFrame.LookVector)
 
 	local idleInicial = result.IdleMode or "IdleSuporte"
 
@@ -1102,11 +1116,7 @@ local function executarAgarrar(result, config)
 		local dist = (hrp.Position - posAlvo).Magnitude
 		if (elapsed >= grabMinSettleTime and dist <= grabReachDistance) or elapsed >= grabSnapTimeout then
 			if elapsed >= grabSnapTimeout and dist > grabReachDistance then
-				dbgPrint(
-					"[Parkour] Grab snap por timeout",
-					"| dist:",
-					string.format("%.2f", dist)
-				)
+				dbgPrint("[Parkour] Grab snap por timeout", "| dist:", string.format("%.2f", dist))
 			end
 			finalizarGrabComConfirmacao()
 		end
@@ -1179,7 +1189,15 @@ local function executarVault(result, _config, impulso, transitionTime)
 	return true
 end
 
-local function executarSubir(novaEdgePos, novaNormal, novaPart, config, nomeAnimacao, confirmarAcaoPausada, idleModePreferido)
+local function executarSubir(
+	novaEdgePos,
+	novaNormal,
+	novaPart,
+	config,
+	nomeAnimacao,
+	confirmarAcaoPausada,
+	idleModePreferido
+)
 	local finalConfig = Configs.mergeConfig(config)
 	local character = estado.CurrentCharacter
 	if not character then
@@ -1289,7 +1307,6 @@ local function executarSubir(novaEdgePos, novaNormal, novaPart, config, nomeAnim
 			if alignPos.Parent and isCharacterAlive(character) then
 				alignPos.Position = posAlvo
 				alignPos.Responsiveness = responsivenessFase2
-
 			end
 		end)
 
@@ -1482,7 +1499,12 @@ local function executarLateral(lateralResult, config)
 		local maxHorizontal = finalConfig.LateralSaltoMaxHorizontal or 11.0
 		local maxVertical = finalConfig.LateralSaltoMaxVertical or 2.8
 		if horizontal > maxHorizontal or vertical > maxVertical then
-			dbgPrint("[Parkour] Lateral bloqueado por segurança | Horiz:", string.format("%.2f", horizontal), "| Vert:", string.format("%.2f", vertical))
+			dbgPrint(
+				"[Parkour] Lateral bloqueado por segurança | Horiz:",
+				string.format("%.2f", horizontal),
+				"| Vert:",
+				string.format("%.2f", vertical)
+			)
 			return false
 		end
 	end
@@ -1517,12 +1539,8 @@ local function executarLateral(lateralResult, config)
 
 		destroyConstraints()
 
-		local posAlvo, cfAlvo = calcularPosicaoGrab(
-			lateralResult.EdgePosition,
-			lateralResult.Normal,
-			finalConfig,
-			lateralResult.IdleMode
-		)
+		local posAlvo, cfAlvo =
+			calcularPosicaoGrab(lateralResult.EdgePosition, lateralResult.Normal, finalConfig, lateralResult.IdleMode)
 		local posAtual = hrp.Position
 		local direcao = lateralResult.Direction
 			or (string.find(nomeAnimacao, "Esquerda", 1, true) and "Esquerda" or "Direita")
@@ -1576,7 +1594,6 @@ local function executarLateral(lateralResult, config)
 			if alignPos.Parent and alignOri.Parent and isCharacterAlive(character) then
 				alignPos.Position = phase1Target + phase2Delta
 				alignPos.Responsiveness = responsivenessFase2
-
 			end
 		end)
 
@@ -1646,10 +1663,7 @@ local function executarEscalar(escalarResult, config)
 	local responsivenessVertical = 1 / math.max(tempoVertical, 0.01) * 12
 	local responsivenessHorizontal = 1 / math.max(tempoHorizontal, 0.01) * 12
 	local snapDistance = math.max(finalConfig.EscalarFinalSnapDistance or 0.2, 0.05)
-	local snapTimeout = math.max(
-		finalConfig.EscalarFinalSnapTimeout or (escalarTime + 0.2),
-		escalarTime
-	)
+	local snapTimeout = math.max(finalConfig.EscalarFinalSnapTimeout or (escalarTime + 0.2), escalarTime)
 
 	local targetOri = CFrame.lookAt(posFinal, posFinal + look, Vector3.yAxis)
 
@@ -1749,11 +1763,7 @@ local function executarEscalar(escalarResult, config)
 		local elapsed = os.clock() - startTime
 		if dist <= snapDistance or elapsed >= snapTimeout then
 			if elapsed >= snapTimeout and dist > snapDistance then
-				dbgPrint(
-					"[Parkour] Escalar snap por timeout",
-					"| dist:",
-					string.format("%.2f", dist)
-				)
+				dbgPrint("[Parkour] Escalar snap por timeout", "| dist:", string.format("%.2f", dist))
 			end
 			finalizarMovimentoEscalar()
 		end
@@ -1919,19 +1929,9 @@ function Movimento.TentarSubir()
 		return false, nil
 	end
 
-	local escalarResult = Analisador.CheckEscalar(
-		character,
-		grabData.EdgePosition,
-		grabData.Normal,
-		grabData.Part,
-		grabData.Config
-	)
-	local subirResult = Analisador.CheckSubir(
-		character,
-		grabData.EdgePosition,
-		grabData.Normal,
-		grabData.Config
-	)
+	local escalarResult =
+		Analisador.CheckEscalar(character, grabData.EdgePosition, grabData.Normal, grabData.Part, grabData.Config)
+	local subirResult = Analisador.CheckSubir(character, grabData.EdgePosition, grabData.Normal, grabData.Config)
 
 	local escalarDisponivel = escalarResult and escalarResult.CanEscalar
 	local subirDisponivel = subirResult and subirResult.CanSubir
@@ -1943,13 +1943,12 @@ function Movimento.TentarSubir()
 	if escalarDisponivel then
 		local ok = executarEscalar(escalarResult, grabData.Config)
 		if ok then
-				dbgPrint("[Parkour] Escalar para cima da plataforma")
+			dbgPrint("[Parkour] Escalar para cima da plataforma")
 		end
 		return ok, "Escalar", nil, escalarResult
 	end
 
 	if not subirDisponivel then
-
 		return false, nil, subirResult, escalarResult
 	end
 
@@ -1964,16 +1963,21 @@ function Movimento.TentarSubir()
 			subirResult.IdleMode
 		)
 		if ok then
-				dbgPrint("[Parkour] Subir para nova superfície | Dist:", string.format("%.1f", subirResult.VerticalDistance))
+			dbgPrint(
+				"[Parkour] Subir para nova superfície | Dist:",
+				string.format("%.1f", subirResult.VerticalDistance)
+			)
 		end
 		return ok, "Subir", subirResult, escalarResult
 	elseif subirResult.Tipo == "SubirSalto" then
 		return true, "SubirSalto", subirResult, escalarResult
 	elseif subirResult.Tipo == "Escalar" then
-
 		local ok = executarEscalar(subirResult, grabData.Config)
 		if ok then
-				dbgPrint("[Parkour] Escalar direto para nova superfície acima | Dist:", string.format("%.1f", subirResult.VerticalDistance))
+			dbgPrint(
+				"[Parkour] Escalar direto para nova superfície acima | Dist:",
+				string.format("%.1f", subirResult.VerticalDistance)
+			)
 		end
 		return ok, "Escalar", subirResult, escalarResult
 	end
@@ -1996,12 +2000,7 @@ function Movimento.TentarDescer()
 		return false, nil
 	end
 
-	local descerResult = Analisador.CheckDescer(
-		character,
-		grabData.EdgePosition,
-		grabData.Normal,
-		grabData.Config
-	)
+	local descerResult = Analisador.CheckDescer(character, grabData.EdgePosition, grabData.Normal, grabData.Config)
 
 	if not descerResult or not descerResult.CanDescer then
 		return false, nil, descerResult
@@ -2016,7 +2015,10 @@ function Movimento.TentarDescer()
 		descerResult.VerticalDistance
 	)
 	if ok then
-		dbgPrint("[Parkour] Descer para superfície abaixo | Dist:", string.format("%.1f", descerResult.VerticalDistance))
+		dbgPrint(
+			"[Parkour] Descer para superfície abaixo | Dist:",
+			string.format("%.1f", descerResult.VerticalDistance)
+		)
 	end
 
 	return ok, "Descer", descerResult
@@ -2038,14 +2040,17 @@ function Movimento.TentarMoverLateral(direcao)
 	end
 
 	local now = os.clock()
-	if now < lateralNoSurfaceCache.ExpiresAt
+	if
+		now < lateralNoSurfaceCache.ExpiresAt
 		and isSameGrabForLateralCache(direcao, grabData.EdgePosition, grabData.Normal)
 	then
-		return false, nil, {
-			CanMoveLateral = false,
-			Reason = "NoLateralSurfaceCached",
-			Direction = direcao,
-		}
+		return false,
+			nil,
+			{
+				CanMoveLateral = false,
+				Reason = "NoLateralSurfaceCached",
+				Direction = direcao,
+			}
 	end
 
 	local lateralResult = Analisador.CheckLateral(
@@ -2264,7 +2269,8 @@ function Movimento.ConfirmarPreviewLateralSalto(direcao, alvoLateralSalto)
 	local animacaoConcluida = false
 	local finalizacaoExecutada = false
 	local movimentoExecutado = false
-	local transicaoTempo = getScaledTransitionTime(finalConfig.LateralSaltoTransitionTime or finalConfig.LateralTransitionTime or 0.28)
+	local transicaoTempo =
+		getScaledTransitionTime(finalConfig.LateralSaltoTransitionTime or finalConfig.LateralTransitionTime or 0.28)
 
 	local function tentarFinalizarLateralSalto()
 		if finalizacaoExecutada then
@@ -2293,8 +2299,16 @@ function Movimento.ConfirmarPreviewLateralSalto(direcao, alvoLateralSalto)
 		destroyConstraints()
 
 		local idleModeNovo = alvoLateralSalto.IdleMode
-			or resolverIdleModeParaGrab(character, alvoLateralSalto.Part, alvoLateralSalto.EdgePosition, alvoLateralSalto.Normal, finalConfig, grabData.IdleMode)
-		local posAlvo, cfAlvo = calcularPosicaoGrab(alvoLateralSalto.EdgePosition, alvoLateralSalto.Normal, finalConfig, idleModeNovo)
+			or resolverIdleModeParaGrab(
+				character,
+				alvoLateralSalto.Part,
+				alvoLateralSalto.EdgePosition,
+				alvoLateralSalto.Normal,
+				finalConfig,
+				grabData.IdleMode
+			)
+		local posAlvo, cfAlvo =
+			calcularPosicaoGrab(alvoLateralSalto.EdgePosition, alvoLateralSalto.Normal, finalConfig, idleModeNovo)
 		local responsiveness = 1 / math.max(transicaoTempo, 0.01) * 10
 		local lateralSaltoAngVel = calcularVelocidadeAngularSuave(hrp.CFrame, cfAlvo, transicaoTempo)
 		local alignPos = criarAlignPosition(hrp, posAlvo, responsiveness)
@@ -2362,7 +2376,6 @@ function Movimento.CancelarPreviewLateralAoSoltar(config)
 end
 
 function Movimento.CancelarPreviewAcao(config)
-
 	if estado.Agarrado and estado.GrabData and estado.GrabData.IdleMode then
 		AnimacaoParkour.TocarIdle(estado.GrabData.IdleMode)
 	end
@@ -2430,13 +2443,8 @@ function Movimento.TentarEscalar()
 		return false
 	end
 
-	local escalarResult = Analisador.CheckEscalar(
-		character,
-		grabData.EdgePosition,
-		grabData.Normal,
-		grabData.Part,
-		grabData.Config
-	)
+	local escalarResult =
+		Analisador.CheckEscalar(character, grabData.EdgePosition, grabData.Normal, grabData.Part, grabData.Config)
 
 	if not escalarResult or not escalarResult.CanEscalar then
 		return false

@@ -191,7 +191,6 @@ else
 end
 
 local function canOcclude(part)
-
 	return getTotalTransparency(part) < 0.25
 		and part.CanCollide
 		and subjectRoot ~= (part:GetRootPart() or part)
@@ -293,14 +292,11 @@ local function queryPoint(origin, unitDir, dist, lastPos)
 						else false
 
 					if promote then
-
 						hardLimit = lim
 					elseif dist < softLimit then
-
 						softLimit = lim
 					end
 				else
-
 					hardLimit = lim
 				end
 			end
@@ -325,7 +321,6 @@ local function queryPoint(origin, unitDir, dist, lastPos)
 			numPierced += 1
 
 			if entryPart then
-
 				local earlyAbort = numPierced >= QUERY_POINT_CAST_LIMIT
 
 				if canOcclude(entryPart) or earlyAbort then
@@ -344,14 +339,11 @@ local function queryPoint(origin, unitDir, dist, lastPos)
 						end
 
 						if promote then
-
 							hardLimit = lim
 						elseif dist < softLimit then
-
 							softLimit = lim
 						end
 					else
-
 						hardLimit = lim
 					end
 				end
@@ -416,7 +408,6 @@ local function testPromotion(focus, dist, focusExtrapolation)
 	local fZ = -focus.lookVector
 
 	do
-
 		debug.profilebegin("extrapolate")
 
 		local SAMPLE_DT = 0.0625
@@ -438,7 +429,6 @@ local function testPromotion(focus, dist, focusExtrapolation)
 	end
 
 	do
-
 		debug.profilebegin("testOffsets")
 
 		for _, offset in ipairs(SCAN_SAMPLE_OFFSETS) do

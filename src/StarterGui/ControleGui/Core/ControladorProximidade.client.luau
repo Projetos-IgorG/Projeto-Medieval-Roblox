@@ -11,8 +11,14 @@ local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
-local ProximityColors = require(ReplicatedStorage:WaitForChild("Interacao"):WaitForChild("Proximidade"):WaitForChild("Configuracoes"):WaitForChild("CoresProximidade"))
-local CatalogoItens = require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
+local ProximityColors = require(
+	ReplicatedStorage:WaitForChild("Interacao")
+		:WaitForChild("Proximidade")
+		:WaitForChild("Configuracoes")
+		:WaitForChild("CoresProximidade")
+)
+local CatalogoItens =
+	require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
 
 local player = Players.LocalPlayer
 local screenGui = Instance.new("ScreenGui")
@@ -38,7 +44,6 @@ local function AtualizarBloqueioProximity(modoAnimacao: string)
 	interacaoBloqueada = novoBloqueio
 
 	if interacaoBloqueada then
-
 		for prompt in pairs(promptsVisiveis) do
 			if prompt and prompt.Parent then
 				prompt.Enabled = false
@@ -47,7 +52,6 @@ local function AtualizarBloqueioProximity(modoAnimacao: string)
 		end
 		promptsVisiveis = {}
 	else
-
 		for prompt in pairs(promptsDesabilitados) do
 			if prompt and prompt.Parent then
 				prompt.Enabled = true
@@ -96,7 +100,11 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 		return
 	end
 
-	local CustomProximity = ReplicatedStorage:WaitForChild("Interacao"):WaitForChild("Proximidade"):WaitForChild("Modelos"):WaitForChild("ModeloProximidade"):Clone()
+	local CustomProximity = ReplicatedStorage:WaitForChild("Interacao")
+		:WaitForChild("Proximidade")
+		:WaitForChild("Modelos")
+		:WaitForChild("ModeloProximidade")
+		:Clone()
 
 	local KeyText = CustomProximity:FindFirstChild("KeyText", true)
 	local KeyLabel = KeyText and KeyText:FindFirstChild("KeyLabel")
@@ -212,7 +220,6 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 			currentTween:Cancel()
 		end
 		if Progress then
-
 			local shrinkDuration = 0.25
 			currentTween = TweenService:Create(Progress, TweenInfo.new(shrinkDuration), {
 				Size = UDim2.fromScale(0, 0),
@@ -232,7 +239,6 @@ ProximityPromptService.PromptShown:Connect(function(promptInstance: ProximityPro
 	end)
 
 	promptInstance.PromptHidden:Once(function()
-
 		promptsVisiveis[promptInstance] = nil
 
 		if CustomProximity then

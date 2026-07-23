@@ -67,7 +67,6 @@ function TransparencyController:HasToolAncestor(object: Instance)
 end
 
 function TransparencyController:IsHeadAccessory(object: Instance): boolean
-
 	if object.Name == "Head" then
 		return true
 	end
@@ -143,11 +142,9 @@ function TransparencyController:SetupTransparency(character)
 		self.descendantAddedConn:Disconnect()
 	end
 	self.descendantAddedConn = character.DescendantAdded:Connect(function(object)
-
 		if self:IsValidPartToModify(object) then
 			self.cachedParts[object] = true
 			self.transparencyDirty = true
-
 		elseif object:IsA("Tool") then
 			if self.toolDescendantAddedConns[object] then
 				self.toolDescendantAddedConns[object]:Disconnect()
@@ -155,7 +152,6 @@ function TransparencyController:SetupTransparency(character)
 			self.toolDescendantAddedConns[object] = object.DescendantAdded:Connect(function(toolChild)
 				self.cachedParts[toolChild] = nil
 				if toolChild:IsA("BasePart") or toolChild:IsA("Decal") then
-
 					toolChild.LocalTransparencyModifier = 0
 				end
 			end)
@@ -214,10 +210,8 @@ function TransparencyController:Update(dt, isInFirstPerson: boolean?)
 		local transparency: number
 
 		if isInFirstPerson then
-
 			transparency = 1
 		else
-
 			local distance = (currentCamera.Focus.Position - currentCamera.CFrame.Position).Magnitude
 			transparency = (distance < 2) and (1.0 - (distance - 0.5) / 1.5) or 0
 			if transparency < 0.5 then

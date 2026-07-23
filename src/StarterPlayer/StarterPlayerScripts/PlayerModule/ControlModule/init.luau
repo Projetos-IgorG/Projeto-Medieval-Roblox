@@ -23,7 +23,8 @@ local Keyboard = require(script:WaitForChild("Keyboard"))
 local Gamepad = require(script:WaitForChild("Gamepad"))
 local DynamicThumbstick = require(script:WaitForChild("DynamicThumbstick"))
 
-local FFlagUserDynamicThumbstickSafeAreaUpdate do
+local FFlagUserDynamicThumbstickSafeAreaUpdate
+do
 	local success, result = pcall(function()
 		return UserSettings():IsUserFeatureEnabled("UserDynamicThumbstickSafeAreaUpdate")
 	end)
@@ -64,7 +65,7 @@ local movementEnumToModuleMap = {
 }
 
 function ControlModule.new()
-	local self = setmetatable({},ControlModule)
+	local self = setmetatable({}, ControlModule)
 
 	self.controllers = {}
 
@@ -81,7 +82,7 @@ function ControlModule.new()
 	self.touchControlFrame = nil
 	self.currentTorsoAngle = 0
 
-	self.inputMoveVector = Vector3.new(0,0,0)
+	self.inputMoveVector = Vector3.new(0, 0, 0)
 
 	self.vehicleController = VehicleController.new(CONTROL_ACTION_PRIORITY)
 
@@ -147,29 +148,31 @@ function ControlModule:GetMoveVector(): Vector3
 	if self.activeController then
 		return self.activeController:GetMoveVector()
 	end
-	return Vector3.new(0,0,0)
+	return Vector3.new(0, 0, 0)
 end
 
 local function NormalizeAngle(angle): number
-	angle = (angle + math.pi*4) % (math.pi*2)
+	angle = (angle + math.pi * 4) % (math.pi * 2)
 	if angle > math.pi then
-		angle = angle - math.pi*2
+		angle = angle - math.pi * 2
 	end
 	return angle
 end
 
 local function AverageAngle(angleA, angleB): number
 	local difference = NormalizeAngle(angleB - angleA)
-	return NormalizeAngle(angleA + difference/2)
+	return NormalizeAngle(angleA + difference / 2)
 end
 
 function ControlModule:GetEstimatedVRTorsoFrame(): CFrame
 	local headFrame = VRService:GetUserCFrame(Enum.UserCFrame.Head)
 	local _, headAngle, _ = headFrame:ToEulerAnglesYXZ()
 	headAngle = -headAngle
-	if not VRService:GetUserCFrameEnabled(Enum.UserCFrame.RightHand) or
-		not VRService:GetUserCFrameEnabled(Enum.UserCFrame.LeftHand) then
-		self.currentTorsoAngle = headAngle;
+	if
+		not VRService:GetUserCFrameEnabled(Enum.UserCFrame.RightHand)
+		or not VRService:GetUserCFrameEnabled(Enum.UserCFrame.LeftHand)
+	then
+		self.currentTorsoAngle = headAngle
 	else
 		local leftHandPos = VRService:GetUserCFrame(Enum.UserCFrame.LeftHand)
 		local rightHandPos = VRService:GetUserCFrame(Enum.UserCFrame.RightHand)
@@ -183,9 +186,8 @@ function ControlModule:GetEstimatedVRTorsoFrame(): CFrame
 		local headAngleRelativeToCurrentAngle = NormalizeAngle(headAngle - self.currentTorsoAngle)
 		local averageHandAngleRelativeToCurrentAngle = NormalizeAngle(averageHandAngle - self.currentTorsoAngle)
 
-		local averageHandAngleValid =
-			averageHandAngleRelativeToCurrentAngle > -math.pi/2 and
-			averageHandAngleRelativeToCurrentAngle < math.pi/2
+		local averageHandAngleValid = averageHandAngleRelativeToCurrentAngle > -math.pi / 2
+			and averageHandAngleRelativeToCurrentAngle < math.pi / 2
 
 		if not averageHandAngleValid then
 			averageHandAngleRelativeToCurrentAngle = headAngleRelativeToCurrentAngle
@@ -212,7 +214,6 @@ function ControlModule:GetActiveController()
 end
 
 function ControlModule:UpdateActiveControlModuleEnabled()
-
 	local disable = function()
 		self.activeController:Enable(false)
 		if self.touchJumpController then
@@ -220,12 +221,14 @@ function ControlModule:UpdateActiveControlModuleEnabled()
 		end
 
 		if self.moveFunction then
-			self.moveFunction(Players.LocalPlayer, Vector3.new(0,0,0), true)
+			self.moveFunction(Players.LocalPlayer, Vector3.new(0, 0, 0), true)
 		end
 	end
 
 	local enable = function()
-		if self.touchControlFrame and (UserInputService.PreferredInput == Enum.PreferredInput.Touch)
+		if
+			self.touchControlFrame
+			and (UserInputService.PreferredInput == Enum.PreferredInput.Touch)
 			and (
 				self.activeControlModule == ClickToMove
 				or self.activeControlModule == TouchThumbstick
@@ -244,7 +247,6 @@ function ControlModule:UpdateActiveControlModuleEnabled()
 		end
 
 		if self.activeControlModule == ClickToMove then
-
 			self.activeController:Enable(
 				true,
 				Players.LocalPlayer.DevComputerMovementMode == Enum.DevComputerMovementMode.UserChoice,
@@ -266,9 +268,15 @@ function ControlModule:UpdateActiveControlModuleEnabled()
 		return
 	end
 
-	if not GuiService.TouchControlsEnabled and UserInputService.PreferredInput == Enum.PreferredInput.Touch and
-		(self.activeControlModule == ClickToMove or self.activeControlModule == TouchThumbstick or
-			self.activeControlModule == DynamicThumbstick) then
+	if
+		not GuiService.TouchControlsEnabled
+		and UserInputService.PreferredInput == Enum.PreferredInput.Touch
+		and (
+			self.activeControlModule == ClickToMove
+			or self.activeControlModule == TouchThumbstick
+			or self.activeControlModule == DynamicThumbstick
+		)
+	then
 		disable()
 		return
 	end
@@ -280,7 +288,9 @@ function ControlModule:Enable(enable: boolean?)
 	if enable == nil then
 		enable = true
 	end
-	if self.controlsEnabled == enable then return end
+	if self.controlsEnabled == enable then
+		return
+	end
 	self.controlsEnabled = enable
 
 	if not self.activeController then
@@ -309,12 +319,13 @@ function ControlModule:SelectComputerMovementModule(): ({}?, boolean)
 			computerModule = Keyboard
 		end
 
-		if UserGameSettings.ComputerMovementMode == Enum.ComputerMovementMode.ClickToMove and computerModule == Keyboard then
-
+		if
+			UserGameSettings.ComputerMovementMode == Enum.ComputerMovementMode.ClickToMove
+			and computerModule == Keyboard
+		then
 			computerModule = ClickToMove
 		end
 	else
-
 		computerModule = movementEnumToModuleMap[DevMovementMode]
 
 		if (not computerModule) and DevMovementMode ~= Enum.DevComputerMovementMode.Scriptable then
@@ -325,10 +336,8 @@ function ControlModule:SelectComputerMovementModule(): ({}?, boolean)
 	if computerModule then
 		return computerModule, true
 	elseif DevMovementMode == Enum.DevComputerMovementMode.Scriptable then
-
 		return nil, true
 	else
-
 		return nil, false
 	end
 end
@@ -353,7 +362,7 @@ local function getGamepadRightThumbstickPosition(): Vector3
 			return input.Position
 		end
 	end
-	return Vector3.new(0,0,0)
+	return Vector3.new(0, 0, 0)
 end
 
 function ControlModule:calculateRawMoveVector(humanoid: Humanoid, cameraRelativeMoveVector: Vector3): Vector3
@@ -397,25 +406,22 @@ function ControlModule:calculateRawMoveVector(humanoid: Humanoid, cameraRelative
 	local c, s
 	local _, _, _, R00, R01, R02, _, _, R12, _, _, R22 = cameraCFrame:GetComponents()
 	if R12 < 1 and R12 > -1 then
-
 		c = R22
 		s = R02
 	else
-
 		c = R00
-		s = -R01*math.sign(R12)
+		s = -R01 * math.sign(R12)
 	end
-	local norm = math.sqrt(c*c + s*s)
+	local norm = math.sqrt(c * c + s * s)
 	return Vector3.new(
-		(c*cameraRelativeMoveVector.X + s*cameraRelativeMoveVector.Z)/norm,
+		(c * cameraRelativeMoveVector.X + s * cameraRelativeMoveVector.Z) / norm,
 		0,
-		(c*cameraRelativeMoveVector.Z - s*cameraRelativeMoveVector.X)/norm
+		(c * cameraRelativeMoveVector.Z - s * cameraRelativeMoveVector.X) / norm
 	)
 end
 
 function ControlModule:OnRenderStepped(dt)
 	if self.activeController and self.activeController.enabled and self.humanoid then
-
 		local moveVector = self.activeController:GetMoveVector()
 		local cameraRelative = self.activeController:IsMoveVectorCameraRelative()
 
@@ -424,10 +430,8 @@ function ControlModule:OnRenderStepped(dt)
 			clickToMoveController:OnRenderStepped(dt)
 		else
 			if moveVector.magnitude > 0 then
-
 				clickToMoveController:CleanupPath()
 			else
-
 				clickToMoveController:OnRenderStepped(dt)
 				moveVector = clickToMoveController:GetMoveVector()
 				cameraRelative = clickToMoveController:IsMoveVectorCameraRelative()
@@ -436,7 +440,8 @@ function ControlModule:OnRenderStepped(dt)
 
 		local _vehicleConsumedInput = false
 		if self.vehicleController then
-			moveVector, _vehicleConsumedInput = self.vehicleController:Update(moveVector, cameraRelative, self.activeControlModule==Gamepad)
+			moveVector, _vehicleConsumedInput =
+				self.vehicleController:Update(moveVector, cameraRelative, self.activeControlModule == Gamepad)
 		end
 
 		if cameraRelative then
@@ -450,19 +455,24 @@ function ControlModule:OnRenderStepped(dt)
 
 		self.moveFunction(Players.LocalPlayer, moveVector, false)
 
-		self.humanoid.Jump = self.activeController:GetIsJumping() or (self.touchJumpController and self.touchJumpController:GetIsJumping())
+		self.humanoid.Jump = self.activeController:GetIsJumping()
+			or (self.touchJumpController and self.touchJumpController:GetIsJumping())
 	end
 end
 
 function ControlModule:updateVRMoveVector(moveVector)
 	local curCamera = workspace.CurrentCamera :: Camera
 
-	local cameraDelta = curCamera.Focus.Position - curCamera.CFrame	.Position
+	local cameraDelta = curCamera.Focus.Position - curCamera.CFrame.Position
 	local firstPerson = cameraDelta.Magnitude < FIRST_PERSON_THRESHOLD_DISTANCE and true
 
-	if moveVector.Magnitude == 0 and firstPerson and VRService.AvatarGestures and self.humanoid
-		and not self.humanoid.Sit then
-
+	if
+		moveVector.Magnitude == 0
+		and firstPerson
+		and VRService.AvatarGestures
+		and self.humanoid
+		and not self.humanoid.Sit
+	then
 		local vrHeadOffset = VRService:GetUserCFrame(Enum.UserCFrame.Head)
 		vrHeadOffset = vrHeadOffset.Rotation + vrHeadOffset.Position * curCamera.HeadScale
 
@@ -516,9 +526,10 @@ function ControlModule:OnCharacterRemoving(_char)
 end
 
 function ControlModule:UpdateTouchGuiVisibility()
-	local doShow = self.humanoid and GuiService.TouchControlsEnabled and UserInputService.PreferredInput == Enum.PreferredInput.Touch
+	local doShow = self.humanoid
+		and GuiService.TouchControlsEnabled
+		and UserInputService.PreferredInput == Enum.PreferredInput.Touch
 	if doShow and not self.touchGui then
-
 		self:CreateTouchGuiContainer()
 	end
 
@@ -528,7 +539,6 @@ function ControlModule:UpdateTouchGuiVisibility()
 end
 
 function ControlModule:SwitchToController(controlModule)
-
 	if not controlModule then
 		if self.activeController then
 			self.activeController:Enable(false)
@@ -584,7 +594,7 @@ function ControlModule:CreateTouchGuiContainer()
 	self.touchGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 	if FFlagUserDynamicThumbstickSafeAreaUpdate then
-		self.touchGui.ClipToDeviceSafeArea = false;
+		self.touchGui.ClipToDeviceSafeArea = false
 	end
 
 	self.touchControlFrame = Instance.new("Frame")

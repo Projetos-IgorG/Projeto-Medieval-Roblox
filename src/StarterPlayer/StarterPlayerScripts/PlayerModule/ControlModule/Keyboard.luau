@@ -22,7 +22,7 @@ function Keyboard.new(CONTROL_ACTION_PRIORITY)
 
 	self.CONTROL_ACTION_PRIORITY = CONTROL_ACTION_PRIORITY
 
-	self.forwardValue  = 0
+	self.forwardValue = 0
 	self.backwardValue = 0
 	self.leftValue = 0
 	self.rightValue = 0
@@ -34,11 +34,10 @@ end
 
 function Keyboard:Enable(enable: boolean)
 	if enable == self.enabled then
-
 		return true
 	end
 
-	self.forwardValue  = 0
+	self.forwardValue = 0
 	self.backwardValue = 0
 	self.leftValue = 0
 	self.rightValue = 0
@@ -70,7 +69,6 @@ function Keyboard:UpdateJump()
 end
 
 function Keyboard:BindContextActions()
-
 	local handleMoveForward = function(_actionName, inputState, _inputObject)
 		self.forwardValue = (inputState == Enum.UserInputState.Begin) and -1 or 0
 		self:UpdateMovement(inputState)
@@ -101,16 +99,41 @@ function Keyboard:BindContextActions()
 		return Enum.ContextActionResult.Pass
 	end
 
-	ContextActionService:BindActionAtPriority("moveForwardAction", handleMoveForward, false,
-		self.CONTROL_ACTION_PRIORITY, Enum.PlayerActions.CharacterForward)
-	ContextActionService:BindActionAtPriority("moveBackwardAction", handleMoveBackward, false,
-		self.CONTROL_ACTION_PRIORITY, Enum.PlayerActions.CharacterBackward)
-	ContextActionService:BindActionAtPriority("moveLeftAction", handleMoveLeft, false,
-		self.CONTROL_ACTION_PRIORITY, Enum.PlayerActions.CharacterLeft)
-	ContextActionService:BindActionAtPriority("moveRightAction", handleMoveRight, false,
-		self.CONTROL_ACTION_PRIORITY, Enum.PlayerActions.CharacterRight)
-	ContextActionService:BindActionAtPriority("jumpAction", handleJumpAction, false,
-		self.CONTROL_ACTION_PRIORITY, Enum.PlayerActions.CharacterJump)
+	ContextActionService:BindActionAtPriority(
+		"moveForwardAction",
+		handleMoveForward,
+		false,
+		self.CONTROL_ACTION_PRIORITY,
+		Enum.PlayerActions.CharacterForward
+	)
+	ContextActionService:BindActionAtPriority(
+		"moveBackwardAction",
+		handleMoveBackward,
+		false,
+		self.CONTROL_ACTION_PRIORITY,
+		Enum.PlayerActions.CharacterBackward
+	)
+	ContextActionService:BindActionAtPriority(
+		"moveLeftAction",
+		handleMoveLeft,
+		false,
+		self.CONTROL_ACTION_PRIORITY,
+		Enum.PlayerActions.CharacterLeft
+	)
+	ContextActionService:BindActionAtPriority(
+		"moveRightAction",
+		handleMoveRight,
+		false,
+		self.CONTROL_ACTION_PRIORITY,
+		Enum.PlayerActions.CharacterRight
+	)
+	ContextActionService:BindActionAtPriority(
+		"jumpAction",
+		handleJumpAction,
+		false,
+		self.CONTROL_ACTION_PRIORITY,
+		Enum.PlayerActions.CharacterJump
+	)
 
 	self._connectionUtil:trackBoundFunction("moveForwardAction", function()
 		ContextActionService:UnbindAction("moveForwardAction")
@@ -132,7 +155,7 @@ end
 function Keyboard:ConnectFocusEventListeners()
 	local function onFocusReleased()
 		self.moveVector = ZERO_VECTOR3
-		self.forwardValue  = 0
+		self.forwardValue = 0
 		self.backwardValue = 0
 		self.leftValue = 0
 		self.rightValue = 0
@@ -145,7 +168,10 @@ function Keyboard:ConnectFocusEventListeners()
 		self:UpdateJump()
 	end
 
-	self._connectionUtil:trackConnection("textBoxFocusReleased", UserInputService.TextBoxFocusReleased:Connect(onFocusReleased))
+	self._connectionUtil:trackConnection(
+		"textBoxFocusReleased",
+		UserInputService.TextBoxFocusReleased:Connect(onFocusReleased)
+	)
 	self._connectionUtil:trackConnection("textBoxFocused", UserInputService.TextBoxFocused:Connect(onTextFocusGained))
 	self._connectionUtil:trackConnection("windowFocusReleased", UserInputService.WindowFocused:Connect(onFocusReleased))
 end

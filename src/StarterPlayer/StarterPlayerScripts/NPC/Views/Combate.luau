@@ -16,7 +16,8 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local CatalogoItens = require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
+local CatalogoItens =
+	require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
 local ConstrutorTools = require(ReplicatedStorage:WaitForChild("SistemaItens"):WaitForChild("ConstrutorTools"))
 
 local TiposNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos"))
@@ -32,8 +33,8 @@ local ViewBase = require(script.Parent:WaitForChild("ViewBase"))
 local PLAYER_LOCAL = Players.LocalPlayer
 local NPC_HitReport: RemoteEvent =
 	ReplicatedStorage:WaitForChild("Remotos"):WaitForChild("NPC_HitReport") :: RemoteEvent
-local EquipAnimacaoTerminou: RemoteEvent =
-	ReplicatedStorage:WaitForChild("Remotos"):WaitForChild("EquipAnimacaoTerminou") :: RemoteEvent
+local EquipAnimacaoTerminou: RemoteEvent = ReplicatedStorage:WaitForChild("Remotos")
+	:WaitForChild("EquipAnimacaoTerminou") :: RemoteEvent
 
 type Ctx = ViewBase.ContextoView
 
@@ -582,7 +583,8 @@ local function configurarHitboxParaSwing(ctx: Ctx, track: AnimationTrack, acaoTi
 	local delayTempo = t.AtrasoHit + 0.15
 
 	task.delay(delayTempo, function()
-		if not ctx.destruido
+		if
+			not ctx.destruido
 			and ctx.estado.swingHitToken == token
 			and ctx.estado.acaoTick == acaoTick
 			and ehAlvoLocal(ctx)

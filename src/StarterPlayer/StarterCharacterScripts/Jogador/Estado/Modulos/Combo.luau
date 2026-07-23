@@ -209,7 +209,8 @@ local function IniciarMonitorCarga(track: AnimationTrack)
 		if tempoCargaDecorrido >= janelaCarga then
 			comboState.carregando = false
 			track:AdjustSpeed(1.0)
-			comboState.multiplicadorDano = ctx.Modulo_Configuracoes.ObterConfiguracao("MultiplicadorDanoMaximoCarga") or 1.2
+			comboState.multiplicadorDano = ctx.Modulo_Configuracoes.ObterConfiguracao("MultiplicadorDanoMaximoCarga")
+				or 1.2
 			LimparConexaoCarga()
 			ctx.TentarAcao:FireServer("AjustarVelocidadeAnimacao", { velocidade = 1.0 })
 			ctx.DebugPrint("[Combo] Carga máxima atingida - auto release")
@@ -286,11 +287,7 @@ local function OnMarkerJanelaCombo(ehFinal: boolean)
 	comboState.continuarCombo = false
 
 	ctx.DebugPrint(
-		string.format(
-			"[Combo] Janela de combo ativada (golpe %d, final=%s)",
-			comboState.indiceAtual,
-			tostring(ehFinal)
-		)
+		string.format("[Combo] Janela de combo ativada (golpe %d, final=%s)", comboState.indiceAtual, tostring(ehFinal))
 	)
 
 	local combo = ctx.Modulo_Configuracoes.ObterConfiguracaoCombo(ctx.EstadoAtual.modoAnimacao)
@@ -623,11 +620,11 @@ function Combo.TentarFintar(): (boolean, string?)
 	end
 
 	if comboState.animacaoAtiva and comboState.animacaoAtiva.IsPlaying then
-		local isHitboxAtiva = ctx.GerenciadorHitboxCliente.MaoAtiva("Right") or ctx.GerenciadorHitboxCliente.MaoAtiva("Left")
-		
+		local isHitboxAtiva = ctx.GerenciadorHitboxCliente.MaoAtiva("Right")
+			or ctx.GerenciadorHitboxCliente.MaoAtiva("Left")
+
 		-- Simplificação: Permite cancelar a qualquer momento enquanto o golpe não saiu (hitbox inativa e marker não disparou)
-		local podeCancelar = (ultimoTempoHitboxAtivou == 0)
-			and not isHitboxAtiva
+		local podeCancelar = (ultimoTempoHitboxAtivou == 0) and not isHitboxAtiva
 		if podeCancelar then
 			local track = comboState.animacaoAtiva
 			local tempoInicioCurrentStrike = comboState.tempoInicioCarga or 0
@@ -659,14 +656,21 @@ function Combo.TentarFintar(): (boolean, string?)
 					end
 
 					local aindaDefendendo = ctx.ClientBridge.EstaSegurandoM2 and ctx.ClientBridge.EstaSegurandoM2()
-					local shiftLockAtivo = ctx.ClientBridge.LerStatusLocal and ctx.ClientBridge.LerStatusLocal("ShiftLockOn") or false
+					local shiftLockAtivo = ctx.ClientBridge.LerStatusLocal
+							and ctx.ClientBridge.LerStatusLocal("ShiftLockOn")
+						or false
 					if aindaDefendendo and shiftLockAtivo then
-						ctx.DebugPrint("[Combo] Finta concluída - Jogador segurando M2 e ShiftLock ativo, transição para Defesa")
+						ctx.DebugPrint(
+							"[Combo] Finta concluída - Jogador segurando M2 e ShiftLock ativo, transição para Defesa"
+						)
 						Combo.CancelarFintaPendente()
 						if ctx.ClientBridge.PredictAnimation then
 							ctx.ClientBridge.PredictAnimation("Defesa", true, 1.0)
 						end
-						ctx.TentarAcao:FireServer("Bloquear", { shiftLock = shiftLockAtivo, timestamp = workspace:GetServerTimeNow() })
+						ctx.TentarAcao:FireServer(
+							"Bloquear",
+							{ shiftLock = shiftLockAtivo, timestamp = workspace:GetServerTimeNow() }
+						)
 					else
 						ctx.DebugPrint("[Combo] Finta concluída - sem M2 ou sem ShiftLock, voltando ao Idle")
 						Combo.ResolverFintaPendente()

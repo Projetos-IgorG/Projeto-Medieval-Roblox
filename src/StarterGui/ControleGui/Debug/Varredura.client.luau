@@ -11,34 +11,110 @@ local ALVO = script:FindFirstAncestorOfClass("ScreenGui") or script.Parent -- o 
 -- são ignoradas automaticamente. Cobre praticamente tudo de GUI.
 local PROPS = {
 	-- GuiObject (base)
-	"Visible", "Active", "AnchorPoint", "Position", "Size", "Rotation", "ZIndex",
-	"LayoutOrder", "ClipsDescendants", "AutomaticSize", "SizeConstraint",
-	"BackgroundColor3", "BackgroundTransparency", "BorderColor3", "BorderSizePixel", "BorderMode",
+	"Visible",
+	"Active",
+	"AnchorPoint",
+	"Position",
+	"Size",
+	"Rotation",
+	"ZIndex",
+	"LayoutOrder",
+	"ClipsDescendants",
+	"AutomaticSize",
+	"SizeConstraint",
+	"BackgroundColor3",
+	"BackgroundTransparency",
+	"BorderColor3",
+	"BorderSizePixel",
+	"BorderMode",
 	-- Image*
-	"Image", "ImageColor3", "ImageTransparency", "ScaleType", "SliceCenter", "SliceScale",
-	"TileSize", "ResampleMode", "ImageRectOffset", "ImageRectSize",
+	"Image",
+	"ImageColor3",
+	"ImageTransparency",
+	"ScaleType",
+	"SliceCenter",
+	"SliceScale",
+	"TileSize",
+	"ResampleMode",
+	"ImageRectOffset",
+	"ImageRectSize",
 	-- Text*
-	"Text", "TextColor3", "TextTransparency", "TextSize", "TextScaled", "TextWrapped",
-	"RichText", "Font", "FontFace", "LineHeight", "TextXAlignment", "TextYAlignment",
-	"TextStrokeColor3", "TextStrokeTransparency", "TextTruncate", "PlaceholderText",
-	"PlaceholderColor3", "ClearTextOnFocus", "MultiLine",
+	"Text",
+	"TextColor3",
+	"TextTransparency",
+	"TextSize",
+	"TextScaled",
+	"TextWrapped",
+	"RichText",
+	"Font",
+	"FontFace",
+	"LineHeight",
+	"TextXAlignment",
+	"TextYAlignment",
+	"TextStrokeColor3",
+	"TextStrokeTransparency",
+	"TextTruncate",
+	"PlaceholderText",
+	"PlaceholderColor3",
+	"ClearTextOnFocus",
+	"MultiLine",
 	-- ScrollingFrame
-	"CanvasSize", "CanvasPosition", "ScrollBarThickness", "ScrollBarImageColor3",
-	"ScrollBarImageTransparency", "AutomaticCanvasSize", "ScrollingDirection",
-	"ElasticBehavior", "VerticalScrollBarInset", "HorizontalScrollBarInset",
+	"CanvasSize",
+	"CanvasPosition",
+	"ScrollBarThickness",
+	"ScrollBarImageColor3",
+	"ScrollBarImageTransparency",
+	"AutomaticCanvasSize",
+	"ScrollingDirection",
+	"ElasticBehavior",
+	"VerticalScrollBarInset",
+	"HorizontalScrollBarInset",
 	-- ViewportFrame
-	"Ambient", "LightColor", "LightDirection",
+	"Ambient",
+	"LightColor",
+	"LightDirection",
 	-- ScreenGui
-	"Enabled", "IgnoreGuiInset", "ResetOnSpawn", "DisplayOrder", "ZIndexBehavior",
-	"ScreenInsets", "ClipToDeviceSafeArea",
+	"Enabled",
+	"IgnoreGuiInset",
+	"ResetOnSpawn",
+	"DisplayOrder",
+	"ZIndexBehavior",
+	"ScreenInsets",
+	"ClipToDeviceSafeArea",
 	-- UICorner / UIStroke / UIGradient / UIPadding
-	"CornerRadius", "Color", "Thickness", "ApplyStrokeMode", "LineJoinMode",
-	"Transparency", "Offset", "PaddingTop", "PaddingBottom", "PaddingLeft", "PaddingRight",
+	"CornerRadius",
+	"Color",
+	"Thickness",
+	"ApplyStrokeMode",
+	"LineJoinMode",
+	"Transparency",
+	"Offset",
+	"PaddingTop",
+	"PaddingBottom",
+	"PaddingLeft",
+	"PaddingRight",
 	-- Layouts / Constraints
-	"FillDirection", "HorizontalAlignment", "VerticalAlignment", "SortOrder", "Padding",
-	"Wraps", "ItemLineAlignment", "HorizontalFlex", "VerticalFlex", "CellSize", "CellPadding",
-	"FillDirectionMaxCells", "StartCorner", "AspectRatio", "AspectType", "DominantAxis",
-	"Scale", "MinSize", "MaxSize", "MinTextSize", "MaxTextSize",
+	"FillDirection",
+	"HorizontalAlignment",
+	"VerticalAlignment",
+	"SortOrder",
+	"Padding",
+	"Wraps",
+	"ItemLineAlignment",
+	"HorizontalFlex",
+	"VerticalFlex",
+	"CellSize",
+	"CellPadding",
+	"FillDirectionMaxCells",
+	"StartCorner",
+	"AspectRatio",
+	"AspectType",
+	"DominantAxis",
+	"Scale",
+	"MinSize",
+	"MaxSize",
+	"MinTextSize",
+	"MaxTextSize",
 }
 
 local function round(n)
@@ -74,8 +150,16 @@ local function serializar(v)
 	elseif t == "ColorSequence" then
 		local p = {}
 		for _, k in ipairs(v.Keypoints) do
-			table.insert(p, string.format("%s:RGB(%d,%d,%d)", round(k.Time),
-				math.round(k.Value.R * 255), math.round(k.Value.G * 255), math.round(k.Value.B * 255)))
+			table.insert(
+				p,
+				string.format(
+					"%s:RGB(%d,%d,%d)",
+					round(k.Time),
+					math.round(k.Value.R * 255),
+					math.round(k.Value.G * 255),
+					math.round(k.Value.B * 255)
+				)
+			)
 		end
 		return "ColorSeq[" .. table.concat(p, ", ") .. "]"
 	elseif t == "NumberSequence" then
@@ -105,7 +189,9 @@ local function escanear(inst, profundidade)
 	for _, prop in ipairs(PROPS) do
 		if not vistos[prop] then
 			vistos[prop] = true
-			local ok, val = pcall(function() return inst[prop] end)
+			local ok, val = pcall(function()
+				return inst[prop]
+			end)
 			if ok and val ~= nil then
 				add(ind .. "   . " .. prop .. " = " .. serializar(val))
 			end

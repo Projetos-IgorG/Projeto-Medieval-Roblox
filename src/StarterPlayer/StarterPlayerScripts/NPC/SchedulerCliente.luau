@@ -14,12 +14,8 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local TiposNPC = require(
-	ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos")
-)
-local ConfigNPC = require(
-	ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("ConfigNPC")
-)
+local TiposNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos"))
+local ConfigNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("ConfigNPC"))
 local ControladorNPC = require(script.Parent:WaitForChild("ControladorNPC"))
 
 local PLAYER_LOCAL = Players.LocalPlayer
@@ -103,13 +99,13 @@ local function obterItem(): Item
 		itemPoolN -= 1
 		return it
 	end
-	return { ctrl = (nil :: any), distancia = 0 }
+	return { ctrl = nil :: any, distancia = 0 }
 end
 
 local function devolverListaParaPool(lista: { Item })
 	for i = #lista, 1, -1 do
 		local it = lista[i]
-		it.ctrl = (nil :: any)
+		it.ctrl = nil :: any
 		it.distancia = 0
 		itemPoolN += 1
 		itemPool[itemPoolN] = it
@@ -191,9 +187,12 @@ function Scheduler.Iniciar()
 				adicionar(inst)
 			end
 		end
-		table.insert(conexoesGerais, pasta.ChildAdded:Connect(function(inst)
-			task.defer(adicionar, inst)
-		end))
+		table.insert(
+			conexoesGerais,
+			pasta.ChildAdded:Connect(function(inst)
+				task.defer(adicionar, inst)
+			end)
+		)
 		table.insert(conexoesGerais, pasta.ChildRemoved:Connect(remover))
 	end
 

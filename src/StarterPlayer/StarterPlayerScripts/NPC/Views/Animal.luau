@@ -11,12 +11,9 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local TiposNPC = require(
-	ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos")
-)
-local IdsAnim = require(
-	ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Animacoes"):WaitForChild("IdsAnimacoesGerais")
-)
+local TiposNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos"))
+local IdsAnim =
+	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Animacoes"):WaitForChild("IdsAnimacoesGerais"))
 local ViewBase = require(script.Parent:WaitForChild("ViewBase"))
 
 type Ctx = ViewBase.ContextoView
@@ -52,9 +49,7 @@ local Animal: ViewBase.View = {
 	end,
 
 	atualizar = function(ctx: Ctx, _dt: number, _distancia: number)
-		local vel = ctx.humanoide.MoveDirection.Magnitude > 0.05
-			and ctx.humanoide.WalkSpeed
-			or 0
+		local vel = ctx.humanoide.MoveDirection.Magnitude > 0.05 and ctx.humanoide.WalkSpeed or 0
 		if vel > 0.5 then
 			tocar(ctx, "Andando", WALK_ID)
 		else

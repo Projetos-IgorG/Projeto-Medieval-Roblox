@@ -199,7 +199,14 @@ end
 -- ─── Handler do remote ─────────────────────────────────────────────────────
 
 TocarAnimacao.OnClientEvent:Connect(
-	function(entidade: Model, animId: string, nomeAnim: string, loop: boolean, velocidade: number, serverTimestamp: number?)
+	function(
+		entidade: Model,
+		animId: string,
+		nomeAnim: string,
+		loop: boolean,
+		velocidade: number,
+		serverTimestamp: number?
+	)
 		-- Ignorar o proprio personagem (gerenciado por ControladorEstadoPersonagem)
 		if entidade == localPlayer.Character then
 			return

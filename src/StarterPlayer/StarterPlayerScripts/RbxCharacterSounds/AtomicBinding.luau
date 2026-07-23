@@ -131,7 +131,6 @@ function AtomicBinding:bindRoot(root)
 	rootNode.alias = ROOT_ALIAS
 	rootNode.instance = root
 	if next(parsedManifest) then
-
 		rootNode.children = {}
 		rootNode.connections = {}
 	end
@@ -151,7 +150,6 @@ function AtomicBinding:bindRoot(root)
 				end
 
 				childNode.alias = alias
-
 			else
 				childNode.children = childNode.children or {}
 				childNode.connections = childNode.connections or {}
@@ -188,7 +186,6 @@ function AtomicBinding:bindRoot(root)
 			end
 
 			local function processDeleteChild(childInstance)
-
 				local childName = childInstance.Name
 				local childNode = children[childName]
 

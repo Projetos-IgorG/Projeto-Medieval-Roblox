@@ -218,7 +218,11 @@ function Debug.DrawDebug(data)
 			end
 
 			if candidate.EdgePosition then
-				Debug.DrawPoint(candidate.EdgePosition, edgeColor, candidate.Retargeted and Vector3.new(0.18, 0.18, 0.18) or Vector3.new(0.24, 0.24, 0.24))
+				Debug.DrawPoint(
+					candidate.EdgePosition,
+					edgeColor,
+					candidate.Retargeted and Vector3.new(0.18, 0.18, 0.18) or Vector3.new(0.24, 0.24, 0.24)
+				)
 			end
 
 			if candidate.TopClearanceCFrame and candidate.TopClearanceSize then
@@ -238,11 +242,19 @@ function Debug.DrawDebug(data)
 			end
 
 			if candidate.TopBlocker and candidate.TopBlocker:IsA("BasePart") then
-				Debug.DrawPoint(candidate.TopBlocker.Position, Color3.fromRGB(255, 40, 40), Vector3.new(0.18, 0.18, 0.18))
+				Debug.DrawPoint(
+					candidate.TopBlocker.Position,
+					Color3.fromRGB(255, 40, 40),
+					Vector3.new(0.18, 0.18, 0.18)
+				)
 			end
 
 			if candidate.FrontBlocker and candidate.FrontBlocker:IsA("BasePart") then
-				Debug.DrawPoint(candidate.FrontBlocker.Position, Color3.fromRGB(255, 140, 40), Vector3.new(0.18, 0.18, 0.18))
+				Debug.DrawPoint(
+					candidate.FrontBlocker.Position,
+					Color3.fromRGB(255, 140, 40),
+					Vector3.new(0.18, 0.18, 0.18)
+				)
 			end
 		end
 	end
@@ -312,10 +324,8 @@ function Debug.DrawClimbDebug(escalarResult, subirResult)
 	end
 
 	if escalarResult then
-
 		if escalarResult.ClearanceCFrame and escalarResult.ClearanceSize then
-			local cor = escalarResult.CanEscalar and Color3.fromRGB(255, 0, 0)
-				or Color3.fromRGB(120, 0, 0)
+			local cor = escalarResult.CanEscalar and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(120, 0, 0)
 			Debug.DrawBox(escalarResult.ClearanceCFrame, escalarResult.ClearanceSize, cor)
 		end
 
@@ -331,7 +341,11 @@ function Debug.DrawClimbDebug(escalarResult, subirResult)
 					Debug.DrawPoint(probe.Origin, Color3.fromRGB(255, 255, 0), Vector3.new(0.35, 0.35, 0.35))
 				end
 			else
-				Debug.DrawRay(f.Origin, f.HitPosition, f.Hit and Color3.fromRGB(255, 255, 0) or Color3.fromRGB(255, 0, 0))
+				Debug.DrawRay(
+					f.Origin,
+					f.HitPosition,
+					f.Hit and Color3.fromRGB(255, 255, 0) or Color3.fromRGB(255, 0, 0)
+				)
 				Debug.DrawPoint(f.Origin, Color3.fromRGB(255, 255, 0), Vector3.new(0.35, 0.35, 0.35))
 			end
 		end
@@ -385,7 +399,11 @@ function Debug.DrawClimbDebug(escalarResult, subirResult)
 			Debug.DrawPoint(subirResult.EdgePosition, Color3.fromRGB(255, 100, 0), Vector3.new(0.35, 0.35, 0.35))
 		end
 
-		if subirResult.LegProbeRaysDebug and subirResult.LegProbeRaysDebug.CFrame and subirResult.LegProbeRaysDebug.Size then
+		if
+			subirResult.LegProbeRaysDebug
+			and subirResult.LegProbeRaysDebug.CFrame
+			and subirResult.LegProbeRaysDebug.Size
+		then
 			Debug.DrawBox(
 				subirResult.LegProbeRaysDebug.CFrame,
 				subirResult.LegProbeRaysDebug.Size,
@@ -439,7 +457,11 @@ function Debug.DrawLateralDebug(lateralResult)
 		end
 	end
 
-	if lateralResult.LegProbeRaysDebug and lateralResult.LegProbeRaysDebug.CFrame and lateralResult.LegProbeRaysDebug.Size then
+	if
+		lateralResult.LegProbeRaysDebug
+		and lateralResult.LegProbeRaysDebug.CFrame
+		and lateralResult.LegProbeRaysDebug.Size
+	then
 		Debug.DrawBox(
 			lateralResult.LegProbeRaysDebug.CFrame,
 			lateralResult.LegProbeRaysDebug.Size,
@@ -516,7 +538,11 @@ function Debug.DrawDescerDebug(descerResult)
 		Debug.DrawPoint(descerResult.EdgePosition, Color3.fromRGB(255, 120, 0), Vector3.new(0.35, 0.35, 0.35))
 	end
 
-	if descerResult.LegProbeRaysDebug and descerResult.LegProbeRaysDebug.CFrame and descerResult.LegProbeRaysDebug.Size then
+	if
+		descerResult.LegProbeRaysDebug
+		and descerResult.LegProbeRaysDebug.CFrame
+		and descerResult.LegProbeRaysDebug.Size
+	then
 		Debug.DrawBox(
 			descerResult.LegProbeRaysDebug.CFrame,
 			descerResult.LegProbeRaysDebug.Size,

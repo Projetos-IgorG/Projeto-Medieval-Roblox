@@ -10,7 +10,7 @@ local PlayerModule = {}
 PlayerModule.__index = PlayerModule
 
 function PlayerModule.new()
-	local self = setmetatable({},PlayerModule)
+	local self = setmetatable({}, PlayerModule)
 	self.cameras = require(script:WaitForChild("CameraModule"))
 	self.controls = require(script:WaitForChild("ControlModule"))
 	return self

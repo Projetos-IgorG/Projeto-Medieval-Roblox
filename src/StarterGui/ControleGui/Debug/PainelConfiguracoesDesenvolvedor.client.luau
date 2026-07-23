@@ -17,7 +17,8 @@ local playerGui = player:WaitForChild("PlayerGui")
 local Modulos = ReplicatedStorage
 
 local ParkourConfigs = require(
-	player:WaitForChild("PlayerScripts")
+	player
+		:WaitForChild("PlayerScripts")
 		:WaitForChild("Jogador")
 		:WaitForChild("Parkour")
 		:WaitForChild("Configuracoes")

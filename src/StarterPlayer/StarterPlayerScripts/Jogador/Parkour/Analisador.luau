@@ -49,7 +49,8 @@ local function computeFaceVerticalEdges(part, result)
 	local verticalAxis
 	local otherAxis
 
-	if math.abs(Utilidades.getAxisValue(worldUpLocal, tangentA))
+	if
+		math.abs(Utilidades.getAxisValue(worldUpLocal, tangentA))
 		>= math.abs(Utilidades.getAxisValue(worldUpLocal, tangentB))
 	then
 		verticalAxis = tangentA
@@ -122,7 +123,6 @@ local function probeMeshVerticalEdge(part, hitPosition, hitNormal, searchUp)
 	end
 
 	if not transitionFound then
-
 		return lastHitPos
 	end
 
@@ -163,7 +163,6 @@ local function computeMeshFaceVerticalEdges(part, result)
 	local bottomWorld = probeMeshVerticalEdge(part, hitPos, hitNormal, false)
 
 	if not topWorld or not bottomWorld then
-
 		local topLocal, bottomLocal = computeFaceVerticalEdges(part, result)
 		return part.CFrame:PointToWorldSpace(topLocal), part.CFrame:PointToWorldSpace(bottomLocal)
 	end
@@ -237,7 +236,6 @@ local _legIgnoreBuffer = table.create(8)
 local _legIgnoreLen = 0
 
 local function castLegSupportRay(origin, direction, baseIgnoreList, minPartHeight, maxPasses)
-
 	local baseLen = #baseIgnoreList
 	for i = 1, baseLen do
 		_legIgnoreBuffer[i] = baseIgnoreList[i]
@@ -336,12 +334,7 @@ local function checkEscalarAtEdge(character, currentEdgePos, currentNormal, curr
 
 	_clearanceMinH = finalConfig.MinPartHeight
 	setClearanceIgnore(character, currentPart)
-	local clear, blocker = Utilidades.firstBlockingPartInBox(
-		cf,
-		clearanceSize,
-		_clearanceIgnore,
-		_clearanceFilter
-	)
+	local clear, blocker = Utilidades.firstBlockingPartInBox(cf, clearanceSize, _clearanceIgnore, _clearanceFilter)
 
 	Debug.Verbose("  ClearanceResult: clear=", clear, "| blocker=", blocker and blocker.Name or "nil")
 
@@ -397,12 +390,8 @@ function Analisador.HasTopClearance(data, config)
 	local cf = CFrame.lookAt(center, center - flatNormal, Vector3.yAxis)
 	_clearanceMinH = finalConfig.MinPartHeight
 	setClearanceIgnore(data.Character, data.Part)
-	local clear, blocker = Utilidades.firstBlockingPartInBox(
-		cf,
-		finalConfig.TopClearanceSize,
-		_clearanceIgnore,
-		_clearanceFilter
-	)
+	local clear, blocker =
+		Utilidades.firstBlockingPartInBox(cf, finalConfig.TopClearanceSize, _clearanceIgnore, _clearanceFilter)
 
 	return clear, blocker, cf, finalConfig.TopClearanceSize
 end
@@ -424,12 +413,8 @@ function Analisador.HasFrontClearance(data, config)
 	local cf = CFrame.lookAt(center, center - flatNormal, Vector3.yAxis)
 	_clearanceMinH = finalConfig.MinPartHeight
 	setClearanceIgnore(data.Character, data.Part)
-	local clear, blocker = Utilidades.firstBlockingPartInBox(
-		cf,
-		finalConfig.FrontClearanceSize,
-		_clearanceIgnore,
-		_clearanceFilter
-	)
+	local clear, blocker =
+		Utilidades.firstBlockingPartInBox(cf, finalConfig.FrontClearanceSize, _clearanceIgnore, _clearanceFilter)
 
 	return clear, blocker, cf, finalConfig.FrontClearanceSize
 end
@@ -449,9 +434,7 @@ function Analisador.ResolveIdleMode(data, config)
 	local maxPasses = finalConfig.LegSupportRayMaxPasses or 6
 
 	local forward, right = getLegSupportRayFrame(data.Normal.Unit)
-	local baseOrigin = data.EdgePosition
-		- Vector3.yAxis * downOffset
-		+ forward * forwardOffset
+	local baseOrigin = data.EdgePosition - Vector3.yAxis * downOffset + forward * forwardOffset
 
 	local rayDirection = forward * rayDistance
 	local minH = finalConfig.MinPartHeight
@@ -462,17 +445,9 @@ function Analisador.ResolveIdleMode(data, config)
 
 	for _, heightOffset in ipairs(rayHeights) do
 		for _, lateralOffset in ipairs(rayLateralOffsets) do
-			local rayOrigin = baseOrigin
-				+ Vector3.yAxis * heightOffset
-				+ right * lateralOffset
+			local rayOrigin = baseOrigin + Vector3.yAxis * heightOffset + right * lateralOffset
 
-			local hitPart, hitPosition = castLegSupportRay(
-				rayOrigin,
-				rayDirection,
-				{ data.Character },
-				minH,
-				maxPasses
-			)
+			local hitPart, hitPosition = castLegSupportRay(rayOrigin, rayDirection, { data.Character }, minH, maxPasses)
 
 			local rayHit = hitPart ~= nil
 			if rayHit then
@@ -498,15 +473,17 @@ function Analisador.ResolveIdleMode(data, config)
 
 	local clear = blocker == nil
 
-	local supportDebug = _dbg and {
-		BaseOrigin = baseOrigin,
-		Distance = rayDistance,
-		Direction = rayDirection,
-		HitCount = hitCount,
-		Rays = raysDebug,
-		Clear = clear,
-		Blocker = blocker,
-	} or nil
+	local supportDebug = _dbg
+			and {
+				BaseOrigin = baseOrigin,
+				Distance = rayDistance,
+				Direction = rayDirection,
+				HitCount = hitCount,
+				Rays = raysDebug,
+				Clear = clear,
+				Blocker = blocker,
+			}
+		or nil
 
 	if not clear then
 		return "IdleSuporte", blocker, supportDebug
@@ -528,15 +505,10 @@ function Analisador.HasVaultClearance(data, config)
 	local cf = CFrame.lookAt(clearanceCenter, clearanceCenter + look, Vector3.yAxis)
 	_clearanceMinH = finalConfig.MinPartHeight
 	setClearanceIgnore(data.Character, data.Part)
-	local clear, blocker = Utilidades.firstBlockingPartInBox(
-		cf,
-		finalConfig.VaultClearanceSize,
-		_clearanceIgnore,
-		_clearanceFilter
-	)
+	local clear, blocker =
+		Utilidades.firstBlockingPartInBox(cf, finalConfig.VaultClearanceSize, _clearanceIgnore, _clearanceFilter)
 
-	local posFinal = bordaReal
-		+ Vector3.yAxis * finalConfig.VaultMoveUpOffset
+	local posFinal = bordaReal + Vector3.yAxis * finalConfig.VaultMoveUpOffset
 
 	return clear, blocker, cf, finalConfig.VaultClearanceSize, posFinal
 end
@@ -546,17 +518,14 @@ function Analisador.HasVaultEdgeClearance(data, config)
 	local bordaReal = data.EdgePosition
 	local look = data.LookVector
 
-	local center = bordaReal + Vector3.yAxis * (finalConfig.VaultEdgeClearanceUpOffset or (finalConfig.VaultClearanceSize.Y / 2))
+	local center = bordaReal
+		+ Vector3.yAxis * (finalConfig.VaultEdgeClearanceUpOffset or (finalConfig.VaultClearanceSize.Y / 2))
 
 	local cf = CFrame.lookAt(center, center + look, Vector3.yAxis)
 	_clearanceMinH = finalConfig.MinPartHeight
 	setClearanceIgnore(data.Character, data.Part)
-	local clear, blocker = Utilidades.firstBlockingPartInBox(
-		cf,
-		finalConfig.VaultClearanceSize,
-		_clearanceIgnore,
-		_clearanceFilter
-	)
+	local clear, blocker =
+		Utilidades.firstBlockingPartInBox(cf, finalConfig.VaultClearanceSize, _clearanceIgnore, _clearanceFilter)
 
 	return clear, blocker, cf, finalConfig.VaultClearanceSize
 end
@@ -638,7 +607,6 @@ local _probeDirBuffer = table.create(3)
 local _probeDirLen = 0
 
 local function buildCastDataFromPartPoint(character, part, samplePoint, preferredNormal)
-
 	if isMeshLikePart(part) then
 		local includeParams = sharedIncludeRayParams
 		includeParams.FilterDescendantsInstances = { part }
@@ -675,7 +643,6 @@ local function buildCastDataFromPartPoint(character, part, samplePoint, preferre
 				}
 			end
 		end
-
 	end
 
 	local half = part.Size / 2
@@ -736,7 +703,6 @@ local function buildCastDataFromPartPoint(character, part, samplePoint, preferre
 end
 
 local function getClosestSurfacePointOnPart(part, worldPoint, preferredDirWorld)
-
 	if isMeshLikePart(part) then
 		local includeParams = sharedIncludeRayParams
 		includeParams.FilterDescendantsInstances = { part }
@@ -759,7 +725,6 @@ local function getClosestSurfacePointOnPart(part, worldPoint, preferredDirWorld)
 				return result.Position
 			end
 		end
-
 	end
 
 	local half = part.Size / 2
@@ -868,7 +833,9 @@ local function collectValidPartsInBox(cframe, size, ignoreList, minPartHeight)
 	local filtered = table.create(#rawParts)
 
 	for _, part in ipairs(rawParts) do
-		if part:IsA("BasePart") and not _collectSeen[part]
+		if
+			part:IsA("BasePart")
+			and not _collectSeen[part]
 			and not Utilidades.isParkourIgnoredPart(part, minPartHeight)
 			and not Utilidades.hasTagDeep(part, Configs.Tags.NAO_AGARRAVEL)
 		then
@@ -931,7 +898,6 @@ local function findForwardEdgeByRayGrid(character, hrp, look, config)
 	for row = 0, rows - 1 do
 		local yOffset = -halfHeight + row * rowStep
 		for col = 0, cols - 1 do
-
 			if borderOnly and row > 0 and row < rows - 1 and col > 0 and col < cols - 1 then
 				continue
 			end
@@ -955,7 +921,9 @@ local function findForwardEdgeByRayGrid(character, hrp, look, config)
 				end
 
 				local hitPart = result.Instance
-				if hitPart and hitPart:IsA("BasePart")
+				if
+					hitPart
+					and hitPart:IsA("BasePart")
 					and not Utilidades.isParkourIgnoredPart(hitPart, minPartHeight)
 					and not Utilidades.hasTagDeep(hitPart, Configs.Tags.NAO_AGARRAVEL)
 				then
@@ -1160,7 +1128,6 @@ local function findForwardEdgeByRayGrid(character, hrp, look, config)
 	end
 
 	table.sort(rankedCandidates, function(a, b)
-
 		if a.FromBox ~= b.FromBox then
 			return a.FromBox
 		end
@@ -1195,29 +1162,33 @@ local function classificarAcaoDePulo(bordaY, hrpY, torsoProbe, legProbe, gridHit
 		local highestRow = math.clamp(gridHitStats.HighestRow or 1, 1, totalRows)
 		local highestRatio = totalRows > 1 and ((highestRow - 1) / (totalRows - 1)) or 0
 		local grabStartRatio = math.clamp(config.ForwardRayGridGrabStartRatio or 0.72, 0.05, 0.98)
-		local vaultMedioStartRatio = math.clamp(config.ForwardRayGridVaultMedioStartRatio or 0.34, 0.0, grabStartRatio - 0.05)
+		local vaultMedioStartRatio =
+			math.clamp(config.ForwardRayGridVaultMedioStartRatio or 0.34, 0.0, grabStartRatio - 0.05)
 
 		if highestRatio >= grabStartRatio then
-			return "Agarrar", {
-				Mode = "RayGrid",
-				HighestRow = highestRow,
-				TotalRows = totalRows,
-				HighestRatio = highestRatio,
-			}
+			return "Agarrar",
+				{
+					Mode = "RayGrid",
+					HighestRow = highestRow,
+					TotalRows = totalRows,
+					HighestRatio = highestRatio,
+				}
 		elseif highestRatio >= vaultMedioStartRatio then
-			return "VaultMedio", {
-				Mode = "RayGrid",
-				HighestRow = highestRow,
-				TotalRows = totalRows,
-				HighestRatio = highestRatio,
-			}
+			return "VaultMedio",
+				{
+					Mode = "RayGrid",
+					HighestRow = highestRow,
+					TotalRows = totalRows,
+					HighestRatio = highestRatio,
+				}
 		else
-			return "VaultBaixo", {
-				Mode = "RayGrid",
-				HighestRow = highestRow,
-				TotalRows = totalRows,
-				HighestRatio = highestRatio,
-			}
+			return "VaultBaixo",
+				{
+					Mode = "RayGrid",
+					HighestRow = highestRow,
+					TotalRows = totalRows,
+					HighestRatio = highestRatio,
+				}
 		end
 	end
 
@@ -1259,10 +1230,7 @@ function Analisador.CheckParkour(character, config)
 
 	local edgeData, blockDebug, rankedForwardCandidates = findForwardEdgeByRayGrid(character, hrp, lookXZ, finalConfig)
 	if not edgeData then
-		Debug.Verbose(
-			"  RESULTADO: NoForwardHit | candidates:",
-			blockDebug and #blockDebug.CandidatePoints or 0
-		)
+		Debug.Verbose("  RESULTADO: NoForwardHit | candidates:", blockDebug and #blockDebug.CandidatePoints or 0)
 		return {
 			Aprovado = false,
 			Reason = "NoForwardHit",
@@ -1451,52 +1419,53 @@ function Analisador.CheckParkour(character, config)
 		local function avaliarSemRetarget(candidate)
 			local candidateDist = (candidate.EdgePosition - hrp.Position).Magnitude
 
-		if candidateDist > finalConfig.MaxGrabDistance then
-			candidate.Aprovado = false
-			candidate.Reason = "TooFarToGrab"
+			if candidateDist > finalConfig.MaxGrabDistance then
+				candidate.Aprovado = false
+				candidate.Reason = "TooFarToGrab"
+				candidate.GrabDistance = candidateDist
+				registerAttempt(candidate)
+				return false, candidate
+			end
+
+			local hasTopClearance, topBlocker, topCf, topSize = Analisador.HasTopClearance(candidate, finalConfig)
+			candidate.TopClearanceCFrame = topCf
+			candidate.TopClearanceSize = topSize
+			candidate.HasTopClearance = hasTopClearance
+
+			if not hasTopClearance then
+				candidate.Aprovado = false
+				candidate.Reason = "NoTopClearance"
+				candidate.TopBlocker = topBlocker
+				candidate.GrabDistance = candidateDist
+				registerAttempt(candidate)
+				return false, candidate
+			end
+
+			local hasFrontClearance, frontBlocker, frontCf, frontSize =
+				Analisador.HasFrontClearance(candidate, finalConfig)
+			candidate.FrontClearanceCFrame = frontCf
+			candidate.FrontClearanceSize = frontSize
+			candidate.HasFrontClearance = hasFrontClearance
+
+			if not hasFrontClearance then
+				candidate.Aprovado = false
+				candidate.Reason = "NoFrontClearance"
+				candidate.FrontBlocker = frontBlocker
+				candidate.GrabDistance = candidateDist
+				registerAttempt(candidate)
+				return false, candidate
+			end
+
+			local idleMode, legHit, legProbeRaysDebug = Analisador.ResolveIdleMode(candidate, finalConfig)
+			candidate.Aprovado = true
+			candidate.Reason = "Ok"
+			candidate.IdleMode = idleMode
+			candidate.LegHit = legHit
+			candidate.LegProbeRaysDebug = legProbeRaysDebug
 			candidate.GrabDistance = candidateDist
 			registerAttempt(candidate)
-			return false, candidate
-		end
 
-		local hasTopClearance, topBlocker, topCf, topSize = Analisador.HasTopClearance(candidate, finalConfig)
-		candidate.TopClearanceCFrame = topCf
-		candidate.TopClearanceSize = topSize
-		candidate.HasTopClearance = hasTopClearance
-
-		if not hasTopClearance then
-			candidate.Aprovado = false
-			candidate.Reason = "NoTopClearance"
-			candidate.TopBlocker = topBlocker
-			candidate.GrabDistance = candidateDist
-			registerAttempt(candidate)
-			return false, candidate
-		end
-
-		local hasFrontClearance, frontBlocker, frontCf, frontSize = Analisador.HasFrontClearance(candidate, finalConfig)
-		candidate.FrontClearanceCFrame = frontCf
-		candidate.FrontClearanceSize = frontSize
-		candidate.HasFrontClearance = hasFrontClearance
-
-		if not hasFrontClearance then
-			candidate.Aprovado = false
-			candidate.Reason = "NoFrontClearance"
-			candidate.FrontBlocker = frontBlocker
-			candidate.GrabDistance = candidateDist
-			registerAttempt(candidate)
-			return false, candidate
-		end
-
-		local idleMode, legHit, legProbeRaysDebug = Analisador.ResolveIdleMode(candidate, finalConfig)
-		candidate.Aprovado = true
-		candidate.Reason = "Ok"
-		candidate.IdleMode = idleMode
-		candidate.LegHit = legHit
-		candidate.LegProbeRaysDebug = legProbeRaysDebug
-		candidate.GrabDistance = candidateDist
-		registerAttempt(candidate)
-
-		return true, candidate
+			return true, candidate
 		end
 
 		local okPrimary, evaluatedPrimary = avaliarSemRetarget(candidateData)
@@ -1532,7 +1501,10 @@ function Analisador.CheckParkour(character, config)
 
 		local function alreadyAdded(candidateData)
 			for _, existing in ipairs(grabCandidates) do
-				if existing.Part == candidateData.Part and (existing.EdgePosition - candidateData.EdgePosition).Magnitude <= 0.05 then
+				if
+					existing.Part == candidateData.Part
+					and (existing.EdgePosition - candidateData.EdgePosition).Magnitude <= 0.05
+				then
 					return true
 				end
 			end
@@ -1638,7 +1610,6 @@ function Analisador.CheckParkour(character, config)
 
 	if acao == "Agarrar" then
 		return tentarAgarrar()
-
 	else
 		if distReal > finalConfig.MaxVaultDistance then
 			data.Aprovado = false
@@ -1654,7 +1625,6 @@ function Analisador.CheckParkour(character, config)
 		data.PosFinal = posFinal
 
 		if not hasVaultClearance then
-
 			if humanoid.FloorMaterial == Enum.Material.Air then
 				data.Acao = "Agarrar"
 				Debug.Verbose("  Fallback:", acao, "-> Agarrar (NoVaultClearance)")
@@ -1668,13 +1638,11 @@ function Analisador.CheckParkour(character, config)
 			return data
 		end
 
-		local hasEdgeClearance, edgeBlocker, edgeCf, edgeSize =
-			Analisador.HasVaultEdgeClearance(data, finalConfig)
+		local hasEdgeClearance, edgeBlocker, edgeCf, edgeSize = Analisador.HasVaultEdgeClearance(data, finalConfig)
 		data.VaultClearanceCFrame = edgeCf
 		data.VaultClearanceSize = edgeSize
 
 		if not hasEdgeClearance then
-
 			if humanoid.FloorMaterial == Enum.Material.Air then
 				data.Acao = "Agarrar"
 				Debug.Verbose("  Fallback:", acao, "-> Agarrar (NoVaultEdgeClearance)")
@@ -1720,23 +1688,23 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 	else
 		flatNormal = flatNormal.Unit
 	end
-	local areaCenter = currentEdgePos
-		+ flatNormal * (probeOffset - areaSize.Z * 0.5)
-		+ Vector3.yAxis * areaUpOffset
+	local areaCenter = currentEdgePos + flatNormal * (probeOffset - areaSize.Z * 0.5) + Vector3.yAxis * areaUpOffset
 	local areaCFrame = Utilidades.getSurfaceFrame(areaCenter, flatNormal)
 
-	local subirDebug = Configs.DebugEnabled and {
-		QueryBoxCFrame = areaCFrame,
-		QueryBoxSize = areaSize,
-		CandidatePoints = {},
-		EscalarChecks = {},
-	} or nil
+	local subirDebug = Configs.DebugEnabled
+			and {
+				QueryBoxCFrame = areaCFrame,
+				QueryBoxSize = areaSize,
+				CandidatePoints = {},
+				EscalarChecks = {},
+			}
+		or nil
 
 	Debug.Verbose("═══ CheckSubir (Area) ═══")
 	Debug.Verbose("  EdgePos:", currentEdgePos, "| Normal:", currentNormal)
 	Debug.Verbose("  QueryCenter:", areaCenter, "| AreaSize:", areaSize)
 
-	local parts = collectValidPartsInBox(areaCFrame, areaSize, {character}, finalConfig.MinPartHeight)
+	local parts = collectValidPartsInBox(areaCFrame, areaSize, { character }, finalConfig.MinPartHeight)
 	local candidates = table.create(#parts)
 	local minVerticalDelta = finalConfig.SubirMinVerticalDelta or 0.5
 	local samplePointBase = currentEdgePos + currentNormal.Unit * probeOffset
@@ -1865,7 +1833,12 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 		elseif cand.VertDist <= finalConfig.SubirSaltoMaxAltura then
 			tipo = "SubirSalto"
 		else
-			Debug.Verbose("  Candidato rejeitado (TooFarAbove):", cand.Part.Name, "| VertDist:", string.format("%.1f", cand.VertDist))
+			Debug.Verbose(
+				"  Candidato rejeitado (TooFarAbove):",
+				cand.Part.Name,
+				"| VertDist:",
+				string.format("%.1f", cand.VertDist)
+			)
 			continue
 		end
 
@@ -1887,14 +1860,8 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 		end
 
 		if not bestEscalarFallback and cand.VertDist <= maxEscalarVerticalDistance then
-			local escalarCandidate = checkEscalarAtEdge(
-				character,
-				cand.EdgePosition,
-				cand.Normal,
-				cand.Part,
-				finalConfig,
-				"SubirCandidate"
-			)
+			local escalarCandidate =
+				checkEscalarAtEdge(character, cand.EdgePosition, cand.Normal, cand.Part, finalConfig, "SubirCandidate")
 
 			if escalarCandidate and escalarCandidate.ClearanceCFrame and escalarCandidate.ClearanceSize then
 				if subirDebug then
@@ -1924,13 +1891,8 @@ function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)
 			string.format("%.1f", cand.VertDist)
 		)
 
-		local hasTopClearance, hasFrontClearance = hasBothClearances(
-			character,
-			cand.Part,
-			cand.EdgePosition,
-			cand.Normal,
-			finalConfig
-		)
+		local hasTopClearance, hasFrontClearance =
+			hasBothClearances(character, cand.Part, cand.EdgePosition, cand.Normal, finalConfig)
 
 		if hasTopClearance and hasFrontClearance then
 			bestCandidate = cand
@@ -2033,22 +1995,22 @@ function Analisador.CheckDescer(character, currentEdgePos, currentNormal, config
 	else
 		flatNormal = flatNormal.Unit
 	end
-	local areaCenter = currentEdgePos
-		+ flatNormal * (probeOffset - areaSize.Z * 0.5)
-		+ Vector3.yAxis * areaDownOffset
+	local areaCenter = currentEdgePos + flatNormal * (probeOffset - areaSize.Z * 0.5) + Vector3.yAxis * areaDownOffset
 	local areaCFrame = Utilidades.getSurfaceFrame(areaCenter, flatNormal)
 
 	Debug.Verbose("═══ CheckDescer (Area) ═══")
 	Debug.Verbose("  EdgePos:", currentEdgePos, "| Normal:", currentNormal)
 	Debug.Verbose("  QueryCenter:", areaCenter, "| AreaSize:", areaSize)
 
-	local descerDebug = Configs.DebugEnabled and {
-		QueryBoxCFrame = areaCFrame,
-		QueryBoxSize = areaSize,
-		CandidatePoints = {},
-	} or nil
+	local descerDebug = Configs.DebugEnabled
+			and {
+				QueryBoxCFrame = areaCFrame,
+				QueryBoxSize = areaSize,
+				CandidatePoints = {},
+			}
+		or nil
 
-	local parts = collectValidPartsInBox(areaCFrame, areaSize, {character}, finalConfig.MinPartHeight)
+	local parts = collectValidPartsInBox(areaCFrame, areaSize, { character }, finalConfig.MinPartHeight)
 	local candidates = table.create(#parts)
 	local minVerticalDelta = finalConfig.DescerMinVerticalDelta or 0.5
 	local samplePointBase = currentEdgePos + currentNormal.Unit * probeOffset
@@ -2139,7 +2101,12 @@ function Analisador.CheckDescer(character, currentEdgePos, currentNormal, config
 
 	for _, cand in ipairs(candidates) do
 		if cand.VertDist > finalConfig.DescerMaxAltura then
-			Debug.Verbose("  Candidato rejeitado (TooFarBelow):", cand.Part.Name, "| VertDist:", string.format("%.1f", cand.VertDist))
+			Debug.Verbose(
+				"  Candidato rejeitado (TooFarBelow):",
+				cand.Part.Name,
+				"| VertDist:",
+				string.format("%.1f", cand.VertDist)
+			)
 			continue
 		end
 
@@ -2147,15 +2114,17 @@ function Analisador.CheckDescer(character, currentEdgePos, currentNormal, config
 			firstValidDistCandidate = cand
 		end
 
-		Debug.Verbose("  Testando candidato:", cand.Part.Name, "| HorizDist:", string.format("%.2f", cand.HorizDist), "| VertDist:", string.format("%.1f", cand.VertDist))
-
-		local hasTopClearance, hasFrontClearance = hasBothClearances(
-			character,
-			cand.Part,
-			cand.EdgePosition,
-			cand.Normal,
-			finalConfig
+		Debug.Verbose(
+			"  Testando candidato:",
+			cand.Part.Name,
+			"| HorizDist:",
+			string.format("%.2f", cand.HorizDist),
+			"| VertDist:",
+			string.format("%.1f", cand.VertDist)
 		)
+
+		local hasTopClearance, hasFrontClearance =
+			hasBothClearances(character, cand.Part, cand.EdgePosition, cand.Normal, finalConfig)
 
 		if hasTopClearance and hasFrontClearance then
 			bestCandidate = cand
@@ -2248,21 +2217,23 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 	local currentWallNormal = flatNormal
 	local areaCFrame = Utilidades.getSurfaceFrame(areaCenter, flatNormal)
 
-	local lateralDebug = Configs.DebugEnabled and {
-		Direction = direcao,
-		BasePosition = areaCenter,
-		SideDirection = sideDir,
-		QueryBoxCFrame = areaCFrame,
-		QueryBoxSize = areaSize,
-		CandidatePoints = {},
-		PathClearanceBoxes = {},
-		PathClearanceRays = {},
-		RejectionCounts = {},
-		AcceptedCounts = {
-			Lateral = 0,
-			LateralSalto = 0,
-		},
-	} or nil
+	local lateralDebug = Configs.DebugEnabled
+			and {
+				Direction = direcao,
+				BasePosition = areaCenter,
+				SideDirection = sideDir,
+				QueryBoxCFrame = areaCFrame,
+				QueryBoxSize = areaSize,
+				CandidatePoints = {},
+				PathClearanceBoxes = {},
+				PathClearanceRays = {},
+				RejectionCounts = {},
+				AcceptedCounts = {
+					Lateral = 0,
+					LateralSalto = 0,
+				},
+			}
+		or nil
 
 	Debug.Verbose("═══ CheckLateral (Area) ═══")
 	Debug.Verbose("  Direction:", direcao, "| EdgePos:", currentEdgePos, "| Normal:", currentNormal)
@@ -2282,10 +2253,8 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 	local jumpCandidates = {}
 	local lateralTopEdgeTolerance = finalConfig.LateralTopEdgeTolerance or 2.0
 	local lateralSaltoMaxVertical = finalConfig.LateralSaltoMaxVertical or 2.8
-	local lateralSaltoTopEdgeTolerance = math.max(
-		finalConfig.LateralSaltoTopEdgeTolerance or lateralSaltoMaxVertical,
-		lateralTopEdgeTolerance
-	)
+	local lateralSaltoTopEdgeTolerance =
+		math.max(finalConfig.LateralSaltoTopEdgeTolerance or lateralSaltoMaxVertical, lateralTopEdgeTolerance)
 	local desiredSideOffset = math.max(finalConfig.LateralTargetSideOffset or 2.2, 0.4)
 	local sampleSideOffset = math.min(areaSize.X * 0.5, desiredSideOffset)
 	local minLateralSideDistance = finalConfig.LateralMinSideDistance or 0.05
@@ -2303,7 +2272,8 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 	local externalCornerMinDot = finalConfig.LateralExternalCornerMinDot or -0.35
 	local pathClearanceEnabled = finalConfig.LateralPathClearanceEnabled ~= false
 	local pathClearanceSize = finalConfig.LateralPathClearanceSize or Vector3.new(1.8, 3.8, 1.4)
-	local sideClearanceDistance = math.max(finalConfig.LateralPathSideDistance or (finalConfig.LateralTargetSideOffset or 3.2), 0.5)
+	local sideClearanceDistance =
+		math.max(finalConfig.LateralPathSideDistance or (finalConfig.LateralTargetSideOffset or 3.2), 0.5)
 	local maxDepth = math.max(finalConfig.LateralMaxProfundidade or 2.2, 0.1)
 	local cornerMaxDepth = math.max(finalConfig.LateralCornerMaxProfundidade or 4.5, maxDepth)
 	local externalCornerMaxDepth = math.max(finalConfig.LateralExternalCornerMaxProfundidade or 8.0, cornerMaxDepth)
@@ -2321,12 +2291,16 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 	end
 
 	local function addRejection(reason)
-		if not lateralDebug then return end
+		if not lateralDebug then
+			return
+		end
 		lateralDebug.RejectionCounts[reason] = (lateralDebug.RejectionCounts[reason] or 0) + 1
 	end
 
 	local function recordRejected(part, topEdge, reason, extra)
-		if not lateralDebug then return end
+		if not lateralDebug then
+			return
+		end
 		addRejection(reason)
 		local pointData = {
 			Position = topEdge,
@@ -2343,7 +2317,9 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 	end
 
 	local function recordAccepted(part, topEdge, moveType, extra)
-		if not lateralDebug then return end
+		if not lateralDebug then
+			return
+		end
 		lateralDebug.AcceptedCounts[moveType] = (lateralDebug.AcceptedCounts[moveType] or 0) + 1
 		local pointData = {
 			Position = topEdge,
@@ -2396,22 +2372,17 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 		local probeCenter = probeBase + sideDir * sideClearanceDistance
 		local probeCf = Utilidades.getSurfaceFrame(probeCenter, flatNormal)
 		local probeSize = pathClearanceSize
-		local clear, blocker = Utilidades.firstBlockingPartInBox(
-			probeCf,
-			probeSize,
-			ignoreList,
-			function(part)
-				if Utilidades.isParkourIgnoredPart(part, finalConfig.MinPartHeight) then
-					return true
-				end
-
-				if targetPart and isSameAssemblyPart(part, targetPart) then
-					return true
-				end
-
-				return false
+		local clear, blocker = Utilidades.firstBlockingPartInBox(probeCf, probeSize, ignoreList, function(part)
+			if Utilidades.isParkourIgnoredPart(part, finalConfig.MinPartHeight) then
+				return true
 			end
-		)
+
+			if targetPart and isSameAssemblyPart(part, targetPart) then
+				return true
+			end
+
+			return false
+		end)
 
 		if lateralDebug then
 			table.insert(lateralDebug.PathClearanceBoxes, {
@@ -2446,7 +2417,9 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 		end
 
 		local rayResult = Workspace:Raycast(rayOrigin, rayDir, rayParams)
-		local hitIsTargetPart = targetPart ~= nil and rayResult ~= nil and isSameAssemblyPart(rayResult.Instance, targetPart)
+		local hitIsTargetPart = targetPart ~= nil
+			and rayResult ~= nil
+			and isSameAssemblyPart(rayResult.Instance, targetPart)
 		local isCorrectFace = hitIsTargetPart and rayResult.Normal:Dot(targetNormalUnit) > 0.5
 		local isClear = rayResult == nil or isCorrectFace
 		if lateralDebug then
@@ -2505,14 +2478,18 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 		local verticalDelta = topEdge.Y - currentEdgePos.Y
 		local normalDot = hitWallNormal:Dot(currentWallNormal)
 
-		local isInternalCornerCandidate = allowCorner and isCornerProbe and part == currentPart and normalDot >= cornerMinDot
+		local isInternalCornerCandidate = allowCorner
+			and isCornerProbe
+			and part == currentPart
+			and normalDot >= cornerMinDot
 		local isExternalCornerCandidate = allowExternalCorner
 			and currentPart ~= nil
 			and part ~= currentPart
 			and normalDot >= externalCornerMinDot
 			and normalDot < (finalConfig.LateralNormalMinDot or 0.5)
 		local isCornerCandidate = isInternalCornerCandidate or isExternalCornerCandidate
-		local cornerType = isExternalCornerCandidate and "Externa" or (isInternalCornerCandidate and "Interna" or "Nenhuma")
+		local cornerType = isExternalCornerCandidate and "Externa"
+			or (isInternalCornerCandidate and "Interna" or "Nenhuma")
 
 		local sideDistanceRaw = delta:Dot(sideDir)
 		local lateralDistance = sideDistanceRaw
@@ -2585,13 +2562,8 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 			return
 		end
 
-		local hasTopClearance, hasFrontClearance = hasBothClearances(
-			character,
-			part,
-			edgePos,
-			hitWallNormal,
-			finalConfig
-		)
+		local hasTopClearance, hasFrontClearance =
+			hasBothClearances(character, part, edgePos, hitWallNormal, finalConfig)
 		local hasPathClearance
 		if isExternalCornerCandidate then
 			hasPathClearance = hasExternalCurvePathClearance(edgePos, hitWallNormal, part)
@@ -2677,16 +2649,26 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 			Debug.Verbose(
 				"    ",
 				tag .. "[" .. i .. "]",
-				"Part:", cand.PartName,
-				"| Side:", fmt2(cand.SideDistance),
-				"| SideRaw:", fmt2(cand.SideDistanceRaw),
-				"| Clamped:", boolStr(cand.SideDistanceClamped),
-				"| Horiz:", fmt2(cand.HorizontalDistance),
-				"| Vert:", fmt2(cand.VertDelta),
-				"| Depth:", fmt2(cand.DepthDistance),
-				"| Dot:", fmt2(cand.NormalDot),
-				"| Curva:", cand.CornerType,
-				"| OtherPart:", boolStr(cand.IsOtherPart)
+				"Part:",
+				cand.PartName,
+				"| Side:",
+				fmt2(cand.SideDistance),
+				"| SideRaw:",
+				fmt2(cand.SideDistanceRaw),
+				"| Clamped:",
+				boolStr(cand.SideDistanceClamped),
+				"| Horiz:",
+				fmt2(cand.HorizontalDistance),
+				"| Vert:",
+				fmt2(cand.VertDelta),
+				"| Depth:",
+				fmt2(cand.DepthDistance),
+				"| Dot:",
+				fmt2(cand.NormalDot),
+				"| Curva:",
+				cand.CornerType,
+				"| OtherPart:",
+				boolStr(cand.IsOtherPart)
 			)
 		end
 	end
@@ -2744,7 +2726,7 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 		}
 	end
 
-	local parts = collectValidPartsInBox(areaCFrame, areaSize, {character}, finalConfig.MinPartHeight)
+	local parts = collectValidPartsInBox(areaCFrame, areaSize, { character }, finalConfig.MinPartHeight)
 	local oppositeSideDir = -sideDir
 	for _, part in ipairs(parts) do
 		for _, multiplier in ipairs(LATERAL_SAMPLE_MULTIPLIERS) do
@@ -2795,10 +2777,14 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 	end
 
 	Debug.Verbose(
-		"  Summary: PartsInBox:", #parts,
-		"| AcceptedLateral:", #candidates,
-		"| AcceptedLateralSalto:", #jumpCandidates,
-		"| Rejected:", rejectedCount
+		"  Summary: PartsInBox:",
+		#parts,
+		"| AcceptedLateral:",
+		#candidates,
+		"| AcceptedLateralSalto:",
+		#jumpCandidates,
+		"| Rejected:",
+		rejectedCount
 	)
 	for reason, count in pairs(lateralDebug and lateralDebug.RejectionCounts or {}) do
 		Debug.Verbose("    RejectReason:", reason, "| Count:", count)
@@ -2827,12 +2813,18 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 
 			Debug.Verbose(
 				"  RESULTADO: NoLateralSurface + CanLateralSalto=true",
-				"| Dist:", fmt2(jumpBest.SideDistance),
-				"| SideRaw:", fmt2(jumpBest.SideDistanceRaw),
-				"| Clamped:", boolStr(jumpBest.SideDistanceClamped),
-				"| Travel:", fmt2(jumpBest.HorizontalDistance),
-				"| Curva:", jumpBest.CornerType,
-				"| Part:", jumpBest.PartName
+				"| Dist:",
+				fmt2(jumpBest.SideDistance),
+				"| SideRaw:",
+				fmt2(jumpBest.SideDistanceRaw),
+				"| Clamped:",
+				boolStr(jumpBest.SideDistanceClamped),
+				"| Travel:",
+				fmt2(jumpBest.HorizontalDistance),
+				"| Curva:",
+				jumpBest.CornerType,
+				"| Part:",
+				jumpBest.PartName
 			)
 			return {
 				CanMoveLateral = false,
@@ -2929,10 +2921,14 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 
 		Debug.Verbose(
 			"  RESULTADO: PreferLateralSaltoOverInternalCorner",
-			"| CurvaPart:", best.PartName,
-			"| SaltoPart:", jumpBest.PartName,
-			"| CurvaDist:", fmt2(best.SideDistance),
-			"| SaltoDist:", fmt2(jumpBest.SideDistance)
+			"| CurvaPart:",
+			best.PartName,
+			"| SaltoPart:",
+			jumpBest.PartName,
+			"| CurvaDist:",
+			fmt2(best.SideDistance),
+			"| SaltoDist:",
+			fmt2(jumpBest.SideDistance)
 		)
 
 		return {
@@ -2980,12 +2976,18 @@ function Analisador.CheckLateral(character, currentEdgePos, currentNormal, direc
 	local estadoLateral = direcao .. (idleMode == "IdleSuporte" and "Suporte" or "Suspenso")
 	Debug.Verbose(
 		"  RESULTADO: CanMoveLateral=true",
-		"| Estado:", estadoLateral,
-		"| Dist:", fmt2(best.SideDistance),
-		"| SideRaw:", fmt2(best.SideDistanceRaw),
-		"| Clamped:", boolStr(best.SideDistanceClamped),
-		"| Curva:", best.CornerType,
-		"| Part:", best.PartName
+		"| Estado:",
+		estadoLateral,
+		"| Dist:",
+		fmt2(best.SideDistance),
+		"| SideRaw:",
+		fmt2(best.SideDistanceRaw),
+		"| Clamped:",
+		boolStr(best.SideDistanceClamped),
+		"| Curva:",
+		best.CornerType,
+		"| Part:",
+		best.PartName
 	)
 
 	return {

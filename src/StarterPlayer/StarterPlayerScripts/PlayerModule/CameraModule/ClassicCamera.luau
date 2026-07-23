@@ -28,7 +28,10 @@ local Util = require(script.Parent:WaitForChild("CameraUtils"))
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ConfigJogador = require(
-	ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Camera"):WaitForChild("Configuracoes"):WaitForChild("ConfigCamera")
+	ReplicatedStorage:WaitForChild("Jogador")
+		:WaitForChild("Camera")
+		:WaitForChild("Configuracoes")
+		:WaitForChild("ConfigCamera")
 )
 
 local BaseCamera = require(script.Parent:WaitForChild("BaseCamera"))
@@ -58,8 +61,7 @@ function ClassicCamera:GetCameraToggleOffset(dt: number)
 		local zoom = self.currentSubjectDistance
 
 		if CameraInput.getTogglePan() then
-			self.cameraToggleSpring.goal =
-				math.clamp(Util.map(zoom, 0.5, 4, 0, 1), 0, 1)
+			self.cameraToggleSpring.goal = math.clamp(Util.map(zoom, 0.5, 4, 0, 1), 0, 1)
 		else
 			self.cameraToggleSpring.goal = 0
 		end
@@ -136,7 +138,6 @@ function ClassicCamera:Update(dt)
 
 		local targetShoulderOffset = Vector3.zero
 		if isFirstPerson then
-
 			targetShoulderOffset = Vector3.zero
 		elseif isMouseLocked then
 			targetShoulderOffset = self:GetMouseLockOffset()
@@ -164,11 +165,9 @@ function ClassicCamera:Update(dt)
 		end
 
 		if isMouseLocked or isFirstPerson then
-
 			local offset = Vector3.zero
 
 			if humanoid then
-
 				offset = offset + humanoid.CameraOffset
 
 				local targetMovementOffset = Vector3.zero
@@ -273,7 +272,6 @@ function ClassicCamera:Update(dt)
 						end
 					end
 				elseif self.isFollowCamera and not (isInFirstPerson or userRecentlyPannedCamera) then
-
 					local lastVec = -(self.lastCameraTransform.Position - subjectPosition)
 
 					local y = Util.GetAngleBetweenXZVectors(lastVec, self:GetCameraLookVector())
@@ -327,7 +325,6 @@ function ClassicCamera:Update(dt)
 			local character = player.Character
 			local headPart = character and character:FindFirstChild("Head")
 			if headPart and headPart:IsA("BasePart") then
-
 				local offsetFP = ConfigJogador.ObterConfiguracao("OffsetFPCabeca") or Vector3.zero
 				local headPos = (headPart.CFrame * CFrame.new(offsetFP)).Position
 

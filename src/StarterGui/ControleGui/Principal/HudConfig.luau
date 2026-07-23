@@ -102,7 +102,7 @@ end
 -- tamanho fixo em pixels, então é cortada em vez de espremida e o UICorner
 -- não deforma.
 function Hud.setBarra(clip, alpha)
-	Hud.tween(clip, { Size = UDim2.new(math.clamp(alpha, 0, 1), 0, 1, 0) })
+	Hud.tween(clip, { Size = UDim2.fromScale(math.clamp(alpha, 0, 1), 1) })
 end
 
 --// Slots (hover, nome e seleção)

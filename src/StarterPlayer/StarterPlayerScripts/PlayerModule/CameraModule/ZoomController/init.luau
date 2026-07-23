@@ -101,7 +101,6 @@ do
 		local poppedZoom = math.huge
 
 		if zoomSpring.goal > DIST_OPAQUE then
-
 			local maxPossibleZoom = max(
 				zoomSpring.x,
 				stepTargetZoom(zoomSpring.goal, zoomDelta, cameraMinZoomDistance, cameraMaxZoomDistance)

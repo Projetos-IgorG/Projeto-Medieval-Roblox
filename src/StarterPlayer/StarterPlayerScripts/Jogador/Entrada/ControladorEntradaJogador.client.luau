@@ -23,7 +23,8 @@ end
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local CatalogoItens = require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
+local CatalogoItens =
+	require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
 
 local ClientBridge =
 	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
@@ -32,8 +33,7 @@ local player = Players.LocalPlayer
 
 local Modulo_Configuracoes =
 	require(ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Configuracoes"):WaitForChild("ConfigCombate"))
-local ModEquip =
-	require(ReplicatedStorage:WaitForChild("SistemaItens"):WaitForChild("ValidacaoEquipamentos"))
+local ModEquip = require(ReplicatedStorage:WaitForChild("SistemaItens"):WaitForChild("ValidacaoEquipamentos"))
 
 local Remotos = ReplicatedStorage:WaitForChild("Remotos")
 local TentarAcao = Remotos:WaitForChild("TentarAcao")
@@ -62,7 +62,8 @@ local estadoInput = {
 
 local toolConexoes: { RBXScriptConnection } = {}
 
-local InputDebounce = require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Entrada"):WaitForChild("DebounceEntrada"))
+local InputDebounce =
+	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Entrada"):WaitForChild("DebounceEntrada"))
 
 local function EnviarAcaoComDebounce(acao: string, dados: any?)
 	InputDebounce.EnviarAcaoComDebounce(TentarAcao, acao, dados)
@@ -75,7 +76,6 @@ end
 function ClientBridge.EstaSegurandoM2()
 	return estadoInput.mouse2Pressionado
 end
-
 
 local estadoEquip = "idle"
 local toolAtualEquipado: Tool? = nil
@@ -160,7 +160,6 @@ ClientBridge.OnEquipAnimacaoTerminou = function(direcaoFinal: number)
 	)
 
 	if direcaoFinal == 1 then
-
 		local char = player.Character
 		if char then
 			local toolNoCharacter = char:FindFirstChildOfClass("Tool") :: Tool?
@@ -170,7 +169,6 @@ ClientBridge.OnEquipAnimacaoTerminou = function(direcaoFinal: number)
 		end
 		toolPendente = nil
 	elseif direcaoFinal == -1 then
-
 		toolAtualEquipado = nil
 	end
 
@@ -183,7 +181,6 @@ ClientBridge.OnEquipAnimacaoTerminou = function(direcaoFinal: number)
 		toolPendente = nil
 		local modo = ObterModoDoTool(pendente)
 		if modo then
-
 			if pendente.Parent == player.Character then
 				IniciarEquipar(pendente, modo)
 			else
@@ -205,7 +202,7 @@ local function ProcessarMouse1Pressionado()
 		return
 	end
 
-	local estaDefendendo = (estadoAcao == "Defendendo") 
+	local estaDefendendo = (estadoAcao == "Defendendo")
 		or (ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("bloqueando") == true)
 		or estadoInput.mouse2Pressionado
 	if estaDefendendo and estadoAcao ~= "Aparando" then
@@ -336,18 +333,23 @@ end
 
 local function IsAlreadyEquipped(tool: Tool): boolean
 	local char = player.Character
-	if not char then return false end
+	if not char then
+		return false
+	end
 	local equipamento = char:FindFirstChild("Equipamento")
-	if not equipamento then return false end
+	if not equipamento then
+		return false
+	end
 	local bracos = equipamento:FindFirstChild("Bracos")
-	if not bracos then return false end
+	if not bracos then
+		return false
+	end
 	local rightArm = bracos:FindFirstChild("RightArm") :: ObjectValue
 	local leftArm = bracos:FindFirstChild("LeftArm") :: ObjectValue
 	return (rightArm and rightArm.Value == tool) or (leftArm and leftArm.Value == tool)
 end
 
 local function ProcessarToolEquipado(tool: Tool)
-
 	if revertendoTool then
 		return
 	end
@@ -377,14 +379,12 @@ local function ProcessarToolEquipado(tool: Tool)
 
 	local podeAlterar = ClientBridge.PodeAlterarTool and ClientBridge.PodeAlterarTool()
 	if not podeAlterar then
-
 		DebugPrint("[EntradaJogador] Troca bloqueada - revertendo. Tool:", tool.Name)
 		local humanoid = ObterHumanoid()
 		if humanoid then
 			revertendoTool = true
 
 			if toolAtualEquipado and toolAtualEquipado ~= tool then
-
 				humanoid:UnequipTools()
 				task.defer(function()
 					if toolAtualEquipado and toolAtualEquipado.Parent then
@@ -393,10 +393,8 @@ local function ProcessarToolEquipado(tool: Tool)
 					revertendoTool = false
 				end)
 			elseif toolAtualEquipado == tool then
-
 				revertendoTool = false
 			else
-
 				humanoid:UnequipTools()
 				revertendoTool = false
 			end
@@ -425,11 +423,9 @@ local function ProcessarToolEquipado(tool: Tool)
 
 	if estadoEquip == "idle" then
 		if toolAtualEquipado then
-
 			toolPendente = tool
 			IniciarDesequipar(toolAtualEquipado)
 		else
-
 			IniciarEquipar(tool, modoDesejado)
 		end
 		return
@@ -445,7 +441,6 @@ local function ProcessarToolEquipado(tool: Tool)
 end
 
 local function ProcessarToolDesequipado(tool: Tool)
-
 	if revertendoTool then
 		return
 	end
@@ -462,7 +457,6 @@ local function ProcessarToolDesequipado(tool: Tool)
 
 	local podeAlterar = ClientBridge.PodeAlterarTool and ClientBridge.PodeAlterarTool()
 	if not podeAlterar then
-
 		DebugPrint("[EntradaJogador] Desequip bloqueado - revertendo. Tool:", tool.Name)
 		local humanoid = ObterHumanoid()
 		if humanoid and tool.Parent then
@@ -488,8 +482,8 @@ local function ProcessarRoll()
 	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		local state = humanoid:GetState()
-		local noAr = humanoid.FloorMaterial == Enum.Material.Air 
-			or state == Enum.HumanoidStateType.Jumping 
+		local noAr = humanoid.FloorMaterial == Enum.Material.Air
+			or state == Enum.HumanoidStateType.Jumping
 			or state == Enum.HumanoidStateType.Freefall
 		if noAr then
 			DebugPrint("[EntradaJogador] Roll bloqueado: Jogador no ar")
@@ -568,8 +562,8 @@ local function ProcessarDash(direcaoParam: string?)
 	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		local state = humanoid:GetState()
-		local noAr = humanoid.FloorMaterial == Enum.Material.Air 
-			or state == Enum.HumanoidStateType.Jumping 
+		local noAr = humanoid.FloorMaterial == Enum.Material.Air
+			or state == Enum.HumanoidStateType.Jumping
 			or state == Enum.HumanoidStateType.Freefall
 		if noAr then
 			DebugPrint("[EntradaJogador] Dash bloqueado: Jogador no ar")
@@ -651,7 +645,8 @@ end
 
 local function ProcessarPular()
 	local estadoAcao = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("estadoAcao") or "Nenhuma"
-	local estaBloqueando = (estadoAcao == "Defendendo") or (ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("bloqueando") == true)
+	local estaBloqueando = (estadoAcao == "Defendendo")
+		or (ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("bloqueando") == true)
 	local estaEsquivando = (estadoAcao == "Rolando") or (estadoAcao == "Dashando")
 	if estaEsquivando then
 		blockJumpUntilRelease = true
@@ -689,8 +684,8 @@ local function ProcessarPular()
 	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		local state = humanoid:GetState()
-		noAr = humanoid.FloorMaterial == Enum.Material.Air 
-			or state == Enum.HumanoidStateType.Jumping 
+		noAr = humanoid.FloorMaterial == Enum.Material.Air
+			or state == Enum.HumanoidStateType.Jumping
 			or state == Enum.HumanoidStateType.Freefall
 	end
 
@@ -698,7 +693,7 @@ local function ProcessarPular()
 	local isFirstPerson = camera and (camera.Focus.Position - camera.CFrame.Position).Magnitude < 1.0 or false
 	local emShiftLockOuPrimeiraPessoa = shiftLockAtivo or isFirstPerson
 
-	local podeDarDash = emShiftLockOuPrimeiraPessoa 
+	local podeDarDash = emShiftLockOuPrimeiraPessoa
 		and (direcao == "Tras" or direcao == "Esquerda" or direcao == "Direita")
 		and Modulo_Configuracoes.EhCombate(modoAnimacao)
 		and not emParkour
@@ -746,7 +741,6 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if estadoInput.agachadoAtivo then
 			estadoInput.agachadoAtivo = false
 			EnviarAcao("Levantar")
-
 		end
 
 		return
@@ -799,19 +793,16 @@ UserInputService.InputEnded:Connect(function(input, _gameProcessed)
 	end
 end)
 
-
-
 local function OnChildAdded(child)
 	if child:IsA("Tool") then
-
 		local char = player.Character
 		if char then
 			local humanoid = char:FindFirstChild("Humanoid") :: Humanoid?
 			if humanoid and humanoid.Health <= 0 then
-
 				local id = child:GetAttribute("Id")
 				local catalogData = id and CatalogoItens.Get(id)
-				local temModo = (catalogData and catalogData.ModoAnimacao ~= nil) or child:FindFirstChild("modoAnimacao") ~= nil
+				local temModo = (catalogData and catalogData.ModoAnimacao ~= nil)
+					or child:FindFirstChild("modoAnimacao") ~= nil
 				if temModo then
 					humanoid:UnequipTools()
 					DebugPrint("[EntradaJogador] Tool desequipado automaticamente (jogador morto):", child.Name)
@@ -831,7 +822,6 @@ local function OnChildRemoved(child)
 end
 
 local function ConfigurarCharacter(char)
-
 	estadoInput = {
 		mouse1Pressionado = false,
 		mouse2Pressionado = false,
@@ -855,7 +845,6 @@ local function ConfigurarCharacter(char)
 
 	local humanoid = char:WaitForChild("Humanoid") :: Humanoid
 	humanoid.Died:Connect(function()
-
 		estadoEquip = "idle"
 		toolPendente = nil
 		revertendoTool = false
@@ -878,7 +867,8 @@ end
 
 UserInputService.JumpRequest:Connect(function()
 	local estadoAcao = ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("estadoAcao") or "Nenhuma"
-	local estaBloqueando = (estadoAcao == "Defendendo") or (ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("bloqueando") == true)
+	local estaBloqueando = (estadoAcao == "Defendendo")
+		or (ClientBridge.LerStatusLocal and ClientBridge.LerStatusLocal("bloqueando") == true)
 	local estaEsquivando = (estadoAcao == "Rolando") or (estadoAcao == "Dashando")
 	if bloquearPuloTemp or estaBloqueando or estaEsquivando or blockJumpUntilRelease then
 		local char = player.Character

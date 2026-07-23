@@ -16,7 +16,8 @@ local Debris = game:GetService("Debris")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Footsteps = require(script:WaitForChild("Footsteps"))
-local ClientBridge = require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
+local ClientBridge =
+	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
 
 local FOOTSTEP_MARKER = "Footstep"
 
@@ -91,7 +92,12 @@ local function estimateCleanupSeconds(sound: Sound, playbackSpeed: number): numb
 	return (sound.TimeLength / speed) + 0.2
 end
 
-local function playMaterialSound(rootPart: BasePart, materialKey: string, playbackSpeed: number, volumeMultiplier: number?)
+local function playMaterialSound(
+	rootPart: BasePart,
+	materialKey: string,
+	playbackSpeed: number,
+	volumeMultiplier: number?
+)
 	local soundTemplate = getSoundTemplate(materialKey)
 	if not soundTemplate then
 		return
@@ -121,7 +127,13 @@ local function canEmitByEnvironment(humanoid: Humanoid, statusState, allowDuring
 		return false
 	end
 
-	if not allowDuringDash and ((ClientBridge.EstaEmRoll and ClientBridge.EstaEmRoll()) or (ClientBridge.EstaEmDash and ClientBridge.EstaEmDash())) then
+	if
+		not allowDuringDash
+		and (
+			(ClientBridge.EstaEmRoll and ClientBridge.EstaEmRoll())
+			or (ClientBridge.EstaEmDash and ClientBridge.EstaEmDash())
+		)
+	then
 		return false
 	end
 
@@ -267,9 +279,12 @@ local function bindCharacter(character: Model)
 		local valueObj = folder:FindFirstChild(name)
 		if valueObj and valueObj:IsA("StringValue") then
 			updateFn(valueObj.Value)
-			table.insert(statusConnections, valueObj:GetPropertyChangedSignal("Value"):Connect(function()
-				updateFn(valueObj.Value)
-			end))
+			table.insert(
+				statusConnections,
+				valueObj:GetPropertyChangedSignal("Value"):Connect(function()
+					updateFn(valueObj.Value)
+				end)
+			)
 		end
 	end
 
@@ -280,9 +295,12 @@ local function bindCharacter(character: Model)
 		local valueObj = folder:FindFirstChild(name)
 		if valueObj and valueObj:IsA("BoolValue") then
 			updateFn(valueObj.Value)
-			table.insert(statusConnections, valueObj:GetPropertyChangedSignal("Value"):Connect(function()
-				updateFn(valueObj.Value)
-			end))
+			table.insert(
+				statusConnections,
+				valueObj:GetPropertyChangedSignal("Value"):Connect(function()
+					updateFn(valueObj.Value)
+				end)
+			)
 		end
 	end
 
@@ -343,27 +361,29 @@ local function bindCharacter(character: Model)
 	end
 
 	local playedConn = humanoid.AnimationPlayed:Connect(onTrackPlayed)
-	local stateChangedConn = humanoid.StateChanged:Connect(function(oldState: Enum.HumanoidStateType, newState: Enum.HumanoidStateType)
-		if newState == Enum.HumanoidStateType.Jumping then
-			isInFreefall = false
-			stopFreefallSound()
-			playJumpSound(rootPart)
-			return
+	local stateChangedConn = humanoid.StateChanged:Connect(
+		function(oldState: Enum.HumanoidStateType, newState: Enum.HumanoidStateType)
+			if newState == Enum.HumanoidStateType.Jumping then
+				isInFreefall = false
+				stopFreefallSound()
+				playJumpSound(rootPart)
+				return
+			end
+
+			isInFreefall = newState == Enum.HumanoidStateType.Freefall
+			updateFreefallSound()
+
+			if newState ~= Enum.HumanoidStateType.Landed then
+				return
+			end
+
+			if oldState ~= Enum.HumanoidStateType.Freefall and oldState ~= Enum.HumanoidStateType.Jumping then
+				return
+			end
+
+			playLandingFootstep(humanoid, rootPart, statusState)
 		end
-
-		isInFreefall = newState == Enum.HumanoidStateType.Freefall
-		updateFreefallSound()
-
-		if newState ~= Enum.HumanoidStateType.Landed then
-			return
-		end
-
-		if oldState ~= Enum.HumanoidStateType.Freefall and oldState ~= Enum.HumanoidStateType.Jumping then
-			return
-		end
-
-		playLandingFootstep(humanoid, rootPart, statusState)
-	end)
+	)
 	freefallHeartbeatConn = RunService.Heartbeat:Connect(function()
 		updateFreefallSound()
 	end)

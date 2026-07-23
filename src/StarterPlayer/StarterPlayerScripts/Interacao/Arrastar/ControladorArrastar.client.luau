@@ -55,7 +55,8 @@ local camera = workspace.CurrentCamera
 local Remotos = ReplicatedStorage:WaitForChild("Remotos")
 local ArrastarItemEvent = Remotos:WaitForChild("ArrastarItem")
 
-local EfeitosVisuaisArrastar = ReplicatedStorage:WaitForChild("Interacao"):WaitForChild("Arrastar"):WaitForChild("EfeitosVisuais")
+local EfeitosVisuaisArrastar =
+	ReplicatedStorage:WaitForChild("Interacao"):WaitForChild("Arrastar"):WaitForChild("EfeitosVisuais")
 local HighlightTemplate = EfeitosVisuaisArrastar:WaitForChild("HighlightArrastar")
 
 local Modulo_Configuracoes =
@@ -94,7 +95,8 @@ local estado = {
 	interacaoBloqueada = false,
 }
 
-local FisicaHelpers = require(ReplicatedStorage:WaitForChild("Interacao"):WaitForChild("Arrastar"):WaitForChild("FisicaAuxiliarArrastar"))
+local FisicaHelpers =
+	require(ReplicatedStorage:WaitForChild("Interacao"):WaitForChild("Arrastar"):WaitForChild("FisicaAuxiliarArrastar"))
 
 local ObterPartePrincipal = FisicaHelpers.ObterPartePrincipal
 local ObterPeso = FisicaHelpers.ObterPeso
@@ -133,11 +135,9 @@ local function DetectarAlvoHover(): Instance?
 	local direcao: Vector3
 
 	if EstaPrimeiraPessoa() then
-
 		origem = camera.CFrame.Position
 		direcao = camera.CFrame.LookVector * CONFIG.DISTANCIA_MAXIMA
 	else
-
 		local mouseLocation = UserInputService:GetMouseLocation()
 		local unitRay = camera:ViewportPointToRay(mouseLocation.X, mouseLocation.Y)
 		origem = unitRay.Origin
@@ -167,7 +167,6 @@ local function DetectarAlvoHover(): Instance?
 end
 
 local function AplicarHighlight(objeto: Instance?)
-
 	if estado.highlightAtivo then
 		estado.highlightAtivo.Adornee = nil
 		estado.highlightAtivo.Parent = nil
@@ -187,7 +186,6 @@ local function AplicarHighlight(objeto: Instance?)
 end
 
 local function CriarConstraints(partePrincipal: BasePart, peso: number)
-
 	LimparConstraints()
 
 	estado.pesoAtual = peso
@@ -323,12 +321,10 @@ local function CalcularPosicaoAlvo(): Vector3
 	local posicaoDesejada: Vector3
 
 	if EstaPrimeiraPessoa() then
-
 		local posicaoCamera = camera.CFrame.Position
 		local direcaoCamera = camera.CFrame.LookVector
 		posicaoDesejada = posicaoCamera + direcaoCamera * CONFIG.DISTANCIA_SEGURAR
 	else
-
 		local mouseLocation = UserInputService:GetMouseLocation()
 		local unitRay = camera:ViewportPointToRay(mouseLocation.X, mouseLocation.Y)
 
@@ -337,7 +333,6 @@ local function CalcularPosicaoAlvo(): Vector3
 		local resultado = workspace:Raycast(unitRay.Origin, unitRay.Direction * 100, sharedRayParams)
 
 		if resultado then
-
 			local pontoMouse = resultado.Position
 
 			local direcaoParaMouse = (pontoMouse - hrp.Position)
@@ -353,7 +348,6 @@ local function CalcularPosicaoAlvo(): Vector3
 				posicaoDesejada = Vector3.new(posicaoDesejada.X, hrp.Position.Y - 2, posicaoDesejada.Z)
 			end
 		else
-
 			local direcaoMouse = unitRay.Direction
 			posicaoDesejada = hrp.Position
 				+ Vector3.new(direcaoMouse.X, 0, direcaoMouse.Z).Unit * CONFIG.DISTANCIA_SEGURAR
@@ -436,7 +430,6 @@ local function PararArrasto()
 
 		local peso = estado.pesoAtual
 		if velocidade.Y > 0 then
-
 			velocidade = Vector3.new(velocidade.X, velocidade.Y / (peso * peso), velocidade.Z)
 		end
 
@@ -501,7 +494,6 @@ local function AtualizarArrasto(deltaTime: number)
 	local peso = estado.pesoAtual
 	local offsetGravidadeAlvo = 0
 	if peso > 1.0 then
-
 		offsetGravidadeAlvo = math.min((peso - 1.0) * CONFIG.GRAVIDADE_POR_PESO * 0.3, CONFIG.OFFSET_GRAVIDADE_MAXIMO)
 	end
 
@@ -518,7 +510,6 @@ local function AtualizarArrasto(deltaTime: number)
 	local distanciaParaAlvo = direcaoParaAlvo.Magnitude
 
 	if distanciaParaAlvo > 0.01 then
-
 		local velocidadeUsar: number
 
 		if distanciaParaAlvo > 2.0 then
@@ -532,10 +523,8 @@ local function AtualizarArrasto(deltaTime: number)
 		local movimentoMaximo = velocidadeUsar * deltaTime
 
 		if distanciaParaAlvo <= movimentoMaximo then
-
 			estado.posicaoAtualItem = posicaoAlvoComGravidade
 		else
-
 			local direcaoNormalizada = direcaoParaAlvo.Unit
 			estado.posicaoAtualItem = estado.posicaoAtualItem + direcaoNormalizada * movimentoMaximo
 		end
@@ -548,7 +537,6 @@ local function AtualizarArrasto(deltaTime: number)
 	end
 
 	if estado.alignOrientation and estado.rotacaoRelativaInicial and estado.direcaoHorizontalInicial then
-
 		local direcaoAtualParaObjeto = (estado.posicaoAtualItem - hrp.Position)
 		local direcaoHorizontalAtual = Vector3.new(direcaoAtualParaObjeto.X, 0, direcaoAtualParaObjeto.Z)
 
@@ -588,7 +576,6 @@ local function AtualizarArrasto(deltaTime: number)
 end
 
 local function AtualizarHover()
-
 	estado.alvoHover = DetectarAlvoHover()
 
 	AplicarHighlight(estado.alvoHover)
@@ -624,7 +611,6 @@ UserInputService.InputBegan:Connect(OnInputBegan)
 UserInputService.InputEnded:Connect(OnInputEnded)
 
 RunService.RenderStepped:Connect(function(deltaTime)
-
 	if estado.interacaoBloqueada then
 		if estado.arrastando then
 			PararArrasto()
@@ -649,12 +635,7 @@ player.CharacterRemoving:Connect(function()
 end)
 
 if UserInputService.TouchEnabled then
-	ContextActionService:BindAction(
-		CONFIG.NOME_ACAO_ARRASTAR,
-		HandleArrastarAction,
-		false,
-		Enum.UserInputType.Touch
-	)
+	ContextActionService:BindAction(CONFIG.NOME_ACAO_ARRASTAR, HandleArrastarAction, false, Enum.UserInputType.Touch)
 end
 
 local function AtualizarBloqueioArrastar(modoAnimacao: string)

@@ -17,7 +17,10 @@ local MOUSELOCK_ACTION_PRIORITY = Enum.ContextActionPriority.Medium.Value
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ConfigJogador = require(
-	ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Camera"):WaitForChild("Configuracoes"):WaitForChild("ConfigCamera")
+	ReplicatedStorage:WaitForChild("Jogador")
+		:WaitForChild("Camera")
+		:WaitForChild("Configuracoes")
+		:WaitForChild("ConfigCamera")
 )
 
 local CAMERA_OFFSET_FALLBACK = Vector3.new(2, 0, 1)
@@ -48,7 +51,6 @@ function MouseLockController.new()
 
 	local boundKeysObj = script:FindFirstChild("BoundKeys")
 	if (not boundKeysObj) or (not boundKeysObj:IsA("StringValue")) then
-
 		if boundKeysObj then
 			boundKeysObj:Destroy()
 		end
@@ -134,7 +136,6 @@ function MouseLockController:GetMouseLockOffset()
 end
 
 function MouseLockController:UpdateMouseLockAvailability()
-
 	local userUsingKeyboardAndMouse = UserInputService.PreferredInput == Enum.PreferredInput.KeyboardAndMouse
 		or UserInputService.KeyboardEnabled
 
@@ -190,22 +191,18 @@ function MouseLockController:EnableMouseLock(enable: boolean)
 		self.enabled = enable
 
 		if self.enabled then
-
 			self:BindContextActions()
 		else
-
 			CameraUtils.restoreMouseIcon()
 
 			self:UnbindContextActions()
 
 			if FFlagUserFixStuckShiftLock then
-
 				if self.isMouseLocked then
 					self.isMouseLocked = false
 					self.mouseLockToggledEvent:Fire()
 				end
 			else
-
 				if self.isMouseLocked then
 					self.mouseLockToggledEvent:Fire()
 				end

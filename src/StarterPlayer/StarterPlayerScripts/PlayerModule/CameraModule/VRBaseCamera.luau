@@ -99,7 +99,6 @@ function VRBaseCamera:OnEnabledChanged()
 				if FFlagUserVRVehicleCamera then
 					self:Reset()
 				else
-
 					if not self:IsInFirstPerson() then
 						self:Reset()
 					end
@@ -112,7 +111,6 @@ function VRBaseCamera:OnEnabledChanged()
 			end
 		end)
 	else
-
 		if self.inFirstPerson then
 			self:GamepadZoomPress()
 		end
@@ -389,7 +387,6 @@ function VRBaseCamera:getRotation(dt)
 			yawDelta = rotateInput.X * 40 * dt
 		end
 	else
-
 		if math.abs(rotateInput.X) > 0.03 then
 			if self.stepRotateTimeout > 0 then
 				self.stepRotateTimeout -= dt

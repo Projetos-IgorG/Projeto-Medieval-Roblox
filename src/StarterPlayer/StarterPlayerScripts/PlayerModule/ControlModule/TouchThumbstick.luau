@@ -11,7 +11,7 @@
 local GuiService = game:GetService("GuiService")
 local UserInputService = game:GetService("UserInputService")
 
-local ZERO_VECTOR3 = Vector3.new(0,0,0)
+local ZERO_VECTOR3 = Vector3.new(0, 0, 0)
 local TOUCH_CONTROL_SHEET = "rbxasset://textures/ui/TouchControlsSheet.png"
 
 local BaseCharacterController = require(script.Parent:WaitForChild("BaseCharacterController"))
@@ -33,21 +33,23 @@ function TouchThumbstick.new()
 	return self
 end
 function TouchThumbstick:Enable(enable: boolean?, uiParentFrame)
-	if enable == nil then return false end
+	if enable == nil then
+		return false
+	end
 	enable = enable and true or false
-	if self.enabled == enable then return true end
+	if self.enabled == enable then
+		return true
+	end
 
 	self.moveVector = ZERO_VECTOR3
 	self.isJumping = false
 
 	if enable then
-
 		if not self.thumbstickFrame then
 			self:Create(uiParentFrame)
 		end
 		self.thumbstickFrame.Visible = true
 	else
-
 		self.thumbstickFrame.Visible = false
 		self:OnInputEnded()
 	end
@@ -57,8 +59,8 @@ end
 function TouchThumbstick:OnInputEnded()
 	self.thumbstickFrame.Position = self.screenPos
 	self.stickImage.Position = UDim2.fromOffset(
-		self.thumbstickFrame.Size.X.Offset/2 - self.thumbstickSize/4,
-		self.thumbstickFrame.Size.Y.Offset/2 - self.thumbstickSize/4
+		self.thumbstickFrame.Size.X.Offset / 2 - self.thumbstickSize / 4,
+		self.thumbstickFrame.Size.Y.Offset / 2 - self.thumbstickSize / 4
 	)
 
 	self.moveVector = ZERO_VECTOR3
@@ -110,15 +112,15 @@ function TouchThumbstick:Create(parentFrame)
 		local minAxis = math.min(parentFrame.AbsoluteSize.X, parentFrame.AbsoluteSize.Y)
 		local isSmallScreen = minAxis <= 500
 		self.thumbstickSize = isSmallScreen and 70 or 120
-		self.screenPos = isSmallScreen and UDim2.new(0, (self.thumbstickSize/2) - 10, 1, -self.thumbstickSize - 20) or
-			UDim2.new(0, self.thumbstickSize/2, 1, -self.thumbstickSize * 1.75)
+		self.screenPos = isSmallScreen and UDim2.new(0, (self.thumbstickSize / 2) - 10, 1, -self.thumbstickSize - 20)
+			or UDim2.new(0, self.thumbstickSize / 2, 1, -self.thumbstickSize * 1.75)
 		self.thumbstickFrame.Size = UDim2.fromOffset(self.thumbstickSize, self.thumbstickSize)
 		self.thumbstickFrame.Position = self.screenPos
 		outerImage.Size = UDim2.fromOffset(self.thumbstickSize, self.thumbstickSize)
-		self.stickImage.Size = UDim2.fromOffset(self.thumbstickSize/2, self.thumbstickSize/2)
+		self.stickImage.Size = UDim2.fromOffset(self.thumbstickSize / 2, self.thumbstickSize / 2)
 		self.stickImage.Position = UDim2.fromOffset(
-			self.thumbstickSize/2 - self.thumbstickSize/4,
-			self.thumbstickSize/2 - self.thumbstickSize/4
+			self.thumbstickSize / 2 - self.thumbstickSize / 4,
+			self.thumbstickSize / 2 - self.thumbstickSize / 4
 		)
 	end
 
@@ -132,8 +134,7 @@ function TouchThumbstick:Create(parentFrame)
 	local deadZone = 0.05
 
 	local function DoMove(direction: Vector2)
-
-		local currentMoveVector = direction / (self.thumbstickSize/2)
+		local currentMoveVector = direction / (self.thumbstickSize / 2)
 
 		local inputAxisMagnitude = currentMoveVector.magnitude
 		if inputAxisMagnitude < deadZone then
@@ -150,48 +151,61 @@ function TouchThumbstick:Create(parentFrame)
 	local function MoveStick(pos: Vector3)
 		local relativePosition = Vector2.new(pos.X - centerPosition.X, pos.Y - centerPosition.Y)
 		local length = relativePosition.magnitude
-		local maxLength = self.thumbstickFrame.AbsoluteSize.X/2
+		local maxLength = self.thumbstickFrame.AbsoluteSize.X / 2
 		if self.isFollowStick and length > maxLength then
 			local offset = relativePosition.unit * maxLength
 			self.thumbstickFrame.Position = UDim2.new(
-				0, pos.X - self.thumbstickFrame.AbsoluteSize.X/2 - offset.X,
-				0, pos.Y - self.thumbstickFrame.AbsoluteSize.Y/2 - offset.Y)
+				0,
+				pos.X - self.thumbstickFrame.AbsoluteSize.X / 2 - offset.X,
+				0,
+				pos.Y - self.thumbstickFrame.AbsoluteSize.Y / 2 - offset.Y
+			)
 		else
 			length = math.min(length, maxLength)
 			relativePosition = relativePosition.unit * length
 		end
 		self.stickImage.Position = UDim2.fromOffset(
-			relativePosition.X + self.stickImage.AbsoluteSize.X/2,
-			relativePosition.Y + self.stickImage.AbsoluteSize.Y/2
+			relativePosition.X + self.stickImage.AbsoluteSize.X / 2,
+			relativePosition.Y + self.stickImage.AbsoluteSize.Y / 2
 		)
 	end
 
 	self.thumbstickFrame.InputBegan:Connect(function(inputObject: InputObject)
-
-		if self.moveTouchObject or inputObject.UserInputType ~= Enum.UserInputType.Touch
-			or inputObject.UserInputState ~= Enum.UserInputState.Begin then
+		if
+			self.moveTouchObject
+			or inputObject.UserInputType ~= Enum.UserInputType.Touch
+			or inputObject.UserInputState ~= Enum.UserInputState.Begin
+		then
 			return
 		end
 
 		self.moveTouchObject = inputObject
 		self.thumbstickFrame.Position = UDim2.fromOffset(
-			inputObject.Position.X - self.thumbstickFrame.Size.X.Offset/2,
-			inputObject.Position.Y - self.thumbstickFrame.Size.Y.Offset/2
+			inputObject.Position.X - self.thumbstickFrame.Size.X.Offset / 2,
+			inputObject.Position.Y - self.thumbstickFrame.Size.Y.Offset / 2
 		)
-		centerPosition = Vector2.new(self.thumbstickFrame.AbsolutePosition.X + self.thumbstickFrame.AbsoluteSize.X/2,
-			self.thumbstickFrame.AbsolutePosition.Y + self.thumbstickFrame.AbsoluteSize.Y/2)
-		local _direction = Vector2.new(inputObject.Position.X - centerPosition.X, inputObject.Position.Y - centerPosition.Y)
+		centerPosition = Vector2.new(
+			self.thumbstickFrame.AbsolutePosition.X + self.thumbstickFrame.AbsoluteSize.X / 2,
+			self.thumbstickFrame.AbsolutePosition.Y + self.thumbstickFrame.AbsoluteSize.Y / 2
+		)
+		local _direction =
+			Vector2.new(inputObject.Position.X - centerPosition.X, inputObject.Position.Y - centerPosition.Y)
 	end)
 
-	self.onTouchMovedConn = UserInputService.TouchMoved:Connect(function(inputObject: InputObject, _isProcessed: boolean)
-		if inputObject == self.moveTouchObject then
-			centerPosition = Vector2.new(self.thumbstickFrame.AbsolutePosition.X + self.thumbstickFrame.AbsoluteSize.X/2,
-				self.thumbstickFrame.AbsolutePosition.Y + self.thumbstickFrame.AbsoluteSize.Y/2)
-			local direction = Vector2.new(inputObject.Position.X - centerPosition.X, inputObject.Position.Y - centerPosition.Y)
-			DoMove(direction)
-			MoveStick(inputObject.Position)
+	self.onTouchMovedConn = UserInputService.TouchMoved:Connect(
+		function(inputObject: InputObject, _isProcessed: boolean)
+			if inputObject == self.moveTouchObject then
+				centerPosition = Vector2.new(
+					self.thumbstickFrame.AbsolutePosition.X + self.thumbstickFrame.AbsoluteSize.X / 2,
+					self.thumbstickFrame.AbsolutePosition.Y + self.thumbstickFrame.AbsoluteSize.Y / 2
+				)
+				local direction =
+					Vector2.new(inputObject.Position.X - centerPosition.X, inputObject.Position.Y - centerPosition.Y)
+				DoMove(direction)
+				MoveStick(inputObject.Position)
+			end
 		end
-	end)
+	)
 
 	self.onTouchEndedConn = UserInputService.TouchEnded:Connect(function(inputObject, _isProcessed)
 		if inputObject == self.moveTouchObject then

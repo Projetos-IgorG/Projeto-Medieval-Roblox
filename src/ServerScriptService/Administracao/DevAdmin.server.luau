@@ -11,7 +11,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local ToolBuilder = require(ReplicatedStorage:WaitForChild("SistemaItens"):WaitForChild("ConstrutorTools"))
-local CatalogoItens = require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
+local CatalogoItens =
+	require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
 local ServicosAmbiente = script.Parent.Parent:WaitForChild("Mundo"):WaitForChild("Ambiente")
 local ServicoTempoMundo = require(ServicosAmbiente:WaitForChild("ServicoTempoMundo"))
 local ServicoAmbienteMundo = require(ServicosAmbiente:WaitForChild("ServicoAmbienteMundo"))
@@ -159,12 +160,16 @@ local function criarTool(jogador, payload, destino)
 	end
 
 	local quantidade = math.clamp(math.floor(tonumber(payload.quantidade) or 1), 1, 20)
-	
+
 	-- Encontra a definicao no CatalogoItens correspondente ao template
 	local dados = nil
 	local templateNameLower = string.lower(template.Name)
 	for id, item in pairs(CatalogoItens.Todos()) do
-		if string.lower(item.Modelo or "") == templateNameLower or id == templateNameLower or string.lower(item.Nome or "") == templateNameLower then
+		if
+			string.lower(item.Modelo or "") == templateNameLower
+			or id == templateNameLower
+			or string.lower(item.Nome or "") == templateNameLower
+		then
 			dados = item
 			break
 		end
@@ -198,7 +203,6 @@ local function criarTool(jogador, payload, destino)
 		return true, string.format("Tool dada: %s (x%d)", dados.Nome, quantidade)
 	end
 end
-
 
 local function curarJogador(jogador, payload)
 	local alvo = encontrarJogador(payload.alvo, jogador) or jogador

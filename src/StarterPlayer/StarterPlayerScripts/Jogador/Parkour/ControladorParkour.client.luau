@@ -17,8 +17,14 @@ local Debug = require(script.Parent:WaitForChild("Depuracao"):WaitForChild("Depu
 local MomentumManager = require(script.Parent:WaitForChild("GerenciadorImpulso"))
 local Utilidades = require(script.Parent:WaitForChild("Utilidades"))
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ClientBridge = require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
-local AnimacaoParkour = require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Parkour"):WaitForChild("Animacoes"):WaitForChild("AnimacaoParkour"))
+local ClientBridge =
+	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
+local AnimacaoParkour = require(
+	ReplicatedStorage:WaitForChild("Jogador")
+		:WaitForChild("Parkour")
+		:WaitForChild("Animacoes")
+		:WaitForChild("AnimacaoParkour")
+)
 
 local connections: { RBXScriptConnection } = {}
 local JUMP_COOLDOWN = 0.1

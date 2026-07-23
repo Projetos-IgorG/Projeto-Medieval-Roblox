@@ -11,9 +11,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local TiposNPC = require(
-	ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos")
-)
+local TiposNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos"))
 local ViewBase = require(script.Parent:WaitForChild("Views"):WaitForChild("ViewBase"))
 
 local Controlador = {}

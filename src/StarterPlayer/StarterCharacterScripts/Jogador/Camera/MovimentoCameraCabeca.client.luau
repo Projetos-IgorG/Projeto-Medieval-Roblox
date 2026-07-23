@@ -9,7 +9,12 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RotacaoCabeca = require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Camera"):WaitForChild("Cabeca"):WaitForChild("RotacaoCabeca"))
+local RotacaoCabeca = require(
+	ReplicatedStorage:WaitForChild("Jogador")
+		:WaitForChild("Camera")
+		:WaitForChild("Cabeca")
+		:WaitForChild("RotacaoCabeca")
+)
 
 local camera = workspace.CurrentCamera
 local player = Players.LocalPlayer
@@ -17,7 +22,6 @@ local player = Players.LocalPlayer
 local connection: RBXScriptConnection? = nil
 
 local function setup(character: Model)
-
 	if connection then
 		connection:Disconnect()
 		connection = nil
@@ -25,7 +29,9 @@ local function setup(character: Model)
 
 	local root = character:WaitForChild("HumanoidRootPart", 5)
 	local neck = character:FindFirstChild("Neck", true)
-	if not root or not neck then return end
+	if not root or not neck then
+		return
+	end
 
 	local yOffset = neck.C0.Y
 	local targetC0 = neck.C0
