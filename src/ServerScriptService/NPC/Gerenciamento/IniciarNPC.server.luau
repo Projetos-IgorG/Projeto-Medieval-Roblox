@@ -92,6 +92,7 @@ SpawnDevRemote.OnServerEvent:Connect(function(player: Player, payload: any)
 		podeAtacar = if typeof(payload.podeAtacar) == "boolean" then payload.podeAtacar else nil,
 		podeDefender = if typeof(payload.podeDefender) == "boolean" then payload.podeDefender else nil,
 		podeParry = if typeof(payload.podeParry) == "boolean" then payload.podeParry else nil,
+		armaId = type(payload.armaId) == "string" and payload.armaId or nil,
 	}
 
 	GerenciadorNPC.SpawnNPC(opcoes)

@@ -11,6 +11,7 @@ export type ClientBridgeType = {
 	EstaJanelaComboAtiva: (() -> boolean)?,
 	EstaComboAtivo: (() -> boolean)?,
 	TentarFintar: (() -> (boolean, string?))?,
+	ReiniciarCooldownFinta: (() -> ())?,
 	ResolverFintaPendente: (() -> ())?,
 	CancelarFintaPendente: (() -> ())?,
 	EstaEmAnimacaoEquip: (() -> boolean)?,
@@ -54,6 +55,7 @@ ClientBridge.MarcarContinuarCombo = nil
 ClientBridge.EstaJanelaComboAtiva = nil
 ClientBridge.EstaComboAtivo = nil
 ClientBridge.TentarFintar = nil
+ClientBridge.ReiniciarCooldownFinta = nil
 ClientBridge.ResolverFintaPendente = nil
 ClientBridge.CancelarFintaPendente = nil
 ClientBridge.EstaEmAnimacaoEquip = nil

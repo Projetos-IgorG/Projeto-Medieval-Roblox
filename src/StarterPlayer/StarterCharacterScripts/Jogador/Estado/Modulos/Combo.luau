@@ -47,6 +47,11 @@ local fintaState = {
 	fintaPendente = false,
 }
 
+local function ReiniciarCooldownFinta()
+	fintaState.ultimaFinta = 0
+	fintaState.fintaPendente = false
+end
+
 local hitFreezeState = {
 	ativo = false,
 	velocidadeOriginal = 1,
@@ -489,6 +494,8 @@ function Combo.AplicarHitFreeze()
 		return
 	end
 
+	ReiniciarCooldownFinta()
+
 	local velFreeze = ctx.Modulo_Configuracoes.ObterConfiguracao("VelocidadeHitFreeze") or 0.2
 	local durFreeze = ctx.Modulo_Configuracoes.ObterConfiguracao("DuracaoHitFreeze") or 0.1
 
@@ -525,6 +532,7 @@ local function FinalizarRewindSolido(ehCombo: boolean)
 	ctx.GerenciadorHitboxCliente.PararTodas()
 
 	if ehCombo then
+		comboState.ultimoComboTerminou = os.clock()
 		ResetarComboState()
 		ctx.TentarAcao:FireServer("ComboTerminou")
 	end
@@ -640,6 +648,8 @@ function Combo.TentarFintar(): (boolean, string?)
 				comboState.conexaoMonitorReversao = nil
 			end
 
+			local indiceFinta = comboState.indiceAtual
+
 			local connection
 			connection = RunService.RenderStepped:Connect(function()
 				if not track or not track.IsPlaying or track.TimePosition <= tempoInicioCurrentStrike + 0.01 then
@@ -693,9 +703,11 @@ function Combo.TentarFintar(): (boolean, string?)
 			comboState.multiplicadorDano = 1.0
 			comboState.tempoInicioCarga = nil
 
-			local cooldownCompleto = ctx.Modulo_Configuracoes.ObterConfiguracao("CooldownComboLeve") or 0.4
-			local cooldownFinta = 0.1
-			comboState.ultimoComboTerminou = agora - cooldownCompleto + cooldownFinta
+			if indiceFinta >= 3 then
+				comboState.ultimoComboTerminou = agora
+			else
+				comboState.ultimoComboTerminou = 0
+			end
 
 			ctx.EstadoAtual.estadoAcao = "Nenhuma"
 
@@ -711,6 +723,10 @@ function Combo.TentarFintar(): (boolean, string?)
 	end
 
 	return false, nil
+end
+
+function Combo.ReiniciarCooldownFinta()
+	ReiniciarCooldownFinta()
 end
 
 function Combo.ResolverFintaPendente()
@@ -949,6 +965,7 @@ function Combo.Inicializar(contexto)
 	ctx.ClientBridge.TentarFintar = Combo.TentarFintar
 	ctx.ClientBridge.ResolverFintaPendente = Combo.ResolverFintaPendente
 	ctx.ClientBridge.CancelarFintaPendente = Combo.CancelarFintaPendente
+	ctx.ClientBridge.ReiniciarCooldownFinta = Combo.ReiniciarCooldownFinta
 	ctx.ClientBridge.AplicarImpulsoAtaque = Combo.AplicarImpulsoAtaque
 end
 

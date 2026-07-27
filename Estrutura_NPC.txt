@@ -1,0 +1,35 @@
+Estrutura de Arquivos - Sistema de NPC
+
+📁 ServerScriptService
+└── 📁 NPC
+    ├── 📁 Combate
+    │   └── 📄 ControladorCombateNPC.luau
+    ├── 📁 Comportamentos
+    │   ├── 📄 Animal.luau
+    │   ├── 📄 Combate.luau
+    │   ├── 📄 Comportamento.luau
+    │   └── 📄 Dialogo.luau
+    └── 📁 Gerenciamento
+        ├── 📄 ConstrutorModeloNPC.luau
+        ├── 📄 GerenciadorNPC.luau
+        ├── 📄 IniciarNPC.server.luau
+        ├── 📄 SchedulerServidor.luau
+        └── 📄 Spawnar.luau
+
+📁 ReplicatedStorage
+└── 📁 Entidades
+    └── 📁 NPC
+        ├── 📄 ConfigNPC.luau
+        ├── 📄 RemotosNPC.luau
+        └── 📄 Tipos.luau
+
+📁 StarterPlayerScripts
+└── 📁 NPC
+    ├── 📄 ControladorNPC.luau
+    ├── 📄 IniciarNPC.client.luau
+    ├── 📄 SchedulerCliente.luau
+    └── 📁 Views
+        ├── 📄 Animal.luau
+        ├── 📄 Combate.luau
+        ├── 📄 Dialogo.luau
+        └── 📄 ViewBase.luau

@@ -431,6 +431,25 @@ function Mod.EstaArmaPronta(modelo: Model): boolean
 	return (s ~= nil and s.armaPronta) == true
 end
 
+function Mod.ObterModoAnimacao(modelo: Model): string
+	local s = estados[modelo]
+	if not s then
+		local idArma = modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId) :: string?
+		if idArma and idArma ~= "" then
+			local dados = CatalogoItens.Get(idArma)
+			if dados and dados.ModoAnimacao then
+				return dados.ModoAnimacao
+			end
+		end
+		return "Punhos"
+	end
+	resolverArmaEquipada(s)
+	local idArma = (s.armaEquipada and lerStringDados(s.armaEquipada, "Id"))
+		or s.modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId)
+	local dadosArma = idArma and CatalogoItens.Get(idArma)
+	return (dadosArma and dadosArma.ModoAnimacao) or "Punhos"
+end
+
 function Mod.ObterAlcanceArmaEquipada(modelo: Model): number?
 	local s = estados[modelo]
 	if not s then
@@ -679,7 +698,8 @@ function Mod.Atacar(modelo: Model, verificarAlvo: (() -> boolean)?): boolean
 	s.verificarAlvo = verificarAlvo
 
 	if maquina.DefinirModo then
-		maquina:DefinirModo("Punhos")
+		local modo = Mod.ObterModoAnimacao(modelo)
+		maquina:DefinirModo(modo)
 	end
 
 	-- Delega ao pipeline do player: valida estado, toca animacao, aplica

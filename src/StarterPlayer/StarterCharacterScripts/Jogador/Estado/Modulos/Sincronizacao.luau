@@ -189,6 +189,12 @@ function Sincronizacao.ProcessarSincronizacao(entidade: Model, dados)
 	ctx.EstadoAtual.agachado = dados.agachado
 	ctx.EstadoAtual.correndo = dados.correndo
 
+	if dados.estadoAcao == "Aparado" and acaoAnterior ~= "Aparado" then
+		if ctx.ClientBridge.ReiniciarCooldownFinta then
+			ctx.ClientBridge.ReiniciarCooldownFinta()
+		end
+	end
+
 	if ctx.ParkourState.ativo then
 		ctx.EstadoAtual.estadoAcao = "Parkour"
 		ctx.EstadoAtual.estadoMov = "Parkour"

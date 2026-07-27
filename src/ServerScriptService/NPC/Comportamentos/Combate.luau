@@ -131,7 +131,7 @@ local ATRASO_BLOQUEIO_PREDITIVO = 0.28
 local ESPERA_BAITING_MIN = 1.0
 local ESPERA_BAITING_MAX = 2.5
 
-local ATRASO_ATAQUE_APOS_PARRY = 0.2
+local ATRASO_ATAQUE_APOS_PARRY = 0.4
 local JANELA_PREPARO_APOS_APARADO = 2.0
 
 local INTERVALO_ROLAGEM_ORBITA = 7
@@ -362,6 +362,7 @@ local function instalarSincMaquina(ctx: Ctx, maq: any)
 				ctx.estado.prepararParryAte = os.clock() + JANELA_PREPARO_APOS_APARADO
 				ctx.estado.cooldownBloqueio = 0
 				ctx.estado.cooldownPredicaoParry = 0
+				ctx.estado.cooldownAtaquePersonagem = 0
 				ctx.humanoide.WalkSpeed = VELOCIDADE_APARANDO
 				ControladorCombateNPC.PararAtaque(ctx.modelo)
 				limparOrientacao(ctx)
@@ -380,6 +381,7 @@ local function instalarSincMaquina(ctx: Ctx, maq: any)
 				ctx.estado.bloqueioSeguraCombo = false
 				ctx.estado.cooldownBloqueio = 0
 				ctx.estado.cooldownPredicaoParry = 0
+				ctx.estado.cooldownAtaquePersonagem = 0
 				tentarAtaqueRiposte(ctx)
 			end
 		elseif novo == "Nenhuma" then
@@ -1111,7 +1113,8 @@ local Combate: Comportamento.Comportamento = {
 			ControladorCombateNPC.EquiparArma(ctx.modelo)
 			setModoCombateAttr(ctx, true)
 			if maq and maq.DefinirModo then
-				maq:DefinirModo("Punhos")
+				local modo = ControladorCombateNPC.ObterModoAnimacao(ctx.modelo)
+				maq:DefinirModo(modo)
 			end
 			pararMovimento(ctx)
 			orientarParaAlvo(ctx, alvoHRP.Position)
@@ -1141,7 +1144,7 @@ local Combate: Comportamento.Comportamento = {
 			if npcParado then
 				if not ctx.estado.tempoParadoInicio then
 					ctx.estado.tempoParadoInicio = agora
-				elseif agora - ctx.estado.tempoParadoInicio >= 1.0 then
+				elseif agora - ctx.estado.tempoParadoInicio >= 0.35 then
 					ctx.estado.cooldownAtaquePersonagem = 0
 				end
 			else

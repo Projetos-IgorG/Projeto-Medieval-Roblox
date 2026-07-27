@@ -68,6 +68,8 @@ export type OpcoesSpawn = {
 	podeAtacar: boolean?,
 	podeDefender: boolean?,
 	podeParry: boolean?,
+	-- Id da arma do catalogo com a qual o NPC de Combate deve spawnar.
+	armaId: string?,
 }
 
 -- Snapshot devolvido por consultas (nunca a referencia interna).

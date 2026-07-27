@@ -40,6 +40,26 @@ type Ctx = ViewBase.ContextoView
 
 local Punhos = (IdsCombate :: any).Punhos and (IdsCombate :: any).Punhos.animacoes or {}
 
+-- Retorna as animacoes do modo correto para o NPC.
+-- So usa o modo da arma quando ArmaPronta == true (arma de fato equipada).
+-- Antes disso, retorna Punhos (igual um player sem arma).
+local function obterAnimacoesModo(ctx: Ctx): { [string]: string }
+	local armaPronta = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaPronta) == true
+	if armaPronta then
+		local idArma = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId) :: string?
+		if idArma and idArma ~= "" then
+			local dados = CatalogoItens.Get(idArma)
+			if dados and dados.ModoAnimacao then
+				local modoData = (IdsCombate :: any)[dados.ModoAnimacao]
+				if modoData and modoData.animacoes then
+					return modoData.animacoes
+				end
+			end
+		end
+	end
+	return Punhos
+end
+
 local FADE_LOCOMOCAO = 0.18
 local FADE_REACAO_IN = 0.14
 local FADE_REACAO_OUT = 0.18
@@ -72,8 +92,44 @@ local LOCOMOCAO_NAMES: { [string]: boolean } = {
 -- Helpers de tracks.
 -- =============================================================================
 
+local function limparTracks(ctx: Ctx)
+	for _, t in ctx.tracks do
+		pcall(function()
+			t:Stop(0)
+			t:Destroy()
+		end)
+	end
+	table.clear(ctx.tracks)
+end
+
 local function carregarTrack(ctx: Ctx, nome: string): AnimationTrack?
-	local id = Punhos[nome]
+	local armaPronta = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaPronta) == true
+	local ehEquipTransicao = (nome == "Equipar" or nome == "Desequipar")
+	-- Antes de equipar (ArmaPronta == false), NPC usa animacoes padrao do Roblox.
+	-- Nenhuma animacao de combate e carregada (nem Punhos) ate o equip completar.
+	-- Excecao: Equipar/Desequipar sempre carregam a animacao da arma sendo equipada.
+	if not armaPronta and not ehEquipTransicao then
+		return nil
+	end
+	local idArma = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId) :: string?
+	local modo = "Punhos"
+	if idArma and idArma ~= "" then
+		local dados = CatalogoItens.Get(idArma)
+		if dados and dados.ModoAnimacao then
+			modo = dados.ModoAnimacao
+		end
+	end
+	local modoData = (IdsCombate :: any)[modo]
+	local anims = modoData and modoData.animacoes
+	local id = anims and anims[nome]
+
+	if not id then
+		-- Fallback para punhos
+		local fallbackData = (IdsCombate :: any).Punhos
+		local fallbackAnims = fallbackData and fallbackData.animacoes
+		id = fallbackAnims and fallbackAnims[nome]
+	end
+
 	if not id then
 		return nil
 	end
@@ -358,20 +414,79 @@ end
 
 local function criarWeaponModelsLocais(ctx: Ctx)
 	local id = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId) :: string?
-	-- Fallback para punhos se nao houver id explicito.
 	local template: Model? = nil
 	local tool = encontrarTemplateArma(id) or encontrarTemplateArma("punhos")
 	if tool then
-		local wm = tool:FindFirstChild("WeaponModel")
-		if wm and wm:IsA("Model") then
-			template = wm
+		local modelVisual = Instance.new("Model")
+		modelVisual.Name = "WeaponVisual"
+
+		local cloneTool = tool:Clone()
+		local hasWeaponModel = cloneTool:FindFirstChild("WeaponModel") ~= nil
+
+		for _, filho in ipairs(cloneTool:GetChildren()) do
+			if
+				filho:IsA("Script")
+				or filho:IsA("LocalScript")
+				or filho:IsA("ProximityPrompt")
+				or filho:IsA("Configuration")
+			then
+				filho:Destroy()
+			elseif filho:IsA("Model") and filho.Name == "WeaponModel" then
+				for _, subFilho in ipairs(filho:GetChildren()) do
+					if
+						not (
+							subFilho:IsA("Script")
+							or subFilho:IsA("LocalScript")
+							or subFilho:IsA("ProximityPrompt")
+							or subFilho:IsA("Configuration")
+						)
+					then
+						subFilho.Parent = modelVisual
+					end
+				end
+				filho:Destroy()
+			else
+				local filhoInstance = filho :: Instance
+				if hasWeaponModel and filhoInstance.Name == "Handle" then
+					filhoInstance:Destroy()
+				else
+					filhoInstance.Parent = modelVisual
+				end
+			end
 		end
+		cloneTool:Destroy()
+
+		if modelVisual:FindFirstChild("Handle") then
+			template = modelVisual
+		else
+			modelVisual:Destroy()
+		end
+
+		tool:Destroy()
 	end
+
 	if not template then
 		return
 	end
-	criarWeaponModelMao(ctx, template, "Right")
-	criarWeaponModelMao(ctx, template, "Left")
+
+	local idArma = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId) :: string?
+	local modo = "Punhos"
+	if idArma and idArma ~= "" then
+		local dados = CatalogoItens.Get(idArma)
+		if dados and dados.ModoAnimacao then
+			modo = dados.ModoAnimacao
+		end
+	end
+
+	if modo == "Punhos" then
+		criarWeaponModelMao(ctx, template, "Right")
+		criarWeaponModelMao(ctx, template, "Left")
+	else
+		criarWeaponModelMao(ctx, template, "Right")
+		destruirWeaponModelMao(ctx, "Left")
+	end
+
+	template:Destroy()
 end
 
 -- =============================================================================
@@ -509,10 +624,9 @@ local function configurarHitboxParaSwing(ctx: Ctx, track: AnimationTrack, acaoTi
 		return
 	end
 
-	-- Garantir que as armas visuais estejam sincronizadas antes de validar
-	sincronizarArmaVisual(ctx)
-
 	-- So tem sentido se a arma estiver pronta visualmente (WeaponModel local existe).
+	-- NAO chamar sincronizarArmaVisual() aqui: ela chama limparTracks() que destroi
+	-- o track de ataque recem iniciado, invalidando todos os GetMarkerReachedSignal.
 	if not ctx.estado.WeaponModelLocalRight and not ctx.estado.WeaponModelLocalLeft then
 		return
 	end
@@ -523,7 +637,18 @@ local function configurarHitboxParaSwing(ctx: Ctx, track: AnimationTrack, acaoTi
 	local timings = obterTimingsAtaque(ctx)
 	local t = timings.Ataque
 	local indiceSwing = ctx.modelo:GetAttribute(TiposNPC.Chaves.AcaoIndice) :: number?
-	local maoIndice = maoPorIndice(indiceSwing)
+	-- Determinar mao de ataque baseado nos weapon models que existem de fato,
+	-- NAO usar maoPorIndice que e hardcoded para Punhos (impar=Left, par=Right).
+	-- Para armas de uma mao (UmaMao), so existe WeaponModelLocalRight,
+	-- entao a mao de ataque deve ser sempre Right.
+	local maoIndice: string
+	if ctx.estado.WeaponModelLocalRight and ctx.estado.WeaponModelLocalLeft then
+		-- Ambas as maos tem arma (Punhos ou UmaMaoDupla): alternar
+		maoIndice = maoPorIndice(indiceSwing)
+	else
+		-- Arma em uma mao so: usar a mao que tem o modelo
+		maoIndice = if ctx.estado.WeaponModelLocalRight then "Right" else "Left"
+	end
 
 	-- Token: apenas o swing mais recente conta. Markers/delays antigos abortam.
 	ctx.estado.swingHitToken = (ctx.estado.swingHitToken or 0) + 1
@@ -612,24 +737,25 @@ end
 
 type Entry = { nome: string, id: string, looped: boolean }
 
-local function entradaPorEstado(estado: string): Entry?
+local function entradaPorEstado(ctx: Ctx, estado: string): Entry?
+	local anims = obterAnimacoesModo(ctx)
 	if estado == TiposNPC.Estado.Aparando then
-		return { nome = "Aparando", id = Punhos.Aparar or Punhos.Defesa or "", looped = false }
+		return { nome = "Aparando", id = anims.Aparar or anims.Defesa or Punhos.Aparar or Punhos.Defesa or "", looped = false }
 	elseif estado == TiposNPC.Estado.Aparado then
-		return { nome = "Aparado", id = Punhos.Aparado or Punhos.Stunado or "", looped = false }
+		return { nome = "Aparado", id = anims.Aparado or anims.Stunado or Punhos.Aparado or Punhos.Stunado or "", looped = false }
 	elseif estado == TiposNPC.Estado.DefesaQuebrada then
-		return { nome = "DefesaQuebrada", id = Punhos.DefesaQuebrada or Punhos.Stunado or "", looped = false }
+		return { nome = "DefesaQuebrada", id = anims.DefesaQuebrada or anims.Stunado or Punhos.DefesaQuebrada or Punhos.Stunado or "", looped = false }
 	elseif estado == TiposNPC.Estado.Stunado then
-		return { nome = "Stunado", id = Punhos.Stunado or "", looped = false }
+		return { nome = "Stunado", id = anims.Stunado or Punhos.Stunado or "", looped = false }
 	elseif estado == TiposNPC.Estado.Defendendo then
-		return { nome = "Defendendo", id = Punhos.Defesa or "", looped = true }
+		return { nome = "Defendendo", id = anims.Defesa or Punhos.Defesa or "", looped = true }
 	end
 	return nil
 end
 
 local function tocarEstado(ctx: Ctx)
 	local estado = ctx.modelo:GetAttribute(TiposNPC.Chaves.Estado) or TiposNPC.Estado.Idle
-	local entry = entradaPorEstado(estado :: string)
+	local entry = entradaPorEstado(ctx, estado :: string)
 	if not entry then
 		-- Estado normal (Idle/Andando/Correndo/Atacando) - nao e reacao; locomocao
 		-- e ataque sao tocadas separadamente via NPC_LocomocaoNome / NPC_Acao.
@@ -653,6 +779,13 @@ local function tocarEstado(ctx: Ctx)
 	local track = ViewBase.CarregarTrack(ctx, entry.nome, entry.id)
 	if not track then
 		return
+	end
+	if estado == TiposNPC.Estado.Aparando then
+		local ataque = ctx.tracks["Ataque"]
+		if ataque and ataque.IsPlaying then
+			ataque:Stop(FADE_SAIDA_ATAQUE)
+		end
+		pararTodasLocomocao(ctx)
 	end
 	if ctx.estado.estadoTocando == entry.nome then
 		if track.IsPlaying then
@@ -718,14 +851,46 @@ local function tocarAcao(ctx: Ctx)
 		if conn and conn.Connected then
 			conn:Disconnect()
 		end
+		ctx.estado.equipArmaJaCriada = false
+		-- Marker "Equip": cria a arma visual imediatamente durante a animacao
+		-- (mesmo marker usado pelo Player em Equipamento.luau).
+		-- IMPORTANTE: chama criarWeaponModelsLocais() diretamente em vez de
+		-- sincronizarArmaVisual(), porque ArmaPronta ainda e false neste ponto
+		-- (servidor so seta true apos receber EquipAnimacaoTerminou).
+		local equipMarkerConn = ctx.estado.equipMarkerConn
+		if equipMarkerConn and equipMarkerConn.Connected then
+			equipMarkerConn:Disconnect()
+		end
+		ctx.estado.equipMarkerConn = track:GetMarkerReachedSignal("Equip"):Connect(function()
+			local mc = ctx.estado.equipMarkerConn
+			if mc then
+				mc:Disconnect()
+				ctx.estado.equipMarkerConn = nil
+			end
+			if ctx.estado.equipStoppedToken == equipToken and not ctx.destruido then
+				ctx.estado.equipArmaJaCriada = true
+				criarWeaponModelsLocais(ctx)
+			end
+		end)
+		-- Stopped: notifica servidor + fallback se marker nao disparou
 		ctx.estado.equipStoppedConn = track.Stopped:Connect(function()
 			local currentConn = ctx.estado.equipStoppedConn
 			if currentConn then
 				currentConn:Disconnect()
 				ctx.estado.equipStoppedConn = nil
 			end
+			local mc = ctx.estado.equipMarkerConn
+			if mc and mc.Connected then
+				mc:Disconnect()
+				ctx.estado.equipMarkerConn = nil
+			end
 			if ctx.estado.equipStoppedToken ~= equipToken then
 				return
+			end
+			-- Fallback: se o marker "Equip" nao disparou, cria arma diretamente
+			-- (igual Player em OnEquipAnimacaoTerminou).
+			if not ctx.estado.equipArmaJaCriada and not ctx.destruido then
+				criarWeaponModelsLocais(ctx)
 			end
 			EquipAnimacaoTerminou:FireServer(ctx.modelo)
 		end)
@@ -776,11 +941,13 @@ local function tocarAcao(ctx: Ctx)
 			end
 		else
 			-- Primeiro golpe ou novo combo (animacao nao esta tocando).
+			-- IMPORTANTE: Play() ANTES de configurarHitboxParaSwing para garantir que
+			-- GetMarkerReachedSignal ja esteja ativo quando os markers dispararem.
 			if ctx.estado.acaoTick == tick and not ctx.destruido then
+				track:Play(FADE_ENTRADA_ATAQUE)
 				if typeof(tick) == "number" then
 					configurarHitboxParaSwing(ctx, track, tick)
 				end
-				track:Play(FADE_ENTRADA_ATAQUE)
 			end
 		end
 	end
@@ -807,22 +974,38 @@ end
 function sincronizarArmaVisual(ctx: Ctx)
 	local pronta = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaPronta) == true
 	if pronta then
-		-- Recria se faltar qualquer mao ou se a arma equipada mudou.
 		local idAtual = (ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId) :: string?) or "punhos"
 		if
 			ctx.estado.armaVisualIdLocal ~= idAtual
 			or not ctx.estado.WeaponModelLocalRight
-			or not ctx.estado.WeaponModelLocalLeft
+			or (idAtual == "punhos" and not ctx.estado.WeaponModelLocalLeft)
 		then
 			cancelarHitboxSwing(ctx)
 			destruirWeaponModelsLocais(ctx)
+			limparTracks(ctx)
 			criarWeaponModelsLocais(ctx)
 			ctx.estado.armaVisualIdLocal = idAtual
+
+			task.defer(function()
+				if not ctx.destruido and ctx.lod ~= TiposNPC.LOD.Distante then
+					aplicarLocomocao(ctx)
+					tocarEstado(ctx)
+				end
+			end)
 		end
 	else
 		cancelarHitboxSwing(ctx)
 		destruirWeaponModelsLocais(ctx)
-		ctx.estado.armaVisualIdLocal = nil
+		if ctx.estado.armaVisualIdLocal ~= nil then
+			limparTracks(ctx)
+			ctx.estado.armaVisualIdLocal = nil
+			task.defer(function()
+				if not ctx.destruido and ctx.lod ~= TiposNPC.LOD.Distante then
+					aplicarLocomocao(ctx)
+					tocarEstado(ctx)
+				end
+			end)
+		end
 	end
 end
 

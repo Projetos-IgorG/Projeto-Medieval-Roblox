@@ -42,6 +42,7 @@ local EquipamentosModelos = Modulos:WaitForChild("Modelos"):WaitForChild("Itens"
 
 local EntidadesPasta = Modulos:WaitForChild("Entidades")
 local LeitorEntidade = require(EntidadesPasta:WaitForChild("LeitorEntidade"))
+local CatalogoItens = require(Modulos:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
 
 local AdminDevRemote = nil
 
@@ -2434,14 +2435,27 @@ end
 -- o servidor decide posicao (a frente do jogador) e cria o NPC.
 -- =============================================================================
 
--- Capacidades aplicadas ao proximo Combate Hostil que for spawnado.
--- Persistem enquanto o painel estiver vivo (sao recriadas em cada renderNPCs).
 local capacidadesNPC = {
 	podeAndar = true,
 	podeAtacar = true,
 	podeDefender = true,
 	podeParry = true,
 }
+
+local armaSelecionadaNPC = "punhos"
+local listaArmasNPC = {}
+
+local function inicializarListaArmasNPC()
+	if #listaArmasNPC > 0 then
+		return
+	end
+	for id, dados in pairs(CatalogoItens.PorTipo("Tool")) do
+		if dados.Subtipo == "Arma" then
+			table.insert(listaArmasNPC, id)
+		end
+	end
+	table.sort(listaArmasNPC)
+end
 
 local DEBUG = false
 local function dbg(...)
@@ -2477,6 +2491,7 @@ local function dispararSpawnCombate(hostil: boolean)
 		podeAtacar = capacidadesNPC.podeAtacar,
 		podeDefender = capacidadesNPC.podeDefender,
 		podeParry = capacidadesNPC.podeParry,
+		armaId = armaSelecionadaNPC,
 	}
 	dispararSpawnNPC(payload)
 end
@@ -2520,6 +2535,20 @@ function renderNPCs()
 		ordem += 1
 		return ordem
 	end
+
+	inicializarListaArmasNPC()
+	createSectionHeader(settingsScroll, "Arma Equipar (NPC Combate)", nextOrder())
+	createAdminDropdown(
+		settingsScroll,
+		"Arma",
+		nextOrder(),
+		listaArmasNPC,
+		armaSelecionadaNPC,
+		function(v)
+			armaSelecionadaNPC = v
+		end,
+		"Selecionar Arma"
+	)
 
 	createSectionHeader(settingsScroll, "Capacidades (aplicadas em tempo real aos NPCs hostis)", nextOrder())
 	createBooleanControl(settingsScroll, "Pode andar", capacidadesNPC.podeAndar, nextOrder(), function(v)
