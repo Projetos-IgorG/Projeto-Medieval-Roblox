@@ -1,19 +1,14 @@
 --!nonstrict
-
 --[[
-    Script: SombraCabeca.client.luau
-    Caminho: src/StarterPlayer/StarterCharacterScripts/Jogador/Camera
-    Responsabilidade: Atualiza sombra e visibilidade da cabeca do personagem local.
-    Uso: LocalScript; roda automaticamente para o jogador local em src/StarterPlayer/StarterCharacterScripts/Jogador/Camera.
-    Nao faz: Nao valida autoridade do servidor, nao salva dados persistentes e nao substitui regras server-side.
-    Funcoes principais: createShadowClone, registerPart, unregisterPart, processChild, cleanup, activate
+	Módulo: SombraCabeca
+	Caminho: src/StarterPlayer/StarterCharacterScripts/Jogador/Camera
+	Responsabilidade: Atualiza sombra e visibilidade da cabeça do personagem local em primeira pessoa.
+	Uso: ModuleScript; importado pelo init.client.luau da Camera.
+	Não faz: Não valida autoridade do servidor, não salva dados persistentes.
 ]]
-local Players = game:GetService("Players")
+
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local player = Players.LocalPlayer
-local camera = workspace.CurrentCamera
 
 local ClientBridge =
 	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("ComunicacaoCliente"):WaitForChild("PonteCliente"))
@@ -24,6 +19,14 @@ local ProjetorSombra = require(
 		:WaitForChild("ProjetorSombra")
 )
 
+-- ── Módulo ─────────────────────────────────────────────────────────────
+
+local SombraCabeca = {}
+
+-- ── Estado interno ─────────────────────────────────────────────────────
+
+local camera = workspace.CurrentCamera
+
 local projector: Model = Instance.new("Model")
 projector.Name = "ShadowProjector"
 
@@ -31,6 +34,8 @@ local activeChar: Model? = nil
 local registry: { [BasePart]: BasePart } = {}
 local charConnections: { RBXScriptConnection } = {}
 local wasActive = false
+
+-- ── Funções privadas ───────────────────────────────────────────────────
 
 local function createShadowClone(part: BasePart): BasePart
 	local clone = part:Clone()
@@ -139,7 +144,9 @@ local function update()
 	end
 end
 
-local function onCharacterAdded(char: Model)
+-- ── API pública ────────────────────────────────────────────────────────
+
+function SombraCabeca.OnCharacterAdded(char: Model)
 	cleanup()
 	activeChar = char
 
@@ -165,14 +172,18 @@ local function onCharacterAdded(char: Model)
 	table.insert(charConnections, removeConn)
 end
 
-if player.Character then
-	onCharacterAdded(player.Character)
+function SombraCabeca.Bind()
+	RunService:BindToRenderStep("HeadShadowProjection", Enum.RenderPriority.Camera.Value + 1, update)
 end
 
-RunService:BindToRenderStep("HeadShadowProjection", Enum.RenderPriority.Camera.Value + 1, update)
+function SombraCabeca.Cleanup()
+	cleanup()
+end
 
-script.Destroying:Connect(function()
+function SombraCabeca.Destroy()
 	cleanup()
 	RunService:UnbindFromRenderStep("HeadShadowProjection")
 	projector:Destroy()
-end)
+end
+
+return SombraCabeca

@@ -9,9 +9,9 @@
 local RotacaoCabeca = {}
 local CFNew, CFAng, asin = CFrame.new, CFrame.Angles, math.asin
 
-function RotacaoCabeca.CalcularTargetC0(cameraDirection, yOffset)
-	local maxSide = math.rad(55)
-	local maxUpDown = math.rad(30)
+function RotacaoCabeca.CalcularTargetC0(cameraDirection, yOffset, customMaxSide: number?, customMaxUpDown: number?)
+	local maxSide = customMaxSide or math.rad(55)
+	local maxUpDown = customMaxUpDown or math.rad(30)
 
 	local sideAngle = math.clamp(-asin(cameraDirection.x), -maxSide, maxSide)
 	local upDownAngle = math.clamp(-asin(cameraDirection.y), -maxUpDown, maxUpDown)
