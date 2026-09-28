@@ -101,11 +101,13 @@ export type DadosEstado = {
 	-- Roll (esquiva rolando no chão)
 	rolando: boolean,
 	ultimoRoll: number,
+	ultimoRollFim: number,
 	direcaoRoll: string,
 
 	-- Dash (impulso rápido lateral/trás)
 	dashando: boolean,
 	ultimoDash: number,
+	ultimoDashFim: number,
 	direcaoDash: string,
 
 	correndoIntent: boolean?,
@@ -148,10 +150,12 @@ function MaquinaDeEstados.Novo(entidade: Model)
 
 		rolando = false,
 		ultimoRoll = 0,
+		ultimoRollFim = 0,
 		direcaoRoll = "Frente",
 
 		dashando = false,
 		ultimoDash = 0,
+		ultimoDashFim = 0,
 		direcaoDash = "Frente",
 
 		ultimoComboTerminou = 0,
@@ -693,6 +697,7 @@ function MaquinaDeEstados:CompletarRoll()
 
 	self.dados.rolando = false
 	self.dados.direcaoRoll = "Frente"
+	self.dados.ultimoRollFim = os.clock()
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Nenhuma)
 
 	return true
@@ -777,6 +782,7 @@ function MaquinaDeEstados:CompletarDash()
 
 	self.dados.dashando = false
 	self.dados.direcaoDash = "Frente"
+	self.dados.ultimoDashFim = os.clock()
 	self:_AlterarEstadoAcao(MaquinaDeEstados.EstadoAcao.Nenhuma)
 
 	return true

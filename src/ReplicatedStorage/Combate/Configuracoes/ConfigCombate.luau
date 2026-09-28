@@ -190,6 +190,10 @@ Modulo_Configuracoes.ConfiguracaoGlobal = {
 	VelocidadeCargaAtaque = 0.4,
 	JanelaCargaLeve = 0.25,
 	MultiplicadorDanoMaximoCarga = 1.2,
+
+	-- Favor the Defender: proteção contra hits de jogadores lagados
+	MaxToleranciaEsquiva = 0.15, -- cap máximo (s) de compensação de latência do defensor (RTT/2)
+	JanelaIframesPosEsquiva = 0.08, -- tempo (s) após completar roll/dash onde hits são rejeitados
 }
 
 Modulo_Configuracoes.ModoAnimacoes = Modulo_ModosAnimacao

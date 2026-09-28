@@ -2538,17 +2538,9 @@ function renderNPCs()
 
 	inicializarListaArmasNPC()
 	createSectionHeader(settingsScroll, "Arma Equipar (NPC Combate)", nextOrder())
-	createAdminDropdown(
-		settingsScroll,
-		"Arma",
-		nextOrder(),
-		listaArmasNPC,
-		armaSelecionadaNPC,
-		function(v)
-			armaSelecionadaNPC = v
-		end,
-		"Selecionar Arma"
-	)
+	createAdminDropdown(settingsScroll, "Arma", nextOrder(), listaArmasNPC, armaSelecionadaNPC, function(v)
+		armaSelecionadaNPC = v
+	end, "Selecionar Arma")
 
 	createSectionHeader(settingsScroll, "Capacidades (aplicadas em tempo real aos NPCs hostis)", nextOrder())
 	createBooleanControl(settingsScroll, "Pode andar", capacidadesNPC.podeAndar, nextOrder(), function(v)

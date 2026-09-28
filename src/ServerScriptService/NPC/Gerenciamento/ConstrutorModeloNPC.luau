@@ -1,208 +1,119 @@
 --!strict
 
 --[[
-    Script: ConstrutorModeloNPC.luau
-    Caminho: src/ServerScriptService/NPC/Gerenciamento
-    Responsabilidade: Constroi o Model R6 de um NPC sem usar templates manuais (clona aparencia do player ou monta R6 base; para animais, clona da pasta de animais se existir).
-    Uso: ModuleScript; require em servidor; chame Construir(opcoes).
-    Nao faz: Nao registra a entidade nem inicia comportamento; apenas devolve o Model pronto para uso.
-    Funcoes principais: Construir
+	Script: ConstrutorModeloNPC.luau
+	Caminho: src/ServerScriptService/NPC/Gerenciamento
+	Responsabilidade: Construir o Model fisico do NPC a partir das opcoes de
+	spawn (template de ReplicatedStorage, aparencia de player ou rig padrao).
+
+	Correcao em relacao ao codigo antigo:
+	- Ao clonar o personagem de um player, as Tools carregadas pelo player
+	  eram clonadas junto (o NPC nascia "segurando" a Tool do player e a
+	  resolucao de arma via Tool fisica pegava a arma errada). Agora as Tools
+	  sao removidas da copia.
 ]]
 
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local TiposNPC = require(
-	ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos")
-)
+local ConstrutorModeloNPC = {}
 
-type OpcoesSpawn = TiposNPC.OpcoesSpawn
-
-local Construtor = {}
-
-local CACHE_DESCRICAO_PADRAO: HumanoidDescription? = nil
-
-local function obterDescricaoPadrao(): HumanoidDescription
-	if CACHE_DESCRICAO_PADRAO then
-		return CACHE_DESCRICAO_PADRAO
+local function prepararModelo(modelo: Model, nome: string?)
+	if nome and nome ~= "" then
+		modelo.Name = nome
 	end
-	local desc = Instance.new("HumanoidDescription")
-	-- Cores neutras para fallback (humano generico).
-	desc.HeadColor = Color3.fromRGB(213, 178, 138)
-	desc.LeftArmColor = desc.HeadColor
-	desc.RightArmColor = desc.HeadColor
-	desc.LeftLegColor = Color3.fromRGB(76, 56, 40)
-	desc.RightLegColor = desc.LeftLegColor
-	desc.TorsoColor = Color3.fromRGB(91, 64, 41)
-	CACHE_DESCRICAO_PADRAO = desc
-	return desc
-end
 
-local function ehScriptPadraoRoblox(inst: Instance): boolean
-	-- Scripts adicionados automaticamente pelo Roblox em personagens (Animate, Sound, Health, Animator)
-	-- conflitam com nosso sistema (Animate dispara Idle/Walk/Run em paralelo as nossas tracks).
-	if not (inst:IsA("LocalScript") or inst:IsA("Script")) then
-		return false
-	end
-	local nome = inst.Name
-	return nome == "Animate" or nome == "Sound" or nome == "Health"
-end
-
-local function limparScriptsConflitantes(modelo: Model)
-	for _, desc in modelo:GetDescendants() do
-		if ehScriptPadraoRoblox(desc) then
-			desc:Destroy()
-		end
-	end
-	-- Remove qualquer Animator gerado automaticamente: na arquitetura client-fat
-	-- cada cliente cria seu proprio Animator local, e o servidor NUNCA toca anim.
 	local hum = modelo:FindFirstChildOfClass("Humanoid")
 	if hum then
-		for _, child in hum:GetChildren() do
-			if child:IsA("Animator") then
-				child:Destroy()
-			end
+		hum.BreakJointsOnDeath = false -- ragdoll cuida da morte
+	end
+
+	local hrp = modelo:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if hrp then
+		modelo.PrimaryPart = hrp
+	end
+
+	for _, desc in modelo:GetDescendants() do
+		if desc:IsA("BasePart") then
+			desc.Anchored = false
 		end
 	end
 end
 
-local function clonarPersonagemDoPlayer(player: Player): Model?
+local function clonarPersonagemDoPlayer(player: Player, nome: string?): Model?
 	local char = player.Character
 	if not char then
 		return nil
 	end
-	if not char:FindFirstChildOfClass("Humanoid") then
+
+	char.Archivable = true
+	local copia = char:Clone()
+	char.Archivable = false
+	if not copia then
 		return nil
 	end
-	-- Aguarda parts essenciais.
-	local hrp = char:FindFirstChild("HumanoidRootPart")
-	if not hrp then
-		return nil
+
+	-- FIX: nunca herdar Tools do player (arma do NPC vem de NPC_ArmaEquipadaId).
+	for _, child in copia:GetChildren() do
+		if child:IsA("Tool") then
+			child:Destroy()
+		end
 	end
-	local sucesso, copia = pcall(function()
-		return char:Clone() :: Model
-	end)
-	if not sucesso or not copia then
-		return nil
+
+	-- Scripts do personagem do player nao devem rodar no NPC.
+	for _, desc in copia:GetDescendants() do
+		if desc:IsA("BaseScript") or desc:IsA("ForceField") then
+			desc:Destroy()
+		end
 	end
-	-- Limpa scripts/anexos que pertencem ao player original.
-	limparScriptsConflitantes(copia)
+
+	prepararModelo(copia, nome or (player.Name .. "_NPC"))
 	return copia
 end
 
-local function criarHumanoR6Generico(): Model
-	-- Usa o servico oficial para garantir um R6 funcional sem template.
-	local sucesso, modelo = pcall(function()
-		return Players:CreateHumanoidModelFromDescriptionAsync(
-			obterDescricaoPadrao(),
-			Enum.HumanoidRigType.R6
-		)
-	end)
-	if sucesso and modelo then
-		return modelo
-	end
-	-- Fallback minimo (nunca deveria acontecer, mas garante seguranca).
-	warn("[ConstrutorModeloNPC] Falha em CreateHumanoidModelFromDescriptionAsync; usando placeholder.")
-	local placeholder = Instance.new("Model")
-	local hrp = Instance.new("Part")
-	hrp.Name = "HumanoidRootPart"
-	hrp.Size = Vector3.new(2, 2, 1)
-	hrp.Transparency = 1
-	hrp.CanCollide = false
-	hrp.Parent = placeholder
-	placeholder.PrimaryPart = hrp
-	local hum = Instance.new("Humanoid")
-	hum.RigType = Enum.HumanoidRigType.R6
-	hum.Parent = placeholder
-	return placeholder
-end
-
-local function clonarTemplateAnimal(especieId: string): Model?
-	local raiz = ReplicatedStorage:FindFirstChild("Entidades")
-	local pastaNPC = raiz and raiz:FindFirstChild("NPC")
-	local pastaAnimais = pastaNPC and pastaNPC:FindFirstChild("Animais")
-	if not pastaAnimais then
+local function buscarTemplate(nomeTemplate: string): Model?
+	local pastaTemplates = ReplicatedStorage:FindFirstChild("Entidades")
+	local templates = pastaTemplates and pastaTemplates:FindFirstChild("Templates")
+	if not templates then
 		return nil
 	end
-	local template = pastaAnimais:FindFirstChild(especieId)
-	if not template or not template:IsA("Model") then
-		return nil
+	local alvo = templates:FindFirstChild(nomeTemplate)
+	if alvo and alvo:IsA("Model") then
+		return alvo
 	end
-	local copia = template:Clone()
-	if not copia:FindFirstChildOfClass("Humanoid") then
-		local hum = Instance.new("Humanoid")
-		hum.RigType = Enum.HumanoidRigType.R6
-		hum.Parent = copia
-	end
-	if not copia.PrimaryPart then
-		copia.PrimaryPart = copia:FindFirstChild("HumanoidRootPart") :: BasePart?
-			or copia:FindFirstChildWhichIsA("BasePart")
-	end
-	return copia
+	return nil
 end
 
-local function ajustarHumanoide(modelo: Model)
-	local hum = modelo:FindFirstChildOfClass("Humanoid")
-	if not hum then
-		return
-	end
-	-- Forca R6.
-	hum.RigType = Enum.HumanoidRigType.R6
-	hum.BreakJointsOnDeath = false
-	hum.RequiresNeck = false
-	hum.AutoRotate = true
-	hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.Subject
-	-- Mostra barra de vida quando ferido (ver vida do NPC).
-	hum.HealthDisplayDistance = 120
-	hum.HealthDisplayType = Enum.HumanoidHealthDisplayType.DisplayWhenDamaged
-	hum.NameDisplayDistance = 60
-	-- Desabilita states que nao usaremos (parkour proprio do NPC e ragdoll).
-	hum:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
-	hum:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
-	hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-end
-
-function Construtor.Construir(opcoes: OpcoesSpawn): Model?
-	local archetype = opcoes.archetype
-	local modelo: Model?
-
-	if archetype == TiposNPC.Archetype.Animal then
-		local especie = opcoes.especie or "Galinha"
-		modelo = clonarTemplateAnimal(especie)
-		if not modelo then
-			warn(string.format(
-				"[ConstrutorModeloNPC] Template de animal '%s' nao encontrado em ReplicatedStorage/Entidades/NPC/Animais; usando R6 generico como placeholder.",
-				especie
-			))
-			modelo = criarHumanoR6Generico()
-		end
-	else
-		-- Dialogo / Combate => humano.
-		if opcoes.aparenciaDe then
-			modelo = clonarPersonagemDoPlayer(opcoes.aparenciaDe)
-		end
-		if not modelo then
-			modelo = criarHumanoR6Generico()
+function ConstrutorModeloNPC.Construir(opcoes: any): Model?
+	-- 1) Aparencia de player (payload __Player__ / aparenciaDe).
+	local aparenciaDe = opcoes.aparenciaDe
+	if typeof(aparenciaDe) == "Instance" and aparenciaDe:IsA("Player") then
+		local copia = clonarPersonagemDoPlayer(aparenciaDe, opcoes.nome)
+		if copia then
+			return copia
 		end
 	end
 
-	if not modelo then
-		return nil
+	-- 2) Template por especie/nome.
+	local nomeTemplate = opcoes.especie or opcoes.template or opcoes.nome
+	if typeof(nomeTemplate) == "string" and nomeTemplate ~= "" then
+		local template = buscarTemplate(nomeTemplate)
+		if template then
+			local copia = template:Clone()
+			prepararModelo(copia, opcoes.nome or nomeTemplate)
+			return copia
+		end
 	end
 
-	modelo.Name = opcoes.nome or (archetype .. (opcoes.especie and ("_" .. opcoes.especie) or ""))
-	ajustarHumanoide(modelo)
-	-- Limpa Animate/Sound/Health gerados automaticamente (CreateHumanoidModelFromDescriptionAsync
-	-- e clones de Character podem trazer estes; nosso sistema toca tudo manualmente).
-	limparScriptsConflitantes(modelo)
-
-	-- Garante PrimaryPart.
-	if not modelo.PrimaryPart then
-		modelo.PrimaryPart = modelo:FindFirstChild("HumanoidRootPart") :: BasePart?
-			or modelo:FindFirstChildWhichIsA("BasePart")
+	-- 3) Fallback: rig humanoide padrao em Templates/NPCBase.
+	local base = buscarTemplate("NPCBase")
+	if base then
+		local copia = base:Clone()
+		prepararModelo(copia, opcoes.nome or "NPC")
+		return copia
 	end
 
-	return modelo
+	warn("[ConstrutorModeloNPC] Nenhum template encontrado para:", tostring(nomeTemplate))
+	return nil
 end
 
-return Construtor
+return ConstrutorModeloNPC

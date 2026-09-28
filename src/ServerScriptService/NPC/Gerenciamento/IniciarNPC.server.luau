@@ -1,36 +1,31 @@
+--!strict
+
 --[[
-    Script: IniciarNPC.server.luau
-    Caminho: src/ServerScriptService/NPC/Gerenciamento
-    Responsabilidade: Inicializa a infraestrutura de NPC do servidor (cria pasta no mundo, garante remotes, e expoe um RemoteEvent de Dev para o painel disparar spawn).
-    Uso: Script de servidor; roda automaticamente.
-    Nao faz: Nao implementa IA; apenas inicializacao e bridge externo.
+	Script: IniciarNPC.server.luau
+	Caminho: src/ServerScriptService/NPC/Gerenciamento
+	Responsabilidade: Bootstrap do sistema de NPC + remotes de dev
+	(SpawnNPCDev, DespawnNPCDev, AtualizarFlagsNPCDev).
+
+	Novidade: o payload de spawn dev aceita `tempoDespawnMorte` (segundos que o
+	corpo fica no chao apos a morte antes de despawnar; padrao 60).
 ]]
 
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local ServerScriptService = game:GetService("ServerScriptService")
 
-local RemotosNPC = require(
-	ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("RemotosNPC")
-)
-local TiposNPC = require(
-	ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos")
-)
+local TiposNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos"))
+local RemotosNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("RemotosNPC"))
 
-local GerenciadorNPC = require(script.Parent:WaitForChild("GerenciadorNPC"))
+local Gerenciamento = ServerScriptService:WaitForChild("NPC"):WaitForChild("Gerenciamento")
+local GerenciadorNPC = require(Gerenciamento:WaitForChild("GerenciadorNPC"))
 
 local DEBUG = false
-local function dbg(...)
+local function dbg(...: any)
 	if DEBUG then
-		print(...)
+		print("[IniciarNPC]", ...)
 	end
 end
-
--- Garante pasta /Workspace/NPCs e pasta de remotes.
-RemotosNPC.ObterPastaMundo()
-local SpawnDevRemote = RemotosNPC.ObterRemote("SpawnNPCDev", "RemoteEvent") :: RemoteEvent
-local DespawnDevRemote = RemotosNPC.ObterRemote("DespawnNPCDev", "RemoteEvent") :: RemoteEvent
-local FlagsDevRemote = RemotosNPC.ObterRemote("AtualizarFlagsNPCDev", "RemoteEvent") :: RemoteEvent
 
 local function podeUsarDev(player: Player): boolean
 	if RunService:IsStudio() then
@@ -39,27 +34,30 @@ local function podeUsarDev(player: Player): boolean
 	if game.CreatorType == Enum.CreatorType.User and player.UserId == game.CreatorId then
 		return true
 	end
-	return player:GetAttribute("AdminDev") == true
+	if player:GetAttribute("AdminDev") == true then
+		return true
+	end
+	return false
 end
 
 local function obterCFrameNaFrente(player: Player, distancia: number): CFrame?
 	local char = player.Character
-	if not char then
-		return nil
-	end
-	local hrp = char:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
 	if not hrp then
 		return nil
 	end
 	local frente = hrp.CFrame.LookVector
-	frente = Vector3.new(frente.X, 0, frente.Z)
-	if frente.Magnitude < 0.01 then
-		frente = Vector3.new(0, 0, -1)
-	end
-	frente = frente.Unit
-	local pos = hrp.Position + frente * math.max(distancia, 3)
-	return CFrame.lookAt(pos, pos + frente)
+	local pos = hrp.Position + frente * distancia
+	return CFrame.lookAt(pos, Vector3.new(hrp.Position.X, pos.Y, hrp.Position.Z))
 end
+
+-- =============================================================================
+-- Remotes de dev.
+-- =============================================================================
+
+local SpawnDevRemote = RemotosNPC.ObterRemote("SpawnNPCDev", "RemoteEvent") :: RemoteEvent
+local DespawnDevRemote = RemotosNPC.ObterRemote("DespawnNPCDev", "RemoteEvent") :: RemoteEvent
+local FlagsDevRemote = RemotosNPC.ObterRemote("AtualizarFlagsNPCDev", "RemoteEvent") :: RemoteEvent
 
 SpawnDevRemote.OnServerEvent:Connect(function(player: Player, payload: any)
 	if not podeUsarDev(player) then
@@ -70,9 +68,11 @@ SpawnDevRemote.OnServerEvent:Connect(function(player: Player, payload: any)
 	end
 
 	local archetype = payload.archetype
-	if archetype ~= TiposNPC.Archetype.Dialogo
+	if
+		archetype ~= TiposNPC.Archetype.Dialogo
 		and archetype ~= TiposNPC.Archetype.Combate
-		and archetype ~= TiposNPC.Archetype.Animal then
+		and archetype ~= TiposNPC.Archetype.Animal
+	then
 		return
 	end
 
@@ -81,89 +81,76 @@ SpawnDevRemote.OnServerEvent:Connect(function(player: Player, payload: any)
 		return
 	end
 
+	local especieVal = if typeof(payload.especie) == "string" and payload.especie ~= "" then payload.especie else nil
+
 	local opcoes: TiposNPC.OpcoesSpawn = {
 		archetype = archetype,
 		cframe = cframe,
-		especie = type(payload.especie) == "string" and payload.especie or nil,
-		aparenciaDe = if archetype ~= TiposNPC.Archetype.Animal then player else nil,
-		nome = type(payload.nome) == "string" and payload.nome or nil,
+		especie = especieVal,
+		nome = if typeof(payload.nome) == "string" and payload.nome ~= "" then payload.nome else nil,
 		hostil = payload.hostil == true,
-		podeAndar = if typeof(payload.podeAndar) == "boolean" then payload.podeAndar else nil,
-		podeAtacar = if typeof(payload.podeAtacar) == "boolean" then payload.podeAtacar else nil,
-		podeDefender = if typeof(payload.podeDefender) == "boolean" then payload.podeDefender else nil,
-		podeParry = if typeof(payload.podeParry) == "boolean" then payload.podeParry else nil,
-		armaId = type(payload.armaId) == "string" and payload.armaId or nil,
+		podeAndar = payload.podeAndar ~= false,
+		podeAtacar = payload.podeAtacar ~= false,
+		podeDefender = payload.podeDefender == true,
+		podeParry = payload.podeParry == true,
+		armaId = if typeof(payload.armaId) == "string" and payload.armaId ~= "" then payload.armaId else nil,
+		tempoDespawnMorte = if typeof(payload.tempoDespawnMorte) == "number" and payload.tempoDespawnMorte > 0 then payload.tempoDespawnMorte else nil,
+		registrarEntidade = if typeof(payload.registrarEntidade) == "boolean" then payload.registrarEntidade else nil,
+		aparenciaDe = if (not especieVal or especieVal == "__Player__") and archetype ~= TiposNPC.Archetype.Animal then player else nil,
 	}
 
-	GerenciadorNPC.SpawnNPC(opcoes)
+	local registro = GerenciadorNPC.SpawnNPC(opcoes)
+	if registro then
+		dbg("Spawn dev por", player.Name, "->", registro.id)
+	end
 end)
 
-DespawnDevRemote.OnServerEvent:Connect(function(player: Player, payload: any)
+DespawnDevRemote.OnServerEvent:Connect(function(player: Player, alvo: any)
 	if not podeUsarDev(player) then
-		warn(string.format("[DevNPC] Player %s tentou usar DespawnNPCDev sem permissao", player.Name))
 		return
 	end
-	dbg(string.format("[DevNPC] Recebido pedido de despawn por %s. Payload: %s", player.Name, game:GetService("HttpService"):JSONEncode(payload)))
-	if typeof(payload) == "number" then
-		local sucesso = GerenciadorNPC.DespawnNPC(payload)
-		dbg(string.format("[DevNPC] Despawn de NPC unico (ID %d): sucesso = %s", payload, tostring(sucesso)) )
-	elseif typeof(payload) == "table" and payload.todos == true then
-		local lista = GerenciadorNPC.Listar()
-		dbg(string.format("[DevNPC] Despawn de todos os NPCs. Quantidade listada: %d", #lista))
-		for _, reg in lista do
-			local sucesso = GerenciadorNPC.DespawnNPC(reg.id)
-			dbg(string.format("[DevNPC] Despawning NPC ID %d (Archetype %s): sucesso = %s", reg.id, reg.archetype, tostring(sucesso)))
-		end
-	else
-		warn(string.format("[DevNPC] Payload de despawn invalido ou nao suportado: %s", typeof(payload)))
+	if typeof(alvo) == "number" then
+		GerenciadorNPC.DespawnNPC(alvo)
+	elseif typeof(alvo) == "table" and alvo.todos == true then
+		GerenciadorNPC.DespawnTodos()
 	end
 end)
 
--- Atualiza flags de capacidade em TODOS os NPCs hostis ja spawnados (real-time toggles).
-FlagsDevRemote.OnServerEvent:Connect(function(player: Player, payload: any)
+FlagsDevRemote.OnServerEvent:Connect(function(player: Player, idNPC: any, flags: any)
 	if not podeUsarDev(player) then
-		warn(string.format("[DevNPC] Player %s tentou usar AtualizarFlagsNPCDev sem permissao", player.Name))
 		return
 	end
-	if typeof(payload) ~= "table" then
-		warn("[DevNPC] Payload de atualizacao de flags invalido")
+	if typeof(idNPC) ~= "number" or typeof(flags) ~= "table" then
 		return
 	end
-	dbg(string.format("[DevNPC] Atualizando flags para NPCs ja spawnados. Payload: %s", game:GetService("HttpService"):JSONEncode(payload)))
-	local count = 0
-	for _, reg in GerenciadorNPC.Listar() do
-		local modelo = reg.modelo
-		if not modelo or not modelo.Parent then
-			continue
-		end
-		local hostil = modelo:GetAttribute(TiposNPC.Chaves.Hostil) == true
-		if reg.archetype ~= TiposNPC.Archetype.Combate or not hostil then
-			continue
-		end
-		
-		count += 1
-		if typeof(payload.podeAndar) == "boolean" then
-			modelo:SetAttribute(TiposNPC.Chaves.PodeAndar, payload.podeAndar)
-		end
-		if typeof(payload.podeAtacar) == "boolean" then
-			modelo:SetAttribute(TiposNPC.Chaves.PodeAtacar, payload.podeAtacar)
-		end
-		if typeof(payload.podeDefender) == "boolean" then
-			modelo:SetAttribute(TiposNPC.Chaves.PodeDefender, payload.podeDefender)
-			-- Parry exige defender ativo.
-			if not payload.podeDefender then
-				modelo:SetAttribute(TiposNPC.Chaves.PodeParry, false)
-			end
-		end
-		if typeof(payload.podeParry) == "boolean" then
-			local defenderAtivo = modelo:GetAttribute(TiposNPC.Chaves.PodeDefender) == true
-			modelo:SetAttribute(TiposNPC.Chaves.PodeParry, payload.podeParry and defenderAtivo)
-		end
+	local registro = GerenciadorNPC.ObterRegistro(idNPC)
+	if not registro then
+		return
 	end
-	dbg(string.format("[DevNPC] Atualizadas flags de %d NPCs hostis de combate", count))
+	local modelo = registro.modelo
+
+	-- Flags so fazem sentido em NPC de combate hostil.
+	if modelo:GetAttribute(TiposNPC.Chaves.Archetype) ~= TiposNPC.Archetype.Combate then
+		return
+	end
+	if modelo:GetAttribute(TiposNPC.Chaves.Hostil) ~= true then
+		return
+	end
+
+	if typeof(flags.podeAndar) == "boolean" then
+		modelo:SetAttribute(TiposNPC.Chaves.PodeAndar, flags.podeAndar)
+	end
+	if typeof(flags.podeAtacar) == "boolean" then
+		modelo:SetAttribute(TiposNPC.Chaves.PodeAtacar, flags.podeAtacar)
+	end
+	if typeof(flags.podeDefender) == "boolean" then
+		modelo:SetAttribute(TiposNPC.Chaves.PodeDefender, flags.podeDefender)
+	end
+	if typeof(flags.podeParry) == "boolean" then
+		-- Parry exige defesa habilitada.
+		local podeDefender = modelo:GetAttribute(TiposNPC.Chaves.PodeDefender) == true
+		modelo:SetAttribute(TiposNPC.Chaves.PodeParry, flags.podeParry and podeDefender)
+	end
 end)
 
--- Limpeza ao encerrar (jogadores saindo nao removem NPCs; servidor encerrar sim, naturalmente).
-Players.PlayerRemoving:Connect(function(_player)
-	-- nada por enquanto: NPCs persistem na sessao.
-end)
+dbg("Sistema de NPC iniciado.")

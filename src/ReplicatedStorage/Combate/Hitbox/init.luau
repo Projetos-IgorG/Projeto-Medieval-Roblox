@@ -110,7 +110,8 @@ local function _FiltrarParaEntidadeViva(raycastResult: RaycastResult): Model?
 	end
 
 	local humanoid = modelo:FindFirstChildOfClass("Humanoid")
-	if not humanoid or humanoid.Health <= 0 then
+	if not humanoid then
+		-- Não é uma entidade (não possui Humanoid)
 		return nil
 	end
 

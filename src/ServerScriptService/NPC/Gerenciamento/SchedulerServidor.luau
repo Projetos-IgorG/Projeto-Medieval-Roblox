@@ -1,164 +1,153 @@
 --!strict
 
 --[[
-    Script: SchedulerServidor.luau
-    Caminho: src/ServerScriptService/NPC/Gerenciamento
-    Responsabilidade: Loop centralizado que invoca atualizar() de todos os NPCs server-side, com fatia de tempo por archetype e re-avaliacao periodica de NetworkOwnership.
-    Uso: ModuleScript; require em GerenciadorNPC; chamar Inscrever/Cancelar; iniciado automaticamente.
-    Nao faz: Nao decide IA; apenas distribui chamadas.
-    Funcoes principais: Inscrever, Cancelar, Iniciar, Parar
+	Script: SchedulerServidor.luau
+	Caminho: src/ServerScriptService/NPC/Gerenciamento
+	Responsabilidade: Um unico Heartbeat que atualiza a IA de todos os NPCs em
+	intervalos configuraveis por archetype, e gerencia network ownership.
+
+	Correcoes em relacao ao codigo antigo:
+	- Removido o require lazy fragil de GerenciadorNPC dentro do tick
+	  (dependencia circular implicita). Agora o GerenciadorNPC injeta um
+	  callback de despawn via DefinirCallbackDespawn.
+	- NPC com modelo fora da arvore e removido do scheduler e despawnado via
+	  callback (sem vazar registro).
 ]]
 
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
-local TiposNPC = require(
-	ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos")
-)
-local ConfigNPC = require(
-	ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("ConfigNPC")
-)
-local Comportamento = require(script.Parent.Parent:WaitForChild("Comportamentos"):WaitForChild("Comportamento"))
-
-type Ctx = Comportamento.ContextoNPC
-
-type Inscricao = {
-	ctx: Ctx,
-	intervaloIA: number,
-	proximaIA: number,
-	proximaOwnership: number,
-}
+local ConfigNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("ConfigNPC"))
 
 local Scheduler = {}
 
-local inscricoes: { [number]: Inscricao } = {}
+type Agendado = {
+	registro: any,
+	proximaIA: number,
+	proximoOwnership: number,
+}
+
+local agendados: { [number]: Agendado } = {}
 local heartbeatConn: RBXScriptConnection? = nil
 
-local function jogadorMaisProximo(pos: Vector3): Player?
-	local melhor: Player? = nil
-	local melhorD = math.huge
-	for _, player in Players:GetPlayers() do
-		local char = player.Character
-		local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
-		if hrp then
-			local d = (hrp.Position - pos).Magnitude
-			if d < melhorD then
-				melhorD = d
-				melhor = player
+-- Callback injetado pelo GerenciadorNPC (evita require circular).
+local callbackDespawn: ((id: number) -> boolean)? = nil
+
+function Scheduler.DefinirCallbackDespawn(fn: (id: number) -> boolean)
+	callbackDespawn = fn
+end
+
+-- =============================================================================
+-- Ownership.
+-- =============================================================================
+
+local function definirOwnership(modelo: Model, archetype: string)
+	local hrp = modelo:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not hrp or hrp.Anchored then
+		return
+	end
+
+	local alvoOwnership: Player? = nil
+	if archetype == "Dialogo" then
+		-- Dialogo: jogador mais proximo simula a fisica (movimento suave perto).
+		local pos = hrp.Position
+		local melhor = math.huge
+		for _, player in Players:GetPlayers() do
+			local char = player.Character
+			local charHRP = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+			if charHRP then
+				local d = (charHRP.Position - pos).Magnitude
+				if d < melhor and d < 150 then
+					melhor = d
+					alvoOwnership = player
+				end
 			end
 		end
 	end
-	return melhor
+	-- Animal/Combate: servidor (nil) — IA de combate precisa de fisica server-side.
+
+	pcall(function()
+		hrp:SetNetworkOwner(alvoOwnership)
+	end)
 end
 
-local function ajustarOwnership(insc: Inscricao)
-	local modelo = insc.ctx.modelo
-	if not modelo or not modelo.Parent then
-		return
-	end
-	local pp = modelo.PrimaryPart
-	if not pp then
-		return
-	end
-	local archetype = insc.ctx.archetype
-	-- Animal e Combate: o servidor cuida. Combate no servidor evita exploit e desyncs/teleportes de física no knockback.
-	if archetype == TiposNPC.Archetype.Animal or archetype == TiposNPC.Archetype.Combate then
-		pcall(function()
-			pp:SetNetworkOwner(nil)
-		end)
-		return
-	end
-	local alvoPlayer = jogadorMaisProximo(pp.Position)
-	if alvoPlayer then
-		pcall(function()
-			pp:SetNetworkOwner(alvoPlayer)
-		end)
-	else
-		pcall(function()
-			pp:SetNetworkOwner(nil)
-		end)
-	end
-end
+-- =============================================================================
+-- Tick global.
+-- =============================================================================
 
-local function tickGlobal(_dt: number)
+local function tickGlobal()
 	local agora = os.clock()
-	for id, insc in inscricoes do
-		local ctx = insc.ctx
-		if not ctx.modelo or not ctx.modelo.Parent or not ctx.humanoide or ctx.humanoide.Parent == nil then
-			inscricoes[id] = nil
-			task.spawn(function()
-				local gerNPC = script.Parent:FindFirstChild("GerenciadorNPC")
-				if gerNPC and gerNPC:IsA("ModuleScript") then
-					local ok, GerenciadorNPC = pcall(require, gerNPC)
-					if ok and GerenciadorNPC and GerenciadorNPC.DespawnNPC then
-						GerenciadorNPC.DespawnNPC(id)
-						return
-					end
-				end
-				local comp = Comportamento.Obter(ctx.archetype)
-				if comp then
-					pcall(comp.destruir, ctx)
-				end
-			end)
+	for id, item in agendados do
+		local registro = item.registro
+		local modelo: Model = registro.modelo
+
+		-- Modelo fora da arvore: remove do scheduler e despawna via callback.
+		if not modelo.Parent then
+			agendados[id] = nil
+			if callbackDespawn then
+				local fn = callbackDespawn
+				task.spawn(function()
+					fn(id)
+				end)
+			elseif registro.comportamento and registro.comportamento.destruir then
+				pcall(registro.comportamento.destruir, registro.ctx)
+			end
 			continue
 		end
 
-		if agora >= insc.proximaOwnership then
-			ajustarOwnership(insc)
-			insc.proximaOwnership = agora + ConfigNPC.Padrao.IntervaloOwnership
-		end
+		local archetype: string = registro.ctx.archetype
 
-		if agora >= insc.proximaIA then
-			local dt = insc.intervaloIA
-			insc.proximaIA = agora + insc.intervaloIA
-			local comp = Comportamento.Obter(ctx.archetype)
-			if comp then
-				local ok, err = pcall(comp.atualizar :: any, ctx, dt)
+		if agora >= item.proximaIA then
+			local intervaloIA = ConfigNPC.Obter(archetype, "IntervaloIA") or ConfigNPC.Padrao.IntervaloIA
+			local dt = math.max(agora - (item.proximaIA - intervaloIA), intervaloIA)
+			item.proximaIA = agora + intervaloIA
+			if registro.comportamento and registro.comportamento.atualizar then
+				local ok, err = pcall(registro.comportamento.atualizar, registro.ctx, dt)
 				if not ok then
-					warn(string.format("[NPC] Erro no comportamento '%s' (id=%d): %s", ctx.archetype, id, tostring(err)))
+					warn("[SchedulerServidor] Erro no atualizar do NPC " .. tostring(id) .. ": " .. tostring(err))
 				end
 			end
 		end
+
+		if agora >= item.proximoOwnership then
+			local intervaloOwnership = ConfigNPC.Obter(archetype, "IntervaloOwnership")
+				or ConfigNPC.Padrao.IntervaloOwnership
+			item.proximoOwnership = agora + intervaloOwnership
+			definirOwnership(modelo, archetype)
+		end
+	end
+
+	-- Sem NPCs: desliga o Heartbeat (zero custo com mundo vazio).
+	if next(agendados) == nil and heartbeatConn then
+		heartbeatConn:Disconnect()
+		heartbeatConn = nil
 	end
 end
 
-local function garantirLoop()
+local function garantirHeartbeat()
 	if heartbeatConn then
 		return
 	end
 	heartbeatConn = RunService.Heartbeat:Connect(tickGlobal)
 end
 
-function Scheduler.Inscrever(ctx: Ctx)
-	local intervalo = ConfigNPC.Obter(ctx.archetype, "IntervaloIA") or ConfigNPC.Padrao.IntervaloIA
-	inscricoes[ctx.id] = {
-		ctx = ctx,
-		intervaloIA = intervalo,
-		proximaIA = os.clock() + math.random() * intervalo, -- desfasa para evitar pico
-		proximaOwnership = 0,
+-- =============================================================================
+-- API.
+-- =============================================================================
+
+function Scheduler.Agendar(registro: any)
+	local agora = os.clock()
+	agendados[registro.id] = {
+		registro = registro,
+		proximaIA = agora,
+		proximoOwnership = agora,
 	}
-	garantirLoop()
+	garantirHeartbeat()
 end
 
 function Scheduler.Cancelar(id: number)
-	inscricoes[id] = nil
-end
-
-function Scheduler.Listar(): { number }
-	local ids: { number } = {}
-	for id in inscricoes do
-		table.insert(ids, id)
-	end
-	return ids
-end
-
-function Scheduler.Parar()
-	if heartbeatConn then
-		heartbeatConn:Disconnect()
-		heartbeatConn = nil
-	end
-	table.clear(inscricoes)
+	agendados[id] = nil
 end
 
 return Scheduler

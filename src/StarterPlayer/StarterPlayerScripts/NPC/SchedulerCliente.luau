@@ -60,6 +60,20 @@ local function distanciaJogador(modelo: Model): number
 	return (pp.Position - hrp.Position).Magnitude
 end
 
+local pendingNPCs: { [Model]: { RBXScriptConnection } } = {}
+
+local function limparPendente(modelo: Model)
+	local conexoes = pendingNPCs[modelo]
+	if conexoes then
+		for _, conn in conexoes do
+			if conn.Connected then
+				conn:Disconnect()
+			end
+		end
+		pendingNPCs[modelo] = nil
+	end
+end
+
 local function adicionar(modelo: Instance)
 	if not modelo:IsA("Model") then
 		return
@@ -67,17 +81,72 @@ local function adicionar(modelo: Instance)
 	if controladores[modelo] then
 		return
 	end
-	local ctrl = ControladorNPC.novo(modelo)
-	if not ctrl then
+
+	local function tentarAdicionar()
+		if not modelo.Parent then
+			return false
+		end
+		if controladores[modelo] then
+			return true
+		end
+
+		local archetype = modelo:GetAttribute(TiposNPC.Chaves.Archetype)
+		if typeof(archetype) ~= "string" then
+			return false
+		end
+
+		local humanoide = modelo:FindFirstChildOfClass("Humanoid")
+		if not humanoide then
+			return false
+		end
+
+		local ctrl = ControladorNPC.novo(modelo)
+		if ctrl then
+			controladores[modelo] = ctrl
+			return true
+		end
+		return false
+	end
+
+	-- Tenta adicionar imediatamente
+	if tentarAdicionar() then
 		return
 	end
-	controladores[modelo] = ctrl
+
+	-- Se falhar (relicacao parcial), aguarda os atributos e filhos
+	limparPendente(modelo)
+	local conexoes = {}
+	pendingNPCs[modelo] = conexoes
+
+	local function verificar()
+		if tentarAdicionar() then
+			limparPendente(modelo)
+		end
+	end
+
+	local connAttr = modelo:GetAttributeChangedSignal(TiposNPC.Chaves.Archetype):Connect(verificar)
+	table.insert(conexoes, connAttr)
+
+	local connChild = modelo.ChildAdded:Connect(function(child)
+		if child:IsA("Humanoid") then
+			verificar()
+		end
+	end)
+	table.insert(conexoes, connChild)
+
+	local connDestroying = modelo.Destroying:Connect(function()
+		limparPendente(modelo)
+	end)
+	table.insert(conexoes, connDestroying)
 end
 
 local function remover(modelo: Instance)
 	if not modelo:IsA("Model") then
 		return
 	end
+
+	limparPendente(modelo)
+
 	local ctrl = controladores[modelo]
 	if not ctrl then
 		return
@@ -180,8 +249,7 @@ function Scheduler.Iniciar()
 	table.insert(conexoesGerais, CollectionService:GetInstanceRemovedSignal("NPC"):Connect(remover))
 
 	-- Tambem observa Workspace/NPCs para o caso de o tag nao estar presente.
-	local pasta = workspace:WaitForChild("NPCs", 5)
-	if pasta then
+	local function escutarPasta(pasta: Folder)
 		for _, inst in pasta:GetChildren() do
 			if inst:HasTag("NPC") == false and inst:IsA("Model") then
 				adicionar(inst)
@@ -193,7 +261,26 @@ function Scheduler.Iniciar()
 				task.defer(adicionar, inst)
 			end)
 		)
-		table.insert(conexoesGerais, pasta.ChildRemoved:Connect(remover))
+		table.insert(
+			conexoesGerais,
+			pasta.ChildRemoved:Connect(function(inst)
+				remover(inst)
+			end)
+		)
+	end
+
+	local pastaNPCs = workspace:FindFirstChild("NPCs")
+	if pastaNPCs and pastaNPCs:IsA("Folder") then
+		escutarPasta(pastaNPCs)
+	else
+		local conn
+		conn = workspace.ChildAdded:Connect(function(child: Instance)
+			if child.Name == "NPCs" and child:IsA("Folder") then
+				conn:Disconnect()
+				escutarPasta(child :: Folder)
+			end
+		end)
+		table.insert(conexoesGerais, conn)
 	end
 
 	heartbeatConn = RunService.Heartbeat:Connect(tickGlobal)

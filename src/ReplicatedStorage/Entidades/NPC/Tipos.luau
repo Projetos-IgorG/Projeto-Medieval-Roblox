@@ -70,6 +70,10 @@ export type OpcoesSpawn = {
 	podeParry: boolean?,
 	-- Id da arma do catalogo com a qual o NPC de Combate deve spawnar.
 	armaId: string?,
+	-- Se deve registrar a entidade no GerenciadorEntidades.
+	registrarEntidade: boolean?,
+	-- Tempo em segundos antes de despawnar o corpo do NPC apos a morte.
+	tempoDespawnMorte: number?,
 }
 
 -- Snapshot devolvido por consultas (nunca a referencia interna).
@@ -113,6 +117,8 @@ TiposNPC.Chaves = {
 	ArmaPronta = "NPC_ArmaPronta",
 	-- Id da arma equipada (string) - cliente clona o WeaponModel local com base nisso.
 	ArmaEquipadaId = "NPC_ArmaEquipadaId",
+	-- Distancia a partir da qual o NPC comeca a correr.
+	DistanciaCorrer = "NPC_DistanciaCorrer",
 }
 
 -- Acoes de combate replicadas via NPC_Acao. View no cliente escolhe a animacao.

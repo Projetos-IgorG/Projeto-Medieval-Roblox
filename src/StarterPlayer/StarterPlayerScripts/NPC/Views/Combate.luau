@@ -23,6 +23,8 @@ local ConstrutorTools = require(ReplicatedStorage:WaitForChild("SistemaItens"):W
 local TiposNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos"))
 local IdsCombate =
 	require(ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Animacoes"):WaitForChild("IdsAnimacoesCombate"))
+local IdsGerais =
+	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Animacoes"):WaitForChild("IdsAnimacoesGerais"))
 local Modulo_Hitbox = require(ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Hitbox"))
 local Timings =
 	require(ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Configuracoes"):WaitForChild("TimingsAtaqueNPC"))
@@ -39,10 +41,11 @@ local EquipAnimacaoTerminou: RemoteEvent = ReplicatedStorage:WaitForChild("Remot
 type Ctx = ViewBase.ContextoView
 
 local Punhos = (IdsCombate :: any).Punhos and (IdsCombate :: any).Punhos.animacoes or {}
+local BaseAnims = IdsGerais.Base.animacoes
 
 -- Retorna as animacoes do modo correto para o NPC.
 -- So usa o modo da arma quando ArmaPronta == true (arma de fato equipada).
--- Antes disso, retorna Punhos (igual um player sem arma).
+-- Antes disso, retorna as animacoes gerais Base (igual um player sem arma).
 local function obterAnimacoesModo(ctx: Ctx): { [string]: string }
 	local armaPronta = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaPronta) == true
 	if armaPronta then
@@ -57,7 +60,7 @@ local function obterAnimacoesModo(ctx: Ctx): { [string]: string }
 			end
 		end
 	end
-	return Punhos
+	return BaseAnims
 end
 
 local FADE_LOCOMOCAO = 0.18
@@ -105,29 +108,29 @@ end
 local function carregarTrack(ctx: Ctx, nome: string): AnimationTrack?
 	local armaPronta = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaPronta) == true
 	local ehEquipTransicao = (nome == "Equipar" or nome == "Desequipar")
-	-- Antes de equipar (ArmaPronta == false), NPC usa animacoes padrao do Roblox.
-	-- Nenhuma animacao de combate e carregada (nem Punhos) ate o equip completar.
-	-- Excecao: Equipar/Desequipar sempre carregam a animacao da arma sendo equipada.
-	if not armaPronta and not ehEquipTransicao then
-		return nil
-	end
+
 	local idArma = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId) :: string?
-	local modo = "Punhos"
-	if idArma and idArma ~= "" then
+	local id: string? = nil
+
+	if (armaPronta or ehEquipTransicao) and idArma and idArma ~= "" then
+		local modo = "Punhos"
 		local dados = CatalogoItens.Get(idArma)
 		if dados and dados.ModoAnimacao then
 			modo = dados.ModoAnimacao
 		end
-	end
-	local modoData = (IdsCombate :: any)[modo]
-	local anims = modoData and modoData.animacoes
-	local id = anims and anims[nome]
+		local modoData = (IdsCombate :: any)[modo]
+		local anims = modoData and modoData.animacoes
+		id = anims and anims[nome]
 
-	if not id then
-		-- Fallback para punhos
-		local fallbackData = (IdsCombate :: any).Punhos
-		local fallbackAnims = fallbackData and fallbackData.animacoes
-		id = fallbackAnims and fallbackAnims[nome]
+		if not id then
+			-- Fallback para punhos
+			local fallbackData = (IdsCombate :: any).Punhos
+			local fallbackAnims = fallbackData and fallbackData.animacoes
+			id = fallbackAnims and fallbackAnims[nome]
+		end
+	else
+		-- Se a arma não está pronta, usa as animações gerais (Base)
+		id = BaseAnims[nome]
 	end
 
 	if not id then
@@ -740,11 +743,23 @@ type Entry = { nome: string, id: string, looped: boolean }
 local function entradaPorEstado(ctx: Ctx, estado: string): Entry?
 	local anims = obterAnimacoesModo(ctx)
 	if estado == TiposNPC.Estado.Aparando then
-		return { nome = "Aparando", id = anims.Aparar or anims.Defesa or Punhos.Aparar or Punhos.Defesa or "", looped = false }
+		return {
+			nome = "Aparando",
+			id = anims.Aparar or anims.Defesa or Punhos.Aparar or Punhos.Defesa or "",
+			looped = false,
+		}
 	elseif estado == TiposNPC.Estado.Aparado then
-		return { nome = "Aparado", id = anims.Aparado or anims.Stunado or Punhos.Aparado or Punhos.Stunado or "", looped = false }
+		return {
+			nome = "Aparado",
+			id = anims.Aparado or anims.Stunado or Punhos.Aparado or Punhos.Stunado or "",
+			looped = false,
+		}
 	elseif estado == TiposNPC.Estado.DefesaQuebrada then
-		return { nome = "DefesaQuebrada", id = anims.DefesaQuebrada or anims.Stunado or Punhos.DefesaQuebrada or Punhos.Stunado or "", looped = false }
+		return {
+			nome = "DefesaQuebrada",
+			id = anims.DefesaQuebrada or anims.Stunado or Punhos.DefesaQuebrada or Punhos.Stunado or "",
+			looped = false,
+		}
 	elseif estado == TiposNPC.Estado.Stunado then
 		return { nome = "Stunado", id = anims.Stunado or Punhos.Stunado or "", looped = false }
 	elseif estado == TiposNPC.Estado.Defendendo then

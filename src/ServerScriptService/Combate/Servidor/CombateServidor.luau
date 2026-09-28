@@ -28,6 +28,7 @@ local Modulo_Configuracoes = require(Combate:WaitForChild("Configuracoes"):WaitF
 local Modulo_Dano = require(DominioCombate:WaitForChild("DanoCombate"))
 local Modulo_Impulso = require(DominioCombate:WaitForChild("ImpulsoCombate"))
 local Modulo_Knockback = require(DominioCombate:WaitForChild("KnockbackCombate"))
+local Ragdoll = require(script.Parent:WaitForChild("Ragdoll"))
 local MaquinaDeEstados =
 	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Estado"):WaitForChild("MaquinaEstadosJogador"))
 
@@ -296,6 +297,22 @@ function ControladorCombate._ProcessarHit(
 		return
 	end
 
+	local alvoHumanoid = alvo:FindFirstChildOfClass("Humanoid")
+	if alvoHumanoid and alvoHumanoid.Health <= 0 then
+		-- Alvo já está morto: registra o ataque no ragdoll e aciona o feedback visual de hit,
+		-- porém ignora dano, animações de stun ou recuos físicos de combate padrão.
+		Ragdoll.RegistrarAtaque(alvo, atacante)
+		if DanoDebugVisual then
+			DanoDebugVisual:FireAllClients(alvo, 0, {
+				tipo = "Hit",
+				atacante = atacante,
+				multiplicador = multiplicadorDano,
+				bypassed = true,
+			})
+		end
+		return
+	end
+
 	local eParry = false
 	local eBlock = false
 	local bypassed = false
@@ -531,6 +548,7 @@ function ControladorCombate._ProcessarHit(
 	end
 
 	-- ===== HIT NORMAL =====
+	Ragdoll.RegistrarAtaque(alvo, atacante)
 	local resultado
 	if danoOverride then
 		resultado = Modulo_Dano.AplicarDanoComValor(atacante, alvo, tipoAtaque, danoOverride)
@@ -1309,6 +1327,66 @@ function ControladorCombate.ProcessarSincronizarMovimento(entidade: Model, novoE
 	return sucesso
 end
 
+-- Favor the Defender: verifica se o alvo está em estado de esquiva (Roll/Dash)
+-- ou acabou de sair de uma esquiva dentro da janela de tolerância de latência.
+-- Retorna true se o hit deve ser rejeitado.
+local function _AlvoEstaEsquivando(alvo: Model, nomeAtacante: string): (boolean, string?)
+	local maqAlvo = maquinasDeEstado[alvo]
+	if not maqAlvo then
+		return false, nil
+	end
+
+	-- 1. Verificar se o alvo está em estado ativo de esquiva no servidor
+	local estadoAcaoAlvo = maqAlvo:ObterEstadoAcao()
+	if estadoAcaoAlvo == MaquinaDeEstados.EstadoAcao.Rolando
+		or estadoAcaoAlvo == MaquinaDeEstados.EstadoAcao.Dashando then
+		DebugPrint(string.format(
+			"[Combate] %s: Hit rejeitado - alvo %s em %s (favor defender)",
+			nomeAtacante, alvo.Name, estadoAcaoAlvo
+		))
+		return true, "AlvoEsquivando"
+	end
+
+	-- 2. Verificar i-frames pós-esquiva: janela fixa após completar roll/dash
+	local janelaIframes = Modulo_Configuracoes.ObterConfiguracao("JanelaIframesPosEsquiva") or 0.08
+	local agora = os.clock()
+	local ultimoRollFim = maqAlvo.dados.ultimoRollFim or 0
+	local ultimoDashFim = maqAlvo.dados.ultimoDashFim or 0
+	local tempoDesdeEsquivaFim = agora - math.max(ultimoRollFim, ultimoDashFim)
+
+	if tempoDesdeEsquivaFim < janelaIframes then
+		DebugPrint(string.format(
+			"[Combate] %s: Hit rejeitado - alvo %s em i-frames pós-esquiva (%.3fs < %.3fs)",
+			nomeAtacante, alvo.Name, tempoDesdeEsquivaFim, janelaIframes
+		))
+		return true, "AlvoIframesPosEsquiva"
+	end
+
+	-- 3. Compensação de latência do defensor: se o alvo ACABOU de iniciar um
+	-- roll/dash (dentro de RTT/2 dele), o hit é rejeitado para cobrir o caso
+	-- onde o defensor esquivou no client dele mas o servidor ainda não processou.
+	local playerAlvoRef = Players:GetPlayerFromCharacter(alvo)
+	if playerAlvoRef then
+		local rttAlvo = playerAlvoRef:GetAttribute("RTT") or 0
+		local maxTol = Modulo_Configuracoes.ObterConfiguracao("MaxToleranciaEsquiva") or 0.15
+		local tolerancia = math.clamp(rttAlvo / 2, 0, maxTol)
+
+		local ultimoRoll = maqAlvo.dados.ultimoRoll or 0
+		local ultimoDash = maqAlvo.dados.ultimoDash or 0
+		local tempoDesdeEsquiva = agora - math.max(ultimoRoll, ultimoDash)
+
+		if tempoDesdeEsquiva < tolerancia then
+			DebugPrint(string.format(
+				"[Combate] %s: Hit rejeitado - alvo %s saiu de esquiva há %.3fs (tolerância=%.3fs, RTT=%.3fs)",
+				nomeAtacante, alvo.Name, tempoDesdeEsquiva, tolerancia, rttAlvo
+			))
+			return true, "AlvoRecemEsquivou"
+		end
+	end
+
+	return false, nil
+end
+
 function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): (boolean, string?)
 	if typeof(dados) ~= "table" then
 		return false, "DadosInvalidos"
@@ -1333,8 +1411,8 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 	end
 
 	local alvoHumanoid = alvo:FindFirstChildOfClass("Humanoid")
-	if not alvoHumanoid or alvoHumanoid.Health <= 0 then
-		return false, "AlvoMorto"
+	if not alvoHumanoid then
+		return false, "AlvoSemHumanoid"
 	end
 
 	local maquina = ControladorCombate.ObterMaquina(entidade)
@@ -1378,14 +1456,14 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 	local hrpAtacante = entidade:FindFirstChild("HumanoidRootPart") :: BasePart?
 	local hrpAlvo = alvo:FindFirstChild("HumanoidRootPart") :: BasePart?
 
-	if hrpAtacante and hrpAlvo then
-		local alcanceMaximo = 8
-		local id = tool:GetAttribute("Id")
-		local catalogData = id and CatalogoItens.Get(id)
-		if catalogData and catalogData.Alcance then
-			alcanceMaximo = catalogData.Alcance
-		end
+	local alcanceMaximo = 8
+	local idTool = tool:GetAttribute("Id")
+	local catalogData = idTool and CatalogoItens.Get(idTool)
+	if catalogData and catalogData.Alcance then
+		alcanceMaximo = catalogData.Alcance
+	end
 
+	if hrpAtacante and hrpAlvo then
 		local distancia = (hrpAtacante.Position - hrpAlvo.Position).Magnitude
 		if distancia > alcanceMaximo * 2 then
 			DebugPrint(
@@ -1398,6 +1476,12 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 			)
 			return false, "ForaDeAlcance"
 		end
+	end
+
+	-- ===== FAVOR THE DEFENDER: Verificar esquiva do alvo =====
+	local alvoEsquivando, motivoEsquiva = _AlvoEstaEsquivando(alvo, entidade.Name)
+	if alvoEsquivando then
+		return false, motivoEsquiva
 	end
 
 	local tipoAtaque = "Ataque"
@@ -1468,6 +1552,31 @@ function ControladorCombate.ProcessarHitboxAcerto(entidade: Model, dados: any): 
 						)
 					)
 					return
+				end
+
+				-- Favor the Defender: revalidar esquiva do alvo após o delay
+				local bufAlvoEsquivando, bufMotivoEsq = _AlvoEstaEsquivando(alvo, entidade.Name)
+				if bufAlvoEsquivando then
+					DebugPrint(string.format(
+						"[Combate] Hit buffer descartado: alvo esquivando (%s)",
+						bufMotivoEsq or "?"
+					))
+					return
+				end
+
+				-- Revalidar distância com posições ATUAIS do servidor (anti-lag hit fantasma)
+				local bufHrpAtacante = entidade:FindFirstChild("HumanoidRootPart") :: BasePart?
+				local bufHrpAlvo = alvo:FindFirstChild("HumanoidRootPart") :: BasePart?
+				if bufHrpAtacante and bufHrpAlvo then
+					local bufAlcance = alcanceMaximo or 8
+					local bufDistancia = (bufHrpAtacante.Position - bufHrpAlvo.Position).Magnitude
+					if bufDistancia > bufAlcance * 2.5 then
+						DebugPrint(string.format(
+							"[Combate] Hit buffer descartado: distância atual %.1f > máximo %.1f",
+							bufDistancia, bufAlcance * 2.5
+						))
+						return
+					end
 				end
 
 				local currentAlvoHumanoid = alvo:FindFirstChildOfClass("Humanoid")
@@ -1675,44 +1784,54 @@ AcaoAnimacaoTerminou.OnServerEvent:Connect(function(player, nomeAcao)
 	end
 end)
 
-Players.PlayerAdded:Connect(function(player)
-	player.CharacterAdded:Connect(function(character)
-		local status = character:WaitForChild("Status", 5)
-		if not status then
-			warn("[ControladorCombate] Status não encontrado para " .. player.Name)
-		end
+local function configurarJogadorCharacter(player: Player, character: Model)
+	local status = character:WaitForChild("Status", 5)
+	if not status then
+		warn("[ControladorCombate] Status não encontrado para " .. player.Name)
+	end
 
-		local _maquina = ControladorCombate.ObterMaquina(character)
+	local _maquina = ControladorCombate.ObterMaquina(character)
 
-		task.defer(function()
-			ControladorCombate._SincronizarEstado(character)
+	task.defer(function()
+		ControladorCombate._SincronizarEstado(character)
+	end)
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		humanoid = character:WaitForChild("Humanoid", 5) :: Humanoid?
+	end
+
+	if humanoid and humanoid:IsA("Humanoid") then
+		humanoid.BreakJointsOnDeath = false
+		humanoid.Died:Connect(function()
+			local maquinaAtual = maquinasDeEstado[character]
+			if maquinaAtual then
+				maquinaAtual:AplicarMorte()
+			end
+			-- Ativa o ragdoll do Player ao morrer
+			Ragdoll.Ativar(character)
 		end)
+	end
+end
 
-		local humanoid = character:FindFirstChild("Humanoid")
-		if humanoid and humanoid:IsA("Humanoid") then
-			humanoid.Died:Connect(function()
-				local maquinaAtual = maquinasDeEstado[character]
-				if maquinaAtual then
-					maquinaAtual:AplicarMorte()
-				end
-			end)
-		end
+local function configurarPlayer(player: Player)
+	player.CharacterAdded:Connect(function(character)
+		configurarJogadorCharacter(player, character)
 	end)
 
 	player.CharacterRemoving:Connect(function(character)
 		ControladorCombate.RemoverMaquina(character)
 	end)
-end)
+
+	if player.Character then
+		configurarJogadorCharacter(player, player.Character)
+	end
+end
+
+Players.PlayerAdded:Connect(configurarPlayer)
 
 for _, player in ipairs(Players:GetPlayers()) do
-	if player.Character then
-		local _status = player.Character:WaitForChild("Status", 5)
-		ControladorCombate.ObterMaquina(player.Character)
-
-		task.defer(function()
-			ControladorCombate._SincronizarEstado(player.Character)
-		end)
-	end
+	configurarPlayer(player)
 end
 
 DebugPrint("[ControladorCombate] Inicializado no servidor")

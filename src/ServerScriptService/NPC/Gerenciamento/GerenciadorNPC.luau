@@ -1,144 +1,178 @@
 --!strict
 
 --[[
-    Script: GerenciadorNPC.luau
-    Caminho: src/ServerScriptService/NPC/Gerenciamento
-    Responsabilidade: API publica do sistema de NPC (SpawnNPC, DespawnNPC, Listar). Cria o Model, registra como Entidade e inscreve no SchedulerServidor.
-    Uso: ModuleScript; require em qualquer codigo de servidor (DevPanel, quests, triggers).
-    Nao faz: Nao implementa IA nem renderizacao; nao conhece UI.
-    Funcoes principais: SpawnNPC, DespawnNPC, Listar, ObterPorId, ObterPorModelo
+	Script: GerenciadorNPC.luau
+	Caminho: src/ServerScriptService/NPC/Gerenciamento
+	Responsabilidade: Ciclo de vida dos NPCs (spawn, registro, morte, despawn)
+	e integracao com o Scheduler e os Comportamentos.
+
+	Correcoes em relacao ao codigo antigo:
+	- Morte agora e tratada: ragdoll fisico + despawn automatico apos
+	  NPC_TempoDespawnMorte segundos (configuravel por spawn; padrao 60s).
+	- Desregistrar do GerenciadorEntidades e SEMPRE chamado no despawn
+	  (antes era condicional ao modelo ainda ter Parent -> vazava registro).
+	- comportamento.destruir e idempotente (flag interna), sem dupla chamada
+	  entre morte e despawn.
+	- armaId agora faz parte das opcoes de spawn (corrige a corrida em que o
+	  Combate resolvia a arma antes do atributo ser setado).
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
+local Workspace = game:GetService("Workspace")
 
 local TiposNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos"))
 local RemotosNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("RemotosNPC"))
-local Especies = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("Especies"))
 
-local Construtor = require(script.Parent:WaitForChild("ConstrutorModeloNPC"))
+local Comportamento = require(script.Parent.Parent:WaitForChild("Comportamentos"):WaitForChild("Comportamento"))
+local ConstrutorModeloNPC = require(script.Parent:WaitForChild("ConstrutorModeloNPC"))
 local Scheduler = require(script.Parent:WaitForChild("SchedulerServidor"))
-local ComportamentosFolder = script.Parent.Parent:WaitForChild("Comportamentos")
-local Comportamento = require(ComportamentosFolder:WaitForChild("Comportamento"))
+local Ragdoll = require(ServerScriptService:WaitForChild("Combate"):WaitForChild("Servidor"):WaitForChild("Ragdoll"))
 
--- Auto-carrega comportamentos para que se registrem.
-require(ComportamentosFolder:WaitForChild("Dialogo"))
-require(ComportamentosFolder:WaitForChild("Combate"))
-require(ComportamentosFolder:WaitForChild("Animal"))
+-- Auto-registram seus comportamentos ao serem required.
+require(script.Parent.Parent:WaitForChild("Comportamentos"):WaitForChild("Animal"))
+require(script.Parent.Parent:WaitForChild("Comportamentos"):WaitForChild("Dialogo"))
+require(script.Parent.Parent:WaitForChild("Comportamentos"):WaitForChild("Combate"))
 
-local Gerenciador_Entidades =
-	require(script.Parent.Parent.Parent:WaitForChild("Entidades"):WaitForChild("GerenciadorEntidades"))
-
-type OpcoesSpawn = TiposNPC.OpcoesSpawn
-type Ctx = Comportamento.ContextoNPC
+local GerenciadorEntidades = require(ServerScriptService:WaitForChild("Entidades"):WaitForChild("GerenciadorEntidades"))
+local Especies = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("Especies"))
 
 local Gerenciador = {}
 
-local proximoId: number = 0
-local registrosPorId: { [number]: Ctx } = {}
-local registrosPorModelo: { [Model]: Ctx } = {}
+-- Tempo (em segundos) que o corpo do NPC fica no chao antes de despawnar.
+local TEMPO_DESPAWN_MORTE_PADRAO = 60
+local CHAVE_TEMPO_DESPAWN = "NPC_TempoDespawnMorte"
 
-local function gerarId(): number
-	proximoId += 1
-	return proximoId
+type Registro = {
+	id: number,
+	modelo: Model,
+	ctx: Comportamento.ContextoNPC,
+	comportamento: any,
+	_morreu: boolean?,
+	_comportamentoFinalizado: boolean?,
+}
+
+local registros: { [number]: Registro } = {}
+local proximoId = 1
+
+local DEBUG = false
+local function dbg(...: any)
+	if DEBUG then
+		print("[GerenciadorNPC]", ...)
+	end
 end
 
-local function escolherEspecie(opcoes: OpcoesSpawn): string
-	if opcoes.archetype == TiposNPC.Archetype.Animal then
-		return opcoes.especie or "Galinha"
+-- =============================================================================
+-- Helpers internos.
+-- =============================================================================
+
+local function obterTempoDespawn(modelo: Model): number
+	local v = modelo:GetAttribute(CHAVE_TEMPO_DESPAWN)
+	if typeof(v) == "number" and v > 0 then
+		return v
 	end
-	-- Humanoides reusam a especie "Humano" do catalogo de Entidades.
-	return "Humano"
+	return TEMPO_DESPAWN_MORTE_PADRAO
 end
 
-local function inicializarHumanoide(modelo: Model): Humanoid?
-	local hum = modelo:FindFirstChildOfClass("Humanoid")
-	if not hum then
-		return nil
+-- Finaliza o comportamento UMA unica vez (idempotente), independente de a
+-- finalizacao vir da morte, do despawn manual ou do scheduler.
+local function finalizarComportamento(registro: Registro)
+	if registro._comportamentoFinalizado then
+		return
 	end
-	return hum
+	registro._comportamentoFinalizado = true
+	if registro.comportamento and registro.comportamento.destruir then
+		local ok, err = pcall(registro.comportamento.destruir, registro.ctx)
+		if not ok then
+			warn("[GerenciadorNPC] Erro ao destruir comportamento:", err)
+		end
+	end
 end
 
-function Gerenciador.SpawnNPC(opcoes: OpcoesSpawn): TiposNPC.RegistroNPC?
-	assert(typeof(opcoes) == "table", "SpawnNPC espera uma tabela de opcoes")
-	assert(typeof(opcoes.cframe) == "CFrame", "opcoes.cframe obrigatorio (CFrame)")
-	assert(opcoes.archetype ~= nil, "opcoes.archetype obrigatorio")
-
-	local comp = Comportamento.Obter(opcoes.archetype)
-	if not comp then
-		warn("[NPC] Archetype desconhecido: " .. tostring(opcoes.archetype))
-		return nil
+-- Morte do NPC: estado terminal + ragdoll + despawn agendado.
+local function aoMorrer(registro: Registro)
+	if registro._morreu then
+		return
 	end
+	registro._morreu = true
 
-	local modelo = Construtor.Construir(opcoes)
-	if not modelo then
-		warn("[NPC] Falha ao construir modelo para archetype " .. opcoes.archetype)
-		return nil
-	end
+	local modelo = registro.modelo
+	dbg("NPC morreu:", registro.id, modelo.Name)
 
-	local humanoide = inicializarHumanoide(modelo)
-	if not humanoide then
-		warn("[NPC] Modelo construido sem Humanoid; abortando spawn.")
-		modelo:Destroy()
-		return nil
-	end
+	-- Estado terminal (Sincronia nunca sobrescreve "Morto").
+	modelo:SetAttribute(TiposNPC.Chaves.Estado, TiposNPC.Estado.Morto)
 
-	local pasta = RemotosNPC.ObterPastaMundo()
-	modelo.Parent = pasta
+	-- Para a IA imediatamente e libera conexoes/maquina de combate.
+	Scheduler.Cancelar(registro.id)
+	finalizarComportamento(registro)
 
-	-- Posiciona com seguranca (pivot pode falhar antes do parent).
-	local sucessoPivot = pcall(function()
-		modelo:PivotTo(opcoes.cframe)
+	-- Ragdoll fisico (conversao unica de joints; sem loops).
+	Ragdoll.Ativar(modelo)
+
+	-- Despawn automatico apos o tempo configurado.
+	local id = registro.id
+	task.delay(obterTempoDespawn(modelo), function()
+		if registros[id] == registro then
+			Gerenciador.DespawnNPC(id)
+		end
 	end)
-	if not sucessoPivot then
-		modelo:Destroy()
+end
+
+-- =============================================================================
+-- Spawn.
+-- =============================================================================
+
+function Gerenciador.SpawnNPC(opcoes: TiposNPC.OpcoesSpawn): Registro?
+	local comportamento = Comportamento.Obter(opcoes.archetype)
+	if not comportamento then
+		warn("[GerenciadorNPC] Archetype sem comportamento registrado:", opcoes.archetype)
 		return nil
 	end
 
-	local id = gerarId()
-	local especieEnt = escolherEspecie(opcoes)
-	-- Garante que a especie existe; se nao, ainda spawna mas avisa.
-	if not Especies.Existe(especieEnt) then
-		warn("[NPC] Especie '" .. especieEnt .. "' inexistente em Especies; entidade NAO sera registrada.")
-	else
-		Gerenciador_Entidades.Registrar(modelo, especieEnt)
+	local modelo = ConstrutorModeloNPC.Construir(opcoes)
+	if not modelo then
+		warn("[GerenciadorNPC] Falha ao construir modelo para archetype:", opcoes.archetype)
+		return nil
 	end
 
-	-- Sincroniza Vida (Atributo) <-> Humanoid.Health para combate continuar funcionando.
-	local conexoesEnt: { RBXScriptConnection } = {}
-	table.insert(
-		conexoesEnt,
-		humanoide.HealthChanged:Connect(function(saude)
-			local entidade = Gerenciador_Entidades.ObterPorModelo(modelo)
-			if entidade then
-				entidade:definirAtributo("Vida", saude)
-			end
-		end)
-	)
-	table.insert(
-		conexoesEnt,
-		humanoide.Died:Connect(function()
-			modelo:SetAttribute(TiposNPC.Chaves.Estado, TiposNPC.Estado.Morto)
-		end)
-	)
+	local humanoide = modelo:FindFirstChildOfClass("Humanoid")
+	if not humanoide then
+		modelo:Destroy()
+		warn("[GerenciadorNPC] Modelo sem Humanoid")
+		return nil
+	end
 
+	local id = proximoId
+	proximoId += 1
+
+	-- Atributos base.
 	modelo:SetAttribute(TiposNPC.Chaves.Id, id)
 	modelo:SetAttribute(TiposNPC.Chaves.Archetype, opcoes.archetype)
-	modelo:SetAttribute(TiposNPC.Chaves.Estado, TiposNPC.Estado.Idle)
 	modelo:SetAttribute(TiposNPC.Chaves.Hostil, opcoes.hostil == true)
-	modelo:SetAttribute(TiposNPC.Chaves.AlvoRef, 0)
-	modelo:SetAttribute(TiposNPC.Chaves.ArmaEquipadaId, opcoes.armaId or "punhos")
-	-- Flags de capacidade. Default: andar, atacar, defender e parry SIM.
-	local podeAndar = if opcoes.podeAndar == nil then true else opcoes.podeAndar == true
-	local podeAtacar = if opcoes.podeAtacar == nil then true else opcoes.podeAtacar == true
-	local podeDefender = if opcoes.podeDefender == nil then true else opcoes.podeDefender == true
-	local podeParry = (if opcoes.podeParry == nil then true else opcoes.podeParry == true) and podeDefender
-	modelo:SetAttribute(TiposNPC.Chaves.PodeAndar, podeAndar)
-	modelo:SetAttribute(TiposNPC.Chaves.PodeAtacar, podeAtacar)
-	modelo:SetAttribute(TiposNPC.Chaves.PodeDefender, podeDefender)
-	modelo:SetAttribute(TiposNPC.Chaves.PodeParry, podeParry)
-	modelo:AddTag("NPC")
+	modelo:SetAttribute(TiposNPC.Chaves.PodeAndar, opcoes.podeAndar ~= false)
+	modelo:SetAttribute(TiposNPC.Chaves.PodeAtacar, opcoes.podeAtacar ~= false)
+	modelo:SetAttribute(TiposNPC.Chaves.PodeDefender, opcoes.podeDefender == true)
+	modelo:SetAttribute(TiposNPC.Chaves.PodeParry, opcoes.podeParry == true)
+	modelo:SetAttribute(TiposNPC.Chaves.Estado, TiposNPC.Estado.Idle)
 
-	local ctx: Ctx = {
+	-- FIX: arma definida ANTES do comportamento iniciar (sem corrida).
+	local armaId = (opcoes :: any).armaId
+	if typeof(armaId) == "string" and armaId ~= "" then
+		modelo:SetAttribute(TiposNPC.Chaves.ArmaEquipadaId, armaId)
+	end
+
+	-- Tempo de despawn na morte (configuravel por spawn).
+	local tempoDespawn = (opcoes :: any).tempoDespawnMorte
+	if typeof(tempoDespawn) == "number" and tempoDespawn > 0 then
+		modelo:SetAttribute(CHAVE_TEMPO_DESPAWN, tempoDespawn)
+	else
+		modelo:SetAttribute(CHAVE_TEMPO_DESPAWN, TEMPO_DESPAWN_MORTE_PADRAO)
+	end
+
+	modelo:PivotTo(opcoes.cframe)
+	modelo.Parent = RemotosNPC.ObterPastaMundo() or Workspace
+
+	local ctx: Comportamento.ContextoNPC = {
 		id = id,
 		archetype = opcoes.archetype,
 		especie = opcoes.especie,
@@ -146,125 +180,101 @@ function Gerenciador.SpawnNPC(opcoes: OpcoesSpawn): TiposNPC.RegistroNPC?
 		humanoide = humanoide,
 		hostil = opcoes.hostil == true,
 		estado = {},
-		conexoes = conexoesEnt,
+		conexoes = {},
 		tracks = {},
 	}
 
-	registrosPorId[id] = ctx
-	registrosPorModelo[modelo] = ctx
-
-	-- Inicia comportamento e inscreve no scheduler.
-	local ok, err = pcall(function()
-		comp.iniciar(ctx)
-	end)
-	if not ok then
-		warn(string.format("[NPC] Erro em iniciar() de '%s': %s", opcoes.archetype, tostring(err)))
-	end
-	Scheduler.Inscrever(ctx)
-
-	-- Despawn automatico ao remover o modelo do mundo (ex: morte com cleanup externo).
-	table.insert(
-		conexoesEnt,
-		modelo.AncestryChanged:Connect(function(_, parent)
-			if parent == nil then
-				Gerenciador.DespawnNPC(id)
-			end
-		end)
-	)
-
-	return {
+	local registro: Registro = {
 		id = id,
-		archetype = opcoes.archetype,
-		especie = opcoes.especie,
 		modelo = modelo,
+		ctx = ctx,
+		comportamento = comportamento,
 	}
-end
+	registros[id] = registro
 
-function Gerenciador.DespawnNPC(idOuModelo: number | Model): boolean
-	local ctx: Ctx? = nil
-	if typeof(idOuModelo) == "number" then
-		ctx = registrosPorId[idOuModelo]
-	elseif typeof(idOuModelo) == "Instance" and (idOuModelo :: Instance):IsA("Model") then
-		ctx = registrosPorModelo[idOuModelo :: Model]
-	end
-	if not ctx then
-		return false
-	end
-
-	Scheduler.Cancelar(ctx.id)
-
-	local comp = Comportamento.Obter(ctx.archetype)
-	if comp then
-		pcall(function()
-			comp.destruir(ctx)
-		end)
-	end
-
-	for _, c in ctx.conexoes do
-		if typeof(c) == "RBXScriptConnection" then
-			if c.Connected then
-				c:Disconnect()
-			end
-		elseif typeof(c) == "function" then
-			pcall(c :: any)
+	-- Registro no GerenciadorEntidades (vida/atributos de entidade).
+	if opcoes.registrarEntidade ~= false and opcoes.especie and Especies.Existe(opcoes.especie) then
+		local okReg, entidade = pcall(GerenciadorEntidades.Registrar, modelo, opcoes.especie)
+		if okReg and entidade then
+			entidade:definirAtributo("Vida", humanoide.Health)
 		end
 	end
-	table.clear(ctx.conexoes)
-	for _, t in ctx.tracks do
-		pcall(function()
-			t:Stop(0)
-		end)
+
+	-- Morte -> ragdoll + despawn agendado.
+	local connDied = humanoide.Died:Connect(function()
+		aoMorrer(registro)
+	end)
+	Comportamento.Helpers.RastrearConexao(ctx, connDied)
+
+	-- Failsafe: modelo removido da arvore por fora (ex.: :Destroy() externo).
+	local connAncestry = modelo.AncestryChanged:Connect(function(_, parent)
+		if parent == nil and registros[id] == registro then
+			Gerenciador.DespawnNPC(id)
+		end
+	end)
+	Comportamento.Helpers.RastrearConexao(ctx, connAncestry)
+
+	-- Inicia comportamento + agenda IA no scheduler.
+	local okIniciar, errIniciar = pcall((comportamento :: any).iniciar, ctx)
+	if not okIniciar then
+		warn("[GerenciadorNPC] Erro ao iniciar comportamento:", errIniciar)
 	end
-	table.clear(ctx.tracks)
+	Scheduler.Agendar(registro)
 
-	registrosPorId[ctx.id] = nil
-	registrosPorModelo[ctx.modelo] = nil
+	dbg("NPC spawnado:", id, modelo.Name, opcoes.archetype)
+	return registro
+end
 
-	if ctx.modelo and ctx.modelo.Parent then
-		Gerenciador_Entidades.Desregistrar(ctx.modelo)
-		ctx.modelo:Destroy()
+-- =============================================================================
+-- Despawn / consultas.
+-- =============================================================================
+
+function Gerenciador.DespawnNPC(id: number): boolean
+	local registro = registros[id]
+	if not registro then
+		return false
+	end
+	registros[id] = nil
+
+	Scheduler.Cancelar(id)
+	finalizarComportamento(registro)
+
+	-- FIX: Desregistrar SEMPRE (antes era condicional a modelo.Parent ~= nil,
+	-- o que vazava o registro da entidade quando o modelo ja tinha sido
+	-- destruido por fora).
+	pcall(GerenciadorEntidades.Desregistrar, registro.modelo)
+
+	if registro.modelo.Parent then
+		registro.modelo:Destroy()
 	end
 
+	dbg("NPC despawnado:", id)
 	return true
 end
 
-function Gerenciador.Listar(): { TiposNPC.RegistroNPC }
-	local lista: { TiposNPC.RegistroNPC } = {}
-	for id, ctx in registrosPorId do
-		table.insert(lista, {
-			id = id,
-			archetype = ctx.archetype,
-			especie = ctx.especie,
-			modelo = ctx.modelo,
-		})
+function Gerenciador.DespawnTodos()
+	local ids = {}
+	for id in registros do
+		table.insert(ids, id)
 	end
-	return lista
+	for _, id in ids do
+		Gerenciador.DespawnNPC(id)
+	end
 end
 
-function Gerenciador.ObterPorId(id: number): TiposNPC.RegistroNPC?
-	local ctx = registrosPorId[id]
-	if not ctx then
-		return nil
-	end
-	return {
-		id = ctx.id,
-		archetype = ctx.archetype,
-		especie = ctx.especie,
-		modelo = ctx.modelo,
-	}
+function Gerenciador.ObterRegistro(id: number): Registro?
+	return registros[id]
 end
 
-function Gerenciador.ObterPorModelo(modelo: Model): TiposNPC.RegistroNPC?
-	local ctx = registrosPorModelo[modelo]
-	if not ctx then
-		return nil
+function Gerenciador.ObterRegistroPorModelo(modelo: Model): Registro?
+	local id = modelo:GetAttribute(TiposNPC.Chaves.Id)
+	if typeof(id) == "number" then
+		return registros[id]
 	end
-	return {
-		id = ctx.id,
-		archetype = ctx.archetype,
-		especie = ctx.especie,
-		modelo = ctx.modelo,
-	}
+	return nil
 end
+
+-- Scheduler usa este callback para despawnar NPC "orfao" sem require ciclico.
+Scheduler.DefinirCallbackDespawn(Gerenciador.DespawnNPC)
 
 return Gerenciador

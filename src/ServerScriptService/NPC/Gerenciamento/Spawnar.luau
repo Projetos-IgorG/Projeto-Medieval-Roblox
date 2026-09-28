@@ -1,15 +1,23 @@
 --!strict
+
 --[[
 	Script: Spawnar.luau
 	Caminho: src/ServerScriptService/NPC/Gerenciamento
 	Responsabilidade: Wrapper de compatibilidade para spawnar NPC usando o novo GerenciadorNPC.
+
+	Correcao em relacao ao codigo antigo:
+	- armaId agora vai DENTRO das opcoes do GerenciadorNPC (o atributo
+	  NPC_ArmaEquipadaId e setado ANTES do comportamento de Combate iniciar,
+	  eliminando a corrida em que o NPC resolvia "punhos" e so depois recebia
+	  a arma).
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local TiposNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos"))
-local GerenciadorNPC = require(ServerScriptService:WaitForChild("NPC"):WaitForChild("Gerenciamento"):WaitForChild("GerenciadorNPC"))
+local GerenciadorNPC =
+	require(ServerScriptService:WaitForChild("NPC"):WaitForChild("Gerenciamento"):WaitForChild("GerenciadorNPC"))
 
 local Spawnar = {}
 
@@ -24,6 +32,7 @@ export type OpcoesSpawn = {
 	playerOrigem: Player?,
 	armaTipo: string?, -- ex: "Armas"
 	armaId: string?, -- ex: "espada_ferro"
+	tempoDespawnMorte: number?, -- segundos ate despawnar apos a morte (padrao 60)
 }
 
 function Spawnar.SpawnarNPC(opts: OpcoesSpawn): (Model?, string?)
@@ -64,14 +73,15 @@ function Spawnar.SpawnarNPC(opts: OpcoesSpawn): (Model?, string?)
 		podeParry = true,
 	}
 
+	-- FIX: arma e tempo de despawn entram nas opcoes (setados antes do iniciar).
+	(opcoes :: any).armaId = if opts.armaId and opts.armaId ~= "" then opts.armaId else nil
+	(opcoes :: any).tempoDespawnMorte = opts.tempoDespawnMorte
+
 	local registro = GerenciadorNPC.SpawnNPC(opcoes)
 	if registro and registro.modelo then
 		local modelo = registro.modelo
-		if opts.armaId and opts.armaId ~= "" then
-			modelo:SetAttribute("NPC_ArmaEquipadaId", opts.armaId)
-			if opts.armaTipo then
-				modelo:SetAttribute("NPC_ArmaTipo", opts.armaTipo)
-			end
+		if opts.armaId and opts.armaId ~= "" and opts.armaTipo then
+			modelo:SetAttribute("NPC_ArmaTipo", opts.armaTipo)
 		end
 		return modelo, nil
 	end
