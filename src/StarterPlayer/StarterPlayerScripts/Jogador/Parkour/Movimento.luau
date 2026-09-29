@@ -1190,9 +1190,12 @@ local function executarVault(result, _config, impulso, transitionTime)
 		local lookFlat = Vector3.new(look.X, 0, look.Z).Unit
 		local impulseVel = lookFlat * impulso + Vector3.new(0, impulso * 0.4, 0)
 
-		criarLinearVelocity(hrp, impulseVel, finalConfig.VaultImpulseDuration)
+		local vaultDuration = finalConfig.VaultImpulseDuration or 0.2
+		criarLinearVelocity(hrp, impulseVel, vaultDuration)
 
-		estado.EmAcao = false
+		task.delay(vaultDuration, function()
+			estado.EmAcao = false
+		end)
 	end)
 
 	local nomeAnimacao = if impulso == finalConfig.VaultMedioImpulse then "VaultMedio" else "VaultBaixo"

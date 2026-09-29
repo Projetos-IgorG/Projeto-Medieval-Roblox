@@ -51,15 +51,44 @@ function DeteccaoSaltoAbismo.CheckSaltoAbismo(character: Model, config: any?)
 
 	rayParams.FilterDescendantsInstances = { character }
 
-	-- 2. Altura de referência do piso atual sob o jogador
-	local floorProbeDist = finalConfig.FloorProbeDownwardDistance or 5.0
+	-- 2. Altura de referência do piso atual sob o jogador (sonda centro e logo atrás para beiradas)
+	local floorProbeDist = finalConfig.FloorProbeDownwardDistance or 6.0
 	local floorHit = Workspace:Raycast(hrp.Position, Vector3.new(0, -floorProbeDist, 0), rayParams)
+
+	-- Se na beiradinha extrema o centro do HRP já passou da borda, sonda logo atrás de onde o jogador veio
+	if not floorHit or (floorHit.Position.Y < hrp.Position.Y - 3.4) then
+		local backProbe = Workspace:Raycast(hrp.Position - lookXZ * 1.2, Vector3.new(0, -floorProbeDist, 0), rayParams)
+		if backProbe and backProbe.Instance then
+			floorHit = backProbe
+		end
+	end
+
+	local noChaoRoblox = humanoid.FloorMaterial ~= Enum.Material.Air
+	local hipHeight = humanoid.HipHeight > 0 and humanoid.HipHeight or 2.0
+	local halfHrp = hrp.Size.Y * 0.5
 	local pisoAtualY: number
-	if floorHit and floorHit.Instance and not Utilidades.isParkourIgnoredPart(floorHit.Instance, finalConfig.MinPartHeight) then
+
+	if floorHit and floorHit.Instance then
 		pisoAtualY = floorHit.Position.Y
+	elseif noChaoRoblox then
+		pisoAtualY = hrp.Position.Y - hipHeight - halfHrp
+	elseif finalConfig.LastFloorY and finalConfig.LastFloorY ~= 0 then
+		pisoAtualY = finalConfig.LastFloorY
 	else
-		local hipHeight = humanoid.HipHeight > 0 and humanoid.HipHeight or 2.0
-		pisoAtualY = hrp.Position.Y - hipHeight - 1.0
+		return {
+			Aprovado = false,
+			Reason = "SemPisoDeReferencia",
+			DebugRays = {},
+		}
+	end
+
+	local deltaPiso = math.abs(hrp.Position.Y - (pisoAtualY + hipHeight + halfHrp))
+	if not noChaoRoblox and deltaPiso > 5.5 then
+		return {
+			Aprovado = false,
+			Reason = "JogadorForaDaAlturaDoPiso",
+			DebugRays = {},
+		}
 	end
 
 	-- 3. Definição da Caixa Visual de Abismo à Frente / Abaixo (cobre as 4 linhas até 11 studs)

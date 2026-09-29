@@ -106,11 +106,14 @@ Configs.DefaultConfig = {
 	-- Salto Abismo (Impulso para saltar sobre buracos / abismos)
 	SaltoAbismoImpulseForward = 50,
 	SaltoAbismoImpulseUp = 50,
-	SaltoAbismoMinQueda = 5.0,
+	SaltoAbismoMinQueda = 7.0,
 	SaltoAbismoObstacleCheckDistance = 3.5,
 	SaltoAbismoFadeTransicao = 0.5,
 	SaltoAbismoMinVelocidadeFracao = 0.5, -- Mínimo de 50% da velocidade máxima atingível de corrida
-	SaltoAbismoMinTempoCorrida = 0.4, -- Tempo mínimo de aceleração de corrida contínua
+	SaltoAbismoMinTempoCorrida = 0.35, -- Tempo mínimo de aceleração de corrida contínua
+	SaltoAbismoLedgeTolerance = 0.1, -- Tolerância de beirada / coyote time na pontinha da superfície
+	SaltoAbismoJumpBufferWindow = 0.25, -- Janela de tolerância para pulo apertado no ar antes de aterrissar
+	SaltoAbismoCooldown = 1.0, -- Cooldown mínimo para evitar pulo duplo / impulsos consecutivos
 	SaltoAbismoDownCheckDistance = 20.0,
 	SaltoAbismoDistancias = { 3.0, 5.5, 8.0, 11.0 }, -- 4 linhas de sondagem para a frente
 
