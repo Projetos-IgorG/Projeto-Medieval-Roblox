@@ -35,6 +35,17 @@ local function prepararModelo(modelo: Model, nome: string?)
 	for _, desc in modelo:GetDescendants() do
 		if desc:IsA("BasePart") then
 			desc.Anchored = false
+		elseif desc:IsA("Motor6D") and desc.Name:match("WeaponJoint") then
+			desc:Destroy()
+		end
+	end
+
+	for _, child in modelo:GetChildren() do
+		if
+			child:IsA("Tool")
+			or child:IsA("Model") and (child.Name:match("^WeaponModel") or child.Name == "WeaponVisual")
+		then
+			child:Destroy()
 		end
 	end
 end
@@ -52,16 +63,25 @@ local function clonarPersonagemDoPlayer(player: Player, nome: string?): Model?
 		return nil
 	end
 
-	-- FIX: nunca herdar Tools do player (arma do NPC vem de NPC_ArmaEquipadaId).
+	-- FIX: nunca herdar Tools, WeaponModels ou joints de arma do player
+	-- (arma do NPC é gerenciada exclusivamente via NPC_ArmaEquipadaId e view local do cliente).
 	for _, child in copia:GetChildren() do
-		if child:IsA("Tool") then
+		if
+			child:IsA("Tool")
+			or child:IsA("Model") and (child.Name:match("^WeaponModel") or child.Name == "WeaponVisual")
+		then
 			child:Destroy()
 		end
 	end
 
-	-- Scripts do personagem do player nao devem rodar no NPC.
+	-- Scripts do personagem do player nao devem rodar no NPC, e joints de armas
+	-- herdadas do player (ex: RightArm_WeaponJoint) devem ser removidos.
 	for _, desc in copia:GetDescendants() do
-		if desc:IsA("BaseScript") or desc:IsA("ForceField") then
+		if
+			desc:IsA("BaseScript")
+			or desc:IsA("ForceField")
+			or desc:IsA("Motor6D") and desc.Name:match("WeaponJoint")
+		then
 			desc:Destroy()
 		end
 	end

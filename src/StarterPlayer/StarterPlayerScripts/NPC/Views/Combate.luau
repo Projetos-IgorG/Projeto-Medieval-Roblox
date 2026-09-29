@@ -3,65 +3,92 @@
 --[[
 	Script: Combate.luau
 	Caminho: src/StarterPlayer/StarterPlayerScripts/NPC/Views
-	Responsabilidade: View completa do NPC de combate - cliente-fat. Toca TODAS
-	    as animacoes (Idle, Andando*, Correndo*, Equipar, Desequipar, Ataque,
-	    Aparando, Aparado, Stunado, DefesaQuebrada, Defendendo) localmente.
-	    Tambem clona o WeaponModel visual da arma equipada localmente, com
-	    Motor6D, ao detectar NPC_ArmaPronta=true. Servidor NAO replica visual
-	    nenhum: o controlador-servidor so seta atributos.
+	Responsabilidade: View completa do NPC de combate (cliente-fat). Toca todas
+	    as animacoes localmente, clona o WeaponModel visual a partir de cache com
+	    Motor6D local, orienta torso e cabeca para o alvo e roda a hitbox local
+	    quando o jogador local e o alvo. O servidor nao replica visual nenhum.
 	Uso: ModuleScript; auto-registra em ViewBase.
+	Nao faz: Nao aplica dano, nao decide estado e nao move o Humanoid.
 	Funcoes principais: iniciar, atualizar, aoLOD, destruir
+
+	Correcoes:
+	- tocarEquip sem animacao disponivel agora cria a arma e confirma ao
+	  servidor (antes saia calado e deixava o NPC preso em "equipando").
+	- equipArmaCriada e resetado ao trocar de acao e ao cair para LOD Distante.
+	- equipExecutadoTick e limpo no LOD Distante (antes bloqueava o replay da
+	  animacao de equipar ao reaproximar).
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+
 local CatalogoItens =
 	require(ReplicatedStorage:WaitForChild("Dados"):WaitForChild("Itens"):WaitForChild("CatalogoItens"))
-local ConstrutorTools = require(ReplicatedStorage:WaitForChild("SistemaItens"):WaitForChild("ConstrutorTools"))
+local CacheArmas = require(ReplicatedStorage:WaitForChild("SistemaItens"):WaitForChild("CacheArmasVisuais"))
 
-local TiposNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos"))
-local IdsCombate =
-	require(ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Animacoes"):WaitForChild("IdsAnimacoesCombate"))
+local PastaNPC = ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC")
+local TiposNPC = require(PastaNPC:WaitForChild("Tipos"))
+local RegistroNPC = require(PastaNPC:WaitForChild("RegistroNPC"))
+
+local PastaCombate = ReplicatedStorage:WaitForChild("Combate")
+local IdsCombate = require(PastaCombate:WaitForChild("Animacoes"):WaitForChild("IdsAnimacoesCombate"))
+local Modulo_Hitbox = require(PastaCombate:WaitForChild("Hitbox"))
+local Timings = require(PastaCombate:WaitForChild("Configuracoes"):WaitForChild("TimingsAtaqueNPC"))
+local Modulo_Combo = require(PastaCombate:WaitForChild("Dominio"):WaitForChild("ComboCombate"))
 local IdsGerais =
 	require(ReplicatedStorage:WaitForChild("Jogador"):WaitForChild("Animacoes"):WaitForChild("IdsAnimacoesGerais"))
-local Modulo_Hitbox = require(ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Hitbox"))
-local Timings =
-	require(ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Configuracoes"):WaitForChild("TimingsAtaqueNPC"))
-local Modulo_Combo =
-	require(ReplicatedStorage:WaitForChild("Combate"):WaitForChild("Dominio"):WaitForChild("ComboCombate"))
+
 local ViewBase = require(script.Parent:WaitForChild("ViewBase"))
 
 local PLAYER_LOCAL = Players.LocalPlayer
-local NPC_HitReport: RemoteEvent =
-	ReplicatedStorage:WaitForChild("Remotos"):WaitForChild("NPC_HitReport") :: RemoteEvent
-local EquipAnimacaoTerminou: RemoteEvent = ReplicatedStorage:WaitForChild("Remotos")
-	:WaitForChild("EquipAnimacaoTerminou") :: RemoteEvent
+local Remotos = ReplicatedStorage:WaitForChild("Remotos")
+local NPC_HitReport = Remotos:WaitForChild("NPC_HitReport") :: RemoteEvent
+local EquipAnimacaoTerminou = Remotos:WaitForChild("EquipAnimacaoTerminou") :: RemoteEvent
 
 type Ctx = ViewBase.ContextoView
 
+-- Estado tipado. Antes era um saco de strings montadas em runtime
+-- ("WeaponModelLocal" .. mao), onde um typo virava bug silencioso.
+type EstadoCombate = {
+	rootJoint: Motor6D?,
+	rootJointC0Base: CFrame?,
+	neckJoint: Motor6D?,
+	yawSuavizado: number?,
+
+	alvoRef: number?,
+	alvoHrp: BasePart?,
+
+	armaVisualId: string?,
+	armaRight: Model?,
+	armaLeft: Model?,
+
+	estadoTocando: string?,
+	acaoTocando: string?,
+	acaoTick: number?,
+
+	hitboxRight: any,
+	hitboxLeft: any,
+	swingToken: number?,
+	markerDisparado: boolean?,
+	limpezaMarkers: (() -> ())?,
+	conexaoStopped: RBXScriptConnection?,
+
+	equipToken: number?,
+	equipStoppedConn: RBXScriptConnection?,
+	equipEndedConn: RBXScriptConnection?,
+	equipMarkerConn: RBXScriptConnection?,
+	equipArmaCriada: boolean?,
+	equipNomeAtual: string?,
+	equipExecutadoTick: number?,
+}
+
+local function est(ctx: Ctx): EstadoCombate
+	return (ctx.estado :: any) :: EstadoCombate
+end
+
 local Punhos = (IdsCombate :: any).Punhos and (IdsCombate :: any).Punhos.animacoes or {}
 local BaseAnims = IdsGerais.Base.animacoes
-
--- Retorna as animacoes do modo correto para o NPC.
--- So usa o modo da arma quando ArmaPronta == true (arma de fato equipada).
--- Antes disso, retorna as animacoes gerais Base (igual um player sem arma).
-local function obterAnimacoesModo(ctx: Ctx): { [string]: string }
-	local armaPronta = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaPronta) == true
-	if armaPronta then
-		local idArma = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId) :: string?
-		if idArma and idArma ~= "" then
-			local dados = CatalogoItens.Get(idArma)
-			if dados and dados.ModoAnimacao then
-				local modoData = (IdsCombate :: any)[dados.ModoAnimacao]
-				if modoData and modoData.animacoes then
-					return modoData.animacoes
-				end
-			end
-		end
-	end
-	return BaseAnims
-end
 
 local FADE_LOCOMOCAO = 0.18
 local FADE_REACAO_IN = 0.14
@@ -71,16 +98,15 @@ local FADE_ENTRADA_ATAQUE = 0.16
 local FADE_SAIDA_ATAQUE = 0.22
 local FADE_EQUIP = 0.10
 
-local SUFIXO_PARA_BRACO = {
-	Right = "Right Arm",
-	Left = "Left Arm",
-}
-local SUFIXO_PARA_SLOT = {
-	Right = "RightArm",
-	Left = "LeftArm",
-}
+-- Quanto maior, mais rapido o torso alcanca o alvo. 12 e um meio termo entre
+-- "robotico" (infinito, que era o comportamento antigo) e "molenga".
+local VELOCIDADE_SUAVIZACAO_YAW = 12
+-- Folga dada aos markers da animacao antes do fallback por tempo assumir.
+local BUFFER_FALLBACK_HITBOX = 0.15
 
--- Conjunto de nomes considerados locomocao (Movement priority).
+local SUFIXO_PARA_BRACO = { Right = "Right Arm", Left = "Left Arm" }
+local SUFIXO_PARA_SLOT = { Right = "RightArm", Left = "LeftArm" }
+
 local LOCOMOCAO_NAMES: { [string]: boolean } = {
 	Idle = true,
 	Andando = true,
@@ -91,52 +117,83 @@ local LOCOMOCAO_NAMES: { [string]: boolean } = {
 	CorrendoEsquerda = true,
 }
 
+local aplicarLocomocao: (ctx: Ctx) -> ()
+
 -- =============================================================================
--- Helpers de tracks.
+-- Animacoes: resolucao de id e invalidacao seletiva de tracks.
 -- =============================================================================
 
-local function limparTracks(ctx: Ctx)
-	for _, t in ctx.tracks do
-		pcall(function()
-			t:Stop(0)
-			t:Destroy()
-		end)
+local function obterAnimacoesModo(ctx: Ctx): { [string]: string }
+	if ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaPronta) ~= true then
+		return BaseAnims
 	end
-	table.clear(ctx.tracks)
+	local idArma = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId) :: string?
+	if not idArma or idArma == "" then
+		return BaseAnims
+	end
+	local dados = CatalogoItens.Get(idArma)
+	local modoData = dados and dados.ModoAnimacao and (IdsCombate :: any)[dados.ModoAnimacao]
+	return (modoData and modoData.animacoes) or BaseAnims
+end
+
+local function idParaTrack(ctx: Ctx, nome: string): string?
+	local armaPronta = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaPronta) == true
+	local ehTransicao = nome == "Equipar" or nome == "Desequipar"
+	local idArma = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId) :: string?
+
+	if not ((armaPronta or ehTransicao) and idArma and idArma ~= "") then
+		return BaseAnims[nome]
+	end
+
+	local dados = CatalogoItens.Get(idArma)
+	local modo = (dados and dados.ModoAnimacao) or "Punhos"
+	local modoData = (IdsCombate :: any)[modo]
+	local id = modoData and modoData.animacoes and modoData.animacoes[nome]
+	if id then
+		return id
+	end
+	return Punhos[nome]
+end
+
+local function descartarTrack(ctx: Ctx, nome: string, fade: number)
+	local track = ctx.tracks[nome]
+	if not track then
+		return
+	end
+	pcall(function()
+		track:Stop(fade)
+		track:Destroy()
+	end)
+	ctx.tracks[nome] = nil
 end
 
 local function carregarTrack(ctx: Ctx, nome: string): AnimationTrack?
-	local armaPronta = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaPronta) == true
-	local ehEquipTransicao = (nome == "Equipar" or nome == "Desequipar")
-
-	local idArma = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId) :: string?
-	local id: string? = nil
-
-	if (armaPronta or ehEquipTransicao) and idArma and idArma ~= "" then
-		local modo = "Punhos"
-		local dados = CatalogoItens.Get(idArma)
-		if dados and dados.ModoAnimacao then
-			modo = dados.ModoAnimacao
-		end
-		local modoData = (IdsCombate :: any)[modo]
-		local anims = modoData and modoData.animacoes
-		id = anims and anims[nome]
-
-		if not id then
-			-- Fallback para punhos
-			local fallbackData = (IdsCombate :: any).Punhos
-			local fallbackAnims = fallbackData and fallbackData.animacoes
-			id = fallbackAnims and fallbackAnims[nome]
-		end
-	else
-		-- Se a arma não está pronta, usa as animações gerais (Base)
-		id = BaseAnims[nome]
-	end
-
+	local id = idParaTrack(ctx, nome)
 	if not id then
 		return nil
 	end
+
+	local trackExistente = ctx.tracks[nome]
+	if trackExistente then
+		local idAtual = trackExistente.Animation and trackExistente.Animation.AnimationId
+		if idAtual ~= id then
+			descartarTrack(ctx, nome, 0)
+		end
+	end
+
 	return ViewBase.CarregarTrack(ctx, nome, id)
+end
+
+-- Substitui o antigo limparTracks(), que apagava TUDO ao trocar de arma e ja
+-- tinha quebrado o hitbox uma vez ao destruir a track de ataque recem criada.
+local function reconciliarTracks(ctx: Ctx)
+	for nome, track in ctx.tracks do
+		local novoId = idParaTrack(ctx, nome)
+		local idAtual = track.Animation and track.Animation.AnimationId
+		if novoId ~= idAtual then
+			descartarTrack(ctx, nome, FADE_LOCOMOCAO)
+		end
+	end
 end
 
 local function pararLocomocaoExceto(ctx: Ctx, manter: AnimationTrack?)
@@ -145,6 +202,10 @@ local function pararLocomocaoExceto(ctx: Ctx, manter: AnimationTrack?)
 			t:Stop(FADE_LOCOMOCAO)
 		end
 	end
+end
+
+local function pararTodasLocomocao(ctx: Ctx)
+	pararLocomocaoExceto(ctx, nil)
 end
 
 local function tocarLocomocao(ctx: Ctx, nome: string, velocidade: number?)
@@ -160,22 +221,60 @@ local function tocarLocomocao(ctx: Ctx, nome: string, velocidade: number?)
 	t:AdjustSpeed(velocidade or 1)
 end
 
-local function pararTodasLocomocao(ctx: Ctx)
-	for nome, t in ctx.tracks do
-		if LOCOMOCAO_NAMES[nome] and t.IsPlaying then
-			t:Stop(FADE_LOCOMOCAO)
-		end
+-- =============================================================================
+-- Alvo em cache. Antes isso era um GetDescendants() por frame, por NPC.
+-- =============================================================================
+
+local function obterAlvoHrp(ctx: Ctx): BasePart?
+	local e = est(ctx)
+	local ref = ctx.modelo:GetAttribute(TiposNPC.Chaves.AlvoRef)
+
+	if typeof(ref) ~= "number" or ref == 0 then
+		e.alvoRef = nil
+		e.alvoHrp = nil
+		return nil
 	end
+
+	local cache = e.alvoHrp
+	if e.alvoRef == ref and cache and cache.Parent then
+		return cache
+	end
+
+	local modelo: Model? = nil
+	if ref > 0 then
+		local player = Players:GetPlayerByUserId(ref)
+		modelo = player and player.Character or nil
+	else
+		modelo = RegistroNPC.Obter(-ref)
+	end
+
+	e.alvoRef = ref
+	e.alvoHrp = modelo and modelo:FindFirstChild("HumanoidRootPart") :: BasePart? or nil
+	return e.alvoHrp
+end
+
+local function ehAlvoLocal(ctx: Ctx): boolean
+	local ref = ctx.modelo:GetAttribute(TiposNPC.Chaves.AlvoRef)
+	return typeof(ref) == "number" and ref == PLAYER_LOCAL.UserId
 end
 
 -- =============================================================================
--- Orientacao visual cliente-local. O servidor move o Humanoid; a View gira o
--- RootJoint localmente para o NPC parecer mirar o alvo sem aplicar torque fisico.
+-- Orientacao visual. Roda no render step logo depois do Character, para
+-- sobrescrever o que o Animator acabou de aplicar no mesmo frame.
 -- =============================================================================
 
-local function obterRootJointVisual(ctx: Ctx): Motor6D?
-	local existente = ctx.estado.rootJointVisual
-	if typeof(existente) == "Instance" and existente:IsA("Motor6D") and existente.Parent then
+local function normAngulo(a: number): number
+	return ((a + math.pi) % (2 * math.pi)) - math.pi
+end
+
+local function yawDoVetor(dir: Vector3): number
+	return math.atan2(-dir.X, -dir.Z)
+end
+
+local function obterRootJoint(ctx: Ctx): Motor6D?
+	local e = est(ctx)
+	local existente = e.rootJoint
+	if existente and existente.Parent then
 		return existente
 	end
 
@@ -186,8 +285,10 @@ local function obterRootJointVisual(ctx: Ctx): Motor6D?
 	local torso = ctx.modelo:FindFirstChild("Torso") :: BasePart?
 	for _, child in hrp:GetChildren() do
 		if child:IsA("Motor6D") and child.Part0 == hrp and (not torso or child.Part1 == torso) then
-			ctx.estado.rootJointVisual = child
-			ctx.estado.rootJointVisualC0Base = child.C0
+			e.rootJoint = child
+			if not e.rootJointC0Base then
+				e.rootJointC0Base = child.C0
+			end
 			return child
 		end
 	end
@@ -195,407 +296,269 @@ local function obterRootJointVisual(ctx: Ctx): Motor6D?
 end
 
 local function obterNeckJoint(ctx: Ctx): Motor6D?
-	local existente = ctx.estado.neckJoint
-	if typeof(existente) == "Instance" and existente:IsA("Motor6D") and existente.Parent then
+	local e = est(ctx)
+	local existente = e.neckJoint
+	if existente and existente.Parent then
 		return existente
 	end
-
-	local neck = ctx.modelo:FindFirstChild("Neck", true) :: Motor6D?
+	local neck = ctx.modelo:FindFirstChild("Neck", true)
 	if neck and neck:IsA("Motor6D") then
-		ctx.estado.neckJoint = neck
-		ctx.estado.neckC0Base = neck.C0
+		e.neckJoint = neck
 		return neck
 	end
 	return nil
 end
 
-local function obterPosicaoAlvoVisual(ctx: Ctx): Vector3?
-	local alvoRef = ctx.modelo:GetAttribute(TiposNPC.Chaves.AlvoRef)
-	if typeof(alvoRef) ~= "number" or alvoRef == 0 then
-		return nil
-	end
-	-- Player: AlvoRef positivo = UserId.
-	if alvoRef > 0 then
-		for _, player in Players:GetPlayers() do
-			if player.UserId == alvoRef then
-				local char = player.Character
-				local hrp = char and (char:FindFirstChild("HumanoidRootPart") :: BasePart?)
-				return hrp and hrp.Position or nil
-			end
-		end
-		return nil
-	end
-	-- NPC: AlvoRef negativo = -id de NPC. Procura por NPC_Id no workspace.
-	local procurado = -alvoRef
-	local pastaNPCs = workspace:FindFirstChild("NPCs") or workspace
-	for _, m in pastaNPCs:GetDescendants() do
-		if m:IsA("Model") and m:GetAttribute("NPC_Id") == procurado then
-			local hrp = m:FindFirstChild("HumanoidRootPart") :: BasePart?
-			return hrp and hrp.Position or nil
-		end
-	end
-	return nil
-end
-
--- Normaliza angulo para [-pi, pi].
-local function normAngulo(a: number): number
-	return ((a + math.pi) % (2 * math.pi)) - math.pi
-end
-
-local function yawDoVetor(dir: Vector3): number
-	return math.atan2(-dir.X, -dir.Z)
-end
-
-local function atualizarOrientacaoVisual(ctx: Ctx, _dt: number)
+local function atualizarOrientacaoVisual(ctx: Ctx, dt: number)
 	if ctx.lod == TiposNPC.LOD.Distante then
 		return
 	end
-	local joint = obterRootJointVisual(ctx)
-	if not joint then
-		return
-	end
+
+	local joint = obterRootJoint(ctx)
 	local hrp = ctx.modelo:FindFirstChild("HumanoidRootPart") :: BasePart?
-	if not hrp then
+	if not joint or not hrp then
 		return
 	end
-	local baseC0 = ctx.estado.rootJointVisualC0Base
+
+	local e = est(ctx)
+	local baseC0 = e.rootJointC0Base
 	if typeof(baseC0) ~= "CFrame" then
 		baseC0 = joint.C0
-		ctx.estado.rootJointVisualC0Base = baseC0
+		e.rootJointC0Base = baseC0
 	end
 
-	local alvoPos = obterPosicaoAlvoVisual(ctx)
-	local atual = 0
-
-	if alvoPos then
-		local dx = alvoPos.X - hrp.Position.X
-		local dz = alvoPos.Z - hrp.Position.Z
+	local alvoHrp = obterAlvoHrp(ctx)
+	local desejado = 0
+	if alvoHrp then
+		local dx = alvoHrp.Position.X - hrp.Position.X
+		local dz = alvoHrp.Position.Z - hrp.Position.Z
 		if (dx * dx + dz * dz) > 0.0025 then
-			local desiredYaw = yawDoVetor(Vector3.new(dx, 0, dz))
-			local hrpYaw = yawDoVetor(hrp.CFrame.LookVector)
-			atual = normAngulo(desiredYaw - hrpYaw)
+			desejado = normAngulo(yawDoVetor(Vector3.new(dx, 0, dz)) - yawDoVetor(hrp.CFrame.LookVector))
 		end
 	end
 
-	ctx.estado.jointYawAtual = atual
-	ctx.estado.jointYawSuavizado = atual
+	-- Lerp exponencial, independente de framerate. O campo antigo
+	-- jointYawSuavizado recebia o valor cru: suavizacao so no nome.
+	local prevYaw = e.yawSuavizado
+	local atual: number
+	if prevYaw == nil then
+		atual = desejado
+	else
+		atual = normAngulo(prevYaw + normAngulo(desejado - prevYaw) * (1 - math.exp(-VELOCIDADE_SUAVIZACAO_YAW * dt)))
+	end
+	e.yawSuavizado = atual
 
 	joint.C0 = CFrame.Angles(0, atual, 0) * (baseC0 :: CFrame)
 
-	-- Rotacao da Cabeca (Neck) no eixo Y fixa no alvo, preservando X e Z do animador
-	local neck = obterNeckJoint(ctx)
-	if neck then
-		if alvoPos then
-			local head = ctx.modelo:FindFirstChild("Head") :: BasePart?
-			local torso = ctx.modelo:FindFirstChild("Torso") :: BasePart?
-			if head and torso then
-				local dir = alvoPos - head.Position
-				if dir.Magnitude > 0.1 then
-					local desiredHeadYawWorld = yawDoVetor(dir)
-					local torsoYawWorld = yawDoVetor(torso.CFrame.LookVector)
-					local relativeYaw = normAngulo(desiredHeadYawWorld - torsoYawWorld)
-
-					-- Mantem X (pitch) e Y (roll) do animador, sobrescreve Z (yaw)
-					local rx, ry, _ = neck.Transform:ToEulerAnglesXYZ()
-					neck.Transform = CFrame.Angles(rx, ry, relativeYaw)
-				end
-			end
-		end
+	-- Cabeca so no LOD Proximo: ninguem percebe a distancia media.
+	if ctx.lod ~= TiposNPC.LOD.Proximo or not alvoHrp then
+		return
 	end
+
+	local neck = obterNeckJoint(ctx)
+	local head = ctx.modelo:FindFirstChild("Head") :: BasePart?
+	local torso = ctx.modelo:FindFirstChild("Torso") :: BasePart?
+	if not neck or not head or not torso then
+		return
+	end
+
+	local dir = alvoHrp.Position - head.Position
+	if dir.Magnitude <= 0.1 then
+		return
+	end
+
+	local relativeYaw = normAngulo(yawDoVetor(dir) - yawDoVetor(torso.CFrame.LookVector))
+	-- Preserva pitch e roll do animador, sobrescreve so o yaw.
+	local rx, ry = neck.Transform:ToEulerAnglesXYZ()
+	neck.Transform = CFrame.Angles(rx, ry, relativeYaw)
 end
 
 local function restaurarOrientacaoVisual(ctx: Ctx)
-	local joint = ctx.estado.rootJointVisual
-	local baseC0 = ctx.estado.rootJointVisualC0Base
-	if typeof(joint) == "Instance" and joint:IsA("Motor6D") and typeof(baseC0) == "CFrame" then
+	local e = est(ctx)
+	local joint = e.rootJoint
+	local baseC0 = e.rootJointC0Base
+	if joint and joint.Parent and typeof(baseC0) == "CFrame" then
 		joint.C0 = baseC0
 	end
 
-	local neck = ctx.estado.neckJoint
-	if typeof(neck) == "Instance" and neck:IsA("Motor6D") and neck.Parent then
+	local neck = e.neckJoint
+	if neck and neck.Parent then
 		neck.Transform = CFrame.new()
 	end
 
-	ctx.estado.rootJointVisual = nil
-	ctx.estado.rootJointVisualC0Base = nil
-	ctx.estado.jointYawAtual = nil
-	ctx.estado.jointYawSuavizado = nil
-	ctx.estado.neckJoint = nil
-	ctx.estado.neckC0Base = nil
+	e.rootJoint = nil
+	e.rootJointC0Base = nil
+	e.neckJoint = nil
+	e.yawSuavizado = nil
 end
 
 -- =============================================================================
--- WeaponModel cliente-local: cada cliente clona o WeaponModel visual da arma
--- equipada e ancora aos bracos do NPC via Motor6D LOCAL. Nada disso replica.
+-- WeaponModel local. Nada disso replica: cada cliente monta o seu.
 -- =============================================================================
 
-local function encontrarTemplateArma(id: string?): Tool?
-	if not id or id == "" then
-		return nil
-	end
-	return ConstrutorTools.CriarTool(id)
+local function campoArma(mao: string): string
+	return if mao == "Right" then "armaRight" else "armaLeft"
 end
 
-local function destruirWeaponModelMao(ctx: Ctx, mao: string)
-	local key = "WeaponModelLocal" .. mao
-	local existente = ctx.estado[key]
-	if existente and typeof(existente) == "Instance" then
+local function destruirArmaMao(ctx: Ctx, mao: string)
+	local e = est(ctx)
+	local existente = if mao == "Right" then e.armaRight else e.armaLeft
+	if existente then
 		existente:Destroy()
 	end
-	ctx.estado[key] = nil
+	if mao == "Right" then
+		e.armaRight = nil
+	else
+		e.armaLeft = nil
+	end
 
 	local nomeBraco = SUFIXO_PARA_BRACO[mao]
-	if nomeBraco then
-		local arm = ctx.modelo:FindFirstChild(nomeBraco) :: BasePart?
-		if arm then
-			local jname = SUFIXO_PARA_SLOT[mao] .. "_WeaponJointLocal"
-			local j = arm:FindFirstChild(jname)
-			if j then
-				j:Destroy()
-			end
+	local arm = nomeBraco and ctx.modelo:FindFirstChild(nomeBraco) :: BasePart?
+	if arm then
+		local j = arm:FindFirstChild(SUFIXO_PARA_SLOT[mao] .. "_WeaponJointLocal")
+		if j then
+			j:Destroy()
 		end
 	end
 end
 
-local function destruirWeaponModelsLocais(ctx: Ctx)
-	destruirWeaponModelMao(ctx, "Right")
-	destruirWeaponModelMao(ctx, "Left")
+local function destruirArmasLocais(ctx: Ctx)
+	destruirArmaMao(ctx, "Right")
+	destruirArmaMao(ctx, "Left")
 end
 
-local function criarWeaponModelMao(ctx: Ctx, template: Model, mao: string)
+local function criarArmaMao(ctx: Ctx, idArma: string?, mao: string)
 	local nomeBraco = SUFIXO_PARA_BRACO[mao]
-	if not nomeBraco then
-		return
-	end
-	local armPart = ctx.modelo:FindFirstChild(nomeBraco) :: BasePart?
+	local armPart = nomeBraco and ctx.modelo:FindFirstChild(nomeBraco) :: BasePart?
 	if not armPart then
 		return
 	end
-	destruirWeaponModelMao(ctx, mao)
 
-	local clone = template:Clone()
-	clone.Name = "WeaponModelLocal" .. mao
+	destruirArmaMao(ctx, mao)
+
+	-- Template ja vem limpo e normalizado do cache.
+	local clone = CacheArmas.Clonar(idArma) or CacheArmas.Clonar("punhos")
+	if not clone then
+		return
+	end
 
 	local handle = clone:FindFirstChild("Handle") :: BasePart?
 	if not handle then
 		clone:Destroy()
 		return
 	end
-	-- Mantém o nome original como "Handle" para compatibilidade com animações
-	handle.Name = "Handle"
 
-	for _, d in clone:GetDescendants() do
-		if d:IsA("Script") or d:IsA("LocalScript") or d:IsA("ProximityPrompt") then
-			d:Destroy()
-		end
-	end
-	for _, p in clone:GetDescendants() do
-		if p:IsA("BasePart") then
-			p.Transparency = if p.Name == "HitboxPart" then 1 else 0
-			p.Anchored = false
-			p.CanCollide = false
-			p.CanTouch = false
-			p.CanQuery = false
-			p.Massless = true
-		end
-	end
-
+	clone.Name = "WeaponModelLocal" .. mao
 	clone.Parent = ctx.modelo
 
 	local joint = Instance.new("Motor6D")
 	joint.Name = SUFIXO_PARA_SLOT[mao] .. "_WeaponJointLocal"
 	joint.Part0 = armPart
 	joint.Part1 = handle
-	-- Usar CFrame estático relativo ao braço para a C0 do Motor6D, evitando
-	-- ler o CFrame do braço já animado (que introduziria offsets incorretos).
+	-- CFrame estatico relativo ao braco: ler o CFrame ja animado introduziria
+	-- offset errado.
 	joint.C0 = CFrame.new(0, -1, 0) * CFrame.Angles(math.rad(-90), 0, 0)
 	joint.C1 = CFrame.new()
 	joint.Parent = armPart
 
-	ctx.estado["WeaponModelLocal" .. mao] = clone
-end
-
-local function criarWeaponModelsLocais(ctx: Ctx)
-	local id = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId) :: string?
-	local template: Model? = nil
-	local tool = encontrarTemplateArma(id) or encontrarTemplateArma("punhos")
-	if tool then
-		local modelVisual = Instance.new("Model")
-		modelVisual.Name = "WeaponVisual"
-
-		local cloneTool = tool:Clone()
-		local hasWeaponModel = cloneTool:FindFirstChild("WeaponModel") ~= nil
-
-		for _, filho in ipairs(cloneTool:GetChildren()) do
-			if
-				filho:IsA("Script")
-				or filho:IsA("LocalScript")
-				or filho:IsA("ProximityPrompt")
-				or filho:IsA("Configuration")
-			then
-				filho:Destroy()
-			elseif filho:IsA("Model") and filho.Name == "WeaponModel" then
-				for _, subFilho in ipairs(filho:GetChildren()) do
-					if
-						not (
-							subFilho:IsA("Script")
-							or subFilho:IsA("LocalScript")
-							or subFilho:IsA("ProximityPrompt")
-							or subFilho:IsA("Configuration")
-						)
-					then
-						subFilho.Parent = modelVisual
-					end
-				end
-				filho:Destroy()
-			else
-				local filhoInstance = filho :: Instance
-				if hasWeaponModel and filhoInstance.Name == "Handle" then
-					filhoInstance:Destroy()
-				else
-					filhoInstance.Parent = modelVisual
-				end
-			end
-		end
-		cloneTool:Destroy()
-
-		if modelVisual:FindFirstChild("Handle") then
-			template = modelVisual
-		else
-			modelVisual:Destroy()
-		end
-
-		tool:Destroy()
-	end
-
-	if not template then
-		return
-	end
-
-	local idArma = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId) :: string?
-	local modo = "Punhos"
-	if idArma and idArma ~= "" then
-		local dados = CatalogoItens.Get(idArma)
-		if dados and dados.ModoAnimacao then
-			modo = dados.ModoAnimacao
-		end
-	end
-
-	if modo == "Punhos" then
-		criarWeaponModelMao(ctx, template, "Right")
-		criarWeaponModelMao(ctx, template, "Left")
+	local e = est(ctx)
+	if mao == "Right" then
+		e.armaRight = clone
 	else
-		criarWeaponModelMao(ctx, template, "Right")
-		destruirWeaponModelMao(ctx, "Left")
+		e.armaLeft = clone
 	end
+end
 
-	template:Destroy()
+local function criarArmasLocais(ctx: Ctx)
+	local idArma = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId) :: string?
+	local dados = idArma and idArma ~= "" and CatalogoItens.Get(idArma) or nil
+	local modo = (dados and dados.ModoAnimacao) or "Punhos"
+
+	criarArmaMao(ctx, idArma, "Right")
+	if modo == "Punhos" or modo == "Dupla" or modo == "UmaMaoDupla" then
+		criarArmaMao(ctx, idArma, "Left")
+	else
+		destruirArmaMao(ctx, "Left")
+	end
 end
 
 -- =============================================================================
--- Hitbox local: o cliente do alvo roda shapecast no WeaponModel local (que e
--- o unico que esta realmente animado pelo Animator local). Quando acertar a
--- si proprio, dispara NPC_HitReport para o servidor validar e aplicar dano.
--- Outros clientes nao rodam hitbox para este NPC (so o do alvo).
+-- Hitbox local: so o cliente do alvo roda, e reporta ao servidor.
 -- =============================================================================
 
-local sincronizarArmaVisual: (ctx: Ctx) -> ()
-local aplicarLocomocao: (ctx: Ctx) -> ()
-
-local function ehAlvoLocal(ctx: Ctx): boolean
-	local alvoRef = ctx.modelo:GetAttribute(TiposNPC.Chaves.AlvoRef)
-	return typeof(alvoRef) == "number" and alvoRef == PLAYER_LOCAL.UserId
+local function campoHitbox(mao: string): string
+	return if mao == "Right" then "hitboxRight" else "hitboxLeft"
 end
 
-local function destruirHitboxesLocais(ctx: Ctx)
-	for _, key in { "HitboxRight", "HitboxLeft" } do
-		local handle = ctx.estado[key]
-		if handle then
-			Modulo_Hitbox.DestruirHitbox(handle)
-		end
-		ctx.estado[key] = nil
+local function destruirHitboxMao(ctx: Ctx, mao: string)
+	local e = est(ctx) :: any
+	local campo = campoHitbox(mao)
+	if e[campo] then
+		Modulo_Hitbox.DestruirHitbox(e[campo])
 	end
+	e[campo] = nil
 end
 
-local function destruirHitboxMaoLocal(ctx: Ctx, mao: string)
-	local key = "Hitbox" .. mao
-	local handle = ctx.estado[key]
-	if handle then
-		Modulo_Hitbox.DestruirHitbox(handle)
-	end
-	ctx.estado[key] = nil
+local function destruirHitboxes(ctx: Ctx)
+	destruirHitboxMao(ctx, "Right")
+	destruirHitboxMao(ctx, "Left")
 end
 
 local function maoOposta(mao: string): string
 	return if mao == "Right" then "Left" else "Right"
 end
 
+-- A animacao de punhos R6 comeca o golpe 1 com a mao esquerda.
 local function maoPorIndice(indice: number?): string
 	local valor = if typeof(indice) == "number" then math.max(1, math.floor(indice)) else 1
-	-- A animação de punhos R6 inicia o primeiro golpe (índice 1) com a mão Esquerda (Left).
-	-- Portanto, índices ímpares (1, 3) mapeiam para 'Left' e pares (2, 4) para 'Right'.
 	return if valor % 2 == 0 then "Right" else "Left"
 end
 
-local function limparConexoesHitboxAnimacao(ctx: Ctx)
-	local limpezaMarkers = ctx.estado.limpezaMarkersHitbox
-	if type(limpezaMarkers) == "function" then
-		pcall(limpezaMarkers)
+local function limparConexoesHitbox(ctx: Ctx)
+	local e = est(ctx)
+	if e.limpezaMarkers then
+		pcall(e.limpezaMarkers)
 	end
-	ctx.estado.limpezaMarkersHitbox = nil
+	e.limpezaMarkers = nil
 
-	local conexaoStopped = ctx.estado.conexaoHitboxStopped
-	if conexaoStopped and conexaoStopped.Connected then
-		conexaoStopped:Disconnect()
+	local conn = e.conexaoStopped
+	if conn and conn.Connected then
+		conn:Disconnect()
 	end
-	ctx.estado.conexaoHitboxStopped = nil
+	e.conexaoStopped = nil
 end
 
-local function cancelarHitboxSwing(ctx: Ctx)
-	ctx.estado.swingHitToken = (ctx.estado.swingHitToken or 0) + 1
-	ctx.estado.hitboxMarkerDisparado = false
-	limparConexoesHitboxAnimacao(ctx)
-	destruirHitboxesLocais(ctx)
+local function cancelarSwing(ctx: Ctx)
+	local e = est(ctx)
+	e.swingToken = (e.swingToken or 0) + 1
+	e.markerDisparado = false
+	limparConexoesHitbox(ctx)
+	destruirHitboxes(ctx)
 end
 
-local function ativarHitboxMaoCliente(ctx: Ctx, mao: string, duracao: number?, acaoTick: number)
-	local key = "Hitbox" .. mao
-	local existente = ctx.estado[key]
-	if existente then
-		Modulo_Hitbox.DestruirHitbox(existente)
-		ctx.estado[key] = nil
-	end
+local function ativarHitboxMao(ctx: Ctx, mao: string, acaoTick: number)
+	destruirHitboxMao(ctx, mao)
 
-	local weaponLocal = ctx.estado["WeaponModelLocal" .. mao]
-	if not weaponLocal or typeof(weaponLocal) ~= "Instance" or not (weaponLocal :: Instance):IsA("Model") then
-		return
-	end
-	local weaponModel = weaponLocal :: Model
-	if not weaponModel.Parent then
+	local arma = (est(ctx) :: any)[campoArma(mao)] :: Model?
+	if not arma or not arma.Parent then
 		return
 	end
 
 	local params = Modulo_Hitbox.CriarRaycastParamsAtacante(ctx.modelo)
-	-- Exclui o proprio NPC atacante; o servidor valida alvo, distancia e swing.
-
-	local handle, erro = Modulo_Hitbox.CriarHitbox(weaponModel, mao :: any, params)
+	local handle, erro = Modulo_Hitbox.CriarHitbox(arma, mao :: any, params)
 	if not handle then
 		if erro then
 			warn("[NPC.Combate.View] CriarHitbox falhou (" .. mao .. "): " .. tostring(erro))
 		end
 		return
 	end
-	ctx.estado[key] = handle
+	(est(ctx) :: any)[campoHitbox(mao)] = handle
 
-	Modulo_Hitbox.AtivarHitbox(handle, function(alvo: Model, _maoHit, raycastResult)
-		if ctx.estado.acaoTick ~= acaoTick then
+	Modulo_Hitbox.AtivarHitbox(handle, function(alvo: Model, _mao, raycastResult)
+		if est(ctx).acaoTick ~= acaoTick or alvo ~= PLAYER_LOCAL.Character then
 			return
 		end
-		if alvo ~= PLAYER_LOCAL.Character then
-			return
-		end
-		-- Reporta para servidor: ele valida atacando + janela + distancia + dedup
-		-- e chama _ProcessarHit canonico.
+		-- O servidor valida atacando + janela + distancia rebobinada + dedup.
 		local npcHrp = ctx.modelo:FindFirstChild("HumanoidRootPart") :: BasePart?
 		local alvoHrp = alvo:FindFirstChild("HumanoidRootPart") :: BasePart?
 		NPC_HitReport:FireServer(
@@ -606,195 +569,163 @@ local function ativarHitboxMaoCliente(ctx: Ctx, mao: string, duracao: number?, a
 			npcHrp and npcHrp.CFrame or nil,
 			alvoHrp and alvoHrp.CFrame or nil
 		)
-	end, duracao)
+	end, nil)
 end
 
-local function obterTimingsAtaque(ctx: Ctx): typeof(Timings.Punhos)
+local function obterTimingsAtaque(ctx: Ctx)
 	local idArma = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId) :: string?
-	local timings = Timings.Punhos
-	if idArma then
-		local catalogData = CatalogoItens.Get(idArma)
-		local modo = catalogData and catalogData.ModoAnimacao
-		if modo and modo ~= "" then
-			timings = Timings.ObterPorArma(modo)
-		end
+	local dados = idArma and CatalogoItens.Get(idArma)
+	local modo = dados and dados.ModoAnimacao
+	if modo and modo ~= "" then
+		return Timings.ObterPorArma(modo)
 	end
-	return timings
+	return Timings.Punhos
 end
 
 local function configurarHitboxParaSwing(ctx: Ctx, track: AnimationTrack, acaoTick: number)
+	local e = est(ctx)
 	if not ehAlvoLocal(ctx) then
 		return
 	end
-
-	-- So tem sentido se a arma estiver pronta visualmente (WeaponModel local existe).
-	-- NAO chamar sincronizarArmaVisual() aqui: ela chama limparTracks() que destroi
-	-- o track de ataque recem iniciado, invalidando todos os GetMarkerReachedSignal.
-	if not ctx.estado.WeaponModelLocalRight and not ctx.estado.WeaponModelLocalLeft then
+	if not e.armaRight and not e.armaLeft then
 		return
 	end
 
-	limparConexoesHitboxAnimacao(ctx)
-	destruirHitboxesLocais(ctx)
+	limparConexoesHitbox(ctx)
+	destruirHitboxes(ctx)
 
-	local timings = obterTimingsAtaque(ctx)
-	local t = timings.Ataque
-	local indiceSwing = ctx.modelo:GetAttribute(TiposNPC.Chaves.AcaoIndice) :: number?
-	-- Determinar mao de ataque baseado nos weapon models que existem de fato,
-	-- NAO usar maoPorIndice que e hardcoded para Punhos (impar=Left, par=Right).
-	-- Para armas de uma mao (UmaMao), so existe WeaponModelLocalRight,
-	-- entao a mao de ataque deve ser sempre Right.
+	-- Arma de uma mao so tem WeaponModel a direita: nao da pra alternar.
 	local maoIndice: string
-	if ctx.estado.WeaponModelLocalRight and ctx.estado.WeaponModelLocalLeft then
-		-- Ambas as maos tem arma (Punhos ou UmaMaoDupla): alternar
-		maoIndice = maoPorIndice(indiceSwing)
+	if e.armaRight and e.armaLeft then
+		maoIndice = maoPorIndice(ctx.modelo:GetAttribute(TiposNPC.Chaves.AcaoIndice) :: number?)
 	else
-		-- Arma em uma mao so: usar a mao que tem o modelo
-		maoIndice = if ctx.estado.WeaponModelLocalRight then "Right" else "Left"
+		maoIndice = if e.armaRight then "Right" else "Left"
 	end
 
-	-- Token: apenas o swing mais recente conta. Markers/delays antigos abortam.
-	ctx.estado.swingHitToken = (ctx.estado.swingHitToken or 0) + 1
-	local token = ctx.estado.swingHitToken
-	ctx.estado.hitboxMarkerDisparado = false
+	e.swingToken = (e.swingToken or 0) + 1
+	local token = e.swingToken
+	e.markerDisparado = false
 
-	local function swingValido(): boolean
-		return not ctx.destruido
-			and ctx.estado.swingHitToken == token
-			and ctx.estado.acaoTick == acaoTick
-			and ehAlvoLocal(ctx)
+	local function valido(): boolean
+		return not ctx.destruido and e.swingToken == token and e.acaoTick == acaoTick and ehAlvoLocal(ctx)
 	end
 
-	local function ativarMaoPorMarker(mao: string)
-		if not swingValido() then
+	local function ativarPorMarker(mao: string)
+		if not valido() or e.markerDisparado then
 			return
 		end
-		if ctx.estado.hitboxMarkerDisparado then
-			return
-		end
-		ctx.estado.hitboxMarkerDisparado = true
-		destruirHitboxMaoLocal(ctx, maoOposta(mao))
-		ativarHitboxMaoCliente(ctx, mao, nil, acaoTick)
+		e.markerDisparado = true
+		destruirHitboxMao(ctx, maoOposta(mao))
+		ativarHitboxMao(ctx, mao, acaoTick)
 	end
 
-	local function pararPorMarkerFim()
-		if ctx.estado.swingHitToken ~= token then
-			return
-		end
-		destruirHitboxesLocais(ctx)
-	end
-
-	ctx.estado.limpezaMarkersHitbox = Modulo_Combo.ConfigurarListenersMarcadores(track, {
-		onAtaqueDireita = function(_indice)
-			ativarMaoPorMarker("Right")
+	e.limpezaMarkers = Modulo_Combo.ConfigurarListenersMarcadores(track, {
+		onAtaqueDireita = function()
+			ativarPorMarker("Right")
 		end,
-		onAtaqueEsquerda = function(_indice)
-			ativarMaoPorMarker("Left")
+		onAtaqueEsquerda = function()
+			ativarPorMarker("Left")
 		end,
-		onAtaqueAmbos = function(_indice)
-			ativarMaoPorMarker(maoIndice)
+		onAtaqueAmbos = function()
+			ativarPorMarker(maoIndice)
 		end,
-		onAtaqueFim = pararPorMarkerFim,
+		onAtaqueFim = function()
+			if e.swingToken == token then
+				destruirHitboxes(ctx)
+			end
+		end,
 	})
 
-	ctx.estado.conexaoHitboxStopped = track.Stopped:Connect(function()
-		if ctx.estado.swingHitToken ~= token then
+	e.conexaoStopped = track.Stopped:Connect(function()
+		if e.swingToken ~= token then
 			return
 		end
-		destruirHitboxesLocais(ctx)
-		limparConexoesHitboxAnimacao(ctx)
+		destruirHitboxes(ctx)
+		limparConexoesHitbox(ctx)
 	end)
 
-	-- O fallback de atraso do hitbox deve ser calculado a partir de quando a animação inicia localmente no cliente,
-	-- e não baseado no clock desincronizado do servidor (acaoTick), evitando ativação prematura.
-	-- Adicionado um buffer de 0.15s para garantir que os marcadores da animação (markers) tenham prioridade.
-	local delayTempo = t.AtrasoHit + 0.15
+	-- Fallback por tempo, escalado pela velocidade REAL da track. Com ataque
+	-- carregado (speed 0.4) o delay fixo antigo disparava cedo demais.
+	local t = obterTimingsAtaque(ctx)
+	local velocidade = math.max(track.Speed, 0.05)
 
-	task.delay(delayTempo, function()
-		if
-			not ctx.destruido
-			and ctx.estado.swingHitToken == token
-			and ctx.estado.acaoTick == acaoTick
-			and ehAlvoLocal(ctx)
-		then
-			if not ctx.estado.hitboxMarkerDisparado then
-				ctx.estado.hitboxMarkerDisparado = true
-				destruirHitboxMaoLocal(ctx, maoOposta(maoIndice))
-				ativarHitboxMaoCliente(ctx, maoIndice, nil, acaoTick)
-			end
+	task.delay(t.Ataque.AtrasoHit / velocidade + BUFFER_FALLBACK_HITBOX, function()
+		if valido() and not e.markerDisparado then
+			e.markerDisparado = true
+			destruirHitboxMao(ctx, maoOposta(maoIndice))
+			ativarHitboxMao(ctx, maoIndice, acaoTick)
 		end
 	end)
 
-	task.delay(t.Duracao, function()
-		if ctx.estado.swingHitToken ~= token then
+	task.delay(t.Ataque.Duracao / velocidade, function()
+		if e.swingToken ~= token then
 			return
 		end
-		destruirHitboxesLocais(ctx)
-		limparConexoesHitboxAnimacao(ctx)
+		destruirHitboxes(ctx)
+		limparConexoesHitbox(ctx)
 	end)
 end
 
 -- =============================================================================
--- Reacoes (estado replicado em NPC_Estado).
+-- Reacoes (NPC_Estado).
 -- =============================================================================
 
 type Entry = { nome: string, id: string, looped: boolean }
 
 local function entradaPorEstado(ctx: Ctx, estado: string): Entry?
-	local anims = obterAnimacoesModo(ctx)
+	local a = obterAnimacoesModo(ctx)
 	if estado == TiposNPC.Estado.Aparando then
-		return {
-			nome = "Aparando",
-			id = anims.Aparar or anims.Defesa or Punhos.Aparar or Punhos.Defesa or "",
-			looped = false,
-		}
+		return { nome = "Aparando", id = a.Aparar or a.Defesa or Punhos.Aparar or Punhos.Defesa or "", looped = false }
 	elseif estado == TiposNPC.Estado.Aparado then
 		return {
 			nome = "Aparado",
-			id = anims.Aparado or anims.Stunado or Punhos.Aparado or Punhos.Stunado or "",
+			id = a.Aparado or a.Stunado or Punhos.Aparado or Punhos.Stunado or "",
 			looped = false,
 		}
 	elseif estado == TiposNPC.Estado.DefesaQuebrada then
 		return {
 			nome = "DefesaQuebrada",
-			id = anims.DefesaQuebrada or anims.Stunado or Punhos.DefesaQuebrada or Punhos.Stunado or "",
+			id = a.DefesaQuebrada or a.Stunado or Punhos.DefesaQuebrada or Punhos.Stunado or "",
 			looped = false,
 		}
 	elseif estado == TiposNPC.Estado.Stunado then
-		return { nome = "Stunado", id = anims.Stunado or Punhos.Stunado or "", looped = false }
+		return { nome = "Stunado", id = a.Stunado or Punhos.Stunado or "", looped = false }
 	elseif estado == TiposNPC.Estado.Defendendo then
-		return { nome = "Defendendo", id = anims.Defesa or Punhos.Defesa or "", looped = true }
+		return { nome = "Defendendo", id = a.Defesa or Punhos.Defesa or "", looped = true }
 	end
 	return nil
 end
 
 local function tocarEstado(ctx: Ctx)
-	local estado = ctx.modelo:GetAttribute(TiposNPC.Chaves.Estado) or TiposNPC.Estado.Idle
-	local entry = entradaPorEstado(ctx, estado :: string)
+	local e = est(ctx)
+	local estado = (ctx.modelo:GetAttribute(TiposNPC.Chaves.Estado) or TiposNPC.Estado.Idle) :: string
+	local entry = entradaPorEstado(ctx, estado)
+
 	if not entry then
-		-- Estado normal (Idle/Andando/Correndo/Atacando) - nao e reacao; locomocao
-		-- e ataque sao tocadas separadamente via NPC_LocomocaoNome / NPC_Acao.
-		if ctx.estado.estadoTocando ~= nil then
-			-- Saindo de uma reacao: para apenas a track de reacao que estava tocando.
-			local nomeReacao = ctx.estado.estadoTocando
-			ctx.estado.estadoTocando = nil
-			local trackReacao = ctx.tracks[nomeReacao]
-			if trackReacao and trackReacao.IsPlaying then
-				local indoAtacar = estado == TiposNPC.Estado.Atacando
-				trackReacao:Stop(if indoAtacar then FADE_REACAO_PARA_ATAQUE else FADE_REACAO_OUT)
-			end
-			-- Reaplica locomocao ao sair de reacao para evitar que o NPC
-			-- fique na pose padrao do Roblox (sem nenhuma animacao tocando).
-			if estado ~= TiposNPC.Estado.Atacando then
-				aplicarLocomocao(ctx)
-			end
+		-- Estado normal: locomocao e ataque sao tocados por outros caminhos.
+		if e.estadoTocando == nil then
+			return
+		end
+		local anterior = e.estadoTocando
+		e.estadoTocando = nil
+
+		local track = ctx.tracks[anterior]
+		if track and track.IsPlaying then
+			local indoAtacar = estado == TiposNPC.Estado.Atacando
+			track:Stop(if indoAtacar then FADE_REACAO_PARA_ATAQUE else FADE_REACAO_OUT)
+		end
+		-- Sem isso o NPC volta para a pose padrao do Roblox.
+		if estado ~= TiposNPC.Estado.Atacando then
+			aplicarLocomocao(ctx)
 		end
 		return
 	end
+
 	local track = ViewBase.CarregarTrack(ctx, entry.nome, entry.id)
 	if not track then
 		return
 	end
+
 	if estado == TiposNPC.Estado.Aparando then
 		local ataque = ctx.tracks["Ataque"]
 		if ataque and ataque.IsPlaying then
@@ -802,22 +733,21 @@ local function tocarEstado(ctx: Ctx)
 		end
 		pararTodasLocomocao(ctx)
 	end
-	if ctx.estado.estadoTocando == entry.nome then
-		if track.IsPlaying then
-			return
-		end
-	end
-	ctx.estado.estadoTocando = entry.nome
 
-	-- Para outras tracks de reacao (NAO para locomocao - locomocao continua por baixo).
+	if e.estadoTocando == entry.nome and track.IsPlaying then
+		return
+	end
+	e.estadoTocando = entry.nome
+
+	-- Para outras reacoes; locomocao continua rodando por baixo.
 	for outro, t in ctx.tracks do
-		if outro ~= entry.nome and not LOCOMOCAO_NAMES[outro] and t.IsPlaying then
-			-- Nao para Ataque/Equipar/Desequipar aqui - eles tem sua propria gestao.
-			if outro == "Ataque" or outro == "Equipar" or outro == "Desequipar" then
-				continue
-			end
-			t:Stop(FADE_REACAO_OUT)
+		if outro == entry.nome or LOCOMOCAO_NAMES[outro] or not t.IsPlaying then
+			continue
 		end
+		if outro == "Ataque" or outro == "Equipar" or outro == "Desequipar" then
+			continue
+		end
+		t:Stop(FADE_REACAO_OUT)
 	end
 
 	track.Looped = entry.looped
@@ -825,203 +755,266 @@ local function tocarEstado(ctx: Ctx)
 end
 
 -- =============================================================================
--- Acao (NPC_Acao: Idle / Ataque / Equipar / Desequipar).
+-- Acao (NPC_Acao).
 -- =============================================================================
 
+local function limparConexoesEquip(ctx: Ctx)
+	local e = est(ctx)
+	for _, campo in { "equipStoppedConn", "equipEndedConn", "equipMarkerConn" } do
+		local conn = (e :: any)[campo] :: RBXScriptConnection?
+		if conn and conn.Connected then
+			conn:Disconnect()
+		end
+		(e :: any)[campo] = nil
+	end
+end
+
+local function tocarEquip(ctx: Ctx, nome: string, criarArmaNoMarker: boolean, acaoTick: number?)
+	local track = carregarTrack(ctx, nome)
+	if not track then
+		-- FIX: sem track a funcao saia calada. A arma nunca era criada e o
+		-- servidor nunca recebia EquipAnimacaoTerminou, deixando o NPC preso em
+		-- "equipando". Agora aplica o efeito imediatamente e confirma.
+		local eSemTrack = est(ctx)
+		eSemTrack.equipNomeAtual = nil
+		eSemTrack.equipExecutadoTick = acaoTick
+		if criarArmaNoMarker and not ctx.destruido then
+			eSemTrack.equipArmaCriada = true
+			criarArmasLocais(ctx)
+		end
+		if not ctx.destruido then
+			EquipAnimacaoTerminou:FireServer(ctx.modelo)
+		end
+		return
+	end
+
+	local e = est(ctx)
+
+	-- Evita re-executar a mesma acao de equipar para o mesmo tick ou enquanto ja estiver ativa.
+	if typeof(acaoTick) == "number" and acaoTick > 0 and e.equipExecutadoTick == acaoTick then
+		return
+	end
+	if e.equipNomeAtual == nome and track.IsPlaying and e.equipToken then
+		return
+	end
+
+	limparConexoesEquip(ctx)
+
+	local token = (e.equipToken or 0) + 1
+	e.equipToken = token
+	e.equipArmaCriada = false
+	e.equipNomeAtual = nome
+	e.equipExecutadoTick = acaoTick
+
+	-- Para a track caso ja esteja tocando antes de reiniciar limpa.
+	if track.IsPlaying then
+		pcall(function()
+			track:Stop(0)
+		end)
+	end
+
+	track.Looped = false
+	track:Play(FADE_EQUIP)
+	track.Looped = false
+
+	local finalizado = false
+	local function finalizar()
+		if finalizado then
+			return
+		end
+		finalizado = true
+
+		limparConexoesEquip(ctx)
+		if e.equipToken ~= token then
+			return
+		end
+
+		if criarArmaNoMarker and not e.equipArmaCriada and not ctx.destruido then
+			e.equipArmaCriada = true
+			criarArmasLocais(ctx)
+		end
+
+		if track.IsPlaying then
+			pcall(function()
+				track:Stop(0.1)
+			end)
+		end
+
+		if not ctx.destruido then
+			EquipAnimacaoTerminou:FireServer(ctx.modelo)
+		end
+	end
+
+	if criarArmaNoMarker then
+		-- Marker "Equip": cria a arma durante a animacao.
+		e.equipMarkerConn = track:GetMarkerReachedSignal("Equip"):Connect(function()
+			if e.equipToken == token and not ctx.destruido then
+				e.equipArmaCriada = true
+				criarArmasLocais(ctx)
+			end
+		end)
+	end
+
+	e.equipStoppedConn = track.Stopped:Connect(finalizar)
+
+	pcall(function()
+		e.equipEndedConn = track.Ended:Connect(finalizar)
+	end)
+
+	local didLoopConn: RBXScriptConnection? = nil
+	pcall(function()
+		didLoopConn = track.DidLoop:Connect(function()
+			if didLoopConn then
+				didLoopConn:Disconnect()
+				didLoopConn = nil
+			end
+			finalizar()
+		end)
+	end)
+
+	local duracao = if track.Length > 0 then (track.Length + 0.5) else 2.0
+	task.delay(duracao, function()
+		if e.equipToken == token and not finalizado then
+			finalizar()
+		end
+		if didLoopConn then
+			pcall(function()
+				didLoopConn:Disconnect()
+			end)
+			didLoopConn = nil
+		end
+	end)
+end
+
 local function tocarAcao(ctx: Ctx)
+	local e = est(ctx)
 	local acao = ctx.modelo:GetAttribute(TiposNPC.Chaves.Acao) :: string?
 	local tick = ctx.modelo:GetAttribute(TiposNPC.Chaves.AcaoTick) :: number?
 	if not acao then
 		return
 	end
 
-	-- Reentrancia: mesmo Acao + mesmo tick = nada a fazer (replication artifact).
-	if ctx.estado.acaoTocando == acao and ctx.estado.acaoTick == tick then
+	-- Mesmo Acao + mesmo tick = artefato de replicacao.
+	if e.acaoTocando == acao and e.acaoTick == tick then
 		return
 	end
-	ctx.estado.acaoTocando = acao
-	ctx.estado.acaoTick = tick
+	e.acaoTocando = acao
+	e.acaoTick = tick
+
+	if acao ~= TiposNPC.Acao.Equipar and acao ~= TiposNPC.Acao.Desequipar then
+		e.equipNomeAtual = nil
+		e.equipExecutadoTick = nil
+		-- FIX: equipArmaCriada nunca era resetado. Ficando true para sempre,
+		-- sincronizarArmaVisual caia no early-return e nunca mais reconciliava
+		-- a arma visual enquanto NPC_ArmaPronta fosse false.
+		e.equipArmaCriada = false
+	end
 
 	if acao == TiposNPC.Acao.Idle then
-		-- Para tracks de acao se ainda tocando.
-		local prev = ctx.tracks["Ataque"]
-		if prev and prev.IsPlaying then
-			prev:Stop(FADE_SAIDA_ATAQUE)
+		local ataque = ctx.tracks["Ataque"]
+		if ataque and ataque.IsPlaying then
+			ataque:Stop(FADE_SAIDA_ATAQUE)
 		end
-		cancelarHitboxSwing(ctx)
-		-- Reaplica locomocao para evitar que o NPC fique sem animacao
-		-- (pose padrao do Roblox) apos sair de um ataque ou reacao.
+		cancelarSwing(ctx)
 		aplicarLocomocao(ctx)
 	elseif acao == TiposNPC.Acao.Equipar then
-		local track = carregarTrack(ctx, "Equipar")
-		if not track then
-			return
-		end
-		track.Looped = false
-		track:Play(FADE_EQUIP)
-		-- Notifica o servidor quando a animacao terminar (igual player).
-		local equipToken = (ctx.estado.equipStoppedToken or 0) + 1
-		ctx.estado.equipStoppedToken = equipToken
-		local conn = ctx.estado.equipStoppedConn
-		if conn and conn.Connected then
-			conn:Disconnect()
-		end
-		ctx.estado.equipArmaJaCriada = false
-		-- Marker "Equip": cria a arma visual imediatamente durante a animacao
-		-- (mesmo marker usado pelo Player em Equipamento.luau).
-		-- IMPORTANTE: chama criarWeaponModelsLocais() diretamente em vez de
-		-- sincronizarArmaVisual(), porque ArmaPronta ainda e false neste ponto
-		-- (servidor so seta true apos receber EquipAnimacaoTerminou).
-		local equipMarkerConn = ctx.estado.equipMarkerConn
-		if equipMarkerConn and equipMarkerConn.Connected then
-			equipMarkerConn:Disconnect()
-		end
-		ctx.estado.equipMarkerConn = track:GetMarkerReachedSignal("Equip"):Connect(function()
-			local mc = ctx.estado.equipMarkerConn
-			if mc then
-				mc:Disconnect()
-				ctx.estado.equipMarkerConn = nil
-			end
-			if ctx.estado.equipStoppedToken == equipToken and not ctx.destruido then
-				ctx.estado.equipArmaJaCriada = true
-				criarWeaponModelsLocais(ctx)
-			end
-		end)
-		-- Stopped: notifica servidor + fallback se marker nao disparou
-		ctx.estado.equipStoppedConn = track.Stopped:Connect(function()
-			local currentConn = ctx.estado.equipStoppedConn
-			if currentConn then
-				currentConn:Disconnect()
-				ctx.estado.equipStoppedConn = nil
-			end
-			local mc = ctx.estado.equipMarkerConn
-			if mc and mc.Connected then
-				mc:Disconnect()
-				ctx.estado.equipMarkerConn = nil
-			end
-			if ctx.estado.equipStoppedToken ~= equipToken then
-				return
-			end
-			-- Fallback: se o marker "Equip" nao disparou, cria arma diretamente
-			-- (igual Player em OnEquipAnimacaoTerminou).
-			if not ctx.estado.equipArmaJaCriada and not ctx.destruido then
-				criarWeaponModelsLocais(ctx)
-			end
-			EquipAnimacaoTerminou:FireServer(ctx.modelo)
-		end)
+		tocarEquip(ctx, "Equipar", true, tick)
 	elseif acao == TiposNPC.Acao.Desequipar then
-		local track = carregarTrack(ctx, "Desequipar")
-		if not track then
-			return
-		end
-		track.Looped = false
-		track:Play(FADE_EQUIP)
-		-- Notifica o servidor quando a animacao terminar (igual player).
-		local equipToken = (ctx.estado.equipStoppedToken or 0) + 1
-		ctx.estado.equipStoppedToken = equipToken
-		local conn = ctx.estado.equipStoppedConn
-		if conn and conn.Connected then
-			conn:Disconnect()
-		end
-		ctx.estado.equipStoppedConn = track.Stopped:Connect(function()
-			local currentConn = ctx.estado.equipStoppedConn
-			if currentConn then
-				currentConn:Disconnect()
-				ctx.estado.equipStoppedConn = nil
-			end
-			if ctx.estado.equipStoppedToken ~= equipToken then
-				return
-			end
-			EquipAnimacaoTerminou:FireServer(ctx.modelo)
-		end)
+		tocarEquip(ctx, "Desequipar", false, tick)
 	elseif acao == TiposNPC.Acao.Ataque then
 		local track = carregarTrack(ctx, "Ataque")
-		if not track then
+		if not track or e.acaoTick ~= tick or ctx.destruido then
 			return
 		end
 		track.Looped = false
 
-		-- Se a animacao de ataque JA esta tocando, e continuacao de combo.
-		-- Todos os golpes (1->4) estao na mesma animacao em sequencia de
-		-- keyframes, entao a animacao deve continuar rodando sem reiniciar.
-		-- Nao dependemos de NPC_AcaoIndice aqui pois existe race condition
-		-- na replicacao: o AcaoTick pode disparar antes do AcaoIndice atualizar,
-		-- causando um Stop->Play indevido que mistura a animacao consigo mesma.
-		if track.IsPlaying then
-			-- Combo em andamento: so atualiza hitbox, sem tocar na animacao.
-			if ctx.estado.acaoTick == tick and not ctx.destruido then
-				if typeof(tick) == "number" then
-					configurarHitboxParaSwing(ctx, track, tick)
-				end
-			end
-		else
-			-- Primeiro golpe ou novo combo (animacao nao esta tocando).
-			-- IMPORTANTE: Play() ANTES de configurarHitboxParaSwing para garantir que
-			-- GetMarkerReachedSignal ja esteja ativo quando os markers dispararem.
-			if ctx.estado.acaoTick == tick and not ctx.destruido then
-				track:Play(FADE_ENTRADA_ATAQUE)
-				if typeof(tick) == "number" then
-					configurarHitboxParaSwing(ctx, track, tick)
-				end
-			end
+		if not track.IsPlaying then
+			track:Play(FADE_ENTRADA_ATAQUE)
+		end
+
+		if typeof(tick) == "number" then
+			configurarHitboxParaSwing(ctx, track, tick)
 		end
 	end
 end
 
 -- =============================================================================
--- Locomocao (NPC_LocomocaoNome / NPC_LocomocaoVelocidade).
+-- Locomocao e sincronia de arma.
 -- =============================================================================
 
 function aplicarLocomocao(ctx: Ctx)
 	local nomeAttr = ctx.modelo:GetAttribute(TiposNPC.Chaves.LocomocaoNome) :: string?
 	local vel = ctx.modelo:GetAttribute(TiposNPC.Chaves.LocomocaoVelocidade) :: number?
-	local nome: string = (nomeAttr ~= nil and nomeAttr ~= "") and nomeAttr or "Idle"
+	local nome = if nomeAttr ~= nil and nomeAttr ~= "" then nomeAttr else "Idle"
 	if not LOCOMOCAO_NAMES[nome] then
 		return
 	end
 	tocarLocomocao(ctx, nome, vel)
 end
 
--- =============================================================================
--- Sincronia de WeaponModel (NPC_ArmaPronta / NPC_ArmaEquipadaId).
--- =============================================================================
+local function reaplicarDepois(ctx: Ctx)
+	task.defer(function()
+		if not ctx.destruido and ctx.lod ~= TiposNPC.LOD.Distante then
+			aplicarLocomocao(ctx)
+			tocarEstado(ctx)
+		end
+	end)
+end
 
-function sincronizarArmaVisual(ctx: Ctx)
+local function sincronizarArmaVisual(ctx: Ctx)
+	local e = est(ctx)
 	local pronta = ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaPronta) == true
-	if pronta then
-		local idAtual = (ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId) :: string?) or "punhos"
-		if
-			ctx.estado.armaVisualIdLocal ~= idAtual
-			or not ctx.estado.WeaponModelLocalRight
-			or (idAtual == "punhos" and not ctx.estado.WeaponModelLocalLeft)
-		then
-			cancelarHitboxSwing(ctx)
-			destruirWeaponModelsLocais(ctx)
-			limparTracks(ctx)
-			criarWeaponModelsLocais(ctx)
-			ctx.estado.armaVisualIdLocal = idAtual
 
-			task.defer(function()
-				if not ctx.destruido and ctx.lod ~= TiposNPC.LOD.Distante then
-					aplicarLocomocao(ctx)
-					tocarEstado(ctx)
-				end
-			end)
+	if not pronta then
+		if e.equipArmaCriada or e.equipNomeAtual ~= nil then
+			-- Preserva as armas criadas localmente enquanto aguarda sincronizacao do servidor.
+			return
 		end
-	else
-		cancelarHitboxSwing(ctx)
-		destruirWeaponModelsLocais(ctx)
-		if ctx.estado.armaVisualIdLocal ~= nil then
-			limparTracks(ctx)
-			ctx.estado.armaVisualIdLocal = nil
-			task.defer(function()
-				if not ctx.destruido and ctx.lod ~= TiposNPC.LOD.Distante then
-					aplicarLocomocao(ctx)
-					tocarEstado(ctx)
-				end
-			end)
+		cancelarSwing(ctx)
+		destruirArmasLocais(ctx)
+		if e.armaVisualId ~= nil then
+			e.armaVisualId = nil
+			reconciliarTracks(ctx)
+			reaplicarDepois(ctx)
 		end
+		return
 	end
+
+	local idAtual = (ctx.modelo:GetAttribute(TiposNPC.Chaves.ArmaEquipadaId) :: string?) or "punhos"
+	local precisaRecriar = e.armaVisualId ~= idAtual or not e.armaRight or (idAtual == "punhos" and not e.armaLeft)
+	if not precisaRecriar then
+		return
+	end
+
+	cancelarSwing(ctx)
+	destruirArmasLocais(ctx)
+	reconciliarTracks(ctx)
+	criarArmasLocais(ctx)
+	e.armaVisualId = idAtual
+	reaplicarDepois(ctx)
+end
+
+-- =============================================================================
+-- Render loop unico para todas as Views de combate.
+-- =============================================================================
+
+local ctxsAtivos: { [Ctx]: true } = {}
+local renderLigado = false
+
+local function garantirRenderLoop()
+	if renderLigado then
+		return
+	end
+	renderLigado = true
+	RunService:BindToRenderStep("NPCCombateOrientacao", Enum.RenderPriority.Character.Value + 1, function(dt)
+		for ctx in ctxsAtivos do
+			if ctx.destruido or not ctx.modelo.Parent then
+				ctxsAtivos[ctx] = nil
+				continue
+			end
+			atualizarOrientacaoVisual(ctx, dt)
+		end
+	end)
 end
 
 -- =============================================================================
@@ -1030,7 +1023,7 @@ end
 
 local function instalarSubscricoes(ctx: Ctx)
 	local m = ctx.modelo
-	local sinais = {
+	local chaves = {
 		TiposNPC.Chaves.Estado,
 		TiposNPC.Chaves.Acao,
 		TiposNPC.Chaves.AcaoTick,
@@ -1040,7 +1033,7 @@ local function instalarSubscricoes(ctx: Ctx)
 		TiposNPC.Chaves.ArmaEquipadaId,
 	}
 
-	for _, chave in sinais do
+	for _, chave in chaves do
 		ViewBase.RastrearConexao(
 			ctx,
 			m:GetAttributeChangedSignal(chave):Connect(function()
@@ -1053,7 +1046,7 @@ local function instalarSubscricoes(ctx: Ctx)
 					tocarAcao(ctx)
 				elseif chave == TiposNPC.Chaves.LocomocaoNome or chave == TiposNPC.Chaves.LocomocaoVelocidade then
 					aplicarLocomocao(ctx)
-				elseif chave == TiposNPC.Chaves.ArmaPronta or chave == TiposNPC.Chaves.ArmaEquipadaId then
+				else
 					sincronizarArmaVisual(ctx)
 				end
 			end)
@@ -1073,52 +1066,45 @@ local Combate: ViewBase.View = {
 
 	iniciar = function(ctx: Ctx)
 		instalarSubscricoes(ctx)
-		-- Orientacao visual roda por frame (Heartbeat) para ser suave; o
-		-- atualizar do Scheduler eh throttled e causaria jitter visivel.
-		ViewBase.RastrearConexao(
-			ctx,
-			RunService.Heartbeat:Connect(function(dt)
-				atualizarOrientacaoVisual(ctx, dt)
-			end)
-		)
+		ctxsAtivos[ctx] = true
+		garantirRenderLoop()
 		-- LOD comeca Distante; aplicamos quando promover via aoLOD.
 	end,
 
 	atualizar = function(_ctx: Ctx, _dt: number, _distancia: number) end,
 
 	aoLOD = function(ctx: Ctx, novo: string, _anterior: string)
-		if novo == TiposNPC.LOD.Distante then
-			ViewBase.PararTodasAsTracks(ctx, FADE_REACAO_OUT)
-			pararTodasLocomocao(ctx)
-			ctx.estado.estadoTocando = nil
-			ctx.estado.acaoTocando = nil
-			ctx.estado.acaoTick = nil
-			cancelarHitboxSwing(ctx)
-			destruirWeaponModelsLocais(ctx)
-			restaurarOrientacaoVisual(ctx)
-
-			local conn = ctx.estado.equipStoppedConn
-			if conn and conn.Connected then
-				conn:Disconnect()
-			end
-			ctx.estado.equipStoppedConn = nil
-		else
-			-- Recarrega tudo ao reaproximar.
+		if novo ~= TiposNPC.LOD.Distante then
 			aplicarTudoAgora(ctx)
+			return
 		end
+
+		local e = est(ctx)
+		ViewBase.PararTodasAsTracks(ctx, FADE_REACAO_OUT)
+		pararTodasLocomocao(ctx)
+		e.estadoTocando = nil
+		e.acaoTocando = nil
+		e.acaoTick = nil
+		cancelarSwing(ctx)
+		destruirArmasLocais(ctx)
+		e.armaVisualId = nil
+		restaurarOrientacaoVisual(ctx)
+		limparConexoesEquip(ctx)
+		e.equipNomeAtual = nil
+		-- FIX: sem limpar o tick executado, ao voltar de LOD Distante o mesmo
+		-- NPC_AcaoTick era considerado "ja executado" e a animacao de equipar
+		-- nunca mais tocava.
+		e.equipExecutadoTick = nil
+		e.equipArmaCriada = false
 	end,
 
 	destruir = function(ctx: Ctx)
-		cancelarHitboxSwing(ctx)
-		destruirWeaponModelsLocais(ctx)
+		ctxsAtivos[ctx] = nil
+		cancelarSwing(ctx)
+		destruirArmasLocais(ctx)
 		restaurarOrientacaoVisual(ctx)
-
-		local conn = ctx.estado.equipStoppedConn
-		if conn and conn.Connected then
-			conn:Disconnect()
-		end
-		ctx.estado.equipStoppedConn = nil
-
+		limparConexoesEquip(ctx)
+		est(ctx).equipNomeAtual = nil
 		ViewBase.LimparTudo(ctx)
 	end,
 }

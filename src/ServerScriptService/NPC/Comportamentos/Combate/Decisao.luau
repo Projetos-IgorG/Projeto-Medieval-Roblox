@@ -12,6 +12,10 @@
 	- Bloqueio nao ignora mais o desengajamento: se o alvo sumir/ficar longe
 	  enquanto o NPC bloqueia, ele solta a guarda e desengaja.
 	- Um unico conjunto de hooks na maquina (via Sincronia.InstalarHooks).
+	- Falha ao obter a maquina de combate agora e reportada (era silenciosa e
+	  deixava o NPC sem hooks -> equip nunca concluia -> NPC congelado).
+	- O early-return de "equipando" no Tick tem prazo (TIMEOUT_EQUIP_IA).
+	- Hostilidade lida do atributo NPC_Hostil a cada tick, nao do snapshot.
 ]]
 
 local Players = game:GetService("Players")
@@ -31,6 +35,11 @@ local Comportamento = require(script.Parent.Parent:WaitForChild("Comportamento")
 type Ctx = Comportamento.ContextoNPC
 
 local Decisao = {}
+
+-- Tempo (s) que a IA tolera o NPC preso em "equipando" antes de destravar na
+-- marra. E a ultima linha de defesa: sem ela, um equip que nunca conclui
+-- congela o NPC permanentemente no early-return do Tick.
+local TIMEOUT_EQUIP_IA = 5.0
 
 -- =============================================================================
 -- Helpers gerais.
@@ -377,7 +386,12 @@ iniciarBloqueio = function(ctx: Ctx)
 			return
 		end
 		local estadoAcao = if maq.ObterEstadoAcao then maq:ObterEstadoAcao() else nil
-		if estadoAcao == "Atacando" or estadoAcao == "Equipando" or estadoAcao == "Desequipando" or estadoAcao == "Aparando" then
+		if
+			estadoAcao == "Atacando"
+			or estadoAcao == "Equipando"
+			or estadoAcao == "Desequipando"
+			or estadoAcao == "Aparando"
+		then
 			return
 		end
 	end
@@ -513,8 +527,7 @@ local function aoMudarEstadoAcao(ctx: Ctx, novo: string, anterior: string)
 			espera = Config.ESPERA_APOS_ACERTO_MIN
 				+ math.random() * (Config.ESPERA_APOS_ACERTO_MAX - Config.ESPERA_APOS_ACERTO_MIN)
 		else
-			espera = Config.ESPERA_BAITING_MIN
-				+ math.random() * (Config.ESPERA_BAITING_MAX - Config.ESPERA_BAITING_MIN)
+			espera = Config.ESPERA_BAITING_MIN + math.random() * (Config.ESPERA_BAITING_MAX - Config.ESPERA_BAITING_MIN)
 		end
 		e.cooldownAtaque = agora + espera
 	end
@@ -582,10 +595,21 @@ function Decisao.Iniciar(ctx: Ctx)
 
 	-- Maquina canonica: NPC participa do pipeline igual qualquer player.
 	-- UM unico conjunto de hooks (Sincronia cuida dos atributos; Decisao da IA).
+	-- FIX: as falhas aqui eram TODAS silenciosas. Sem maquina nao ha hooks, e
+	-- sem hooks o equipar nunca conclui: o NPC spawna, tenta equipar uma vez e
+	-- fica parado para sempre. Agora cada caminho de falha grita no Output.
 	local cs = Estado.ObterCombateServidor()
-	if cs and cs.ObterMaquina then
+	if not cs then
+		warn("[NPC.Decisao] CombateServidor indisponivel; NPC de combate sem pipeline:", ctx.modelo:GetFullName())
+	elseif not cs.ObterMaquina then
+		warn("[NPC.Decisao] CombateServidor sem ObterMaquina; hooks nao instalados")
+	else
 		local ok, maq = pcall(cs.ObterMaquina, ctx.modelo)
-		if ok and maq then
+		if not ok then
+			warn("[NPC.Decisao] ObterMaquina estourou para", ctx.modelo:GetFullName(), "->", maq)
+		elseif not maq then
+			warn("[NPC.Decisao] ObterMaquina retornou nil para", ctx.modelo:GetFullName())
+		else
 			e.maquina = maq
 			Sincronia.InstalarHooks(s, maq, function(novo: string, anterior: string)
 				aoMudarEstadoAcao(ctx, novo, anterior)
@@ -627,14 +651,29 @@ function Decisao.Tick(ctx: Ctx, dt: number)
 		return
 	end
 
-	-- Equipando/desequipando: aguarda a animacao terminar.
+	-- Equipando/desequipando: aguarda a animacao terminar, mas COM PRAZO.
+	-- FIX: este early-return nao tinha limite. Qualquer equip que nao concluisse
+	-- (maquina sem hook, cliente sem animacao, pipeline recusando) congelava o
+	-- NPC para sempre, com WalkSpeed 0 e sem um unico erro no Output.
 	if Acoes.EstaEquipando(modelo) then
+		if not e.equipandoDesde then
+			e.equipandoDesde = agora
+		elseif agora - e.equipandoDesde > TIMEOUT_EQUIP_IA then
+			e.equipandoDesde = nil
+			Acoes.ForcarFimEquip(modelo, "IA presa em equipando por mais de " .. TIMEOUT_EQUIP_IA .. "s")
+		end
 		Movimento.Parar(ctx)
 		return
 	end
+	e.equipandoDesde = nil
+
+	-- FIX: hostilidade lida do atributo, nao do snapshot feito no spawn. O
+	-- painel de dev altera NPC_Hostil em runtime e o ctx nunca acompanhava.
+	local hostil = lerFlag(modelo, TiposNPC.Chaves.Hostil, ctx.hostil == true)
+	ctx.hostil = hostil
 
 	-- NPC nao-hostil: parado em modo Base.
-	if not ctx.hostil then
+	if not hostil then
 		desengajar(ctx)
 		return
 	end
@@ -722,8 +761,7 @@ function Decisao.Tick(ctx: Ctx, dt: number)
 			e.chasingAlvo = nil
 			e.cooldownAtaque = 0
 		end
-		local npcParado = Movimento.VelocidadePlanaModelo(modelo) < 0.8
-			and ctx.humanoide.MoveDirection.Magnitude < 0.1
+		local npcParado = Movimento.VelocidadePlanaModelo(modelo) < 0.8 and ctx.humanoide.MoveDirection.Magnitude < 0.1
 		if npcParado then
 			if not e.tempoParadoInicio then
 				e.tempoParadoInicio = agora
@@ -765,9 +803,8 @@ function Decisao.Tick(ctx: Ctx, dt: number)
 	-- Atacando: ajusta posicao e pede continuacao de combo.
 	if Acoes.EstaAtacando(modelo) then
 		if podeAndar then
-			local moveu, animLoco = Movimento.MoverParaFaixaDeAlcance(
-				ctx, pos, alvoHRP.Position, distancia, alcance, distanciaCorrer, dt
-			)
+			local moveu, animLoco =
+				Movimento.MoverParaFaixaDeAlcance(ctx, pos, alvoHRP.Position, distancia, alcance, distanciaCorrer, dt)
 			if moveu and animLoco then
 				Acoes.TocarLocomocao(modelo, animLoco, e.velocidadeAnimacaoLocomocao or 1)
 			else
@@ -788,7 +825,10 @@ function Decisao.Tick(ctx: Ctx, dt: number)
 		local cooldownBloqueioOK = (e.cooldownBloqueio or 0) <= agora
 		local cooldownAtaqueOK = (e.cooldownAtaque or 0) <= agora
 
-		if podeDefender and cooldownBloqueioOK and not emPreparoAposAparado
+		if
+			podeDefender
+			and cooldownBloqueioOK
+			and not emPreparoAposAparado
 			and math.random() < Config.CHANCE_BLOQUEIO_POR_TICK
 		then
 			iniciarBloqueio(ctx)
@@ -814,9 +854,8 @@ function Decisao.Tick(ctx: Ctx, dt: number)
 			return
 		end
 
-		local moveu, animLoco = Movimento.MoverParaFaixaDeAlcance(
-			ctx, pos, alvoHRP.Position, distancia, alcance, distanciaCorrer, dt
-		)
+		local moveu, animLoco =
+			Movimento.MoverParaFaixaDeAlcance(ctx, pos, alvoHRP.Position, distancia, alcance, distanciaCorrer, dt)
 		if moveu and animLoco then
 			Acoes.TocarLocomocao(modelo, animLoco, e.velocidadeAnimacaoLocomocao or 1)
 			if s then

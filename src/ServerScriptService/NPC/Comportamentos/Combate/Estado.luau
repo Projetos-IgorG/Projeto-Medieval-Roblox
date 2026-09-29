@@ -6,6 +6,8 @@
 	e acesso lazy ao CombateServidor.
 	UNICO dono da tabela de estados. Estado.Destruir garante zero leaks:
 	desconecta hooks, limpa historico e remove a maquina do CombateServidor.
+
+	Correcao: equipToken invalida watchdogs de equip pendentes ao destruir.
 ]]
 
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -36,6 +38,8 @@ export type EstadoNPC = {
 	desequipando: boolean,
 	indiceCombo: number,
 	comboToken: number,
+	-- Invalida watchdogs de equip pendentes (task.delay antigos).
+	equipToken: number,
 	acaoTick: number,
 	swingHitInicio: number,
 	swingHitFim: number,
@@ -106,6 +110,7 @@ function Estado.ObterOuCriar(modelo: Model, humanoide: Humanoid): EstadoNPC
 		desequipando = false,
 		indiceCombo = 0,
 		comboToken = 0,
+		equipToken = 0,
 		acaoTick = 0,
 		swingHitInicio = 0,
 		swingHitFim = 0,
@@ -126,6 +131,7 @@ function Estado.Destruir(modelo: Model)
 	end
 	s.destruido = true
 	s.comboToken += 1 -- invalida qualquer task.delay/defer pendente
+	s.equipToken += 1 -- invalida watchdogs de equip pendentes
 	s.atacando = false
 	s.equipando = false
 	s.desequipando = false

@@ -10,6 +10,12 @@
 	- NPC_Estado: escrito pelo hook da maquina (mapeamento unico) e pela
 	  locomocao via DefinirEstadoLocomocao (guardado por estadoAcao == "Nenhuma").
 	- "Morto" e terminal: so o Gerenciamento escreve, ninguem sobrescreve.
+
+	Correcoes:
+	- Aceita maquina com :ObterDados() OU campo .dados (o resto do sistema usa
+	  o campo; a incompatibilidade quebrava a conclusao do equipar).
+	- Hook protegido por pcall: erro em uma transicao nao derruba todas as
+	  sincronizacoes seguintes do NPC.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -21,6 +27,23 @@ local Estado = require(script.Parent:WaitForChild("Estado"))
 type EstadoNPC = Estado.EstadoNPC
 
 local Sincronia = {}
+
+-- FIX: o resto do sistema (Decisao) le `maquina.dados` direto, enquanto este
+-- modulo chamava `maquina:ObterDados()`. Se a MaquinaDeEstados nao expuser esse
+-- metodo, o hook estourava a cada transicao e NPC_ArmaPronta nunca era setado
+-- (equip pendurado -> NPC congelado). Agora aceita as duas formas.
+local function obterDados(maquina: any): any?
+	if not maquina then
+		return nil
+	end
+	if maquina.ObterDados then
+		local ok, dados = pcall(maquina.ObterDados, maquina)
+		if ok and dados then
+			return dados
+		end
+	end
+	return maquina.dados
+end
 
 local function setAttr(modelo: Model, chave: string, valor: any)
 	if modelo:GetAttribute(chave) ~= valor then
@@ -79,7 +102,7 @@ function Sincronia.DefinirEstadoLocomocao(s: EstadoNPC, maquina: any, estado: st
 	if s.destruido then
 		return
 	end
-	local dados = maquina and maquina.dados
+	local dados = obterDados(maquina)
 	if dados and (dados.estadoAcao ~= "Nenhuma" or dados.bloqueando) then
 		return
 	end
@@ -121,8 +144,9 @@ local function aoMudarMaquina(s: EstadoNPC, maquina: any)
 	if s.destruido then
 		return
 	end
-	local dados = maquina:ObterDados()
+	local dados = obterDados(maquina)
 	if not dados then
+		warn("[NPC.Sincronia] Maquina sem dados; equip/estado nao serao sincronizados em", s.modelo:GetFullName())
 		return
 	end
 
@@ -154,8 +178,14 @@ function Sincronia.InstalarHooks(
 	maquina: any,
 	aoMudarEstadoAcao: ((novo: string, anterior: string) -> ())?
 )
+	-- FIX: erro dentro do hook nao pode derrubar o callback da maquina. Se isso
+	-- acontecer, o NPC perde TODAS as sincronizacoes seguintes (inclusive a
+	-- conclusao do equipar).
 	local function sincronizar()
-		aoMudarMaquina(s, maquina)
+		local ok, err = (pcall :: any)(aoMudarMaquina, s, maquina)
+		if not ok then
+			warn("[NPC.Sincronia] Erro ao sincronizar maquina:", err)
+		end
 	end
 
 	if maquina.AoMudarEstadoAcao then

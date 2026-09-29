@@ -3,7 +3,9 @@
 --[[
     Script: SchedulerCliente.luau
     Caminho: src/StarterPlayer/StarterPlayerScripts/NPC
-    Responsabilidade: Loop centralizado client-side; descobre NPCs via tag/pasta, gerencia LOD/distancia, distribui atualizacoes e respeita o limite de ativos por archetype.
+    Responsabilidade: Loop centralizado client-side; descobre NPCs via tag ou
+        pasta, gerencia LOD por distancia com histerese, distribui atualizacoes
+        e respeita o limite de ativos por archetype.
     Uso: ModuleScript; chame Iniciar() em IniciarNPC.client.luau.
     Nao faz: Nao toca animacoes nem cria models; orquestra controladores.
     Funcoes principais: Iniciar, Parar
@@ -14,24 +16,66 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local TiposNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("Tipos"))
-local ConfigNPC = require(ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC"):WaitForChild("ConfigNPC"))
+local PastaNPC = ReplicatedStorage:WaitForChild("Entidades"):WaitForChild("NPC")
+local TiposNPC = require(PastaNPC:WaitForChild("Tipos"))
+local ConfigNPC = require(PastaNPC:WaitForChild("ConfigNPC"))
+local RegistroNPC = require(PastaNPC:WaitForChild("RegistroNPC"))
 local ControladorNPC = require(script.Parent:WaitForChild("ControladorNPC"))
 
 local PLAYER_LOCAL = Players.LocalPlayer
 
+-- Um NPC parado exatamente no limite de um raio ficava alternando de LOD todo
+-- tick, destruindo e recriando tracks e WeaponModels. A histerese alarga o
+-- raio de SAIDA do estado atual.
+local MARGEM_HISTERESE = 1.12
+
 local Scheduler = {}
 
-local controladores: { [Model]: ControladorNPC.ControladorImpl } = {}
+type Registro = {
+	ctrl: ControladorNPC.ControladorImpl,
+	raiz: BasePart?,
+	lod: string,
+}
+
+local registros: { [Model]: Registro } = {}
+local pendentes: { [Model]: { RBXScriptConnection } } = {}
 local conexoesGerais: { RBXScriptConnection } = {}
 local heartbeatConn: RBXScriptConnection? = nil
 local acumulador = 0
 local rodando = false
 
-local function rotuloLOD(distancia: number, archetype: string): string
+-- =============================================================================
+-- Distancia e LOD.
+-- =============================================================================
+
+local function obterRaiz(modelo: Model, registro: Registro): BasePart?
+	local raiz = registro.raiz
+	if raiz and raiz.Parent then
+		return raiz
+	end
+	raiz = modelo.PrimaryPart or (modelo:FindFirstChild("HumanoidRootPart") :: BasePart?)
+	registro.raiz = raiz
+	return raiz
+end
+
+local function raizDoJogador(): BasePart?
+	local char = PLAYER_LOCAL.Character
+	return char and char:FindFirstChild("HumanoidRootPart") :: BasePart? or nil
+end
+
+local function rotuloLOD(distancia: number, archetype: string, anterior: string): string
 	local rProx = ConfigNPC.Obter(archetype, "RaioProximo")
 	local rMed = ConfigNPC.Obter(archetype, "RaioMedio")
 	local rDes = ConfigNPC.Obter(archetype, "RaioDesativacao")
+
+	if anterior == TiposNPC.LOD.Proximo then
+		rProx *= MARGEM_HISTERESE
+	end
+	if anterior ~= TiposNPC.LOD.Distante then
+		rMed *= MARGEM_HISTERESE
+		rDes *= MARGEM_HISTERESE
+	end
+
 	if distancia > rDes then
 		return TiposNPC.LOD.Distante
 	end
@@ -44,140 +88,132 @@ local function rotuloLOD(distancia: number, archetype: string): string
 	return TiposNPC.LOD.Distante
 end
 
-local function distanciaJogador(modelo: Model): number
-	local pp = modelo.PrimaryPart
-	if not pp then
-		pp = modelo:FindFirstChild("HumanoidRootPart") :: BasePart?
-	end
-	if not pp then
-		return math.huge
-	end
-	local char = PLAYER_LOCAL.Character
-	local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
-	if not hrp then
-		return math.huge
-	end
-	return (pp.Position - hrp.Position).Magnitude
-end
-
-local pendingNPCs: { [Model]: { RBXScriptConnection } } = {}
+-- =============================================================================
+-- Registro de NPCs.
+-- =============================================================================
 
 local function limparPendente(modelo: Model)
-	local conexoes = pendingNPCs[modelo]
-	if conexoes then
-		for _, conn in conexoes do
-			if conn.Connected then
-				conn:Disconnect()
-			end
-		end
-		pendingNPCs[modelo] = nil
+	local conexoes = pendentes[modelo]
+	if not conexoes then
+		return
 	end
+	for _, conn in conexoes do
+		if conn.Connected then
+			conn:Disconnect()
+		end
+	end
+	pendentes[modelo] = nil
 end
 
-local function adicionar(modelo: Instance)
-	if not modelo:IsA("Model") then
+local function adicionar(inst: Instance)
+	if not inst:IsA("Model") then
 		return
 	end
-	if controladores[modelo] then
+	local modelo = inst :: Model
+	if registros[modelo] then
 		return
 	end
 
-	local function tentarAdicionar()
+	RegistroNPC.Adicionar(modelo)
+
+	local function tentar(): boolean
 		if not modelo.Parent then
 			return false
 		end
-		if controladores[modelo] then
+		if registros[modelo] then
 			return true
 		end
-
-		local archetype = modelo:GetAttribute(TiposNPC.Chaves.Archetype)
-		if typeof(archetype) ~= "string" then
+		if typeof(modelo:GetAttribute(TiposNPC.Chaves.Archetype)) ~= "string" then
 			return false
 		end
-
-		local humanoide = modelo:FindFirstChildOfClass("Humanoid")
-		if not humanoide then
+		if not modelo:FindFirstChildOfClass("Humanoid") then
 			return false
 		end
 
 		local ctrl = ControladorNPC.novo(modelo)
-		if ctrl then
-			controladores[modelo] = ctrl
-			return true
+		if not ctrl then
+			return false
 		end
-		return false
+		registros[modelo] = { ctrl = ctrl, raiz = nil, lod = TiposNPC.LOD.Distante }
+		return true
 	end
 
-	-- Tenta adicionar imediatamente
-	if tentarAdicionar() then
+	if tentar() then
 		return
 	end
 
-	-- Se falhar (relicacao parcial), aguarda os atributos e filhos
+	-- Replicacao parcial: espera atributos e Humanoid chegarem.
 	limparPendente(modelo)
-	local conexoes = {}
-	pendingNPCs[modelo] = conexoes
+	local conexoes: { RBXScriptConnection } = {}
+	pendentes[modelo] = conexoes
 
 	local function verificar()
-		if tentarAdicionar() then
+		if tentar() then
 			limparPendente(modelo)
 		end
 	end
 
-	local connAttr = modelo:GetAttributeChangedSignal(TiposNPC.Chaves.Archetype):Connect(verificar)
-	table.insert(conexoes, connAttr)
-
-	local connChild = modelo.ChildAdded:Connect(function(child)
-		if child:IsA("Humanoid") then
-			verificar()
-		end
-	end)
-	table.insert(conexoes, connChild)
-
-	local connDestroying = modelo.Destroying:Connect(function()
-		limparPendente(modelo)
-	end)
-	table.insert(conexoes, connDestroying)
+	table.insert(conexoes, modelo:GetAttributeChangedSignal(TiposNPC.Chaves.Archetype):Connect(verificar))
+	table.insert(
+		conexoes,
+		modelo.ChildAdded:Connect(function(child)
+			if child:IsA("Humanoid") then
+				verificar()
+			end
+		end)
+	)
+	table.insert(
+		conexoes,
+		modelo.Destroying:Connect(function()
+			limparPendente(modelo)
+		end)
+	)
 end
 
-local function remover(modelo: Instance)
-	if not modelo:IsA("Model") then
+local function remover(inst: Instance)
+	if not inst:IsA("Model") then
 		return
 	end
+	local modelo = inst :: Model
 
 	limparPendente(modelo)
+	RegistroNPC.Remover(modelo)
 
-	local ctrl = controladores[modelo]
-	if not ctrl then
+	local registro = registros[modelo]
+	if not registro then
 		return
 	end
-	controladores[modelo] = nil
-	ctrl:destruir()
+	registros[modelo] = nil
+	registro.ctrl:destruir()
 end
 
--- Buffers reutilizados a cada tick para minimizar pressao de GC.
-type Item = { ctrl: ControladorNPC.ControladorImpl, distancia: number }
-local porArchetypeBuf: { [string]: { Item } } = {}
-local itemPool: { Item } = {}
-local itemPoolN = 0
+-- =============================================================================
+-- Tick. Buffers reciclados para nao pressionar o GC.
+-- =============================================================================
+
+type Item = { registro: Registro, distancia: number }
+
+local porArchetype: { [string]: { Item } } = {}
+local pool: { Item } = {}
+local poolN = 0
 
 local function obterItem(): Item
-	if itemPoolN > 0 then
-		local it = itemPool[itemPoolN]
-		itemPool[itemPoolN] = nil
-		itemPoolN -= 1
+	if poolN > 0 then
+		local it = pool[poolN]
+		pool[poolN] = nil
+		poolN -= 1
 		return it
 	end
-	return { ctrl = nil :: any, distancia = 0 }
+	return { registro = nil :: any, distancia = 0 }
 end
 
-local function devolverListaParaPool(lista: { Item })
+local function devolverLista(lista: { Item })
 	for i = #lista, 1, -1 do
 		local it = lista[i]
-		it.ctrl = nil :: any
+		it.registro = nil :: any
 		it.distancia = 0
-		itemPoolN += 1
-		itemPool[itemPoolN] = it
+		poolN += 1
+		pool[poolN] = it
 		lista[i] = nil
 	end
 end
@@ -188,51 +224,75 @@ end
 
 local function tickGlobal(dt: number)
 	acumulador += dt
-	if acumulador < ConfigNPC.Padrao.IntervaloAtualizacao then
+	local intervalo = ConfigNPC.Padrao.IntervaloAtualizacao
+	if acumulador < intervalo then
 		return
 	end
-	local passo = acumulador
-	acumulador = 0
 
-	-- 1) Categoriza por archetype com (controlador, distancia) usando buffers reciclados.
-	for modelo, ctrl in controladores do
+	local passo = acumulador
+	-- Subtrai em vez de zerar para nao acumular drift de timing.
+	acumulador -= intervalo
+	if acumulador > intervalo then
+		acumulador = 0
+	end
+
+	local raizJogador = raizDoJogador()
+
+	for modelo, registro in registros do
 		if not modelo.Parent then
-			controladores[modelo] = nil
-			ctrl:destruir()
+			registros[modelo] = nil
+			registro.ctrl:destruir()
 			continue
 		end
-		local d = distanciaJogador(modelo)
-		local lista = porArchetypeBuf[ctrl.archetype]
+
+		local distancia = math.huge
+		local raiz = obterRaiz(modelo, registro)
+		if raiz and raizJogador then
+			distancia = (raiz.Position - raizJogador.Position).Magnitude
+		end
+
+		local archetype = registro.ctrl.archetype
+		local lista = porArchetype[archetype]
 		if not lista then
 			lista = {}
-			porArchetypeBuf[ctrl.archetype] = lista
+			porArchetype[archetype] = lista
 		end
+
 		local item = obterItem()
-		item.ctrl = ctrl
-		item.distancia = d
+		item.registro = registro
+		item.distancia = distancia
 		lista[#lista + 1] = item
 	end
 
-	-- 2) Para cada archetype, ordena por distancia e ativa apenas os MaxAtivos primeiros.
-	for archetype, lista in porArchetypeBuf do
-		if #lista == 0 then
+	for archetype, lista in porArchetype do
+		local total = #lista
+		if total == 0 then
 			continue
 		end
-		table.sort(lista, ordenarPorDistancia)
+
 		local max = ConfigNPC.Obter(archetype, "MaxAtivosPorArchetype") or 999
-		for indice, item in lista do
-			local lod
-			if indice > max then
-				lod = TiposNPC.LOD.Distante
-			else
-				lod = rotuloLOD(item.distancia, archetype)
-			end
-			item.ctrl:definirLOD(lod)
-			item.ctrl:atualizar(passo, item.distancia)
+		-- So precisa ordenar quando ha mais NPCs do que vagas.
+		if total > max then
+			table.sort(lista, ordenarPorDistancia)
 		end
-		devolverListaParaPool(lista)
+
+		for indice, item in lista do
+			local registro = item.registro
+			local lod = if indice > max
+				then TiposNPC.LOD.Distante
+				else rotuloLOD(item.distancia, archetype, registro.lod)
+			registro.lod = lod
+			registro.ctrl:definirLOD(lod)
+			registro.ctrl:atualizar(passo, item.distancia)
+		end
+
+		devolverLista(lista)
 	end
 end
+
+-- =============================================================================
+-- Ciclo de vida.
+-- =============================================================================
 
 function Scheduler.Iniciar()
 	if rodando then
@@ -240,18 +300,18 @@ function Scheduler.Iniciar()
 	end
 	rodando = true
 
-	-- Adiciona NPCs ja existentes na tag.
+	RegistroNPC.Iniciar()
+
 	for _, inst in CollectionService:GetTagged("NPC") do
 		adicionar(inst)
 	end
-
 	table.insert(conexoesGerais, CollectionService:GetInstanceAddedSignal("NPC"):Connect(adicionar))
 	table.insert(conexoesGerais, CollectionService:GetInstanceRemovedSignal("NPC"):Connect(remover))
 
-	-- Tambem observa Workspace/NPCs para o caso de o tag nao estar presente.
+	-- Fallback para NPCs em Workspace/NPCs sem a tag.
 	local function escutarPasta(pasta: Folder)
 		for _, inst in pasta:GetChildren() do
-			if inst:HasTag("NPC") == false and inst:IsA("Model") then
+			if inst:IsA("Model") and not inst:HasTag("NPC") then
 				adicionar(inst)
 			end
 		end
@@ -261,19 +321,14 @@ function Scheduler.Iniciar()
 				task.defer(adicionar, inst)
 			end)
 		)
-		table.insert(
-			conexoesGerais,
-			pasta.ChildRemoved:Connect(function(inst)
-				remover(inst)
-			end)
-		)
+		table.insert(conexoesGerais, pasta.ChildRemoved:Connect(remover))
 	end
 
 	local pastaNPCs = workspace:FindFirstChild("NPCs")
 	if pastaNPCs and pastaNPCs:IsA("Folder") then
 		escutarPasta(pastaNPCs)
 	else
-		local conn
+		local conn: RBXScriptConnection
 		conn = workspace.ChildAdded:Connect(function(child: Instance)
 			if child.Name == "NPCs" and child:IsA("Folder") then
 				conn:Disconnect()
@@ -288,20 +343,29 @@ end
 
 function Scheduler.Parar()
 	rodando = false
+
 	for _, c in conexoesGerais do
 		if c.Connected then
 			c:Disconnect()
 		end
 	end
 	table.clear(conexoesGerais)
+
 	if heartbeatConn then
 		heartbeatConn:Disconnect()
 		heartbeatConn = nil
 	end
-	for modelo, ctrl in controladores do
-		ctrl:destruir()
-		controladores[modelo] = nil
+
+	for modelo in pendentes do
+		limparPendente(modelo)
 	end
+
+	for modelo, registro in registros do
+		registro.ctrl:destruir()
+		registros[modelo] = nil
+	end
+
+	acumulador = 0
 end
 
 return Scheduler

@@ -14,7 +14,11 @@
 	- Guard de maquina.dados (nil-index em Mod.Atacar).
 	- Bloqueio proibido durante stun/defesa quebrada.
 	- Historico de swings limpo por retencao (sem crescer indefinidamente).
-	- Tokens mortos (equipToken/desequipToken/ultimoSwingFim) removidos.
+	- Tokens mortos (desequipToken/ultimoSwingFim) removidos.
+	- equipToken de volta, agora com proposito: invalida watchdogs pendentes.
+	- Watchdog de equip/desequip: o NPC nunca mais fica preso em "equipando"
+	  se o hook da maquina nao concluir (era o congelamento pos-spawn).
+	- Todos os caminhos de falha do equipar agora emitem warn.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -29,6 +33,15 @@ local Sincronia = require(script.Parent:WaitForChild("Sincronia"))
 type EstadoNPC = Estado.EstadoNPC
 
 local Acoes = {}
+
+-- Tempo (s) ate pedir a conclusao do equip ao pipeline caso o cliente nao
+-- avise (animacao nao tocou, LOD distante, jogador longe...).
+local FALLBACK_EQUIP = 1.8
+-- Tempo (s) ate o SERVIDOR destravar o NPC por conta propria. Sem este
+-- watchdog, um equip que nunca conclui deixa s.equipando = true para sempre e
+-- o Decisao.Tick fica preso no early-return de EstaEquipando: o NPC spawna,
+-- fica parado e nunca mais decide nada.
+local TIMEOUT_EQUIP = 3.5
 
 -- =============================================================================
 -- Helpers internos.
@@ -149,28 +162,92 @@ end
 -- API publica (equivalente ao antigo ControladorCombateNPC).
 -- =============================================================================
 
+-- Destrava um equip/desequip pendurado. Usado pelo watchdog interno e pelo
+-- Decisao quando a IA percebe que o NPC ficou preso em "Equipando".
+function Acoes.ForcarFimEquip(modelo: Model, motivo: string?)
+	local s = Estado.Obter(modelo)
+	if not s or s.destruido or not s.equipando then
+		return
+	end
+	warn(string.format("[NPC.Acoes] Equip destravado a forca (%s): %s", motivo or "timeout", modelo:GetFullName()))
+	s.equipToken += 1
+	local eraDesequip = s.desequipando
+	s.equipando = false
+	s.desequipando = false
+	s.armaPronta = not eraDesequip
+	Sincronia.DefinirArmaPronta(s, s.armaPronta)
+	if not s.atacando then
+		Sincronia.DefinirAcao(s, TiposNPC.Acao.Idle, 0)
+	end
+end
+
 function Acoes.EquiparArma(modelo: Model)
 	local s = Estado.Obter(modelo)
-	if not s or s.destruido or s.armaPronta or s.equipando then
+	if not s then
+		-- FIX: antes retornava em silencio. Estado inexistente aqui significa que
+		-- o comportamento nao inicializou: o NPC nunca equiparia e ninguem saberia.
+		warn("[NPC.Acoes] EquiparArma ignorado: estado de combate inexistente em", modelo:GetFullName())
+		return
+	end
+	if s.destruido or s.armaPronta or s.equipando then
 		return
 	end
 	local cs = Estado.ObterCombateServidor()
 	if not cs then
+		warn("[NPC.Acoes] EquiparArma ignorado: CombateServidor indisponivel para", modelo:GetFullName())
 		return
 	end
 
 	Arma.Aplicar(s) -- re-resolve arma/timings antes de equipar
 
+	s.equipToken += 1
+	local token = s.equipToken
 	s.equipando = true
 	s.desequipando = false
 	Sincronia.DefinirAcao(s, TiposNPC.Acao.Equipar, 0)
 
 	-- Delega ao pipeline do player; a conclusao chega via hook da maquina
 	-- (estadoAcao volta para "Nenhuma" -> Sincronia atualiza NPC_ArmaPronta).
-	local ok = pcall(cs.ProcessarEquipar, modelo, Arma.ObterModoAnimacao(modelo))
-	if not ok then
+	local ok, sucesso = pcall(cs.ProcessarEquipar, modelo, Arma.ObterModoAnimacao(modelo))
+	if not ok or not sucesso then
+		-- FIX: falha deixa rastro. Este era o caminho mudo que fazia o NPC
+		-- alternar Equipar <-> Idle a cada tick sem nunca equipar.
+		warn(
+			string.format(
+				"[NPC.Acoes] ProcessarEquipar falhou em %s: %s",
+				modelo:GetFullName(),
+				if not ok then tostring(sucesso) else "pipeline retornou false"
+			)
+		)
 		s.equipando = false
+		Sincronia.DefinirAcao(s, TiposNPC.Acao.Idle, 0)
+		return
 	end
+
+	-- Salvaguarda 1: o cliente pode nunca disparar EquipAnimacaoTerminou.
+	task.delay(FALLBACK_EQUIP, function()
+		if s.destruido or s.equipToken ~= token or not s.equipando then
+			return
+		end
+		local csServ = Estado.ObterCombateServidor()
+		if csServ and csServ.ProcessarAnimacaoEquipTerminou then
+			-- FIX: pcall. Sem ele um erro aqui matava a thread e o NPC ficava
+			-- congelado sem nenhuma mensagem no Output.
+			local okFim, err = pcall(csServ.ProcessarAnimacaoEquipTerminou, modelo)
+			if not okFim then
+				warn("[NPC.Acoes] ProcessarAnimacaoEquipTerminou falhou:", err)
+			end
+		end
+	end)
+
+	-- Salvaguarda 2 (watchdog): se o hook da maquina nunca chegar (maquina nao
+	-- obtida, ObterDados ausente, transicao perdida), destrava mesmo assim.
+	task.delay(TIMEOUT_EQUIP, function()
+		if s.destruido or s.equipToken ~= token or not s.equipando then
+			return
+		end
+		Acoes.ForcarFimEquip(modelo, "hook da maquina nunca concluiu o equip")
+	end)
 end
 
 function Acoes.DesequiparArma(modelo: Model)
@@ -183,20 +260,34 @@ function Acoes.DesequiparArma(modelo: Model)
 	end
 	local cs = Estado.ObterCombateServidor()
 	if not cs then
+		warn("[NPC.Acoes] DesequiparArma ignorado: CombateServidor indisponivel")
 		return
 	end
 
+	s.equipToken += 1
+	local token = s.equipToken
 	s.equipando = true
 	s.desequipando = true
 	Sincronia.DefinirAcao(s, TiposNPC.Acao.Desequipar, 0)
 
-	local ok = pcall(cs.ProcessarDesequipar, modelo)
+	local ok, err = pcall(cs.ProcessarDesequipar, modelo)
 	if not ok then
+		warn("[NPC.Acoes] ProcessarDesequipar falhou:", err)
 		s.equipando = false
 		s.desequipando = false
 		s.armaPronta = false
 		Sincronia.DefinirArmaPronta(s, false)
+		Sincronia.DefinirAcao(s, TiposNPC.Acao.Idle, 0)
+		return
 	end
+
+	-- Mesmo watchdog do equipar: desequipar pendurado tambem congela a IA.
+	task.delay(TIMEOUT_EQUIP, function()
+		if s.destruido or s.equipToken ~= token or not s.equipando then
+			return
+		end
+		Acoes.ForcarFimEquip(modelo, "hook da maquina nunca concluiu o desequip")
+	end)
 end
 
 function Acoes.Atacar(modelo: Model, verificarAlvo: (() -> boolean)?): boolean
