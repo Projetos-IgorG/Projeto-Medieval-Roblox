@@ -228,6 +228,21 @@ function AcaoParkour.CheckParkour(character, config)
 		local function avaliarSemRetarget(candidate)
 			local candidateDist = (candidate.EdgePosition - hrp.Position).Magnitude
 
+			if
+				Utilidades.isCharacterStandingOnPart(
+					character,
+					candidate.Part,
+					finalConfig.FloorProbeDownwardDistance or 4.5,
+					finalConfig.LastFloorPart
+				)
+			then
+				candidate.Aprovado = false
+				candidate.Reason = "StandingOnObstaclePart"
+				candidate.GrabDistance = candidateDist
+				registerAttempt(candidate)
+				return false, candidate
+			end
+
 			if candidateDist > finalConfig.MaxGrabDistance then
 				candidate.Aprovado = false
 				candidate.Reason = "TooFarToGrab"
@@ -420,6 +435,35 @@ function AcaoParkour.CheckParkour(character, config)
 	if acao == "Agarrar" then
 		return tentarAgarrar()
 	else
+		local minVaultEdgeHeight = hrp.Position.Y - (finalConfig.VaultMinEdgeDropFromHrp or 2.2)
+		if bordaReal.Y < minVaultEdgeHeight then
+			data.Aprovado = false
+			data.Reason = "VaultEdgeBelowFeet"
+			Debug.Verbose(
+				"  RESULTADO:",
+				data.Reason,
+				"| bordaY:",
+				string.format("%.2f", bordaReal.Y),
+				"< minY:",
+				string.format("%.2f", minVaultEdgeHeight)
+			)
+			return data
+		end
+
+		if
+			Utilidades.isCharacterStandingOnPart(
+				character,
+				data.Part,
+				finalConfig.FloorProbeDownwardDistance or 4.5,
+				finalConfig.LastFloorPart
+			)
+		then
+			data.Aprovado = false
+			data.Reason = "CantVaultStandingObject"
+			Debug.Verbose("  RESULTADO: CantVaultStandingObject | Part:", data.Part and data.Part.Name or "nil")
+			return data
+		end
+
 		if distReal > finalConfig.MaxVaultDistance then
 			data.Aprovado = false
 			data.Reason = "TooFarToVault"

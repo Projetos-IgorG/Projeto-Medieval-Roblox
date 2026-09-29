@@ -105,6 +105,72 @@ function Utilidades.createRaycastParamsForCharacter(character, extraIgnore)
 	return Utilidades.createRaycastParams(_charRayIgnoreBuffer)
 end
 
+local _floorProbeRayParams = RaycastParams.new()
+_floorProbeRayParams.FilterType = Enum.RaycastFilterType.Exclude
+_floorProbeRayParams.IgnoreWater = true
+
+function Utilidades.getFloorPartsUnderCharacter(character, maxDistance, extraPart)
+	if not character then
+		return EMPTY_ARRAY, {}
+	end
+
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return EMPTY_ARRAY, {}
+	end
+
+	local floorParts = {}
+	local seen = {}
+
+	if extraPart and extraPart:IsA("BasePart") then
+		seen[extraPart] = true
+		table.insert(floorParts, extraPart)
+	end
+
+	_floorProbeRayParams.FilterDescendantsInstances = { character }
+	local dist = maxDistance or 4.5
+	local lookXZ = Vector3.new(hrp.CFrame.LookVector.X, 0, hrp.CFrame.LookVector.Z)
+	if lookXZ.Magnitude > 0.001 then
+		lookXZ = lookXZ.Unit
+	else
+		lookXZ = Vector3.new(0, 0, -1)
+	end
+	local rightXZ = Vector3.new(hrp.CFrame.RightVector.X, 0, hrp.CFrame.RightVector.Z)
+	if rightXZ.Magnitude > 0.001 then
+		rightXZ = rightXZ.Unit
+	else
+		rightXZ = Vector3.new(1, 0, 0)
+	end
+
+	local probeOffsets = {
+		Vector3.zero,
+		-lookXZ * 0.8,
+		lookXZ * 0.5,
+		rightXZ * 0.5,
+		-rightXZ * 0.5,
+	}
+
+	for _, offset in ipairs(probeOffsets) do
+		local origin = hrp.Position + offset
+		local hit = Workspace:Raycast(origin, Vector3.new(0, -dist, 0), _floorProbeRayParams)
+		if hit and hit.Instance and hit.Instance:IsA("BasePart") and not seen[hit.Instance] then
+			seen[hit.Instance] = true
+			table.insert(floorParts, hit.Instance)
+		end
+	end
+
+	return floorParts, seen
+end
+
+function Utilidades.isCharacterStandingOnPart(character, part, maxDistance, extraPart)
+	if not character or not part then
+		return false
+	end
+
+	local _, seen = Utilidades.getFloorPartsUnderCharacter(character, maxDistance, extraPart)
+	return seen[part] == true
+end
+
 function Utilidades.createOverlapParams(ignoreList, maxParts)
 	_overlapParamsCache.FilterDescendantsInstances = ignoreList or EMPTY_ARRAY
 	_overlapParamsCache.MaxParts = maxParts or 0

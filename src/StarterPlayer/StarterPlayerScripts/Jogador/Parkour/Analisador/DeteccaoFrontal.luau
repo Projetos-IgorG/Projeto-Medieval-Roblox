@@ -13,7 +13,6 @@ local Workspace = game:GetService("Workspace")
 
 local Configs = require(script.Parent.Parent.Configuracoes.ConfigParkour)
 local Utilidades = require(script.Parent.Parent.Utilidades)
-local Debug = require(script.Parent.Parent.Depuracao.DepuracaoParkour)
 local Geometria = require(script.Parent.Geometria)
 
 local DeteccaoFrontal = {}
@@ -77,6 +76,12 @@ local function findForwardEdgeByRayGrid(character, hrp, look, finalConfig)
 	if not lookXZ then
 		return nil, nil, nil
 	end
+
+	local _, standingPartsSet = Utilidades.getFloorPartsUnderCharacter(
+		character,
+		finalConfig.FloorProbeDownwardDistance or 4.5,
+		finalConfig.LastFloorPart
+	)
 
 	local rows = finalConfig.ForwardRayGridRows or 7
 	local cols = finalConfig.ForwardRayGridColumns or 5
@@ -149,6 +154,13 @@ local function findForwardEdgeByRayGrid(character, hrp, look, finalConfig)
 					and not Utilidades.isParkourIgnoredPart(hitPart, minPartHeight)
 					and not Utilidades.hasTagDeep(hitPart, Configs.Tags.NAO_AGARRAVEL)
 				then
+					if standingPartsSet[hitPart] then
+						local advance = (result.Position - currentOrigin).Magnitude + 0.05
+						remainingDist -= advance
+						currentOrigin = currentOrigin + lookXZ * advance
+						continue
+					end
+
 					hitSomething = true
 					rayHitPosition = result.Position
 					local distToHRP = (result.Position - hrp.Position).Magnitude
@@ -196,6 +208,9 @@ local function findForwardEdgeByRayGrid(character, hrp, look, finalConfig)
 
 	local gridBot = baseOrigin.Y - halfHeight
 	for _, boxPart in ipairs(boxParts) do
+		if standingPartsSet[boxPart] then
+			continue
+		end
 		if not seen[boxPart] then
 			local dirXZ = (boxPart.Position - hrp.Position) * Vector3.new(1, 0, 1)
 			if dirXZ.Magnitude < 0.01 then
@@ -329,7 +344,8 @@ local function findForwardEdgeByRayGrid(character, hrp, look, finalConfig)
 		local distXZ = deltaXZ.Magnitude
 		local forwardDist = deltaXZ:Dot(lookXZ)
 		local lateral = (deltaXZ - lookXZ * forwardDist).Magnitude
-		local accepted = distXZ > 0.05 and distXZ <= maxDist
+		local isStanding = standingPartsSet[part] == true
+		local accepted = not isStanding and distXZ > 0.05 and distXZ <= maxDist
 
 		table.insert(candidatePoints, {
 			Position = edgePosition,

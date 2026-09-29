@@ -71,6 +71,8 @@ Configs.DefaultConfig = {
 	MaxGrabDistance = 4.5,
 	MaxGrabReachHeight = 5.5,
 	MaxVaultDistance = 6.0,
+	VaultMinEdgeDropFromHrp = 2.2,
+	FloorProbeDownwardDistance = 4.5,
 
 	MinPartHeight = 0.6,
 

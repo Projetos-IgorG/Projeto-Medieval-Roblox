@@ -33,6 +33,8 @@ local runtimeConfig = Configs.mergeConfig(nil)
 local failThrottles = {} :: { [string]: number }
 local lastIdleRecheckAt = 0
 local currentHrp: BasePart? = nil
+local lastFloorPart: BasePart? = nil
+local lastFloorTime = 0
 
 local subirSaltoPendente = nil
 local lateralSaltoPendente = nil
@@ -307,7 +309,12 @@ local function onJumpNormal(character, humanoid)
 
 	Analisador.ClearDebug()
 
-	local result = Analisador.CheckParkour(character, {})
+	local now = os.clock()
+	local recentFloorPart = if now - lastFloorTime < 0.4 then lastFloorPart else nil
+
+	local result = Analisador.CheckParkour(character, {
+		LastFloorPart = recentFloorPart,
+	})
 
 	if not result or not result.Aprovado then
 		dbgPrint("[Parkour] CheckParkour reprovado | reason:", result and result.Reason or "nil")
@@ -315,6 +322,21 @@ local function onJumpNormal(character, humanoid)
 			Analisador.DrawDebug(result)
 		end
 		return
+	end
+
+	if result.Acao == "VaultBaixo" or result.Acao == "VaultMedio" then
+		if Analisador.IsStandingOnPart(character, result.Part, {
+			LastFloorPart = recentFloorPart,
+		}) then
+			dbgPrint(
+				"[Parkour] Vault cancelado: o jogador está pisando no objeto alvo | Part:",
+				result.Part and result.Part.Name or "nil"
+			)
+			if Configs.DebugEnabled then
+				Analisador.DrawDebug(result)
+			end
+			return
+		end
 	end
 
 	if noChao and result.Acao == "Agarrar" then
@@ -397,6 +419,16 @@ end
 
 local function onHeartbeat(character, humanoid)
 	local now = os.clock()
+
+	if humanoid.FloorMaterial ~= Enum.Material.Air and character then
+		local _, standingSet =
+			Utilidades.getFloorPartsUnderCharacter(character, runtimeConfig.FloorProbeDownwardDistance or 4.5)
+		local floor = next(standingSet)
+		if floor then
+			lastFloorPart = floor
+			lastFloorTime = now
+		end
+	end
 
 	if not Movimento.EstaAgarrado() then
 		clearSubirSaltoPendente(false)
@@ -617,6 +649,8 @@ local function setupCharacter(character: Model)
 	Movimento.Soltar()
 	lastJumpTime = 0
 	lastIdleRecheckAt = 0
+	lastFloorPart = nil
+	lastFloorTime = 0
 	clearSubirSaltoPendente(false)
 	clearLateralSaltoPendente(false)
 	resetDescerState()

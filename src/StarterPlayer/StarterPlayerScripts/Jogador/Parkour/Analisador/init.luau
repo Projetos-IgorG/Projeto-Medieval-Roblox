@@ -94,7 +94,16 @@ function Analisador.CheckEscalar(character, currentEdgePos, currentNormal, curre
 	return Escalada.CheckEscalar(character, currentEdgePos, currentNormal, currentPart, config)
 end
 
--- ===== Utilitários diversos =====
+function Analisador.IsStandingOnPart(character, part, config)
+	local finalConfig = Configs.mergeConfig(config)
+	return Utilidades.isCharacterStandingOnPart(
+		character,
+		part,
+		finalConfig.FloorProbeDownwardDistance or 4.5,
+		finalConfig.LastFloorPart
+	)
+end
+
 function Analisador.IsRunningForVault(humanoid, ClientBridgeRef)
 	if ClientBridgeRef and ClientBridgeRef.LerStatusLocal then
 		local estadoMov = ClientBridgeRef.LerStatusLocal("estadoMov")
