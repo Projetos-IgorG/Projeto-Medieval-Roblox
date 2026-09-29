@@ -46,6 +46,8 @@ type Config = {
 	Invert: boolean,
 	RequireShiftLockInThirdPerson: boolean,
 	FirstPersonThreshold: number,
+	ThirdPersonPitchThreshold: number, -- deadzone da câmera em 3ª pessoa para cima/baixo (rad)
+	ThirdPersonMaxPitch: number, -- pitch da câmera em 3ª pessoa onde atinge inclinação máxima (rad)
 }
 
 export type TorsoTiltConfig = {
@@ -55,6 +57,8 @@ export type TorsoTiltConfig = {
 	Invert: boolean?,
 	RequireShiftLockInThirdPerson: boolean?,
 	FirstPersonThreshold: number?,
+	ThirdPersonPitchThreshold: number?,
+	ThirdPersonMaxPitch: number?,
 }
 
 -- ── Defaults ───────────────────────────────────────────────────────────
@@ -66,6 +70,8 @@ local DEFAULT_CONFIG: Config = {
 	Invert = false,
 	RequireShiftLockInThirdPerson = true,
 	FirstPersonThreshold = 1.5,
+	ThirdPersonPitchThreshold = math.rad(40),
+	ThirdPersonMaxPitch = math.rad(70),
 }
 
 -- ── Classe ─────────────────────────────────────────────────────────────
@@ -102,7 +108,6 @@ InclinacaoTorso.__index = InclinacaoTorso
 
 type InclinacaoTorsoClass = typeof(setmetatable({} :: TorsoTiltSelf, InclinacaoTorso))
 export type TorsoTiltInstance = InclinacaoTorsoClass
-
 
 -- ── Constructor ────────────────────────────────────────────────────────
 
@@ -182,6 +187,12 @@ end
 -- ── Condições ──────────────────────────────────────────────────────────
 
 function InclinacaoTorso._isFirstPerson(self: InclinacaoTorsoClass): boolean
+	if PonteCliente and type(PonteCliente.EstaEmPrimeiraPessoa) == "function" then
+		local ok, inFP = pcall(PonteCliente.EstaEmPrimeiraPessoa)
+		if ok and type(inFP) == "boolean" then
+			return inFP
+		end
+	end
 	if not self.head then
 		return false
 	end
@@ -211,8 +222,42 @@ function InclinacaoTorso._isParkour(self: InclinacaoTorsoClass): boolean
 	return false
 end
 
+function InclinacaoTorso._isCrouched(self: InclinacaoTorsoClass): boolean
+	if PonteCliente and type(PonteCliente.LerStatusLocal) == "function" then
+		local ok, val = pcall(PonteCliente.LerStatusLocal, "AgachadoOn")
+		if ok and val == true then
+			return true
+		end
+	end
+	if self.character then
+		local statusLocal = self.character:FindFirstChild("StatusLocal")
+		if statusLocal then
+			local agachadoVal = statusLocal:FindFirstChild("AgachadoOn")
+			if agachadoVal and agachadoVal:IsA("BoolValue") and agachadoVal.Value == true then
+				return true
+			end
+		end
+
+		local status = self.character:FindFirstChild("Status")
+		if status then
+			local agachadoVal = status:FindFirstChild("Agachado")
+			if agachadoVal and agachadoVal:IsA("BoolValue") and agachadoVal.Value == true then
+				return true
+			end
+		end
+
+		if self.character:GetAttribute("Agachado") == true or self.character:GetAttribute("AgachadoOn") == true then
+			return true
+		end
+	end
+	return false
+end
+
 function InclinacaoTorso._shouldTilt(self: InclinacaoTorsoClass): boolean
 	if self:_isParkour() then
+		return false
+	end
+	if self:_isCrouched() then
 		return false
 	end
 	if self:_isFirstPerson() then
@@ -244,8 +289,29 @@ function InclinacaoTorso._update(self: InclinacaoTorsoClass, dt: number)
 	local active = self:_shouldTilt()
 	if active then
 		local pitch = math.asin(math.clamp(cam.CFrame.LookVector.Y, -1, 1))
-		targetAngle = -math.clamp(pitch, -self.config.MaxAngle, self.config.MaxAngle)
-			* self.config.TiltFraction
+		local isFirstPerson = self:_isFirstPerson()
+
+		if isFirstPerson then
+			-- 1ª pessoa: inclinação fluida proporcional ao pitch da câmera
+			targetAngle = -math.clamp(pitch, -self.config.MaxAngle, self.config.MaxAngle) * self.config.TiltFraction
+		else
+			-- 3ª pessoa: deadzone simétrica para cima e para baixo.
+			-- Câmera levemente inclinada (até ~45°) não mexe no torso.
+			-- Quando estiver olhando bem para cima ou bem para baixo (acima do threshold), inclina suavemente até o limite.
+			local absPitch = math.abs(pitch)
+			local threshold = self.config.ThirdPersonPitchThreshold
+			local maxPitch = self.config.ThirdPersonMaxPitch
+
+			if absPitch <= threshold then
+				targetAngle = 0
+			else
+				local span = math.max(maxPitch - threshold, 0.0001)
+				local progress = math.clamp((absPitch - threshold) / span, 0, 1)
+				local maxTilt = self.config.MaxAngle * self.config.TiltFraction
+				targetAngle = -math.sign(pitch) * maxTilt * progress
+			end
+		end
+
 		if self.config.Invert then
 			targetAngle = -targetAngle
 		end
