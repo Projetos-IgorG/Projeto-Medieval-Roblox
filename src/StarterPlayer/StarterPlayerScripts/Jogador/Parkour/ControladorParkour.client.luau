@@ -35,6 +35,7 @@ local lastIdleRecheckAt = 0
 local currentHrp: BasePart? = nil
 local lastFloorPart: BasePart? = nil
 local lastFloorTime = 0
+local runStartTime = 0
 
 local subirSaltoPendente = nil
 local lateralSaltoPendente = nil
@@ -311,6 +312,62 @@ local function onJumpNormal(character, humanoid)
 
 	local now = os.clock()
 	local recentFloorPart = if now - lastFloorTime < 0.4 then lastFloorPart else nil
+	local estaCorrendo = Analisador.IsRunningForVault(humanoid, ClientBridge)
+
+	local function tentarSaltoAbismo(): boolean
+		if not estaCorrendo then
+			return false
+		end
+		if not noChao and (now - lastFloorTime >= 0.35) then
+			return false
+		end
+		if Movimento.EstaEmSaltoAbismo() then
+			return false
+		end
+
+		-- REGRA: Precisa estar correndo pelo menos até a metade da velocidade máxima atingível de corrida
+		-- (tanto em velocidade atual quanto em tempo de aceleração de corrida contínua)
+		local velMaximaCorrendo = runtimeConfig.VelocidadeCorrendo or 20
+		local fracaoMinima = runtimeConfig.SaltoAbismoMinVelocidadeFracao or 0.5
+		local velocidadeMinima = velMaximaCorrendo * fracaoMinima
+		local tempoCorridaMinimo = runtimeConfig.SaltoAbismoMinTempoCorrida or 0.35
+
+		local tempoCorrendo = if runStartTime > 0 then (now - runStartTime) else 0
+		local hrpLocal = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local velLinearXZ = if hrpLocal then Vector3.new(hrpLocal.AssemblyLinearVelocity.X, 0, hrpLocal.AssemblyLinearVelocity.Z).Magnitude else 0
+		local velocidadeAtual = math.max(humanoid.WalkSpeed, velLinearXZ)
+
+		if velocidadeAtual < velocidadeMinima or (tempoCorrendo < tempoCorridaMinimo and velocidadeAtual < velMaximaCorrendo * 0.8) then
+			dbgPrint(
+				"[Parkour] SaltoAbismo ignorado: corrida insuficiente | vel:",
+				string.format("%.1f", velocidadeAtual),
+				"/ min:",
+				string.format("%.1f", velocidadeMinima),
+				"| tempo:",
+				string.format("%.2fs", tempoCorrendo),
+				"/ min:",
+				string.format("%.2fs", tempoCorridaMinimo)
+			)
+			return false
+		end
+
+		local saltoResult = Analisador.CheckSaltoAbismo(character, runtimeConfig)
+		if saltoResult and Configs.DebugEnabled then
+			Analisador.DrawDebug(saltoResult)
+		end
+
+		if saltoResult and saltoResult.Aprovado then
+			dbgPrint("[Parkour] SaltoAbismo aprovado!")
+			local ok = Movimento.Executar(saltoResult, runtimeConfig)
+			if ok then
+				registerMomentum(now)
+				return true
+			end
+		else
+			dbgPrint("[Parkour] CheckSaltoAbismo reprovado | reason:", saltoResult and saltoResult.Reason or "nil")
+		end
+		return false
+	end
 
 	local result = Analisador.CheckParkour(character, {
 		LastFloorPart = recentFloorPart,
@@ -320,6 +377,9 @@ local function onJumpNormal(character, humanoid)
 		dbgPrint("[Parkour] CheckParkour reprovado | reason:", result and result.Reason or "nil")
 		if result and Configs.DebugEnabled then
 			Analisador.DrawDebug(result)
+		end
+		if tentarSaltoAbismo() then
+			return
 		end
 		return
 	end
@@ -335,6 +395,9 @@ local function onJumpNormal(character, humanoid)
 			if Configs.DebugEnabled then
 				Analisador.DrawDebug(result)
 			end
+			if tentarSaltoAbismo() then
+				return
+			end
 			return
 		end
 	end
@@ -344,12 +407,15 @@ local function onJumpNormal(character, humanoid)
 		if Configs.DebugEnabled then
 			Analisador.DrawDebug(result)
 		end
+		if tentarSaltoAbismo() then
+			return
+		end
 		return
 	end
 
 	if
 		(result.Acao == "VaultBaixo" or result.Acao == "VaultMedio")
-		and not Analisador.IsRunningForVault(humanoid, ClientBridge)
+		and not estaCorrendo
 	then
 		if noChao then
 			dbgPrint("[Parkour] Vault sem corrida no chão: não pode fallback para Agarrar | Acao:", result.Acao)
@@ -381,6 +447,9 @@ local function onJumpNormal(character, humanoid)
 		dbgPrint("[Parkour] Agarrar bloqueado: pulo iniciado no chão")
 		if Configs.DebugEnabled then
 			Analisador.DrawDebug(result)
+		end
+		if tentarSaltoAbismo() then
+			return
 		end
 		return
 	end
@@ -419,6 +488,16 @@ end
 
 local function onHeartbeat(character, humanoid)
 	local now = os.clock()
+
+	local estaCorrendoAgora = Analisador.IsRunningForVault(humanoid, ClientBridge)
+	local estaSeMovendo = humanoid.MoveDirection.Magnitude > 0.1
+	if estaCorrendoAgora and estaSeMovendo then
+		if runStartTime == 0 then
+			runStartTime = now
+		end
+	else
+		runStartTime = 0
+	end
 
 	if humanoid.FloorMaterial ~= Enum.Material.Air and character then
 		local _, standingSet =
@@ -684,6 +763,7 @@ local function setupCharacter(character: Model)
 		AnimacaoParkour.Destruir()
 		Movimento.Soltar()
 		currentHrp = nil
+		runStartTime = 0
 		clearLateralSaltoPendente(false)
 		clearSubirSaltoPendente(false)
 		resetDescerState()

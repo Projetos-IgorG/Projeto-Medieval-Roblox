@@ -103,6 +103,17 @@ Configs.DefaultConfig = {
 	VaultMedioImpulse = 40,
 	VaultMedioTransitionTime = 0.2,
 
+	-- Salto Abismo (Impulso para saltar sobre buracos / abismos)
+	SaltoAbismoImpulseForward = 50,
+	SaltoAbismoImpulseUp = 50,
+	SaltoAbismoMinQueda = 5.0,
+	SaltoAbismoObstacleCheckDistance = 3.5,
+	SaltoAbismoFadeTransicao = 0.5,
+	SaltoAbismoMinVelocidadeFracao = 0.5, -- Mínimo de 50% da velocidade máxima atingível de corrida
+	SaltoAbismoMinTempoCorrida = 0.4, -- Tempo mínimo de aceleração de corrida contínua
+	SaltoAbismoDownCheckDistance = 20.0,
+	SaltoAbismoDistancias = { 3.0, 5.5, 8.0, 11.0 }, -- 4 linhas de sondagem para a frente
+
 	SubirAreaSize = Vector3.new(3.5, 10.0, 6.0),
 	SubirAreaUpOffset = 5.0,
 	SubirProbeNormalOffset = 2.0,

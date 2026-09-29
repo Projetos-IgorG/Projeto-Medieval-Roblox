@@ -39,6 +39,7 @@ local AcaoParkour = require(script:WaitForChild("AcaoParkour"))
 local AcaoSubir = require(script:WaitForChild("AcaoSubir"))
 local AcaoDescer = require(script:WaitForChild("AcaoDescer"))
 local AcaoLateral = require(script:WaitForChild("AcaoLateral"))
+local DeteccaoSaltoAbismo = require(script:WaitForChild("DeteccaoSaltoAbismo"))
 
 local Analisador = {}
 
@@ -76,6 +77,10 @@ end
 -- ===== Ações (merge resolvido dentro de cada módulo) =====
 function Analisador.CheckParkour(character, config)
 	return AcaoParkour.CheckParkour(character, config)
+end
+
+function Analisador.CheckSaltoAbismo(character, config)
+	return DeteccaoSaltoAbismo.CheckSaltoAbismo(character, config)
 end
 
 function Analisador.CheckSubir(character, currentEdgePos, currentNormal, config)

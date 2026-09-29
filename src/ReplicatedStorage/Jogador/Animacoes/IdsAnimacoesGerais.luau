@@ -83,6 +83,11 @@ local GeneralAnimations = {
 
 			VaultMedio = "rbxassetid://139979993022198",
 			VaultBaixo = "rbxassetid://105489781294318",
+
+			ParkourPulandoAbismo = "rbxassetid://116920112083279", -- Pulo de parkour com impulso sobre abismo
+			ParkourQuedaAbismo = "rbxassetid://93101843191370", -- Queda contínua de parkour no ar
+			ParkourPulandoQueda = "rbxassetid://116920112083279", -- Compatibilidade
+			ParkourQueda = "rbxassetid://93101843191370", -- Compatibilidade
 		},
 		eventos = {
 			SubirDireitaSuporte = "SubirParkour",

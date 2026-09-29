@@ -61,6 +61,7 @@ local idleDebugState = {
 
 local estado = {
 	EmAcao = false,
+	EmSaltoAbismo = false,
 	Agarrado = false,
 	ActiveConstraints = {} :: { Instance },
 	CharacterBaseParts = nil :: { BasePart }?,
@@ -68,6 +69,8 @@ local estado = {
 	DiedConnection = nil :: RBXScriptConnection?,
 	GrabHeartbeatConn = nil :: RBXScriptConnection?,
 	EscalarHeartbeatConn = nil :: RBXScriptConnection?,
+	SaltoAbismoHeartbeatConn = nil :: RBXScriptConnection?,
+	SaltoAbismoStateConn = nil :: RBXScriptConnection?,
 	CurrentCharacter = nil :: Model?,
 	SavedCollisions = {} :: { [BasePart]: boolean },
 	SavedHeadCanCollide = nil :: boolean?,
@@ -501,6 +504,15 @@ local function fullCleanup()
 		estado.EscalarHeartbeatConn:Disconnect()
 		estado.EscalarHeartbeatConn = nil
 	end
+	if estado.SaltoAbismoHeartbeatConn then
+		estado.SaltoAbismoHeartbeatConn:Disconnect()
+		estado.SaltoAbismoHeartbeatConn = nil
+	end
+	if estado.SaltoAbismoStateConn then
+		estado.SaltoAbismoStateConn:Disconnect()
+		estado.SaltoAbismoStateConn = nil
+	end
+	estado.EmSaltoAbismo = false
 
 	destroyConstraints()
 	restaurarColisao()
@@ -1185,6 +1197,178 @@ local function executarVault(result, _config, impulso, transitionTime)
 
 	local nomeAnimacao = if impulso == finalConfig.VaultMedioImpulse then "VaultMedio" else "VaultBaixo"
 	AnimacaoParkour.TocarAcao(nomeAnimacao, nil, nil)
+
+	return true
+end
+
+local function cancelarSaltoAbismoInterno()
+	if estado.SaltoAbismoHeartbeatConn then
+		estado.SaltoAbismoHeartbeatConn:Disconnect()
+		estado.SaltoAbismoHeartbeatConn = nil
+	end
+	if estado.SaltoAbismoStateConn then
+		estado.SaltoAbismoStateConn:Disconnect()
+		estado.SaltoAbismoStateConn = nil
+	end
+	estado.EmSaltoAbismo = false
+	estado.EmAcao = false
+end
+
+local function executarSaltoAbismo(result, _config)
+	local character = result.Character or estado.CurrentCharacter
+	if not character then
+		return false
+	end
+
+	local hrp = result.Hrp or Utilidades.getCharacterParts(character)
+	local humanoid = result.Humanoid or character:FindFirstChildOfClass("Humanoid")
+
+	if not hrp or not humanoid then
+		return false
+	end
+
+	local finalConfig = Configs.mergeConfig(_config)
+	if not podeIniciarParkour() then
+		return false
+	end
+
+	cancelarSaltoAbismoInterno()
+
+	estado.EmAcao = true
+	estado.EmSaltoAbismo = true
+	estado.CurrentCharacter = character
+
+	conectarDied(character)
+
+	local look = result.LookVector or hrp.CFrame.LookVector
+	local lookFlat = Vector3.new(look.X, 0, look.Z).Unit
+	local impulsoFrente = finalConfig.SaltoAbismoImpulseForward or 50
+	local impulsoUp = finalConfig.SaltoAbismoImpulseUp or 50
+
+	-- Garante ativação do pulo nativo
+	humanoid.Jump = true
+	humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+
+	-- Aplica impulso físico para frente e para cima preservando e somando o momentum da corrida
+	local velAtual = hrp.AssemblyLinearVelocity
+	local velAtualXZ = Vector3.new(velAtual.X, 0, velAtual.Z)
+	local velHorizontal = lookFlat * math.max(velAtualXZ.Magnitude + impulsoFrente, 38)
+	local velY = math.max(velAtual.Y, 22) + impulsoUp
+	hrp.AssemblyLinearVelocity = Vector3.new(velHorizontal.X, velY, velHorizontal.Z)
+
+	local tempoInicio = os.clock()
+	local emFaseQueda = false
+	local decolou = false
+
+	local function transicionarParaQueda()
+		if emFaseQueda or not estado.EmSaltoAbismo then
+			return
+		end
+		emFaseQueda = true
+		local fade = finalConfig.SaltoAbismoFadeTransicao or 0.5
+		dbgPrint("[Parkour] Transicionando diretamente para ParkourQueda!")
+		AnimacaoParkour.TocarAcaoLoop("ParkourQueda", fade)
+	end
+
+	local function finalizarSaltoAbismo()
+		if not estado.EmSaltoAbismo then
+			return
+		end
+
+		dbgPrint("[Parkour] Finalizando SaltoAbismo (pouso)")
+		cancelarSaltoAbismoInterno()
+		AnimacaoParkour.EncerrarAcaoAtual(0.15)
+	end
+
+	-- Obtém a track de pulo para monitorar o término exato sem gap
+	local trackPulo = AnimacaoParkour.ObterTrack("ParkourPulandoQueda")
+		or AnimacaoParkour.ObterTrack("ParkourPulandoAbismo")
+	if trackPulo then
+		local puloEndedConn
+		puloEndedConn = trackPulo.Ended:Connect(function()
+			if puloEndedConn then
+				puloEndedConn:Disconnect()
+				puloEndedConn = nil
+			end
+			if estado.EmSaltoAbismo and not emFaseQueda then
+				transicionarParaQueda()
+			end
+		end)
+	end
+
+	-- Toca animação inicial de pulo se preparando para queda.
+	-- Ela roda a animação por inteira e, no instante em que acaba, vai direto para a queda.
+	AnimacaoParkour.TocarAcao("ParkourPulandoQueda", nil, function()
+		if estado.EmSaltoAbismo and not emFaseQueda then
+			transicionarParaQueda()
+		end
+	end)
+
+	local connHeartbeat
+	connHeartbeat = RunService.Heartbeat:Connect(function()
+		if not isCharacterAlive(character) or not estado.EmSaltoAbismo then
+			finalizarSaltoAbismo()
+			return
+		end
+
+		local now = os.clock()
+		local tempoNoAr = now - tempoInicio
+
+		-- Decolagem só é confirmada quando o Humanoid realmente estiver no ar
+		if not decolou then
+			if humanoid.FloorMaterial == Enum.Material.Air then
+				decolou = true
+			end
+		end
+
+		-- Transição garantida para a Queda assim que a animação de pulo estiver nos últimos frames
+		if not emFaseQueda and estado.EmSaltoAbismo then
+			if trackPulo then
+				local len = trackPulo.Length
+				if
+					len > 0 and trackPulo.TimePosition >= math.max(len - 0.08, 0.05)
+					or (tempoNoAr > 0.2 and not trackPulo.IsPlaying)
+				then
+					transicionarParaQueda()
+				end
+			end
+		end
+
+		-- Detecta pouso apenas depois que realmente decolou, passou o tempo de segurança (0.35s)
+		-- e o personagem estiver caindo ou atingindo o solo (velY <= 5 e FloorMaterial ~= Air)
+		if decolou and tempoNoAr > 0.35 then
+			if humanoid.FloorMaterial ~= Enum.Material.Air and hrp.AssemblyLinearVelocity.Y <= 5 then
+				finalizarSaltoAbismo()
+				return
+			end
+		end
+
+		if tempoNoAr > 12.0 then
+			finalizarSaltoAbismo()
+			return
+		end
+	end)
+	estado.SaltoAbismoHeartbeatConn = connHeartbeat
+
+	local connState
+	connState = humanoid.StateChanged:Connect(function(_, novoEstado)
+		if not estado.EmSaltoAbismo then
+			return
+		end
+		-- Pouso só ocorre quando o jogador REALMENTE decolou, passou o tempo de segurança e tocou o chão com velocidade descendente
+		local tempoNoAr = os.clock() - tempoInicio
+		if
+			decolou
+			and tempoNoAr > 0.35
+			and humanoid.FloorMaterial ~= Enum.Material.Air
+			and hrp.AssemblyLinearVelocity.Y <= 5
+		then
+			if novoEstado == Enum.HumanoidStateType.Landed or novoEstado == Enum.HumanoidStateType.Running then
+				finalizarSaltoAbismo()
+			end
+		end
+	end)
+	estado.SaltoAbismoStateConn = connState
 
 	return true
 end
@@ -1880,7 +2064,11 @@ function Movimento.Executar(parkourResult, config)
 	end
 
 	if estado.EmAcao then
-		return false
+		if estado.EmSaltoAbismo and parkourResult.Acao == "Agarrar" then
+			cancelarSaltoAbismoInterno()
+		else
+			return false
+		end
 	end
 
 	local acao = parkourResult.Acao
@@ -1902,6 +2090,8 @@ function Movimento.Executar(parkourResult, config)
 			finalConfig.VaultMedioImpulse,
 			finalConfig.VaultMedioTransitionTime
 		)
+	elseif acao == "SaltoAbismo" then
+		return executarSaltoAbismo(parkourResult, finalConfig)
 	end
 
 	return false
@@ -2505,7 +2695,18 @@ function Movimento.EstaAgarrado()
 end
 
 function Movimento.EstaEmAcao()
-	return estado.EmAcao
+	return estado.EmAcao and not estado.EmSaltoAbismo
+end
+
+function Movimento.EstaEmSaltoAbismo()
+	return estado.EmSaltoAbismo == true
+end
+
+function Movimento.CancelarSaltoAbismo()
+	if estado.EmSaltoAbismo then
+		cancelarSaltoAbismoInterno()
+		AnimacaoParkour.EncerrarAcaoAtual(0.12)
+	end
 end
 
 function Movimento.GetGrabData()

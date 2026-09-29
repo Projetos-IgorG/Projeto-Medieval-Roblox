@@ -316,6 +316,19 @@ function Debug.DrawDebug(data)
 	if data.VaultClearanceCFrame and data.VaultClearanceSize then
 		Debug.DrawBox(data.VaultClearanceCFrame, data.VaultClearanceSize, Color3.fromRGB(0, 255, 100))
 	end
+
+	if data.SaltoAbismoBoxCFrame and data.SaltoAbismoBoxSize then
+		local corBox = data.Aprovado and Color3.fromRGB(0, 255, 180) or Color3.fromRGB(255, 60, 60)
+		Debug.DrawBox(data.SaltoAbismoBoxCFrame, data.SaltoAbismoBoxSize, corBox)
+	end
+
+	if data.SaltoAbismoRays then
+		for _, r in ipairs(data.SaltoAbismoRays) do
+			local corRay = r.IsAbyss and Color3.fromRGB(0, 255, 180) or Color3.fromRGB(255, 60, 60)
+			Debug.DrawRay(r.Origin, r.HitPosition, corRay)
+			Debug.DrawPoint(r.HitPosition, corRay, Vector3.new(0.35, 0.35, 0.35))
+		end
+	end
 end
 
 function Debug.DrawClimbDebug(escalarResult, subirResult)

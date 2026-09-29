@@ -60,6 +60,15 @@ local preAcaoAtual: PreAcaoState? = nil
 local speedMultiplier: number = 1.0
 
 local function obterPrioridade(nomeAnimacao: string, looped: boolean): Enum.AnimationPriority
+	if
+		nomeAnimacao == "ParkourPulandoAbismo"
+		or nomeAnimacao == "ParkourQuedaAbismo"
+		or nomeAnimacao == "ParkourPulandoQueda"
+		or nomeAnimacao == "ParkourQueda"
+	then
+		return Enum.AnimationPriority.Action3
+	end
+
 	if looped or nomeAnimacao == "IdleSuporte" or nomeAnimacao == "IdleSuspenso" then
 		return Enum.AnimationPriority.Action
 	end
@@ -305,7 +314,12 @@ function AnimacaoParkour.TocarAcao(nomeAnimacao: string, onEvento: Callback, onC
 			end
 		end)
 	else
-		local stoppedConn = track.Stopped:Connect(function()
+		local completou = false
+		local function dispararCompleto()
+			if completou then
+				return
+			end
+			completou = true
 			if tokenLocal ~= tokenAcao then
 				return
 			end
@@ -322,17 +336,79 @@ function AnimacaoParkour.TocarAcao(nomeAnimacao: string, onEvento: Callback, onC
 			if onCompleto then
 				onCompleto()
 			end
-		end)
+		end
+
+		local stoppedConn = track.Stopped:Connect(dispararCompleto)
+		local endedConn = track.Ended:Connect(dispararCompleto)
 		table.insert(conexoesAcao, stoppedConn)
+		table.insert(conexoesAcao, endedConn)
 
 		if not skipPlay then
 			tocarTrack(track, nomeAnimacao, obterFadeInAcaoPara(nomeAnimacao), false, velMultiplicador)
+		end
+
+		local duracao = track.Length
+		if duracao and duracao > 0 then
+			local speed = obterVelocidadeTrack(nomeAnimacao, false) * (velMultiplicador or 1.0)
+			local tempoLimite = math.max((duracao / math.max(speed, 0.05)), 0.05)
+			task.delay(tempoLimite, function()
+				if tokenLocal == tokenAcao and not completou then
+					dispararCompleto()
+				end
+			end)
 		end
 	end
 
 	if not markerName then
 		executarEventoUmaVez()
 	end
+
+	return true
+end
+
+function AnimacaoParkour.TocarAcaoLoop(nomeAnimacao: string, fadeIn: number?, velMultiplicador: number?): boolean
+	if not currentAnimator then
+		return false
+	end
+
+	local track = obterTrack(nomeAnimacao)
+	if not track then
+		return false
+	end
+
+	tokenAcao += 1
+	local tokenLocal = tokenAcao
+	preAcaoAtual = nil
+	limparConexoesAcao()
+
+	local fade = fadeIn or configAnim.FadeInAcao
+
+	if acaoTrackAtual and acaoTrackAtual ~= track then
+		pararTrack(acaoTrackAtual, fade)
+	end
+
+	if idleTrackAtual then
+		pararTrack(idleTrackAtual, obterFadeOutIdleParaAcao(nomeAnimacao))
+		idleTrackAtual = nil
+		idleAtual = nil
+	end
+
+	acaoTrackAtual = track
+
+	-- Força loop nas propriedades do AnimationTrack
+	track.Looped = true
+	tocarTrack(track, nomeAnimacao, fade, true, velMultiplicador)
+	track.Looped = true
+
+	-- Listener de reinício automático para caso o asset de animação não tenha loop nativo embutido
+	local loopEndedConn = track.Ended:Connect(function()
+		if tokenLocal ~= tokenAcao or acaoTrackAtual ~= track then
+			return
+		end
+		track.TimePosition = 0
+		track:Play(0.04)
+	end)
+	table.insert(conexoesAcao, loopEndedConn)
 
 	return true
 end
@@ -595,6 +671,10 @@ end
 
 function AnimacaoParkour.ResetarBraco()
 	proximoBraco = "Direita"
+end
+
+function AnimacaoParkour.ObterTrack(nomeAnimacao: string): AnimationTrack?
+	return obterTrack(nomeAnimacao)
 end
 
 function AnimacaoParkour.Destruir()
